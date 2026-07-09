@@ -1,0 +1,13 @@
+# Render Blueprint — repo bağlanınca ayarların çoğu otomatik gelir
+services:
+  - type: web
+    name: makropanel
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+      - key: SECRET_KEY
+        generateValue: true

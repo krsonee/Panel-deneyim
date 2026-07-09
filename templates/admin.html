@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MakroPanel — Link Takip & Analiz</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #060a10; --sidebar: #0a0f18; --surface: #0f1623; --surface-2: #151e2e;
+      --border: #243044; --text: #e8edf5; --muted: #7d8da6; --accent: #6366f1;
+      --accent-soft: rgba(99,102,241,0.15); --green: #22c55e; --green-soft: rgba(34,197,94,0.12);
+      --amber: #f59e0b; --rose: #f43f5e; --cyan: #06b6d4;
+      --sidebar-w: 250px;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    .app { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: var(--sidebar-w); background: var(--sidebar); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; flex-shrink: 0; position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+    }
+    .sidebar-brand { padding: 1.35rem 1.25rem; border-bottom: 1px solid var(--border); }
+    .sidebar-brand h1 { font-size: 1.15rem; font-weight: 800; }
+    .sidebar-brand h1 span { color: var(--accent); }
+    .sidebar-brand p { font-size: 0.68rem; color: var(--muted); margin-top: 0.2rem; }
+
+    .nav { padding: 0.85rem 0.65rem; flex: 1; }
+    .nav-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); padding: 0.5rem 0.75rem; }
+    .nav-item {
+      display: flex; align-items: center; gap: 0.65rem; padding: 0.65rem 0.85rem;
+      border-radius: 10px; font-size: 0.85rem; font-weight: 500; color: var(--muted);
+      text-decoration: none; margin-bottom: 0.2rem; border: 1px solid transparent;
+    }
+    .nav-item .icon { font-size: 1rem; width: 1.25rem; text-align: center; }
+    .nav-item.active { background: var(--accent-soft); color: #c7d2fe; border-color: rgba(99,102,241,0.35); }
+    .nav-item.disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+    .nav-item .badge { margin-left: auto; font-size: 0.6rem; padding: 0.15rem 0.4rem; background: var(--surface-2); border-radius: 4px; }
+
+    .sidebar-foot { padding: 1rem; border-top: 1px solid var(--border); }
+    .sidebar-foot a { font-size: 0.78rem; color: var(--muted); text-decoration: none; }
+    .sidebar-foot a:hover { color: var(--rose); }
+
+    .main { margin-left: var(--sidebar-w); flex: 1; min-width: 0; }
+    .main-inner { padding: 1.25rem 1.5rem 2rem; max-width: 1200px; }
+
+    .topbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.25rem; }
+    .topbar h2 { font-size: 1.25rem; font-weight: 700; }
+    .topbar p { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+    .live-pill {
+      display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.75rem;
+      background: var(--green-soft); border: 1px solid rgba(34,197,94,0.35); border-radius: 999px;
+      font-size: 0.72rem; color: var(--green);
+    }
+    .live-pill::before { content: ""; width: 6px; height: 6px; background: var(--green); border-radius: 50%; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.85)} }
+
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.85rem; margin-bottom: 1.25rem; }
+    @media (max-width: 1000px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 520px) { .kpi-grid { grid-template-columns: 1fr; } }
+
+    .kpi {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+      padding: 1.15rem 1.2rem; position: relative; overflow: hidden;
+    }
+    .kpi::after { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent); opacity: 0.6; }
+    .kpi.green::after { background: var(--green); }
+    .kpi.amber::after { background: var(--amber); }
+    .kpi.cyan::after { background: var(--cyan); }
+    .kpi .val { font-size: 2rem; font-weight: 800; line-height: 1.1; }
+    .kpi.green .val { color: var(--green); }
+    .kpi .lbl { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-top: 0.35rem; }
+    .kpi .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+
+    .charts-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.85rem; margin-bottom: 1rem; }
+    @media (max-width: 1000px) { .charts-grid { grid-template-columns: 1fr; } }
+    .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1rem 1.1rem; }
+    .chart-card h3 { font-size: 0.85rem; font-weight: 600; }
+    .chart-card p.sub { font-size: 0.68rem; color: var(--muted); margin: 0.2rem 0 0.75rem; }
+    .chart-wrap { position: relative; height: 210px; }
+    .chart-empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); font-size: 0.78rem; background: rgba(6,10,16,0.75); border-radius: 8px; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 1rem; }
+    .card-head {
+      padding: 0.9rem 1.15rem; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.88rem;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;
+    }
+    .card-body { padding: 1rem 1.15rem; }
+    .card-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.55rem; }
+    @media (max-width: 640px) { .form-row { grid-template-columns: 1fr; } }
+
+    label { display: block; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.28rem; }
+    input, select {
+      width: 100%; padding: 0.55rem 0.75rem; background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 9px; color: var(--text); font-size: 0.85rem;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+    .filter-bar { display: grid; grid-template-columns: 1fr 120px 120px 110px 110px auto; gap: 0.5rem; padding: 0.85rem 1.15rem; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+    @media (max-width: 900px) { .filter-bar { grid-template-columns: 1fr 1fr; } }
+
+    .btn {
+      padding: 0.55rem 0.9rem; border-radius: 9px; border: 1px solid var(--border);
+      background: var(--surface-2); color: var(--text); font-size: 0.78rem; font-weight: 600; cursor: pointer;
+    }
+    .btn:hover { background: #1c2738; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-success { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.4); color: var(--green); }
+    .btn-danger { color: var(--rose); border-color: rgba(244,63,94,0.4); }
+    .btn-sm { padding: 0.28rem 0.55rem; font-size: 0.68rem; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    th { text-align: left; padding: 0.65rem 0.85rem; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+    th.col-draggable { cursor: grab; user-select: none; touch-action: none; }
+    th.col-draggable::before { content: "⋮⋮"; display: inline-block; margin-right: 0.35rem; opacity: 0.35; font-size: 0.55rem; letter-spacing: -0.08em; vertical-align: middle; }
+    th.col-draggable:hover { color: var(--text); background: rgba(99,102,241,0.08); }
+    th.col-draggable:active, th.col-dragging { cursor: grabbing; }
+    th.col-dragging { opacity: 0.45; background: var(--accent-soft); color: #c7d2fe; }
+    th.col-drop-target { box-shadow: inset 0 -2px 0 var(--accent); color: var(--accent); }
+    body.col-drag-active { cursor: grabbing; }
+    body.col-drag-active * { cursor: grabbing !important; }
+    td { padding: 0.65rem 0.85rem; border-top: 1px solid var(--border); vertical-align: middle; }
+    tr.online td[data-col="status"] { box-shadow: inset 3px 0 0 var(--green); }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover { background: rgba(99,102,241,0.06); }
+    tr.hidden-row { display: none; }
+    tr.flash-row { animation: rowFlash 1.2s ease; }
+    @keyframes rowFlash { 0%{background:rgba(34,197,94,0.25)} 100%{background:transparent} }
+
+    .tag { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 5px; font-size: 0.68rem; font-weight: 600; background: var(--accent-soft); color: #a5b4fc; }
+    .tag.online { background: var(--green-soft); color: var(--green); }
+    .tag.offline { background: rgba(125,141,166,0.15); color: var(--muted); }
+    .tag.game-slot { background: rgba(245,158,11,0.15); color: var(--amber); }
+    .tag.game-casino { background: rgba(244,63,94,0.15); color: var(--rose); }
+    .tag.game-sport { background: rgba(6,182,212,0.15); color: var(--cyan); }
+    .tag.device-mobile { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+    .tag.device-desktop { background: rgba(6,182,212,0.15); color: var(--cyan); }
+    .tag.device-tablet { background: rgba(168,85,247,0.15); color: #c084fc; }
+    .device-cell { font-size: 0.72rem; line-height: 1.35; max-width: 200px; }
+    .device-cell small { display: block; color: var(--muted); font-size: 0.65rem; margin-top: 0.1rem; }
+
+    .mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.7rem; color: #94a3b8; }
+    .time { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--green); }
+    .muted { color: var(--muted); }
+    .empty { text-align: center; color: var(--muted); padding: 1.5rem; font-style: italic; }
+    .filter-count { font-size: 0.72rem; color: var(--muted); padding: 0.4rem 1.15rem; }
+
+    .code-box { position: relative; }
+    .code-box pre { background: #04070c; border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem; font-size: 0.65rem; color: #94a3b8; white-space: pre-wrap; word-break: break-all; }
+    .code-box .btn { position: absolute; top: 0.3rem; right: 0.3rem; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 200;
+      display: none; align-items: center; justify-content: center; padding: 1rem;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+      width: 100%; max-width: 520px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;
+    }
+    .modal-head { padding: 1.1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .modal-head h3 { font-size: 1rem; }
+    .modal-body { padding: 1.25rem; overflow-y: auto; flex: 1; }
+    .modal-close { background: none; border: none; color: var(--muted); font-size: 1.25rem; cursor: pointer; }
+
+    .timeline { position: relative; padding-left: 1.5rem; }
+    .timeline::before { content: ""; position: absolute; left: 0.45rem; top: 0.5rem; bottom: 0.5rem; width: 2px; background: var(--border); }
+    .tl-item { position: relative; padding-bottom: 1.1rem; }
+    .tl-item:last-child { padding-bottom: 0; }
+    .tl-dot {
+      position: absolute; left: -1.15rem; top: 0.15rem; width: 1.1rem; height: 1.1rem;
+      background: var(--surface-2); border: 2px solid var(--accent); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; font-size: 0.55rem;
+    }
+    .tl-time { font-size: 0.72rem; color: var(--green); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .tl-text { font-size: 0.85rem; margin-top: 0.15rem; }
+    .tl-detail { font-size: 0.72rem; color: var(--muted); margin-top: 0.15rem; }
+
+    .toast {
+      position: fixed; bottom: 1.25rem; right: 1.25rem; padding: 0.65rem 1rem;
+      background: var(--surface-2); border: 1px solid var(--green); border-radius: 10px;
+      color: var(--green); font-size: 0.8rem; opacity: 0; transition: 0.25s; z-index: 300;
+    }
+    .toast.show { opacity: 1; }
+
+    @media (max-width: 768px) {
+      .sidebar { transform: translateX(-100%); }
+      .main { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h1>Makro<span>Panel</span></h1>
+        <p>SaaS Yönetim Merkezi</p>
+      </div>
+      <nav class="nav">
+        <div class="nav-label">Modüller</div>
+        <a href="/admin" class="nav-item active"><span class="icon">📊</span> Link Takip & Analiz</a>
+        <span class="nav-item disabled"><span class="icon">💰</span> Muhasebe <span class="badge">Yakında</span></span>
+        <span class="nav-item disabled"><span class="icon">👥</span> CRM <span class="badge">Yakında</span></span>
+        <span class="nav-item disabled"><span class="icon">⚙️</span> Ayarlar <span class="badge">Yakında</span></span>
+      </nav>
+      <div class="sidebar-foot">
+        <a href="/admin/logout">Çıkış Yap</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <div class="main-inner">
+        <div class="topbar">
+          <div>
+            <h2>Link Takip & Analiz</h2>
+            <p>Sunucu: {{ server_url }} · 3 sn'de bir otomatik güncellenir</p>
+          </div>
+          <div class="live-pill" id="poll-status">Canlı akış aktif</div>
+        </div>
+
+        <!-- KPI Widgets -->
+        <section class="kpi-grid">
+          <div class="kpi green">
+            <div class="val" id="kpi-online">0</div>
+            <div class="lbl">Şu An Aktif Oyuncu</div>
+            <div class="sub">Son 90 saniye</div>
+          </div>
+          <div class="kpi">
+            <div class="val" id="kpi-unique">0</div>
+            <div class="lbl">Toplam Benzersiz Ziyaretçi</div>
+            <div class="sub">Tekil oturum ID</div>
+          </div>
+          <div class="kpi amber">
+            <div class="val" id="kpi-top-domain" style="font-size:1.35rem;">—</div>
+            <div class="lbl">En Çok Trafik Çeken Domain</div>
+            <div class="sub" id="kpi-top-domain-sub">—</div>
+          </div>
+          <div class="kpi cyan">
+            <div class="val" id="kpi-top-channel" style="font-size:1.35rem;">—</div>
+            <div class="lbl">En Aktif Affiliate Kanalı</div>
+            <div class="sub" id="kpi-top-channel-sub">—</div>
+          </div>
+        </section>
+
+        <!-- Grafikler -->
+        <section class="charts-grid">
+          <div class="chart-card">
+            <h3>Domain Trafiği</h3>
+            <p class="sub">Toplam oyuncu vs şu an online</p>
+            <div class="chart-wrap"><canvas id="chart-domains"></canvas><div class="chart-empty" id="empty-domains">Veri yok</div></div>
+          </div>
+          <div class="chart-card">
+            <h3>Affiliate Kanalları</h3>
+            <p class="sub">Hangi ref linki kaç üye getirdi</p>
+            <div class="chart-wrap"><canvas id="chart-affiliate"></canvas><div class="chart-empty" id="empty-affiliate">Veri yok</div></div>
+          </div>
+          <div class="chart-card">
+            <h3>Oyun Tıklamaları</h3>
+            <p class="sub">Kategori bazlı etkileşim</p>
+            <div class="chart-wrap"><canvas id="chart-games"></canvas><div class="chart-empty" id="empty-games">Veri yok</div></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">Domain Ekle</div>
+          <div class="card-body">
+            <form id="add-link-form">
+              <div class="form-row">
+                <div><label for="input-domain">Domain</label><input id="input-domain" placeholder="makrobet804.com" required></div>
+                <div><label for="input-ref">Referans (?ref=) — opsiyonel</label><input id="input-ref" placeholder="Boş = tüm site"></div>
+                <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><span>Takip Edilen Domainler</span><a href="/demo" target="_blank" class="btn btn-sm">Demo Site</a></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Domain</th><th>Referans</th><th>Online</th><th>Takip Kodu</th><th></th></tr></thead>
+              <tbody id="links-table"><tr><td colspan="5" class="empty">Henüz domain yok</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><span>Şu An Online</span><span class="muted" id="online-label" style="font-weight:400;font-size:0.75rem;"></span></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th data-col="status">Durum</th>
+                <th data-col="session_id">Oturum ID</th>
+                <th data-col="domain">Domain</th>
+                <th data-col="ref">Referans</th>
+                <th data-col="ip">IP</th>
+                <th data-col="time">Süre</th>
+                <th data-col="games">Oyunlar</th>
+                <th data-col="device">Cihaz</th>
+                <th data-col="actions"></th>
+              </tr></thead>
+              <tbody id="online-table"><tr><td colspan="9" class="empty">Online oyuncu yok</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span>Tüm Oyuncular</span>
+            <div class="card-actions">
+              <button class="btn btn-success" id="btn-csv">Verileri Excel (CSV) Olarak İndir</button>
+              <button class="btn" id="btn-export-json">JSON İndir</button>
+              <button class="btn btn-danger" id="btn-clear">Oturumları Temizle</button>
+            </div>
+          </div>
+          <div class="filter-bar">
+            <div><label for="search-input">Canlı Arama</label><input id="search-input" placeholder="Oturum ID, IP, domain…"></div>
+            <div><label for="filter-domain">Domain</label><select id="filter-domain"><option value="">Tümü</option></select></div>
+            <div><label for="filter-ref">Referans</label><select id="filter-ref"><option value="">Tümü</option></select></div>
+            <div><label for="filter-device">Cihaz Türü</label><select id="filter-device"><option value="">Tümü</option><option value="mobile">Mobil</option><option value="desktop">Bilgisayar</option><option value="tablet">Tablet</option></select></div>
+            <div><label for="filter-status">Durum</label><select id="filter-status"><option value="">Tümü</option><option value="online">Online</option><option value="offline">Offline</option></select></div>
+            <div style="align-self:end"><button type="button" class="btn" id="btn-clear-filter">Temizle</button></div>
+          </div>
+          <div class="filter-count" id="filter-count"></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th data-col="status">Durum</th>
+                <th data-col="session_id">Oturum ID</th>
+                <th data-col="domain">Domain</th>
+                <th data-col="ref">Referans</th>
+                <th data-col="ip">IP</th>
+                <th data-col="time">Süre</th>
+                <th data-col="games">Oyunlar</th>
+                <th data-col="device">Cihaz</th>
+                <th data-col="actions"></th>
+              </tr></thead>
+              <tbody id="sessions-table"><tr><td colspan="9" class="empty">Veri yok</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Journey Modal -->
+  <div class="modal-overlay" id="journey-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <h3 id="modal-title">Kullanıcı Zaman Tüneli</h3>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted" style="font-size:0.78rem;margin-bottom:1rem;" id="modal-meta"></p>
+        <div class="timeline" id="modal-timeline"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    (function () {
+      var API = "";
+      var allSessions = [];
+      var prevSnapshot = {};
+      var flashIds = new Set();
+      var charts = { domain: null, affiliate: null, games: null };
+      var COLORS = ["#6366f1","#22c55e","#f59e0b","#f43f5e","#06b6d4","#a855f7"];
+
+      Chart.defaults.color = "#7d8da6";
+      Chart.defaults.borderColor = "rgba(36,48,68,0.5)";
+
+      function fmtTime(s) { s=s||0; return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0"); }
+      function fmtClock(iso) { if(!iso)return"—"; return new Date(iso).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}); }
+      function fmtDate(iso) { return iso ? new Date(iso).toLocaleString("tr-TR") : "—"; }
+      function esc(s) { var d=document.createElement("div"); d.textContent=s||""; return d.innerHTML; }
+      function toast(m) { var t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},2200); }
+
+      var COL_ORDER_PREFIX = "makropanel_col_order_";
+      var SESSION_COL_KEYS = ["status","session_id","domain","ref","ip","time","games","device","actions"];
+      var dragColKey = null;
+      var dropColKey = null;
+      var dragTableId = null;
+
+      function getColOrder(tableId) {
+        try {
+          var saved = JSON.parse(localStorage.getItem(COL_ORDER_PREFIX + tableId));
+          if (Array.isArray(saved) && saved.length) {
+            var order = saved.filter(function(k){ return SESSION_COL_KEYS.indexOf(k) >= 0; });
+            SESSION_COL_KEYS.forEach(function(k){ if (order.indexOf(k) < 0) order.push(k); });
+            return order;
+          }
+        } catch (e) {}
+        return SESSION_COL_KEYS.slice();
+      }
+
+      function setColOrder(tableId, order) {
+        localStorage.setItem(COL_ORDER_PREFIX + tableId, JSON.stringify(order));
+      }
+
+      function applyColumnOrder(table, order) {
+        if (!table) return;
+        var headRow = table.querySelector("thead tr");
+        if (!headRow) return;
+        var thMap = {};
+        headRow.querySelectorAll("th[data-col]").forEach(function(th) {
+          thMap[th.getAttribute("data-col")] = th;
+        });
+        order.forEach(function(key) { if (thMap[key]) headRow.appendChild(thMap[key]); });
+
+        table.querySelectorAll("tbody tr").forEach(function(row) {
+          if (row.querySelector(".empty")) return;
+          var tdMap = {};
+          row.querySelectorAll("td[data-col]").forEach(function(td) {
+            tdMap[td.getAttribute("data-col")] = td;
+          });
+          order.forEach(function(key) { if (tdMap[key]) row.appendChild(tdMap[key]); });
+        });
+      }
+
+      function applyTableColOrder(tableId) {
+        var tbody = document.getElementById(tableId);
+        if (tbody) applyColumnOrder(tbody.closest("table"), getColOrder(tableId));
+      }
+
+      function reorderColumns(tableId, fromKey, toKey) {
+        if (!tableId || !fromKey || !toKey || fromKey === toKey) return;
+        var order = getColOrder(tableId);
+        var fromIdx = order.indexOf(fromKey);
+        var toIdx = order.indexOf(toKey);
+        if (fromIdx < 0 || toIdx < 0) return;
+        order.splice(fromIdx, 1);
+        order.splice(toIdx, 0, fromKey);
+        setColOrder(tableId, order);
+        applyTableColOrder(tableId);
+      }
+
+      function initColumnDrag() {
+        document.querySelectorAll("#online-table, #sessions-table").forEach(function(tbody) {
+          var table = tbody.closest("table");
+          if (!table || table.getAttribute("data-col-drag") === "1") return;
+          table.setAttribute("data-col-drag", "1");
+          table.querySelectorAll("thead th[data-col]").forEach(function(th) {
+            th.classList.add("col-draggable");
+            th.title = "Basılı tutup sürükleyerek sırayı değiştir";
+            th.addEventListener("mousedown", onColDragStart);
+          });
+        });
+      }
+
+      function clearColDragMarkers() {
+        document.querySelectorAll("th.col-dragging, th.col-drop-target").forEach(function(th) {
+          th.classList.remove("col-dragging", "col-drop-target");
+        });
+        document.body.classList.remove("col-drag-active");
+      }
+
+      function onColDragStart(e) {
+        if (e.button !== 0) return;
+        var table = this.closest("table");
+        var tbody = table && table.querySelector("tbody");
+        dragTableId = tbody ? tbody.id : null;
+        dragColKey = this.getAttribute("data-col");
+        dropColKey = null;
+        this.classList.add("col-dragging");
+        document.body.classList.add("col-drag-active");
+
+        function onMove(ev) {
+          ev.preventDefault();
+          document.querySelectorAll("th.col-drop-target").forEach(function(th) {
+            th.classList.remove("col-drop-target");
+          });
+          var el = document.elementFromPoint(ev.clientX, ev.clientY);
+          var th = el && el.closest("th[data-col]");
+          if (th && table && th.closest("table") === table) {
+            var key = th.getAttribute("data-col");
+            if (key !== dragColKey) {
+              dropColKey = key;
+              th.classList.add("col-drop-target");
+            } else {
+              dropColKey = null;
+            }
+          } else {
+            dropColKey = null;
+          }
+        }
+
+        function onUp(ev) {
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+          if (dropColKey && dragColKey && dragTableId) {
+            reorderColumns(dragTableId, dragColKey, dropColKey);
+            toast("Bu tablonun sütun sırası güncellendi");
+          }
+          dragColKey = null;
+          dropColKey = null;
+          dragTableId = null;
+          clearColDragMarkers();
+        }
+
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      function shortUa(ua) {
+        if(!ua)return"—";
+        if(ua.includes("Chrome"))return"Chrome";
+        if(ua.includes("Safari"))return"Safari";
+        if(ua.includes("Firefox"))return"Firefox";
+        return ua.slice(0,24)+"…";
+      }
+
+      function renderDevice(s) {
+        var cat = s.device_category || "unknown";
+        var tagClass = cat === "mobile" ? "device-mobile" : cat === "desktop" ? "device-desktop" : cat === "tablet" ? "device-tablet" : "";
+        var icon = cat === "mobile" ? "📱" : cat === "desktop" ? "💻" : cat === "tablet" ? "📲" : "❓";
+        var main = s.device_display || s.device_label || shortUa(s.user_agent);
+        var sub = "";
+        if (cat === "mobile" || cat === "tablet") {
+          sub = (s.device_os || "") + (s.device_brand && s.device_brand !== s.device_os ? " · " + s.device_brand : "");
+          if (s.device_browser && s.device_browser !== "—") sub += " · " + s.device_browser;
+        } else if (cat === "desktop") {
+          sub = (s.device_browser && s.device_browser !== "—") ? s.device_browser : (s.device_os || "");
+        }
+        return '<div class="device-cell"><span class="tag '+tagClass+'">'+icon+" "+esc(main)+'</span>'+
+          (sub ? '<small>'+esc(sub)+'</small>' : '')+'</div>';
+      }
+
+      function gameClass(n) {
+        if(n==="Slot Oyunu")return"game-slot";
+        if(n==="Canlı Casino")return"game-casino";
+        if(n==="Spor Bahisleri")return"game-sport";
+        return"";
+      }
+      function renderGames(g) {
+        if(!g||!g.length)return'<span class="muted">—</span>';
+        return g.map(function(x){return'<span class="tag '+gameClass(x)+'">'+esc(x)+'</span>';}).join("");
+      }
+
+      function detectChanges(sessions) {
+        flashIds.clear();
+        var next = {};
+        sessions.forEach(function(s) {
+          next[s.session_id] = { total_seconds: s.total_seconds, last_seen_at: s.last_seen_at, games_len: (s.games||[]).length };
+          var p = prevSnapshot[s.session_id];
+          if (!p) flashIds.add(s.session_id);
+          else if (p.total_seconds !== s.total_seconds || p.last_seen_at !== s.last_seen_at || p.games_len !== (s.games||[]).length)
+            flashIds.add(s.session_id);
+        });
+        prevSnapshot = next;
+      }
+
+      function sessionRow(s, opts) {
+        opts = opts || {};
+        var st = s.is_online ? '<span class="tag online">Online</span>' : '<span class="tag offline">Offline</span>';
+        var ref = s.ref_code || "Direkt giriş";
+        var flash = flashIds.has(s.session_id) ? " flash-row" : "";
+        var click = opts.clickable ? " clickable" : "";
+        var cells = {
+          status: '<td data-col="status">'+st+'</td>',
+          session_id: '<td data-col="session_id" class="mono" title="'+esc(s.session_id)+'">'+esc(s.session_short||s.session_id)+'</td>',
+          domain: '<td data-col="domain">'+esc(s.domain)+'</td>',
+          ref: '<td data-col="ref"><span class="tag">'+esc(ref)+'</span></td>',
+          ip: '<td data-col="ip" class="mono">'+esc(s.ip_address||"—")+'</td>',
+          time: '<td data-col="time" class="time" data-seconds="'+s.total_seconds+'">'+fmtTime(s.total_seconds)+'</td>',
+          games: '<td data-col="games">'+renderGames(s.games)+'</td>',
+          device: '<td data-col="device" title="'+esc(s.user_agent||"")+'">'+renderDevice(s)+'</td>',
+          actions: opts.detailBtn
+            ? '<td data-col="actions"><button class="btn btn-sm" data-journey="'+esc(s.session_id)+'">Zaman Tüneli</button></td>'
+            : '<td data-col="actions"></td>'
+        };
+        var order = getColOrder(opts.tableId || "sessions-table");
+        var r = '<tr data-session-id="'+esc(s.session_id)+'" data-domain="'+esc(s.domain)+'" data-ref="'+esc(ref)+'" data-status="'+(s.is_online?"online":"offline")+'" data-device="'+esc(s.device_category||"")+'" class="'+(s.is_online?"online":"")+click+flash+'">';
+        order.forEach(function(key) { if (cells[key]) r += cells[key]; });
+        r += '</tr>';
+        return r;
+      }
+
+      function showEmpty(id, show) { var el=document.getElementById(id); if(el) el.style.display=show?"flex":"none"; }
+
+      function renderCharts(data) {
+        var domains = data.domain_traffic||[];
+        var channels = data.affiliate_channels||[];
+        var games = data.game_clicks||[];
+        showEmpty("empty-domains", !domains.length);
+        showEmpty("empty-affiliate", !channels.length);
+        showEmpty("empty-games", !games.length);
+        if (charts.domain) charts.domain.destroy();
+        if (charts.affiliate) charts.affiliate.destroy();
+        if (charts.games) charts.games.destroy();
+
+        charts.domain = new Chart(document.getElementById("chart-domains"), {
+          type: "bar",
+          data: {
+            labels: domains.map(function(d){return d.domain;}),
+            datasets: [
+              { label: "Toplam Oyuncu", data: domains.map(function(d){return d.total_players;}), backgroundColor: "#6366f1aa", borderRadius: 5 },
+              { label: "Şu An Online", data: domains.map(function(d){return d.online_now;}), backgroundColor: "#22c55eaa", borderRadius: 5 }
+            ]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+        });
+
+        var total = channels.reduce(function(a,c){return a+c.members;},0)||1;
+        charts.affiliate = new Chart(document.getElementById("chart-affiliate"), {
+          type: "doughnut",
+          data: {
+            labels: channels.map(function(c){ return c.channel+" ("+Math.round(c.members/total*100)+"%)"; }),
+            datasets: [{ data: channels.map(function(c){return c.members;}), backgroundColor: COLORS, borderWidth: 2, borderColor: "#0f1623" }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { font: { size: 10 }, boxWidth: 10 } } } }
+        });
+
+        charts.games = new Chart(document.getElementById("chart-games"), {
+          type: "bar",
+          data: {
+            labels: games.map(function(g){return g.game;}),
+            datasets: [{ data: games.map(function(g){return g.clicks;}), backgroundColor: ["#f59e0baa","#f43f5eaa","#06b6d4aa"], borderRadius: 5 }]
+          },
+          options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+        });
+      }
+
+      function updateKpi(kpi) {
+        if (!kpi) return;
+        document.getElementById("kpi-online").textContent = kpi.online;
+        document.getElementById("kpi-unique").textContent = kpi.unique_visitors;
+        document.getElementById("kpi-top-domain").textContent = kpi.top_domain;
+        document.getElementById("kpi-top-domain-sub").textContent = kpi.top_domain_count ? kpi.top_domain_count + " ziyaretçi" : "—";
+        document.getElementById("kpi-top-channel").textContent = kpi.top_channel;
+        document.getElementById("kpi-top-channel-sub").textContent = kpi.top_channel_count ? kpi.top_channel_count + " üye" : "—";
+      }
+
+      function updateFilters(sessions, links) {
+        var dSel = document.getElementById("filter-domain");
+        var rSel = document.getElementById("filter-ref");
+        var cD = dSel.value, cR = rSel.value;
+        var doms = {}, refs = {};
+        sessions.forEach(function(s){ doms[s.domain]=1; refs[s.ref_code||"Direkt giriş"]=1; });
+        (links||[]).forEach(function(l){ doms[l.domain]=1; if(l.ref_code) refs[l.ref_code]=1; });
+        dSel.innerHTML = '<option value="">Tümü</option>';
+        rSel.innerHTML = '<option value="">Tümü</option>';
+        Object.keys(doms).sort().forEach(function(d){ dSel.innerHTML+='<option value="'+esc(d)+'">'+esc(d)+'</option>'; });
+        Object.keys(refs).sort().forEach(function(r){ rSel.innerHTML+='<option value="'+esc(r)+'">'+esc(r)+'</option>'; });
+        dSel.value=cD; rSel.value=cR;
+      }
+
+      function applyFilters() {
+        var q = document.getElementById("search-input").value.trim().toLowerCase();
+        var dom = document.getElementById("filter-domain").value;
+        var ref = document.getElementById("filter-ref").value;
+        var dev = document.getElementById("filter-device").value;
+        var st = document.getElementById("filter-status").value;
+        var vis = 0;
+        document.querySelectorAll("#sessions-table tr[data-session-id]").forEach(function(row) {
+          var ok = (!q||row.textContent.toLowerCase().indexOf(q)>=0) && (!dom||row.getAttribute("data-domain")===dom)
+            && (!ref||row.getAttribute("data-ref")===ref) && (!dev||row.getAttribute("data-device")===dev)
+            && (!st||row.getAttribute("data-status")===st);
+          row.classList.toggle("hidden-row", !ok);
+          if (ok) vis++;
+        });
+        document.getElementById("filter-count").textContent = vis+" / "+allSessions.length+" oyuncu";
+      }
+
+      function renderLinks(links) {
+        var tbody = document.getElementById("links-table");
+        if (!links.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz domain yok</td></tr>'; return; }
+        tbody.innerHTML = links.map(function(l) {
+          var ref = l.ref_code ? '<span class="tag">'+esc(l.ref_code)+'</span>' : '<span class="tag">Tüm site</span>';
+          var on = l.online_count>0 ? '<span class="tag online">'+l.online_count+'</span>' : '<span class="tag offline">0</span>';
+          var cid = "code-"+l.id;
+          return '<tr><td><strong>'+esc(l.domain)+'</strong></td><td>'+ref+'</td><td>'+on+'</td>'+
+            '<td><div class="code-box"><button class="btn btn-sm" onclick="copyCode(\''+cid+'\')">Kopyala</button><pre id="'+cid+'">'+esc(l.tracking_code)+'</pre></div></td>'+
+            '<td><button class="btn btn-sm btn-danger" onclick="deleteLink('+l.id+')">Sil</button></td></tr>';
+        }).join("");
+      }
+
+      function renderOnline(users) {
+        var tbody = document.getElementById("online-table");
+        document.getElementById("online-label").textContent = users.length ? users.length+" kişi sitede" : "";
+        if (!users.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">Online yok</td></tr>'; return; }
+        tbody.innerHTML = users.map(function(u){ return sessionRow(u, { detailBtn: true, tableId: "online-table" }); }).join("");
+        applyTableColOrder("online-table");
+        bindJourneyButtons();
+      }
+
+      function renderSessions(sessions) {
+        allSessions = sessions || [];
+        detectChanges(allSessions);
+        var tbody = document.getElementById("sessions-table");
+        if (!allSessions.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">Veri yok</td></tr>'; return; }
+        tbody.innerHTML = allSessions.map(function(s){ return sessionRow(s, { clickable: true, detailBtn: true, tableId: "sessions-table" }); }).join("");
+        applyTableColOrder("sessions-table");
+        applyFilters();
+        bindJourneyButtons();
+        bindRowClicks();
+      }
+
+      function bindJourneyButtons() {
+        document.querySelectorAll("[data-journey]").forEach(function(btn) {
+          btn.onclick = function(e) { e.stopPropagation(); openJourney(btn.getAttribute("data-journey")); };
+        });
+      }
+
+      function bindRowClicks() {
+        document.querySelectorAll("#sessions-table tr.clickable").forEach(function(row) {
+          row.onclick = function() { openJourney(row.getAttribute("data-session-id")); };
+        });
+      }
+
+      function openJourney(sessionId) {
+        fetch(API+"/api/sessions/"+encodeURIComponent(sessionId)+"/journey")
+          .then(function(r){return r.json();})
+          .then(function(data) {
+            if (data.error) { toast(data.error); return; }
+            var s = data.session;
+            document.getElementById("modal-title").textContent = "Zaman Tüneli — "+s.session_short;
+            document.getElementById("modal-meta").textContent = s.domain+" · "+s.ref_code+" · IP: "+(s.ip_address||"—")+" · "+(s.device_display||"—")+" · "+(s.is_online?"Online":"Offline");
+            document.getElementById("modal-timeline").innerHTML = (data.timeline||[]).map(function(item) {
+              return '<div class="tl-item"><div class="tl-dot">'+item.icon+'</div>'+
+                '<div class="tl-time">'+fmtClock(item.time)+'</div>'+
+                '<div class="tl-text">'+esc(item.text)+'</div>'+
+                '<div class="tl-detail">'+esc(item.detail||"")+'</div></div>';
+            }).join("") || '<p class="muted">Henüz aktivite yok.</p>';
+            document.getElementById("journey-modal").classList.add("open");
+          });
+      }
+
+      function tickTimes() {
+        document.querySelectorAll("tr.online .time[data-seconds]").forEach(function(el) {
+          var s = parseInt(el.getAttribute("data-seconds")||"0",10)+1;
+          el.setAttribute("data-seconds", s);
+          el.textContent = fmtTime(s);
+        });
+      }
+
+      var lastLinks = [];
+      function refreshAll() {
+        fetch(API+"/api/stats").then(function(r){ if(r.status===401){location.href="/admin/login";return null;} return r.json(); })
+          .then(function(s){ if(!s)return; updateKpi(s.kpi); });
+
+        fetch(API+"/api/charts").then(function(r){return r.json();}).then(renderCharts);
+        fetch(API+"/api/links").then(function(r){return r.json();}).then(function(d){ lastLinks=d.links||[]; renderLinks(lastLinks); updateFilters(allSessions,lastLinks); });
+        fetch(API+"/api/online").then(function(r){return r.json();}).then(function(d){ renderOnline(d.users||[]); });
+        fetch(API+"/api/sessions").then(function(r){return r.json();}).then(function(d){ renderSessions(d.sessions||[]); updateFilters(allSessions,lastLinks); });
+
+        document.getElementById("poll-status").textContent = "Son güncelleme: "+new Date().toLocaleTimeString("tr-TR");
+      }
+
+      document.getElementById("add-link-form").addEventListener("submit", function(e) {
+        e.preventDefault();
+        fetch(API+"/api/links",{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({domain:document.getElementById("input-domain").value.trim(),ref_code:document.getElementById("input-ref").value.trim()})
+        }).then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});}).then(function(res){
+          if(!res.ok){alert(res.data.error);return;}
+          document.getElementById("input-domain").value="";
+          document.getElementById("input-ref").value="";
+          refreshAll(); toast("Eklendi!");
+        });
+      });
+
+      ["search-input","filter-domain","filter-ref","filter-device","filter-status"].forEach(function(id){
+        document.getElementById(id).addEventListener("input", applyFilters);
+        document.getElementById(id).addEventListener("change", applyFilters);
+      });
+      document.getElementById("btn-clear-filter").onclick = function(){
+        document.getElementById("search-input").value="";
+        document.getElementById("filter-domain").value="";
+        document.getElementById("filter-ref").value="";
+        document.getElementById("filter-device").value="";
+        document.getElementById("filter-status").value="";
+        applyFilters();
+      };
+
+      document.getElementById("btn-csv").onclick = function(){ window.location.href = API+"/api/data/export.csv"; toast("CSV indiriliyor…"); };
+      document.getElementById("btn-export-json").onclick = function(){
+        fetch(API+"/api/data/export").then(function(r){return r.json();}).then(function(data){
+          var a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)]));
+          a.download="analiz-"+Date.now()+".json"; a.click(); toast("JSON indirildi!");
+        });
+      };
+      document.getElementById("btn-clear").onclick = function(){
+        if(!confirm("Tüm oturum verileri silinecek. Emin misin?")) return;
+        fetch(API+"/api/data/clear-sessions",{method:"POST"}).then(function(){ prevSnapshot={}; refreshAll(); toast("Temizlendi."); });
+      };
+
+      document.getElementById("modal-close").onclick = function(){ document.getElementById("journey-modal").classList.remove("open"); };
+      document.getElementById("journey-modal").onclick = function(e){ if(e.target===this) this.classList.remove("open"); };
+
+      window.copyCode = function(id){ var el=document.getElementById(id); if(el) navigator.clipboard.writeText(el.textContent).then(function(){toast("Kopyalandı!");}); };
+      window.deleteLink = function(id){
+        if(!confirm("Silinsin mi?")) return;
+        fetch(API+"/api/links/"+id,{method:"DELETE"}).then(function(){refreshAll();toast("Silindi.");});
+      };
+
+      initColumnDrag();
+      applyTableColOrder("online-table");
+      applyTableColOrder("sessions-table");
+      refreshAll();
+      setInterval(refreshAll, 3000);
+      setInterval(tickTimes, 1000);
+    })();
+  </script>
+</body>
+</html>

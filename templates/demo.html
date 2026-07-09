@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Demo Site — Affiliate Takip Testi</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0e17;
+      --surface: #111827;
+      --border: #2a3548;
+      --text: #e8edf5;
+      --muted: #8896ab;
+      --accent: #6366f1;
+      --green: #22c55e;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #1e1b4b, #312e81);
+      padding: 2rem 1.5rem;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header h1 { font-size: 1.6rem; }
+    .header p { color: #c4b5fd; margin-top: 0.4rem; font-size: 0.9rem; }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-top: 1rem;
+      padding: 0.35rem 0.85rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      border: 1px solid var(--border);
+    }
+
+    .status.waiting { color: var(--muted); }
+    .status.active { color: var(--green); border-color: rgba(34,197,94,0.4); background: rgba(34,197,94,0.1); }
+
+    main {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    .info {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+    }
+
+    @media (max-width: 640px) { .info { grid-template-columns: 1fr; } }
+
+    .box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+
+    .box label {
+      display: block;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      margin-bottom: 0.3rem;
+    }
+
+    .box span { font-weight: 600; word-break: break-all; }
+
+    .game-btn {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      width: 100%;
+      padding: 1rem 1.2rem;
+      margin-bottom: 0.65rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.2s;
+    }
+
+    .game-btn:hover { border-color: var(--accent); }
+
+    .timer {
+      text-align: center;
+      margin-top: 1.5rem;
+      padding: 1.2rem;
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+    }
+
+    .timer .val {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .note {
+      margin-top: 2rem;
+      padding: 1rem;
+      background: rgba(99,102,241,0.08);
+      border: 1px solid rgba(99,102,241,0.25);
+      border-radius: 10px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .note a { color: #a5b4fc; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>Demo Site</h1>
+    <p>Bu sayfa, merkezi takip sistemini test etmek içindir.</p>
+    <div class="status waiting" id="track-status">Takip bekleniyor…</div>
+  </header>
+
+  <main>
+    <div class="info">
+      <div class="box">
+        <label>Domain (otomatik)</label>
+        <span id="show-domain">—</span>
+      </div>
+      <div class="box">
+        <label>Referans (?ref=)</label>
+        <span id="show-ref">—</span>
+      </div>
+      <div class="box">
+        <label>Oturum ID (benzersiz)</label>
+        <span id="show-session" class="mono" style="font-size:0.75rem;">—</span>
+      </div>
+    </div>
+
+    <button class="game-btn" data-track-game="Slot Oyunu">🎰 Slot Oyunu</button>
+    <button class="game-btn" data-track-game="Canlı Casino">🃏 Canlı Casino</button>
+    <button class="game-btn" data-track-game="Spor Bahisleri">⚽ Spor Bahisleri</button>
+
+    <div class="timer">
+      <div class="val" id="timer">00:00</div>
+      <p class="muted" style="margin-top:0.3rem;color:var(--muted);font-size:0.85rem;">Sitede geçirilen süre</p>
+    </div>
+
+    <div class="note">
+      Admin panelinde domain kayıtlıysa bu sayfa otomatik takip edilir.
+      <strong>Demo sayfa = localhost domaini.</strong> Burada test edince admin panelde
+      <code>makrobet804.com</code> değil, <code>localhost</code> satırında online görünürsün.
+      Gerçek site için takip kodunu o sitenin HTML'ine eklemen gerekir.
+      Önce <a href="/admin">Admin Panel</a>inden domain ekle.
+    </div>
+  </main>
+
+  <script src="{{ server_url }}/static/tracker.js" data-api="{{ server_url }}" async></script>
+  <script>
+    (function () {
+      var domain = window.location.hostname.replace(/^www\./, "") || "localhost";
+      if (domain === "127.0.0.1") domain = "localhost";
+      var refParam = new URLSearchParams(window.location.search).get("ref");
+      var ref = refParam || "Direkt giriş (ref yok)";
+
+      document.getElementById("show-domain").textContent = domain;
+      document.getElementById("show-ref").textContent = ref;
+
+      var seconds = 0;
+
+      function updateTimer() {
+        if (window.AffiliateTracker && window.AffiliateTracker.isTracked()) {
+          seconds = window.AffiliateTracker.getSeconds();
+          var sid = window.AffiliateTracker.getSessionId();
+          if (sid) document.getElementById("show-session").textContent = sid.slice(0, 16) + "…";
+        } else {
+          seconds += 1;
+        }
+        document.getElementById("timer").textContent = fmtTime(seconds);
+      }
+
+      function fmtTime(s) {
+        return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+      }
+
+      setInterval(updateTimer, 1000);
+
+      var check = setInterval(function () {
+        if (window.AffiliateTracker && window.AffiliateTracker.isTracked()) {
+          document.getElementById("track-status").textContent = "Merkezi sunucuya bağlı — takip aktif";
+          document.getElementById("track-status").className = "status active";
+          clearInterval(check);
+        }
+      }, 500);
+
+      setTimeout(function () {
+        if (document.getElementById("track-status").classList.contains("waiting")) {
+          document.getElementById("track-status").textContent =
+            "Takip edilmiyor — admin panelinde '" + domain + "' domainini ekle (referans boş bırakılabilir)";
+        }
+      }, 4000);
+    })();
+  </script>
+</body>
+</html>

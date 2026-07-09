@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Giriş — Makro Panel</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #060a10;
+      color: #e8edf5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    .login-box {
+      width: 100%;
+      max-width: 400px;
+      background: #0f1623;
+      border: 1px solid #243044;
+      border-radius: 18px;
+      padding: 2.25rem 2rem;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+    }
+    .logo { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.25rem; }
+    .logo span { color: #6366f1; }
+    .sub { color: #7d8da6; font-size: 0.88rem; margin-bottom: 1.75rem; }
+    label { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: #7d8da6; margin-bottom: 0.35rem; }
+    input {
+      width: 100%; padding: 0.75rem 0.9rem; margin-bottom: 1rem;
+      background: #151e2e; border: 1px solid #243044; border-radius: 10px;
+      color: #e8edf5; font-size: 0.95rem;
+    }
+    input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.2); }
+    .btn {
+      width: 100%; padding: 0.8rem; border: none; border-radius: 10px;
+      background: #6366f1; color: #fff; font-size: 0.95rem; font-weight: 600;
+      cursor: pointer; margin-top: 0.25rem;
+    }
+    .btn:hover { filter: brightness(1.08); }
+    .error {
+      background: rgba(244,63,94,0.12); border: 1px solid rgba(244,63,94,0.35);
+      color: #f43f5e; padding: 0.65rem 0.85rem; border-radius: 10px;
+      font-size: 0.85rem; margin-bottom: 1rem;
+    }
+    .hint { margin-top: 1.25rem; font-size: 0.75rem; color: #7d8da6; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <div class="logo">Makro<span>Panel</span></div>
+    <p class="sub">Link Takip & Analiz modülüne giriş yap</p>
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="POST" action="/admin/login">
+      <label for="username">Kullanıcı Adı</label>
+      <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+      <label for="password">Şifre</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit" class="btn">Giriş Yap</button>
+    </form>
+    <p class="hint">Demo site hâlâ herkese açık: /demo</p>
+  </div>
+</body>
+</html>
