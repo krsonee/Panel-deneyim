@@ -19,8 +19,6 @@ PERMISSION_CATALOG = [
      "desc": "Online ve tüm oyuncular tabloları"},
     {"key": "tracking.reports", "label": "Referans Raporu", "group": "Link Takip",
      "desc": "Affiliate / ref performans tablosu"},
-    {"key": "tracking.links", "label": "Link Üretici", "group": "Link Takip",
-     "desc": "Affiliate link oluşturma aracı"},
     {"key": "tracking.export", "label": "Veri Dışa Aktarma", "group": "Link Takip",
      "desc": "CSV, JSON indirme ve oturum temizleme"},
     {"key": "admin.users", "label": "Kullanıcı Yönetimi", "group": "Yönetim",
@@ -40,7 +38,7 @@ ROLE_TEMPLATES = {
         "desc": "Takip modülünde tam yetki, kullanıcı yönetimi yok",
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.domains",
-            "tracking.players", "tracking.reports", "tracking.links", "tracking.export",
+            "tracking.players", "tracking.reports", "tracking.export",
         ],
     },
     "viewer": {
@@ -52,9 +50,9 @@ ROLE_TEMPLATES = {
     },
     "affiliate_manager": {
         "label": "Affiliate Yöneticisi",
-        "desc": "Raporlar ve link üretici",
+        "desc": "Raporlar ve dashboard",
         "permissions": [
-            "module.tracking", "tracking.dashboard", "tracking.reports", "tracking.links",
+            "module.tracking", "tracking.dashboard", "tracking.reports",
         ],
     },
     "custom": {

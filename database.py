@@ -96,6 +96,7 @@ def init_schema(conn):
                 id SERIAL PRIMARY KEY,
                 domain TEXT NOT NULL,
                 ref_code TEXT NOT NULL DEFAULT '',
+                label TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 UNIQUE(domain, ref_code)
             )
@@ -134,6 +135,7 @@ def init_schema(conn):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 domain TEXT NOT NULL,
                 ref_code TEXT NOT NULL,
+                label TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 UNIQUE(domain, ref_code)
             )
@@ -190,6 +192,27 @@ def migrate_schema(conn):
         execute(conn, "ALTER TABLE visitor_sessions ADD COLUMN user_agent TEXT NOT NULL DEFAULT ''")
     conn.commit()
     migrate_admin_users(conn)
+    migrate_tracked_links(conn)
+
+
+def migrate_tracked_links(conn):
+    if uses_postgres():
+        cols = {
+            r["column_name"]
+            for r in fetchall(
+                conn,
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'tracked_links'
+                """,
+            )
+        }
+    else:
+        cols = {r[1] for r in execute(conn, "PRAGMA table_info(tracked_links)").fetchall()}
+
+    if "label" not in cols:
+        execute(conn, "ALTER TABLE tracked_links ADD COLUMN label TEXT NOT NULL DEFAULT ''")
+    conn.commit()
 
 
 def migrate_admin_users(conn):

@@ -333,7 +333,7 @@ def migrate_domains():
         if not has_local:
             execute(
                 conn,
-                "INSERT INTO tracked_links (domain, ref_code, created_at) VALUES ('localhost', '', ?)",
+                "INSERT INTO tracked_links (domain, ref_code, label, created_at) VALUES ('localhost', '', '', ?)",
                 (iso(utcnow()),),
             )
         conn.commit()
@@ -718,7 +718,7 @@ def demo_page():
 
 
 @app.route("/api/links", methods=["GET"])
-@permission_required("tracking.domains", "tracking.links")
+@permission_required("tracking.domains")
 def list_links():
     now = utcnow()
     cutoff = iso(now - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
@@ -734,10 +734,9 @@ def list_links():
                 (item["id"], cutoff),
             )
         item["online_count"] = online_count or 0
-        item["tracking_code"] = build_tracking_snippet(item["domain"], item["ref_code"])
         item["affiliate_url"] = affiliate_url(item["domain"], item["ref_code"])
         links.append(item)
-    return jsonify({"links": links})
+    return jsonify({"links": links, "tracking_snippet": build_tracking_snippet()})
 
 
 @app.route("/api/links", methods=["POST"])
@@ -746,6 +745,7 @@ def create_link():
     data = request.get_json(silent=True) or {}
     domain = normalize_domain(data.get("domain", ""))
     ref_code = (data.get("ref_code") or "").strip()
+    label = (data.get("label") or data.get("name") or "").strip()
 
     if not domain:
         return jsonify({"error": "Domain zorunludur."}), 400
@@ -755,8 +755,8 @@ def create_link():
         with closing(get_db()) as conn:
             link_id = insert_returning_id(
                 conn,
-                "INSERT INTO tracked_links (domain, ref_code, created_at) VALUES (?, ?, ?)",
-                (domain, ref_code, created_at),
+                "INSERT INTO tracked_links (domain, ref_code, label, created_at) VALUES (?, ?, ?, ?)",
+                (domain, ref_code, label, created_at),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM tracked_links WHERE id = ?", (link_id,))
@@ -766,9 +766,8 @@ def create_link():
         return jsonify({"error": "Bu domain zaten takip listesinde."}), 409
 
     item = dict(row)
-    item["tracking_code"] = build_tracking_snippet(item["domain"], item["ref_code"])
     item["affiliate_url"] = affiliate_url(item["domain"], item["ref_code"])
-    return jsonify({"link": item}), 201
+    return jsonify({"link": item, "tracking_snippet": build_tracking_snippet()}), 201
 
 
 @app.route("/api/links/bulk", methods=["POST"])
@@ -793,8 +792,8 @@ def create_links_bulk():
             with closing(get_db()) as conn:
                 insert_returning_id(
                     conn,
-                    "INSERT INTO tracked_links (domain, ref_code, created_at) VALUES (?, ?, ?)",
-                    (domain, ref_code, created_at),
+                    "INSERT INTO tracked_links (domain, ref_code, label, created_at) VALUES (?, ?, ?, ?)",
+                    (domain, ref_code, "", created_at),
                 )
                 conn.commit()
             added.append(domain)
@@ -831,23 +830,6 @@ def preview_links_bulk():
     })
 
 
-@app.route("/api/links/generate-url", methods=["POST"])
-@permission_required("tracking.links")
-def generate_affiliate_url():
-    data = request.get_json(silent=True) or {}
-    domain = normalize_domain(data.get("domain", ""))
-    ref_code = (data.get("ref_code") or "").strip()
-    if not domain:
-        return jsonify({"error": "Domain zorunludur."}), 400
-    url = affiliate_url(domain, ref_code)
-    return jsonify({
-        "url": url,
-        "domain": domain,
-        "ref_code": ref_code,
-        "tracking_code": build_tracking_snippet(domain, ref_code),
-    })
-
-
 @app.route("/api/links/<int:link_id>", methods=["DELETE"])
 @permission_required("tracking.domains")
 def delete_link(link_id):
@@ -860,11 +842,10 @@ def delete_link(link_id):
     return jsonify({"ok": True})
 
 
-def build_tracking_snippet(domain, ref_code):
+def build_tracking_snippet(domain=None, ref_code=None):
     base = get_server_base_url()
-    label = f"{domain} / {ref_code}" if ref_code else f"{domain} (tüm site)"
     return (
-        f"<!-- Affiliate Takip: {label} -->\n"
+        "<!-- MakroPanel — tüm kayıtlı domainler için ortak takip kodu -->\n"
         f'<script src="{base}/static/tracker.js" '
         f'data-api="{base}" async></script>'
     )
