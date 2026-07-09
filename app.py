@@ -63,6 +63,13 @@ IntegrityError = integrity_error_type()
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+_is_prod = bool(os.environ.get("RENDER") or PUBLIC_BASE_URL.startswith("https"))
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=_is_prod,
+    PERMANENT_SESSION_LIFETIME=timedelta(days=31),
+)
 
 
 def init_db():
@@ -74,24 +81,25 @@ def init_db():
 
 def ensure_primary_admin():
     """Ana admin hesabını env'deki kullanıcı adı/şifre ile senkron tutar (Render kurtarma)."""
-    if not ADMIN_USERNAME or not ADMIN_PASSWORD:
+    username = normalize_username(ADMIN_USERNAME)
+    if not username or not ADMIN_PASSWORD:
         return
     now = iso(utcnow())
     ph = generate_password_hash(ADMIN_PASSWORD, method="pbkdf2:sha256")
     perms = json.dumps(["*"])
     with closing(get_db()) as conn:
-        row = fetchone(conn, "SELECT id FROM admin_users WHERE username = ?", (ADMIN_USERNAME,))
+        row = fetchone(conn, "SELECT id FROM admin_users WHERE LOWER(username) = ?", (username,))
         if row:
             execute(
                 conn,
-                "UPDATE admin_users SET password_hash = ?, role = ?, permissions = ? WHERE username = ?",
-                (ph, "superadmin", perms, ADMIN_USERNAME),
+                "UPDATE admin_users SET password_hash = ?, role = ?, permissions = ? WHERE LOWER(username) = ?",
+                (ph, "superadmin", perms, username),
             )
         else:
             execute(
                 conn,
                 "INSERT INTO admin_users (username, password_hash, role, permissions, created_at) VALUES (?, ?, ?, ?, ?)",
-                (ADMIN_USERNAME, ph, "superadmin", perms, now),
+                (username, ph, "superadmin", perms, now),
             )
         conn.commit()
 
@@ -107,7 +115,8 @@ def seed_admin_users():
     now = iso(utcnow())
     with closing(get_db()) as conn:
         for username, password in users.items():
-            if not username or not password or username == ADMIN_USERNAME:
+            username = normalize_username(username)
+            if not username or not password or username == normalize_username(ADMIN_USERNAME):
                 continue
             row = fetchone(conn, "SELECT id FROM admin_users WHERE username = ?", (username,))
             if row:
@@ -136,12 +145,17 @@ def admin_user_to_dict(row):
     }
 
 
+def normalize_username(value):
+    return (value or "").strip().lower()
+
+
 def get_admin_user(username, password):
+    username = normalize_username(username)
     with closing(get_db()) as conn:
-        row = fetchone(conn, "SELECT * FROM admin_users WHERE username = ?", (username,))
+        row = fetchone(conn, "SELECT * FROM admin_users WHERE LOWER(username) = ?", (username,))
         if row and check_password_hash(row["password_hash"], password):
             return admin_user_to_dict(row)
-    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+    if username == normalize_username(ADMIN_USERNAME) and password == ADMIN_PASSWORD:
         return {"id": 0, "username": username, "role": "superadmin", "permissions": ["*"], "created_at": ""}
     return None
 
@@ -613,6 +627,11 @@ def build_journey(session_data):
 # ── Sayfalar ──
 
 
+@app.route("/health")
+def health():
+    return jsonify({"ok": True, "service": "makropanel"})
+
+
 @app.route("/")
 def index():
     return redirect(url_for("admin_page"))
@@ -624,7 +643,7 @@ def login_page():
         return redirect(url_for("admin_page"))
     error = None
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
+        username = normalize_username(request.form.get("username", ""))
         password = request.form.get("password", "")
         user = get_admin_user(username, password)
         if user:
@@ -1333,7 +1352,7 @@ def list_admin_users():
 @permission_required("admin.users")
 def create_admin_user():
     data = request.get_json(silent=True) or {}
-    username = (data.get("username") or "").strip()
+    username = normalize_username(data.get("username"))
     password = (data.get("password") or "").strip()
     role = (data.get("role") or "custom").strip().lower()
     permissions = permissions_from_role(role, data.get("permissions"))

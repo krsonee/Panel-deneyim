@@ -58,12 +58,19 @@
     {% endif %}
     <form method="POST" action="/admin/login">
       <label for="username">Kullanıcı Adı</label>
-      <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+      <input id="username" name="username" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" required autofocus>
       <label for="password">Şifre</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required>
-      <button type="submit" class="btn">Giriş Yap</button>
+      <button type="submit" class="btn" id="login-btn">Giriş Yap</button>
     </form>
-    <p class="hint">Demo site hâlâ herkese açık: /demo</p>
+    <p class="hint">Render ücretsiz planda ilk giriş 30–60 sn sürebilir.<br>Demo site: /demo</p>
   </div>
+  <script>
+    document.querySelector("form").addEventListener("submit", function() {
+      var btn = document.getElementById("login-btn");
+      btn.disabled = true;
+      btn.textContent = "Giriş yapılıyor…";
+    });
+  </script>
 </body>
 </html>
