@@ -13,7 +13,19 @@
       --accent-soft: rgba(99,102,241,0.15); --green: #22c55e; --green-soft: rgba(34,197,94,0.12);
       --amber: #f59e0b; --rose: #f43f5e; --cyan: #06b6d4;
       --sidebar-w: 250px;
+      --code-bg: #04070c; --code-text: #94a3b8; --hover-bg: #1c2738;
+      --row-hover: rgba(99,102,241,0.06);
     }
+    [data-theme="light"] {
+      --bg: #f1f5f9; --sidebar: #ffffff; --surface: #ffffff; --surface-2: #f8fafc;
+      --border: #e2e8f0; --text: #0f172a; --muted: #64748b;
+      --accent-soft: rgba(99,102,241,0.12); --green-soft: rgba(34,197,94,0.15);
+      --code-bg: #f1f5f9; --code-text: #475569; --hover-bg: #e2e8f0;
+      --row-hover: rgba(99,102,241,0.08);
+    }
+    [data-theme="light"] .tag { color: #4338ca; }
+    [data-theme="light"] th.col-dragging { color: #4338ca; }
+    [data-theme="light"] .nav-item.active { color: #4338ca; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
     .app { display: flex; min-height: 100vh; }
@@ -106,7 +118,7 @@
       padding: 0.55rem 0.9rem; border-radius: 9px; border: 1px solid var(--border);
       background: var(--surface-2); color: var(--text); font-size: 0.78rem; font-weight: 600; cursor: pointer;
     }
-    .btn:hover { background: #1c2738; }
+    .btn:hover { background: var(--hover-bg); }
     .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
     .btn-success { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.4); color: var(--green); }
     .btn-danger { color: var(--rose); border-color: rgba(244,63,94,0.4); }
@@ -126,7 +138,7 @@
     td { padding: 0.65rem 0.85rem; border-top: 1px solid var(--border); vertical-align: middle; }
     tr.online td[data-col="status"] { box-shadow: inset 3px 0 0 var(--green); }
     tr.clickable { cursor: pointer; }
-    tr.clickable:hover { background: rgba(99,102,241,0.06); }
+    tr.clickable:hover { background: var(--row-hover); }
     tr.hidden-row { display: none; }
     tr.flash-row { animation: rowFlash 1.2s ease; }
     @keyframes rowFlash { 0%{background:rgba(34,197,94,0.25)} 100%{background:transparent} }
@@ -150,7 +162,7 @@
     .filter-count { font-size: 0.72rem; color: var(--muted); padding: 0.4rem 1.15rem; }
 
     .code-box { position: relative; }
-    .code-box pre { background: #04070c; border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem; font-size: 0.65rem; color: #94a3b8; white-space: pre-wrap; word-break: break-all; }
+    .code-box pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem; font-size: 0.65rem; color: var(--code-text); white-space: pre-wrap; word-break: break-all; }
     .code-box .btn { position: absolute; top: 0.3rem; right: 0.3rem; }
 
     /* Modal */
@@ -188,6 +200,21 @@
     }
     .toast.show { opacity: 1; }
 
+    .tools-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 900px) { .tools-grid { grid-template-columns: 1fr; } }
+    .tool-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem; }
+    .tool-box h4 { font-size: 0.78rem; margin-bottom: 0.5rem; }
+    .tool-box textarea { min-height: 110px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 0.75rem; }
+    .link-out { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.65rem; font-size: 0.72rem; color: var(--code-text); word-break: break-all; margin-top: 0.45rem; }
+    .period-bar { display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; }
+    .period-bar select { width: auto; min-width: 140px; }
+    .sidebar-actions { padding: 0 1rem 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; }
+    .sidebar-actions .btn { width: 100%; text-align: left; }
+    .settings-list { font-size: 0.8rem; line-height: 1.6; }
+    .settings-list dt { color: var(--muted); font-size: 0.68rem; text-transform: uppercase; margin-top: 0.75rem; }
+    .settings-list dd { margin: 0.15rem 0 0; }
+    .user-row { display: flex; align-items: center; justify-content: space-between; padding: 0.45rem 0; border-bottom: 1px solid var(--border); font-size: 0.78rem; }
+
     @media (max-width: 768px) {
       .sidebar { transform: translateX(-100%); }
       .main { margin-left: 0; }
@@ -206,8 +233,13 @@
         <a href="/admin" class="nav-item active"><span class="icon">📊</span> Link Takip & Analiz</a>
         <span class="nav-item disabled"><span class="icon">💰</span> Muhasebe <span class="badge">Yakında</span></span>
         <span class="nav-item disabled"><span class="icon">👥</span> CRM <span class="badge">Yakında</span></span>
-        <span class="nav-item disabled"><span class="icon">⚙️</span> Ayarlar <span class="badge">Yakında</span></span>
+        <button type="button" class="nav-item" id="btn-open-settings" style="width:100%;border:none;background:none;cursor:pointer;font:inherit;text-align:left;">
+          <span class="icon">⚙️</span> Ayarlar
+        </button>
       </nav>
+      <div class="sidebar-actions">
+        <button type="button" class="btn btn-sm" id="btn-theme">🌙 Koyu Tema</button>
+      </div>
       <div class="sidebar-foot">
         <a href="/admin/logout">Çıkış Yap</a>
       </div>
@@ -221,6 +253,16 @@
             <p>Sunucu: {{ server_url }} · 3 sn'de bir otomatik güncellenir</p>
           </div>
           <div class="live-pill" id="poll-status">Canlı akış aktif</div>
+          <div class="period-bar">
+            <label for="filter-period" class="muted" style="font-size:0.72rem;">Tarih:</label>
+            <select id="filter-period">
+              <option value="all">Tüm Zamanlar</option>
+              <option value="today">Bugün</option>
+              <option value="yesterday">Dün</option>
+              <option value="7days">Son 7 Gün</option>
+              <option value="30days">Son 30 Gün</option>
+            </select>
+          </div>
         </div>
 
         <!-- KPI Widgets -->
@@ -267,15 +309,47 @@
         </section>
 
         <section class="card">
-          <div class="card-head">Domain Ekle</div>
+          <div class="card-head">Domain & Araçlar</div>
           <div class="card-body">
             <form id="add-link-form">
               <div class="form-row">
-                <div><label for="input-domain">Domain</label><input id="input-domain" placeholder="makrobet804.com" required></div>
+                <div><label for="input-domain">Tek Domain</label><input id="input-domain" placeholder="makrobet804.com"></div>
                 <div><label for="input-ref">Referans (?ref=) — opsiyonel</label><input id="input-ref" placeholder="Boş = tüm site"></div>
                 <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
               </div>
             </form>
+            <div class="tools-grid" style="margin-top:1rem;">
+              <div class="tool-box">
+                <h4>📦 Toplu Domain Ekle</h4>
+                <p class="muted" style="font-size:0.72rem;margin-bottom:0.45rem;">Her satıra bir domain yaz (804, 805, makrogir.com…)</p>
+                <textarea id="bulk-domains" placeholder="makrogir.com&#10;makrobet804.com&#10;makrobet805.com"></textarea>
+                <div style="margin-top:0.45rem;display:flex;gap:0.4rem;">
+                  <input id="bulk-ref" placeholder="Ortak ref (opsiyonel)" style="flex:1;">
+                  <button type="button" class="btn btn-primary" id="btn-bulk-add">Toplu Ekle</button>
+                </div>
+                <p class="muted" id="bulk-result" style="font-size:0.7rem;margin-top:0.4rem;"></p>
+              </div>
+              <div class="tool-box">
+                <h4>🔗 Affiliate Link Üretici</h4>
+                <div class="form-row" style="grid-template-columns:1fr 1fr;">
+                  <div><label for="gen-domain">Domain</label><select id="gen-domain"><option value="">Seç…</option></select></div>
+                  <div><label for="gen-ref">Referans Kodu</label><input id="gen-ref" placeholder="ahmet123"></div>
+                </div>
+                <button type="button" class="btn btn-success" id="btn-gen-link" style="margin-top:0.45rem;">Link Oluştur</button>
+                <div class="link-out" id="gen-link-out">Link burada görünecek…</div>
+                <button type="button" class="btn btn-sm" id="btn-copy-link" style="margin-top:0.35rem;">Linki Kopyala</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><span>Referans Raporu</span><span class="muted" id="ref-report-label" style="font-weight:400;font-size:0.75rem;"></span></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Domain</th><th>Referans</th><th>Toplam Ziyaretçi</th><th>Online</th><th>Toplam Süre</th><th>Benzersiz IP</th><th>Son Görülme</th><th>Affiliate Link</th></tr></thead>
+              <tbody id="ref-report-table"><tr><td colspan="8" class="empty">Veri yok</td></tr></tbody>
+            </table>
           </div>
         </section>
 
@@ -348,6 +422,31 @@
     </div>
   </div>
 
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-head">
+        <h3>Ayarlar</h3>
+        <button class="modal-close" id="settings-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <dl class="settings-list" id="settings-info"></dl>
+        <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0;">
+        <h4 style="font-size:0.85rem;margin-bottom:0.5rem;">Admin Kullanıcıları</h4>
+        <div id="admin-users-list"></div>
+        <form id="add-user-form" style="margin-top:0.75rem;display:grid;grid-template-columns:1fr 1fr auto;gap:0.4rem;">
+          <input id="new-user-name" placeholder="Kullanıcı adı" required>
+          <input id="new-user-pass" type="password" placeholder="Şifre (min 6)" required>
+          <button type="submit" class="btn btn-primary">Ekle</button>
+        </form>
+        <p class="muted" style="font-size:0.68rem;margin-top:0.75rem;">
+          Telegram: Render → Environment → TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID<br>
+          Özel domain: PUBLIC_BASE_URL=https://panel.makrogir.com
+        </p>
+      </div>
+    </div>
+  </div>
+
   <!-- Journey Modal -->
   <div class="modal-overlay" id="journey-modal">
     <div class="modal">
@@ -372,6 +471,88 @@
       var flashIds = new Set();
       var charts = { domain: null, affiliate: null, games: null };
       var COLORS = ["#6366f1","#22c55e","#f59e0b","#f43f5e","#06b6d4","#a855f7"];
+      var currentPeriod = "all";
+      var lastGeneratedUrl = "";
+
+      function periodQuery() {
+        return currentPeriod && currentPeriod !== "all" ? "?period=" + encodeURIComponent(currentPeriod) : "";
+      }
+
+      function applyTheme(theme) {
+        if (theme === "light") {
+          document.documentElement.setAttribute("data-theme", "light");
+        } else {
+          document.documentElement.removeAttribute("data-theme");
+          theme = "dark";
+        }
+        localStorage.setItem("makropanel_theme", theme);
+        var btn = document.getElementById("btn-theme");
+        if (btn) btn.textContent = theme === "light" ? "🌙 Koyu Tema" : "☀️ Açık Tema";
+      }
+
+      function initTheme() {
+        applyTheme(localStorage.getItem("makropanel_theme") || "dark");
+      }
+
+      function renderRefReport(rows) {
+        var tbody = document.getElementById("ref-report-table");
+        document.getElementById("ref-report-label").textContent = (rows||[]).length ? rows.length + " kayıt" : "";
+        if (!rows || !rows.length) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty">Veri yok</td></tr>';
+          return;
+        }
+        tbody.innerHTML = rows.map(function(r) {
+          var mins = r.total_minutes != null ? r.total_minutes + " dk" : Math.round((r.total_seconds||0)/60) + " dk";
+          return '<tr><td>'+esc(r.domain)+'</td><td><span class="tag">'+esc(r.ref_label)+'</span></td>'+
+            '<td><strong>'+r.total_visitors+'</strong></td>'+
+            '<td>'+(r.online_now>0?'<span class="tag online">'+r.online_now+'</span>':'<span class="muted">0</span>')+'</td>'+
+            '<td>'+esc(mins)+'</td><td>'+r.unique_ips+'</td>'+
+            '<td class="mono">'+fmtDate(r.last_seen_at)+'</td>'+
+            '<td><button class="btn btn-sm" data-copy-url="'+esc(r.affiliate_url)+'">Kopyala</button></td></tr>';
+        }).join("");
+        tbody.querySelectorAll("[data-copy-url]").forEach(function(btn) {
+          btn.onclick = function() { copyText(btn.getAttribute("data-copy-url")); };
+        });
+      }
+
+      function updateGenDomainSelect(links) {
+        var sel = document.getElementById("gen-domain");
+        var cur = sel.value;
+        var doms = {};
+        (links||[]).forEach(function(l){ doms[l.domain]=1; });
+        sel.innerHTML = '<option value="">Seç…</option>';
+        Object.keys(doms).sort().forEach(function(d){
+          sel.innerHTML += '<option value="'+esc(d)+'">'+esc(d)+'</option>';
+        });
+        if (cur && doms[cur]) sel.value = cur;
+      }
+
+      function loadSettings() {
+        fetch(API+"/api/settings").then(function(r){return r.json();}).then(function(s) {
+          document.getElementById("settings-info").innerHTML =
+            '<dt>Panel URL</dt><dd>'+esc(s.public_base_url)+'</dd>'+
+            '<dt>Veritabanı</dt><dd>'+(s.database==="postgresql"?"PostgreSQL ✅":"SQLite (yerel)")+'</dd>'+
+            '<dt>Telegram Bildirimi</dt><dd>'+(s.telegram_enabled?"Aktif ✅":"Kapalı — env ayarla")+'</dd>'+
+            '<dt>Giriş Yapan</dt><dd>'+esc(s.current_user||"—")+'</dd>'+
+            '<dt>Özel Domain</dt><dd class="muted" style="font-size:0.72rem;">'+esc(s.custom_domain_hint)+'</dd>';
+        });
+        fetch(API+"/api/admin/users").then(function(r){return r.json();}).then(function(d) {
+          var box = document.getElementById("admin-users-list");
+          var users = d.users || [];
+          box.innerHTML = users.length ? users.map(function(u) {
+            return '<div class="user-row"><span class="mono">'+esc(u.username)+'</span>'+
+              (users.length>1?'<button class="btn btn-sm btn-danger" data-del-user="'+u.id+'">Sil</button>':'')+'</div>';
+          }).join("") : '<p class="muted">Kullanıcı yok</p>';
+          box.querySelectorAll("[data-del-user]").forEach(function(btn) {
+            btn.onclick = function() {
+              if (!confirm("Bu admin silinsin mi?")) return;
+              fetch(API+"/api/admin/users/"+btn.getAttribute("data-del-user"),{method:"DELETE"})
+                .then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});})
+                .then(function(res){ if(!res.ok){alert(res.data.error);return;} loadSettings(); toast("Silindi"); });
+            };
+          });
+        });
+      }
 
       Chart.defaults.color = "#7d8da6";
       Chart.defaults.borderColor = "rgba(36,48,68,0.5)";
@@ -672,6 +853,7 @@
 
       function renderLinks(links) {
         var tbody = document.getElementById("links-table");
+        updateGenDomainSelect(links);
         if (!links.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz domain yok</td></tr>'; return; }
         tbody.innerHTML = links.map(function(l) {
           var ref = l.ref_code ? '<span class="tag">'+esc(l.ref_code)+'</span>' : '<span class="tag">Tüm site</span>';
@@ -744,27 +926,106 @@
 
       var lastLinks = [];
       function refreshAll() {
-        fetch(API+"/api/stats").then(function(r){ if(r.status===401){location.href="/admin/login";return null;} return r.json(); })
+        var pq = periodQuery();
+        fetch(API+"/api/stats"+pq).then(function(r){ if(r.status===401){location.href="/admin/login";return null;} return r.json(); })
           .then(function(s){ if(!s)return; updateKpi(s.kpi); });
 
-        fetch(API+"/api/charts").then(function(r){return r.json();}).then(renderCharts);
+        fetch(API+"/api/charts"+pq).then(function(r){return r.json();}).then(renderCharts);
+        fetch(API+"/api/reports/referrals"+pq).then(function(r){return r.json();}).then(function(d){ renderRefReport(d.report||[]); });
         fetch(API+"/api/links").then(function(r){return r.json();}).then(function(d){ lastLinks=d.links||[]; renderLinks(lastLinks); updateFilters(allSessions,lastLinks); });
         fetch(API+"/api/online").then(function(r){return r.json();}).then(function(d){ renderOnline(d.users||[]); });
-        fetch(API+"/api/sessions").then(function(r){return r.json();}).then(function(d){ renderSessions(d.sessions||[]); updateFilters(allSessions,lastLinks); });
+        fetch(API+"/api/sessions"+pq).then(function(r){return r.json();}).then(function(d){ renderSessions(d.sessions||[]); updateFilters(allSessions,lastLinks); });
 
         document.getElementById("poll-status").textContent = "Son güncelleme: "+new Date().toLocaleTimeString("tr-TR");
       }
 
       document.getElementById("add-link-form").addEventListener("submit", function(e) {
         e.preventDefault();
+        var domain = document.getElementById("input-domain").value.trim();
+        if (!domain) { alert("Domain girin."); return; }
         fetch(API+"/api/links",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({domain:document.getElementById("input-domain").value.trim(),ref_code:document.getElementById("input-ref").value.trim()})
+          body:JSON.stringify({domain:domain,ref_code:document.getElementById("input-ref").value.trim()})
         }).then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});}).then(function(res){
           if(!res.ok){alert(res.data.error);return;}
           document.getElementById("input-domain").value="";
           document.getElementById("input-ref").value="";
           refreshAll(); toast("Eklendi!");
         });
+      });
+
+      document.getElementById("btn-bulk-add").onclick = function() {
+        var text = document.getElementById("bulk-domains").value.trim();
+        if (!text) { alert("En az bir domain yazın."); return; }
+        fetch(API+"/api/links/bulk", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ text: text, ref_code: document.getElementById("bulk-ref").value.trim() })
+        }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+          .then(function(res) {
+            if (!res.ok) { alert(res.data.error || "Hata"); return; }
+            var d = res.data;
+            document.getElementById("bulk-result").textContent =
+              d.count_added + " eklendi, " + d.count_skipped + " zaten vardı.";
+            document.getElementById("bulk-domains").value = "";
+            refreshAll();
+            toast("Toplu ekleme tamam!");
+          });
+      };
+
+      document.getElementById("btn-gen-link").onclick = function() {
+        var domain = document.getElementById("gen-domain").value;
+        var ref = document.getElementById("gen-ref").value.trim();
+        if (!domain) { alert("Domain seçin."); return; }
+        fetch(API+"/api/links/generate-url", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ domain: domain, ref_code: ref })
+        }).then(function(r){ return r.json(); }).then(function(d) {
+          if (d.error) { alert(d.error); return; }
+          lastGeneratedUrl = d.url;
+          document.getElementById("gen-link-out").textContent = d.url;
+        });
+      };
+
+      document.getElementById("btn-copy-link").onclick = function() {
+        if (lastGeneratedUrl) copyText(lastGeneratedUrl);
+        else toast("Önce link oluşturun.");
+      };
+
+      document.getElementById("filter-period").addEventListener("change", function() {
+        currentPeriod = this.value;
+        refreshAll();
+      });
+
+      document.getElementById("btn-theme").onclick = function() {
+        var next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+        applyTheme(next);
+      };
+
+      document.getElementById("btn-open-settings").onclick = function() {
+        loadSettings();
+        document.getElementById("settings-modal").classList.add("open");
+      };
+      document.getElementById("settings-close").onclick = function() {
+        document.getElementById("settings-modal").classList.remove("open");
+      };
+      document.getElementById("settings-modal").onclick = function(e) {
+        if (e.target === this) this.classList.remove("open");
+      };
+      document.getElementById("add-user-form").addEventListener("submit", function(e) {
+        e.preventDefault();
+        fetch(API+"/api/admin/users", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            username: document.getElementById("new-user-name").value.trim(),
+            password: document.getElementById("new-user-pass").value
+          })
+        }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+          .then(function(res) {
+            if (!res.ok) { alert(res.data.error); return; }
+            document.getElementById("new-user-name").value = "";
+            document.getElementById("new-user-pass").value = "";
+            loadSettings();
+            toast("Admin eklendi!");
+          });
       });
 
       ["search-input","filter-domain","filter-ref","filter-device","filter-status"].forEach(function(id){
@@ -796,11 +1057,13 @@
       document.getElementById("journey-modal").onclick = function(e){ if(e.target===this) this.classList.remove("open"); };
 
       window.copyCode = function(id){ var el=document.getElementById(id); if(el) navigator.clipboard.writeText(el.textContent).then(function(){toast("Kopyalandı!");}); };
+      window.copyText = function(text){ if(text) navigator.clipboard.writeText(text).then(function(){toast("Kopyalandı!");}); };
       window.deleteLink = function(id){
         if(!confirm("Silinsin mi?")) return;
         fetch(API+"/api/links/"+id,{method:"DELETE"}).then(function(){refreshAll();toast("Silindi.");});
       };
 
+      initTheme();
       initColumnDrag();
       applyTableColOrder("online-table");
       applyTableColOrder("sessions-table");

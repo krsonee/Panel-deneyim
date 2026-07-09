@@ -3,13 +3,16 @@ import io
 import json
 import os
 import re
-from functools import wraps
-from urllib.parse import urlparse
-import sqlite3
+import threading
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
+from urllib.parse import urlparse
 
 from flask import (
     Flask,
@@ -22,91 +25,144 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.security import check_password_hash, generate_password_hash
 
-APP_DIR = Path(__file__).resolve().parent
-DB_PATH = APP_DIR / "analytics.db"
+from database import (
+    DB_PATH,
+    APP_DIR,
+    execute,
+    fetchall,
+    fetchone,
+    get_db,
+    init_db as db_init_schema,
+    insert_returning_id,
+    integrity_error_type,
+    iso,
+    scalar,
+    utcnow,
+    uses_postgres,
+)
 
-# ── Admin Giriş Ayarları (Render panelinde Environment Variables ile değiştirebilirsin) ──
+# ── Ortam değişkenleri (Render → Environment) ──
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "makro123")
 SECRET_KEY = os.environ.get("SECRET_KEY", "makrobet-analytics-gizli-anahtar-degistir")
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
 ONLINE_THRESHOLD_SECONDS = 90
+IntegrityError = integrity_error_type()
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
 
-def utcnow():
-    return datetime.now(timezone.utc)
+def init_db():
+    db_init_schema()
+    migrate_domains()
+    seed_admin_users()
 
 
-def iso(dt):
-    return dt.isoformat()
+def seed_admin_users():
+    users = {ADMIN_USERNAME: ADMIN_PASSWORD}
+    raw = os.environ.get("ADMIN_USERS", "").strip()
+    if raw:
+        try:
+            users.update(json.loads(raw))
+        except json.JSONDecodeError:
+            pass
+    now = iso(utcnow())
+    with closing(get_db()) as conn:
+        for username, password in users.items():
+            if not username or not password:
+                continue
+            row = fetchone(conn, "SELECT id FROM admin_users WHERE username = ?", (username,))
+            if row:
+                continue
+            execute(
+                conn,
+                "INSERT INTO admin_users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                (username, generate_password_hash(password, method="pbkdf2:sha256"), now),
+            )
+        conn.commit()
+
+
+def verify_admin(username, password):
+    with closing(get_db()) as conn:
+        row = fetchone(
+            conn,
+            "SELECT password_hash FROM admin_users WHERE username = ?",
+            (username,),
+        )
+        if row and check_password_hash(row["password_hash"], password):
+            return True
+    return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
+
+
+def send_telegram(text):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = urllib.parse.urlencode({
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML",
+    }).encode()
+    try:
+        req = urllib.request.Request(url, data=payload, method="POST")
+        urllib.request.urlopen(req, timeout=8)
+    except (urllib.error.URLError, TimeoutError, OSError):
+        pass
+
+
+def notify_new_visitor(domain, ref_code, ip_address, device_display):
+    ref = ref_code or "Direkt giriş"
+    msg = (
+        f"🟢 <b>Yeni ziyaretçi</b>\n"
+        f"Domain: {domain}\n"
+        f"Ref: {ref}\n"
+        f"IP: {ip_address or '—'}\n"
+        f"Cihaz: {device_display or '—'}"
+    )
+    threading.Thread(target=send_telegram, args=(msg,), daemon=True).start()
+
+
+def date_range_from_period(period):
+    now = utcnow()
+    if period == "today":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return iso(start), iso(now)
+    if period == "yesterday":
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = today_start - timedelta(days=1)
+        return iso(start), iso(today_start)
+    if period == "7days":
+        return iso(now - timedelta(days=7)), iso(now)
+    if period == "30days":
+        return iso(now - timedelta(days=30)), iso(now)
+    return None, None
+
+
+def sessions_date_clause(period):
+    start, end = date_range_from_period(period)
+    if not start:
+        return "", ()
+    return " AND vs.started_at >= ? AND vs.started_at < ?", (start, end)
+
+
+def affiliate_url(domain, ref_code=""):
+    base = get_server_base_url()
+    d = normalize_domain(domain)
+    if ref_code:
+        return f"https://{d}?ref={urllib.parse.quote(ref_code)}"
+    return f"https://{d}"
 
 
 def parse_iso(value):
     if not value:
         return None
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db():
-    with closing(get_db()) as conn:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS tracked_links (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                domain TEXT NOT NULL,
-                ref_code TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                UNIQUE(domain, ref_code)
-            );
-
-            CREATE TABLE IF NOT EXISTS visitor_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL UNIQUE,
-                tracked_link_id INTEGER NOT NULL,
-                domain TEXT NOT NULL,
-                ref_code TEXT NOT NULL,
-                started_at TEXT NOT NULL,
-                last_seen_at TEXT NOT NULL,
-                total_seconds INTEGER NOT NULL DEFAULT 0,
-                games TEXT NOT NULL DEFAULT '[]',
-                game_log TEXT NOT NULL DEFAULT '[]',
-                FOREIGN KEY (tracked_link_id) REFERENCES tracked_links(id)
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_sessions_last_seen
-                ON visitor_sessions(last_seen_at);
-            CREATE INDEX IF NOT EXISTS idx_sessions_link
-                ON visitor_sessions(tracked_link_id);
-            """
-        )
-        conn.commit()
-    migrate_schema()
-    migrate_domains()
-
-
-def migrate_schema():
-    """Yeni kolonları mevcut veritabanına ekler."""
-    with closing(get_db()) as conn:
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(visitor_sessions)").fetchall()}
-        if "ip_address" not in cols:
-            conn.execute(
-                "ALTER TABLE visitor_sessions ADD COLUMN ip_address TEXT NOT NULL DEFAULT ''"
-            )
-        if "user_agent" not in cols:
-            conn.execute(
-                "ALTER TABLE visitor_sessions ADD COLUMN user_agent TEXT NOT NULL DEFAULT ''"
-            )
-        conn.commit()
 
 
 def normalize_domain(domain):
@@ -132,30 +188,23 @@ def normalize_domain(domain):
 def migrate_domains():
     """Eski yanlış kayıtları düzeltir; yerel test için localhost ekler."""
     with closing(get_db()) as conn:
-        rows = conn.execute("SELECT id, domain FROM tracked_links").fetchall()
+        rows = fetchall(conn, "SELECT id, domain FROM tracked_links")
         for row in rows:
             fixed = normalize_domain(row["domain"])
             if fixed and fixed != row["domain"]:
                 try:
-                    conn.execute(
-                        "UPDATE tracked_links SET domain = ? WHERE id = ?",
-                        (fixed, row["id"]),
-                    )
-                except sqlite3.IntegrityError:
-                    conn.execute("DELETE FROM tracked_links WHERE id = ?", (row["id"],))
+                    execute(conn, "UPDATE tracked_links SET domain = ? WHERE id = ?", (fixed, row["id"]))
+                except IntegrityError:
+                    execute(conn, "DELETE FROM tracked_links WHERE id = ?", (row["id"],))
 
-        has_local = conn.execute(
-            """
-            SELECT 1 FROM tracked_links
-            WHERE domain IN ('localhost', '127.0.0.1') LIMIT 1
-            """
-        ).fetchone()
+        has_local = fetchone(
+            conn,
+            "SELECT 1 FROM tracked_links WHERE domain IN ('localhost', '127.0.0.1') LIMIT 1",
+        )
         if not has_local:
-            conn.execute(
-                """
-                INSERT INTO tracked_links (domain, ref_code, created_at)
-                VALUES ('localhost', '', ?)
-                """,
+            execute(
+                conn,
+                "INSERT INTO tracked_links (domain, ref_code, created_at) VALUES ('localhost', '', ?)",
                 (iso(utcnow()),),
             )
         conn.commit()
@@ -195,16 +244,18 @@ def find_tracked_link(domain, ref_code):
     placeholders = ",".join("?" * len(domains))
     with closing(get_db()) as conn:
         if ref_code:
-            row = conn.execute(
+            row = fetchone(
+                conn,
                 f"SELECT * FROM tracked_links WHERE domain IN ({placeholders}) AND ref_code = ?",
                 (*domains, ref_code),
-            ).fetchone()
+            )
             if row:
                 return dict(row)
-        row = conn.execute(
+        row = fetchone(
+            conn,
             f"SELECT * FROM tracked_links WHERE domain IN ({placeholders}) AND ref_code = ''",
             domains,
-        ).fetchone()
+        )
         return dict(row) if row else None
 
 
@@ -391,6 +442,8 @@ def session_to_dict(row, now=None):
 
 
 def get_server_base_url():
+    if PUBLIC_BASE_URL:
+        return PUBLIC_BASE_URL
     return request.host_url.rstrip("/")
 
 
@@ -454,8 +507,9 @@ def login_page():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        if verify_admin(username, password):
             session["admin_logged_in"] = True
+            session["admin_username"] = username
             session.permanent = True
             return redirect(url_for("admin_page"))
         error = "Kullanıcı adı veya şifre hatalı."
@@ -488,22 +542,19 @@ def list_links():
     now = utcnow()
     cutoff = iso(now - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
     with closing(get_db()) as conn:
-        rows = conn.execute(
-            "SELECT * FROM tracked_links ORDER BY created_at DESC"
-        ).fetchall()
+        rows = fetchall(conn, "SELECT * FROM tracked_links ORDER BY created_at DESC")
     links = []
     for row in rows:
         item = dict(row)
         with closing(get_db()) as conn:
-            online_count = conn.execute(
-                """
-                SELECT COUNT(*) FROM visitor_sessions
-                WHERE tracked_link_id = ? AND last_seen_at >= ?
-                """,
+            online_count = scalar(
+                conn,
+                "SELECT COUNT(*) FROM visitor_sessions WHERE tracked_link_id = ? AND last_seen_at >= ?",
                 (item["id"], cutoff),
-            ).fetchone()[0]
-        item["online_count"] = online_count
+            )
+        item["online_count"] = online_count or 0
         item["tracking_code"] = build_tracking_snippet(item["domain"], item["ref_code"])
+        item["affiliate_url"] = affiliate_url(item["domain"], item["ref_code"])
         links.append(item)
     return jsonify({"links": links})
 
@@ -521,34 +572,88 @@ def create_link():
     created_at = iso(utcnow())
     try:
         with closing(get_db()) as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO tracked_links (domain, ref_code, created_at)
-                VALUES (?, ?, ?)
-                """,
+            link_id = insert_returning_id(
+                conn,
+                "INSERT INTO tracked_links (domain, ref_code, created_at) VALUES (?, ?, ?)",
                 (domain, ref_code, created_at),
             )
             conn.commit()
-            link_id = cur.lastrowid
-            row = conn.execute(
-                "SELECT * FROM tracked_links WHERE id = ?", (link_id,)
-            ).fetchone()
-    except sqlite3.IntegrityError:
+            row = fetchone(conn, "SELECT * FROM tracked_links WHERE id = ?", (link_id,))
+    except IntegrityError:
         if ref_code:
             return jsonify({"error": "Bu domain + referans kombinasyonu zaten kayıtlı."}), 409
         return jsonify({"error": "Bu domain zaten takip listesinde."}), 409
 
     item = dict(row)
     item["tracking_code"] = build_tracking_snippet(item["domain"], item["ref_code"])
+    item["affiliate_url"] = affiliate_url(item["domain"], item["ref_code"])
     return jsonify({"link": item}), 201
+
+
+@app.route("/api/links/bulk", methods=["POST"])
+@login_required
+def create_links_bulk():
+    data = request.get_json(silent=True) or {}
+    raw_domains = data.get("domains") or data.get("text") or ""
+    ref_code = (data.get("ref_code") or "").strip()
+    lines = []
+    if isinstance(raw_domains, list):
+        lines = raw_domains
+    else:
+        lines = str(raw_domains).replace(",", "\n").split("\n")
+
+    added, skipped, errors = [], [], []
+    created_at = iso(utcnow())
+    for line in lines:
+        domain = normalize_domain(line)
+        if not domain:
+            continue
+        try:
+            with closing(get_db()) as conn:
+                link_id = insert_returning_id(
+                    conn,
+                    "INSERT INTO tracked_links (domain, ref_code, created_at) VALUES (?, ?, ?)",
+                    (domain, ref_code, created_at),
+                )
+                conn.commit()
+            added.append(domain)
+        except IntegrityError:
+            skipped.append(domain)
+        except Exception as exc:
+            errors.append({"domain": domain, "error": str(exc)})
+
+    return jsonify({
+        "added": added,
+        "skipped": skipped,
+        "errors": errors,
+        "count_added": len(added),
+        "count_skipped": len(skipped),
+    })
+
+
+@app.route("/api/links/generate-url", methods=["POST"])
+@login_required
+def generate_affiliate_url():
+    data = request.get_json(silent=True) or {}
+    domain = normalize_domain(data.get("domain", ""))
+    ref_code = (data.get("ref_code") or "").strip()
+    if not domain:
+        return jsonify({"error": "Domain zorunludur."}), 400
+    url = affiliate_url(domain, ref_code)
+    return jsonify({
+        "url": url,
+        "domain": domain,
+        "ref_code": ref_code,
+        "tracking_code": build_tracking_snippet(domain, ref_code),
+    })
 
 
 @app.route("/api/links/<int:link_id>", methods=["DELETE"])
 @login_required
 def delete_link(link_id):
     with closing(get_db()) as conn:
-        conn.execute("DELETE FROM visitor_sessions WHERE tracked_link_id = ?", (link_id,))
-        cur = conn.execute("DELETE FROM tracked_links WHERE id = ?", (link_id,))
+        execute(conn, "DELETE FROM visitor_sessions WHERE tracked_link_id = ?", (link_id,))
+        cur = execute(conn, "DELETE FROM tracked_links WHERE id = ?", (link_id,))
         conn.commit()
         if cur.rowcount == 0:
             return jsonify({"error": "Link bulunamadı."}), 404
@@ -582,13 +687,13 @@ def track_init():
         return jsonify({"tracked": False, "reason": "Bu domain/referans kayıtlı değil."})
 
     now = iso(utcnow())
+    is_new = False
     with closing(get_db()) as conn:
-        existing = conn.execute(
-            "SELECT * FROM visitor_sessions WHERE session_id = ?", (session_id,)
-        ).fetchone()
+        existing = fetchone(conn, "SELECT * FROM visitor_sessions WHERE session_id = ?", (session_id,))
 
         if existing:
-            conn.execute(
+            execute(
+                conn,
                 """
                 UPDATE visitor_sessions
                 SET last_seen_at = ?, domain = ?, ref_code = ?, tracked_link_id = ?,
@@ -597,11 +702,11 @@ def track_init():
                 """,
                 (now, domain, ref_code, link["id"], client_ip, user_agent, session_id),
             )
-            row = conn.execute(
-                "SELECT * FROM visitor_sessions WHERE session_id = ?", (session_id,)
-            ).fetchone()
+            row = fetchone(conn, "SELECT * FROM visitor_sessions WHERE session_id = ?", (session_id,))
         else:
-            conn.execute(
+            is_new = True
+            execute(
+                conn,
                 """
                 INSERT INTO visitor_sessions
                 (session_id, tracked_link_id, domain, ref_code, started_at, last_seen_at,
@@ -610,17 +715,17 @@ def track_init():
                 """,
                 (session_id, link["id"], domain, ref_code, now, now, client_ip, user_agent),
             )
-            row = conn.execute(
-                "SELECT * FROM visitor_sessions WHERE session_id = ?", (session_id,)
-            ).fetchone()
+            row = fetchone(conn, "SELECT * FROM visitor_sessions WHERE session_id = ?", (session_id,))
         conn.commit()
 
-    session = session_to_dict(row)
+    session_data = session_to_dict(row)
+    if is_new:
+        notify_new_visitor(domain, ref_code, client_ip, session_data.get("device_display"))
     return jsonify({
         "tracked": True,
         "session_id": session_id,
-        "total_seconds": session["total_seconds"],
-        "games": session["games"],
+        "total_seconds": session_data["total_seconds"],
+        "games": session_data["games"],
     })
 
 
@@ -642,7 +747,8 @@ def track_heartbeat():
 
     now = iso(utcnow())
     with closing(get_db()) as conn:
-        conn.execute(
+        execute(
+            conn,
             """
             UPDATE visitor_sessions
             SET last_seen_at = ?, total_seconds = ?, games = ?,
@@ -681,9 +787,7 @@ def track_event():
 
     now = iso(utcnow())
     with closing(get_db()) as conn:
-        row = conn.execute(
-            "SELECT * FROM visitor_sessions WHERE session_id = ?", (session_id,)
-        ).fetchone()
+        row = fetchone(conn, "SELECT * FROM visitor_sessions WHERE session_id = ?", (session_id,))
         if not row:
             return jsonify({"error": "Oturum bulunamadı"}), 404
 
@@ -694,20 +798,39 @@ def track_event():
             games.append(game)
         game_log.append({"game": game, "time": now, "elapsed": elapsed})
 
-        conn.execute(
-            """
-            UPDATE visitor_sessions
-            SET last_seen_at = ?, games = ?, game_log = ?, total_seconds = MAX(total_seconds, ?)
-            WHERE session_id = ?
-            """,
-            (
-                now,
-                json.dumps(games, ensure_ascii=False),
-                json.dumps(game_log, ensure_ascii=False),
-                elapsed,
-                session_id,
-            ),
-        )
+        if uses_postgres():
+            execute(
+                conn,
+                """
+                UPDATE visitor_sessions
+                SET last_seen_at = ?, games = ?, game_log = ?,
+                    total_seconds = GREATEST(total_seconds, ?)
+                WHERE session_id = ?
+                """,
+                (
+                    now,
+                    json.dumps(games, ensure_ascii=False),
+                    json.dumps(game_log, ensure_ascii=False),
+                    elapsed,
+                    session_id,
+                ),
+            )
+        else:
+            execute(
+                conn,
+                """
+                UPDATE visitor_sessions
+                SET last_seen_at = ?, games = ?, game_log = ?, total_seconds = MAX(total_seconds, ?)
+                WHERE session_id = ?
+                """,
+                (
+                    now,
+                    json.dumps(games, ensure_ascii=False),
+                    json.dumps(game_log, ensure_ascii=False),
+                    elapsed,
+                    session_id,
+                ),
+            )
         conn.commit()
 
     return jsonify({"ok": True})
@@ -724,14 +847,26 @@ def track_leave():
 
     past = iso(utcnow() - timedelta(seconds=ONLINE_THRESHOLD_SECONDS + 5))
     with closing(get_db()) as conn:
-        conn.execute(
-            """
-            UPDATE visitor_sessions
-            SET last_seen_at = ?, total_seconds = MAX(total_seconds, ?)
-            WHERE session_id = ?
-            """,
-            (past, total_seconds, session_id),
-        )
+        if uses_postgres():
+            execute(
+                conn,
+                """
+                UPDATE visitor_sessions
+                SET last_seen_at = ?, total_seconds = GREATEST(total_seconds, ?)
+                WHERE session_id = ?
+                """,
+                (past, total_seconds, session_id),
+            )
+        else:
+            execute(
+                conn,
+                """
+                UPDATE visitor_sessions
+                SET last_seen_at = ?, total_seconds = MAX(total_seconds, ?)
+                WHERE session_id = ?
+                """,
+                (past, total_seconds, session_id),
+            )
         conn.commit()
 
     return jsonify({"ok": True})
@@ -747,7 +882,8 @@ def online_users():
     cutoff = iso(now - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
 
     with closing(get_db()) as conn:
-        rows = conn.execute(
+        rows = fetchall(
+            conn,
             """
             SELECT vs.* FROM visitor_sessions vs
             INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
@@ -755,7 +891,7 @@ def online_users():
             ORDER BY vs.last_seen_at DESC
             """,
             (cutoff,),
-        ).fetchall()
+        )
 
     users = [session_to_dict(row, now) for row in rows]
     return jsonify({"count": len(users), "users": users})
@@ -765,17 +901,63 @@ def online_users():
 @login_required
 def all_sessions():
     now = utcnow()
+    period = request.args.get("period", "all")
+    date_sql, date_params = sessions_date_clause(period)
     with closing(get_db()) as conn:
-        rows = conn.execute(
-            """
+        rows = fetchall(
+            conn,
+            f"""
             SELECT vs.* FROM visitor_sessions vs
             INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
+            WHERE 1=1{date_sql}
             ORDER BY vs.last_seen_at DESC
-            """
-        ).fetchall()
+            """,
+            date_params,
+        )
 
     sessions = [session_to_dict(row, now) for row in rows]
-    return jsonify({"sessions": sessions})
+    return jsonify({"sessions": sessions, "period": period})
+
+
+@app.route("/api/reports/referrals", methods=["GET"])
+@login_required
+def referral_report():
+    now = utcnow()
+    cutoff = iso(now - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
+    period = request.args.get("period", "all")
+    date_sql, date_params = sessions_date_clause(period)
+
+    with closing(get_db()) as conn:
+        rows = fetchall(
+            conn,
+            f"""
+            SELECT
+                vs.domain,
+                CASE WHEN vs.ref_code = '' OR vs.ref_code IS NULL
+                     THEN 'Direkt giriş' ELSE vs.ref_code END AS ref_label,
+                vs.ref_code,
+                COUNT(*) AS total_visitors,
+                SUM(CASE WHEN vs.last_seen_at >= ? THEN 1 ELSE 0 END) AS online_now,
+                SUM(vs.total_seconds) AS total_seconds,
+                MAX(vs.last_seen_at) AS last_seen_at,
+                COUNT(DISTINCT vs.ip_address) AS unique_ips
+            FROM visitor_sessions vs
+            INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
+            WHERE 1=1{date_sql}
+            GROUP BY vs.domain, vs.ref_code
+            ORDER BY total_visitors DESC
+            """,
+            (cutoff, *date_params),
+        )
+
+    report = []
+    for row in rows:
+        item = dict(row)
+        ref = item.get("ref_code") or ""
+        item["affiliate_url"] = affiliate_url(item["domain"], ref)
+        item["total_minutes"] = round((item.get("total_seconds") or 0) / 60, 1)
+        report.append(item)
+    return jsonify({"report": report, "period": period})
 
 
 @app.route("/api/sessions/<session_id>/journey", methods=["GET"])
@@ -783,10 +965,7 @@ def all_sessions():
 def session_journey(session_id):
     now = utcnow()
     with closing(get_db()) as conn:
-        row = conn.execute(
-            "SELECT vs.* FROM visitor_sessions vs WHERE vs.session_id = ?",
-            (session_id,),
-        ).fetchone()
+        row = fetchone(conn, "SELECT vs.* FROM visitor_sessions vs WHERE vs.session_id = ?", (session_id,))
     if not row:
         return jsonify({"error": "Oturum bulunamadı"}), 404
     data = session_to_dict(row, now)
@@ -798,10 +977,13 @@ def session_journey(session_id):
 def chart_data():
     now = utcnow()
     cutoff = iso(now - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
+    period = request.args.get("period", "all")
+    date_sql, date_params = sessions_date_clause(period)
 
     with closing(get_db()) as conn:
-        domain_rows = conn.execute(
-            """
+        domain_rows = fetchall(
+            conn,
+            f"""
             SELECT
                 vs.domain,
                 COUNT(*) AS total_players,
@@ -809,18 +991,26 @@ def chart_data():
                 SUM(vs.total_seconds) AS total_seconds
             FROM visitor_sessions vs
             INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
+            WHERE 1=1{date_sql}
             GROUP BY vs.domain
             ORDER BY total_players DESC
             """,
-            (cutoff,),
-        ).fetchall()
+            (cutoff, *date_params),
+        )
 
-        click_rows = conn.execute(
-            "SELECT vs.domain, vs.game_log FROM visitor_sessions vs"
-        ).fetchall()
+        click_rows = fetchall(
+            conn,
+            f"""
+            SELECT vs.domain, vs.game_log FROM visitor_sessions vs
+            INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
+            WHERE 1=1{date_sql}
+            """,
+            date_params,
+        )
 
-        ref_rows = conn.execute(
-            """
+        ref_rows = fetchall(
+            conn,
+            f"""
             SELECT
                 CASE WHEN vs.ref_code = '' OR vs.ref_code IS NULL
                      THEN 'Direkt giriş' ELSE vs.ref_code END AS channel,
@@ -828,18 +1018,22 @@ def chart_data():
                 SUM(CASE WHEN vs.last_seen_at >= ? THEN 1 ELSE 0 END) AS online_now
             FROM visitor_sessions vs
             INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
+            WHERE 1=1{date_sql}
             GROUP BY channel
             ORDER BY members DESC
             """,
-            (cutoff,),
-        ).fetchall()
+            (cutoff, *date_params),
+        )
 
-        game_rows = conn.execute(
-            """
+        game_rows = fetchall(
+            conn,
+            f"""
             SELECT vs.game_log FROM visitor_sessions vs
             INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
-            """
-        ).fetchall()
+            WHERE 1=1{date_sql}
+            """,
+            date_params,
+        )
 
     game_counts = {}
     domain_clicks = {}
@@ -885,15 +1079,16 @@ def chart_data():
 def export_data():
     now = utcnow()
     with closing(get_db()) as conn:
-        links = [dict(r) for r in conn.execute("SELECT * FROM tracked_links").fetchall()]
+        links = [dict(r) for r in fetchall(conn, "SELECT * FROM tracked_links")]
         sessions = [
             session_to_dict(r, now)
-            for r in conn.execute(
+            for r in fetchall(
+                conn,
                 """
                 SELECT vs.* FROM visitor_sessions vs
                 INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
-                """
-            ).fetchall()
+                """,
+            )
         ]
     return jsonify({"exported_at": iso(now), "links": links, "sessions": sessions})
 
@@ -903,13 +1098,14 @@ def export_data():
 def export_csv():
     now = utcnow()
     with closing(get_db()) as conn:
-        rows = conn.execute(
+        rows = fetchall(
+            conn,
             """
             SELECT vs.* FROM visitor_sessions vs
             INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
             ORDER BY vs.last_seen_at DESC
-            """
-        ).fetchall()
+            """,
+        )
     output = io.StringIO()
     output.write("\ufeff")
     writer = csv.writer(output)
@@ -947,9 +1143,73 @@ def export_csv():
 @login_required
 def clear_sessions():
     with closing(get_db()) as conn:
-        conn.execute("DELETE FROM visitor_sessions")
+        execute(conn, "DELETE FROM visitor_sessions")
         conn.commit()
     return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users", methods=["GET"])
+@login_required
+def list_admin_users():
+    with closing(get_db()) as conn:
+        rows = fetchall(conn, "SELECT id, username, created_at FROM admin_users ORDER BY username")
+    return jsonify({"users": [dict(r) for r in rows]})
+
+
+@app.route("/api/admin/users", methods=["POST"])
+@login_required
+def create_admin_user():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+    if not username or not password:
+        return jsonify({"error": "Kullanıcı adı ve şifre gerekli."}), 400
+    if len(password) < 6:
+        return jsonify({"error": "Şifre en az 6 karakter olmalı."}), 400
+    try:
+        with closing(get_db()) as conn:
+            insert_returning_id(
+                conn,
+                "INSERT INTO admin_users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                (username, generate_password_hash(password, method="pbkdf2:sha256"), iso(utcnow())),
+            )
+            conn.commit()
+    except IntegrityError:
+        return jsonify({"error": "Bu kullanıcı adı zaten var."}), 409
+    return jsonify({"ok": True, "username": username}), 201
+
+
+@app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
+@login_required
+def delete_admin_user(user_id):
+    current = session.get("admin_username")
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT username FROM admin_users WHERE id = ?", (user_id,))
+        if not row:
+            return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+        if row["username"] == current:
+            return jsonify({"error": "Kendi hesabını silemezsin."}), 400
+        total = scalar(conn, "SELECT COUNT(*) FROM admin_users")
+        if total <= 1:
+            return jsonify({"error": "Son admin kullanıcı silinemez."}), 400
+        execute(conn, "DELETE FROM admin_users WHERE id = ?", (user_id,))
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/settings", methods=["GET"])
+@login_required
+def get_settings():
+    return jsonify({
+        "public_base_url": get_server_base_url(),
+        "database": "postgresql" if uses_postgres() else "sqlite",
+        "telegram_enabled": bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID),
+        "current_user": session.get("admin_username"),
+        "custom_domain_hint": (
+            "Render → Settings → Custom Domain ekleyin, "
+            "sonra PUBLIC_BASE_URL ortam değişkenini ayarlayın."
+        ),
+    })
 
 
 @app.route("/api/stats", methods=["GET"])
@@ -957,42 +1217,70 @@ def clear_sessions():
 def stats():
     now = utcnow()
     cutoff = iso(now - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
+    period = request.args.get("period", "all")
+    date_sql, date_params = sessions_date_clause(period)
 
     with closing(get_db()) as conn:
-        online_count = conn.execute(
+        online_count = scalar(
+            conn,
             "SELECT COUNT(*) FROM visitor_sessions WHERE last_seen_at >= ?",
             (cutoff,),
-        ).fetchone()[0]
+        )
+        total_sessions = scalar(
+            conn,
+            f"""
+            SELECT COUNT(*) FROM visitor_sessions vs
+            INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
+            WHERE 1=1{date_sql}
+            """,
+            date_params,
+        )
+        total_links = scalar(conn, "SELECT COUNT(*) FROM tracked_links")
 
-        total_sessions = conn.execute("SELECT COUNT(*) FROM visitor_sessions").fetchone()[0]
-        total_links = conn.execute("SELECT COUNT(*) FROM tracked_links").fetchone()[0]
+        log_rows = fetchall(
+            conn,
+            f"""
+            SELECT vs.game_log FROM visitor_sessions vs
+            INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
+            WHERE 1=1{date_sql}
+            """,
+            date_params,
+        )
+        total_clicks = sum(len(json.loads(r["game_log"] or "[]")) for r in log_rows)
 
-        log_rows = conn.execute("SELECT game_log FROM visitor_sessions").fetchall()
-        total_clicks = sum(len(json.loads(r[0] or "[]")) for r in log_rows)
-
-        top_domain_row = conn.execute(
-            """
-            SELECT domain, COUNT(*) AS cnt FROM visitor_sessions
-            GROUP BY domain ORDER BY cnt DESC LIMIT 1
-            """
-        ).fetchone()
-        top_channel_row = conn.execute(
-            """
-            SELECT CASE WHEN ref_code = '' OR ref_code IS NULL
-                        THEN 'Direkt giriş' ELSE ref_code END AS ch,
+        top_domain_row = fetchone(
+            conn,
+            f"""
+            SELECT vs.domain, COUNT(*) AS cnt FROM visitor_sessions vs
+            INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
+            WHERE 1=1{date_sql}
+            GROUP BY vs.domain ORDER BY cnt DESC LIMIT 1
+            """,
+            date_params,
+        )
+        top_channel_row = fetchone(
+            conn,
+            f"""
+            SELECT CASE WHEN vs.ref_code = '' OR vs.ref_code IS NULL
+                        THEN 'Direkt giriş' ELSE vs.ref_code END AS ch,
                    COUNT(*) AS cnt
-            FROM visitor_sessions GROUP BY ch ORDER BY cnt DESC LIMIT 1
-            """
-        ).fetchone()
+            FROM visitor_sessions vs
+            INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
+            WHERE 1=1{date_sql}
+            GROUP BY ch ORDER BY cnt DESC LIMIT 1
+            """,
+            date_params,
+        )
 
     return jsonify({
-        "online_count": online_count,
-        "total_sessions": total_sessions,
-        "total_links": total_links,
+        "online_count": online_count or 0,
+        "total_sessions": total_sessions or 0,
+        "total_links": total_links or 0,
         "total_clicks": total_clicks or 0,
+        "period": period,
         "kpi": {
-            "online": online_count,
-            "unique_visitors": total_sessions,
+            "online": online_count or 0,
+            "unique_visitors": total_sessions or 0,
             "top_domain": top_domain_row["domain"] if top_domain_row else "—",
             "top_domain_count": top_domain_row["cnt"] if top_domain_row else 0,
             "top_channel": top_channel_row["ch"] if top_channel_row else "—",

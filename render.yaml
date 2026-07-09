@@ -1,4 +1,4 @@
-# Render Blueprint — repo bağlanınca ayarların çoğu otomatik gelir
+# Render Blueprint
 services:
   - type: web
     name: makropanel
@@ -11,3 +11,10 @@ services:
         value: "3.12.0"
       - key: SECRET_KEY
         generateValue: true
+      - key: PUBLIC_BASE_URL
+        value: https://takipmkr.onrender.com
+
+# PostgreSQL (Render Dashboard → New PostgreSQL → DATABASE_URL otomatik bağlanır)
+# databases:
+#   - name: makropanel-db
+#     plan: free
