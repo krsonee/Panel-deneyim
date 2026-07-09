@@ -1026,6 +1026,13 @@
 
       Chart.defaults.color = "#7d8da6";
       Chart.defaults.borderColor = "rgba(36,48,68,0.5)";
+      Chart.defaults.animation = false;
+      var chartBaseOpts = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        transitions: { active: { animation: { duration: 0 } }, resize: { animation: { duration: 0 } } }
+      };
 
       function fmtTime(s) { s=s||0; return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0"); }
       function fmtClock(iso) { if(!iso)return"—"; return new Date(iso).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}); }
@@ -1244,40 +1251,75 @@
         showEmpty("empty-domains", !domains.length);
         showEmpty("empty-affiliate", !channels.length);
         showEmpty("empty-games", !games.length);
-        if (charts.domain) charts.domain.destroy();
-        if (charts.affiliate) charts.affiliate.destroy();
-        if (charts.games) charts.games.destroy();
 
-        charts.domain = new Chart(document.getElementById("chart-domains"), {
-          type: "bar",
-          data: {
-            labels: domains.map(function(d){return d.domain;}),
-            datasets: [
-              { label: "Toplam Oyuncu", data: domains.map(function(d){return d.total_players;}), backgroundColor: "#6366f1aa", borderRadius: 5 },
-              { label: "Şu An Online", data: domains.map(function(d){return d.online_now;}), backgroundColor: "#22c55eaa", borderRadius: 5 }
-            ]
-          },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
-        });
+        var domainLabels = domains.map(function(d){ return d.domain; });
+        var domainTotals = domains.map(function(d){ return d.total_players; });
+        var domainOnline = domains.map(function(d){ return d.online_now; });
 
-        var total = channels.reduce(function(a,c){return a+c.members;},0)||1;
-        charts.affiliate = new Chart(document.getElementById("chart-affiliate"), {
-          type: "doughnut",
-          data: {
-            labels: channels.map(function(c){ return c.channel+" ("+Math.round(c.members/total*100)+"%)"; }),
-            datasets: [{ data: channels.map(function(c){return c.members;}), backgroundColor: COLORS, borderWidth: 2, borderColor: "#0f1623" }]
-          },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { font: { size: 10 }, boxWidth: 10 } } } }
-        });
+        if (charts.domain) {
+          charts.domain.data.labels = domainLabels;
+          charts.domain.data.datasets[0].data = domainTotals;
+          charts.domain.data.datasets[1].data = domainOnline;
+          charts.domain.update("none");
+        } else {
+          charts.domain = new Chart(document.getElementById("chart-domains"), {
+            type: "bar",
+            data: {
+              labels: domainLabels,
+              datasets: [
+                { label: "Toplam Oyuncu", data: domainTotals, backgroundColor: "#6366f1aa", borderRadius: 5 },
+                { label: "Şu An Online", data: domainOnline, backgroundColor: "#22c55eaa", borderRadius: 5 }
+              ]
+            },
+            options: Object.assign({}, chartBaseOpts, {
+              plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } } },
+              scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+            })
+          });
+        }
 
-        charts.games = new Chart(document.getElementById("chart-games"), {
-          type: "bar",
-          data: {
-            labels: games.map(function(g){return g.game;}),
-            datasets: [{ data: games.map(function(g){return g.clicks;}), backgroundColor: ["#f59e0baa","#f43f5eaa","#06b6d4aa"], borderRadius: 5 }]
-          },
-          options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }
-        });
+        var total = channels.reduce(function(a,c){ return a+c.members; }, 0) || 1;
+        var affLabels = channels.map(function(c){ return c.channel+" ("+Math.round(c.members/total*100)+"%)"; });
+        var affData = channels.map(function(c){ return c.members; });
+
+        if (charts.affiliate) {
+          charts.affiliate.data.labels = affLabels;
+          charts.affiliate.data.datasets[0].data = affData;
+          charts.affiliate.update("none");
+        } else {
+          charts.affiliate = new Chart(document.getElementById("chart-affiliate"), {
+            type: "doughnut",
+            data: {
+              labels: affLabels,
+              datasets: [{ data: affData, backgroundColor: COLORS, borderWidth: 2, borderColor: "#0f1623" }]
+            },
+            options: Object.assign({}, chartBaseOpts, {
+              plugins: { legend: { position: "bottom", labels: { font: { size: 10 }, boxWidth: 10 } } }
+            })
+          });
+        }
+
+        var gameLabels = games.map(function(g){ return g.game; });
+        var gameData = games.map(function(g){ return g.clicks; });
+
+        if (charts.games) {
+          charts.games.data.labels = gameLabels;
+          charts.games.data.datasets[0].data = gameData;
+          charts.games.update("none");
+        } else {
+          charts.games = new Chart(document.getElementById("chart-games"), {
+            type: "bar",
+            data: {
+              labels: gameLabels,
+              datasets: [{ data: gameData, backgroundColor: ["#f59e0baa","#f43f5eaa","#06b6d4aa"], borderRadius: 5 }]
+            },
+            options: Object.assign({}, chartBaseOpts, {
+              indexAxis: "y",
+              plugins: { legend: { display: false } },
+              scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
+            })
+          });
+        }
       }
 
       function updateKpi(kpi) {
