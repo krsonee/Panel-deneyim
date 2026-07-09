@@ -27,6 +27,14 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from permissions import (
+    ALL_PERMISSION_KEYS,
+    PERMISSION_CATALOG,
+    ROLE_TEMPLATES,
+    has_permission,
+    normalize_permissions,
+    permissions_from_role,
+)
 from database import (
     DB_PATH,
     APP_DIR,
@@ -40,7 +48,6 @@ from database import (
     iso,
     scalar,
     utcnow,
-    uses_postgres,
 )
 
 # ── Ortam değişkenleri (Render → Environment) ──
@@ -82,22 +89,49 @@ def seed_admin_users():
                 continue
             execute(
                 conn,
-                "INSERT INTO admin_users (username, password_hash, created_at) VALUES (?, ?, ?)",
-                (username, generate_password_hash(password, method="pbkdf2:sha256"), now),
+                "INSERT INTO admin_users (username, password_hash, role, permissions, created_at) VALUES (?, ?, ?, ?, ?)",
+                (username, generate_password_hash(password, method="pbkdf2:sha256"), "superadmin", json.dumps(["*"]), now),
             )
         conn.commit()
 
 
-def verify_admin(username, password):
+def admin_user_to_dict(row):
+    if not row:
+        return None
+    role = row["role"] if "role" in row.keys() else "custom"
+    perms = normalize_permissions(row["permissions"] if "permissions" in row.keys() else '["*"]')
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "role": role,
+        "permissions": perms,
+        "created_at": row["created_at"],
+    }
+
+
+def get_admin_user(username, password):
     with closing(get_db()) as conn:
-        row = fetchone(
-            conn,
-            "SELECT password_hash FROM admin_users WHERE username = ?",
-            (username,),
-        )
+        row = fetchone(conn, "SELECT * FROM admin_users WHERE username = ?", (username,))
         if row and check_password_hash(row["password_hash"], password):
-            return True
-    return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
+            return admin_user_to_dict(row)
+    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        return {"id": 0, "username": username, "role": "superadmin", "permissions": ["*"], "created_at": ""}
+    return None
+
+
+def get_session_permissions():
+    return normalize_permissions(session.get("admin_permissions"))
+
+
+def login_admin_user(user):
+    session["admin_logged_in"] = True
+    session["admin_username"] = user["username"]
+    session["admin_role"] = user.get("role", "custom")
+    session["admin_permissions"] = user.get("permissions", [])
+
+
+def verify_admin(username, password):
+    return get_admin_user(username, password) is not None
 
 
 def send_telegram(text):
@@ -183,6 +217,49 @@ def normalize_domain(domain):
     if d == "127.0.0.1":
         return "localhost"
     return d
+
+
+MAX_BULK_RANGE = 500
+
+
+def expand_domain_line(line):
+    """Tek satırdan domain listesi üretir. Aralık: makrobet804-1084 veya makrobet 804 - 1084"""
+    raw = (line or "").strip()
+    if not raw:
+        return []
+
+    compact = re.sub(r"\s+", "", raw)
+    range_match = re.match(r"^([a-zA-Z][a-zA-Z0-9]*?)(\d+)-(\d+)$", compact, re.I)
+    if range_match:
+        prefix = range_match.group(1).lower()
+        start = int(range_match.group(2))
+        end = int(range_match.group(3))
+        if start > end:
+            start, end = end, start
+        count = end - start + 1
+        if count > MAX_BULK_RANGE:
+            raise ValueError(f"Tek aralıkta en fazla {MAX_BULK_RANGE} domain eklenebilir ({count} istendi).")
+        return [f"{prefix}{num}.com" for num in range(start, end + 1)]
+
+    domain = normalize_domain(raw)
+    return [domain] if domain else []
+
+
+def expand_domain_input(text):
+    """Metin kutusundaki satırları ve aralıkları domain listesine çevirir."""
+    if isinstance(text, list):
+        lines = text
+    else:
+        lines = str(text or "").replace(",", "\n").split("\n")
+
+    domains = []
+    seen = set()
+    for line in lines:
+        for domain in expand_domain_line(line):
+            if domain and domain not in seen:
+                seen.add(domain)
+                domains.append(domain)
+    return domains
 
 
 def migrate_domains():
@@ -458,6 +535,21 @@ def login_required(view):
     return wrapped
 
 
+def permission_required(*required_perms):
+    def decorator(view):
+        @wraps(view)
+        @login_required
+        def wrapped(*args, **kwargs):
+            needed = list(required_perms)
+            if not has_permission(get_session_permissions(), needed):
+                if request.path.startswith("/api/"):
+                    return jsonify({"error": "Bu işlem için yetkiniz yok."}), 403
+                return render_template("login.html", error="Bu sayfa için yetkiniz yok."), 403
+            return view(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
 def build_journey(session_data):
     """Kullanıcının kronolojik zaman tüneli."""
     ref = session_data["ref_code"] or "Direkt giriş"
@@ -507,9 +599,9 @@ def login_page():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        if verify_admin(username, password):
-            session["admin_logged_in"] = True
-            session["admin_username"] = username
+        user = get_admin_user(username, password)
+        if user:
+            login_admin_user(user)
             session.permanent = True
             return redirect(url_for("admin_page"))
         error = "Kullanıcı adı veya şifre hatalı."
@@ -525,7 +617,34 @@ def logout():
 @app.route("/admin")
 @login_required
 def admin_page():
+    if not has_permission(get_session_permissions(), "module.tracking"):
+        return render_template(
+            "login.html",
+            error="Link Takip modülüne erişim yetkiniz yok. Yöneticinize başvurun.",
+        ), 403
     return render_template("admin.html", server_url=get_server_base_url())
+
+
+@app.route("/api/me", methods=["GET"])
+@login_required
+def api_me():
+    perms = get_session_permissions()
+    return jsonify({
+        "username": session.get("admin_username"),
+        "role": session.get("admin_role"),
+        "permissions": perms,
+        "role_templates": ROLE_TEMPLATES,
+        "permission_catalog": PERMISSION_CATALOG,
+    })
+
+
+@app.route("/api/permissions/catalog", methods=["GET"])
+@login_required
+def permissions_catalog():
+    return jsonify({
+        "catalog": PERMISSION_CATALOG,
+        "role_templates": ROLE_TEMPLATES,
+    })
 
 
 @app.route("/demo")
@@ -537,7 +656,7 @@ def demo_page():
 
 
 @app.route("/api/links", methods=["GET"])
-@login_required
+@permission_required("tracking.domains", "tracking.links")
 def list_links():
     now = utcnow()
     cutoff = iso(now - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
@@ -560,7 +679,7 @@ def list_links():
 
 
 @app.route("/api/links", methods=["POST"])
-@login_required
+@permission_required("tracking.domains")
 def create_link():
     data = request.get_json(silent=True) or {}
     domain = normalize_domain(data.get("domain", ""))
@@ -591,26 +710,26 @@ def create_link():
 
 
 @app.route("/api/links/bulk", methods=["POST"])
-@login_required
+@permission_required("tracking.domains")
 def create_links_bulk():
     data = request.get_json(silent=True) or {}
     raw_domains = data.get("domains") or data.get("text") or ""
     ref_code = (data.get("ref_code") or "").strip()
-    lines = []
-    if isinstance(raw_domains, list):
-        lines = raw_domains
-    else:
-        lines = str(raw_domains).replace(",", "\n").split("\n")
+
+    try:
+        domain_list = expand_domain_input(raw_domains)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if not domain_list:
+        return jsonify({"error": "Geçerli domain bulunamadı."}), 400
 
     added, skipped, errors = [], [], []
     created_at = iso(utcnow())
-    for line in lines:
-        domain = normalize_domain(line)
-        if not domain:
-            continue
+    for domain in domain_list:
         try:
             with closing(get_db()) as conn:
-                link_id = insert_returning_id(
+                insert_returning_id(
                     conn,
                     "INSERT INTO tracked_links (domain, ref_code, created_at) VALUES (?, ?, ?)",
                     (domain, ref_code, created_at),
@@ -628,11 +747,30 @@ def create_links_bulk():
         "errors": errors,
         "count_added": len(added),
         "count_skipped": len(skipped),
+        "count_expanded": len(domain_list),
+    })
+
+
+@app.route("/api/links/bulk/preview", methods=["POST"])
+@permission_required("tracking.domains")
+def preview_links_bulk():
+    data = request.get_json(silent=True) or {}
+    raw = data.get("text") or data.get("domains") or ""
+    try:
+        domains = expand_domain_input(raw)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    preview = domains[:8]
+    return jsonify({
+        "count": len(domains),
+        "preview": preview,
+        "first": domains[0] if domains else None,
+        "last": domains[-1] if domains else None,
     })
 
 
 @app.route("/api/links/generate-url", methods=["POST"])
-@login_required
+@permission_required("tracking.links")
 def generate_affiliate_url():
     data = request.get_json(silent=True) or {}
     domain = normalize_domain(data.get("domain", ""))
@@ -649,7 +787,7 @@ def generate_affiliate_url():
 
 
 @app.route("/api/links/<int:link_id>", methods=["DELETE"])
-@login_required
+@permission_required("tracking.domains")
 def delete_link(link_id):
     with closing(get_db()) as conn:
         execute(conn, "DELETE FROM visitor_sessions WHERE tracked_link_id = ?", (link_id,))
@@ -876,7 +1014,7 @@ def track_leave():
 
 
 @app.route("/api/online", methods=["GET"])
-@login_required
+@permission_required("tracking.players")
 def online_users():
     now = utcnow()
     cutoff = iso(now - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
@@ -898,7 +1036,7 @@ def online_users():
 
 
 @app.route("/api/sessions", methods=["GET"])
-@login_required
+@permission_required("tracking.players")
 def all_sessions():
     now = utcnow()
     period = request.args.get("period", "all")
@@ -920,7 +1058,7 @@ def all_sessions():
 
 
 @app.route("/api/reports/referrals", methods=["GET"])
-@login_required
+@permission_required("tracking.reports")
 def referral_report():
     now = utcnow()
     cutoff = iso(now - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
@@ -961,7 +1099,7 @@ def referral_report():
 
 
 @app.route("/api/sessions/<session_id>/journey", methods=["GET"])
-@login_required
+@permission_required("tracking.players")
 def session_journey(session_id):
     now = utcnow()
     with closing(get_db()) as conn:
@@ -973,7 +1111,7 @@ def session_journey(session_id):
 
 
 @app.route("/api/charts", methods=["GET"])
-@login_required
+@permission_required("tracking.dashboard")
 def chart_data():
     now = utcnow()
     cutoff = iso(now - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
@@ -1075,7 +1213,7 @@ def chart_data():
 
 
 @app.route("/api/data/export", methods=["GET"])
-@login_required
+@permission_required("tracking.export")
 def export_data():
     now = utcnow()
     with closing(get_db()) as conn:
@@ -1094,7 +1232,7 @@ def export_data():
 
 
 @app.route("/api/data/export.csv", methods=["GET"])
-@login_required
+@permission_required("tracking.export")
 def export_csv():
     now = utcnow()
     with closing(get_db()) as conn:
@@ -1140,7 +1278,7 @@ def export_csv():
 
 
 @app.route("/api/data/clear-sessions", methods=["POST"])
-@login_required
+@permission_required("tracking.export")
 def clear_sessions():
     with closing(get_db()) as conn:
         execute(conn, "DELETE FROM visitor_sessions")
@@ -1149,38 +1287,92 @@ def clear_sessions():
 
 
 @app.route("/api/admin/users", methods=["GET"])
-@login_required
+@permission_required("admin.users")
 def list_admin_users():
     with closing(get_db()) as conn:
-        rows = fetchall(conn, "SELECT id, username, created_at FROM admin_users ORDER BY username")
-    return jsonify({"users": [dict(r) for r in rows]})
+        rows = fetchall(
+            conn,
+            "SELECT id, username, role, permissions, created_at FROM admin_users ORDER BY username",
+        )
+    users = []
+    for row in rows:
+        item = admin_user_to_dict(row)
+        item["role_label"] = ROLE_TEMPLATES.get(item["role"], {}).get("label", item["role"])
+        users.append(item)
+    return jsonify({"users": users, "role_templates": ROLE_TEMPLATES, "permission_catalog": PERMISSION_CATALOG})
 
 
 @app.route("/api/admin/users", methods=["POST"])
-@login_required
+@permission_required("admin.users")
 def create_admin_user():
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "").strip()
+    role = (data.get("role") or "custom").strip().lower()
+    permissions = permissions_from_role(role, data.get("permissions"))
     if not username or not password:
         return jsonify({"error": "Kullanıcı adı ve şifre gerekli."}), 400
     if len(password) < 6:
         return jsonify({"error": "Şifre en az 6 karakter olmalı."}), 400
+    if role == "custom" and not permissions:
+        return jsonify({"error": "Özel rol için en az bir yetki seçin."}), 400
     try:
         with closing(get_db()) as conn:
             insert_returning_id(
                 conn,
-                "INSERT INTO admin_users (username, password_hash, created_at) VALUES (?, ?, ?)",
-                (username, generate_password_hash(password, method="pbkdf2:sha256"), iso(utcnow())),
+                "INSERT INTO admin_users (username, password_hash, role, permissions, created_at) VALUES (?, ?, ?, ?, ?)",
+                (
+                    username,
+                    generate_password_hash(password, method="pbkdf2:sha256"),
+                    role,
+                    json.dumps(permissions),
+                    iso(utcnow()),
+                ),
             )
             conn.commit()
     except IntegrityError:
         return jsonify({"error": "Bu kullanıcı adı zaten var."}), 409
-    return jsonify({"ok": True, "username": username}), 201
+    return jsonify({"ok": True, "username": username, "role": role, "permissions": permissions}), 201
+
+
+@app.route("/api/admin/users/<int:user_id>", methods=["PUT"])
+@permission_required("admin.users")
+def update_admin_user(user_id):
+    data = request.get_json(silent=True) or {}
+    role = (data.get("role") or "custom").strip().lower()
+    permissions = permissions_from_role(role, data.get("permissions"))
+    password = (data.get("password") or "").strip()
+    if role == "custom" and not permissions:
+        return jsonify({"error": "Özel rol için en az bir yetki seçin."}), 400
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT * FROM admin_users WHERE id = ?", (user_id,))
+        if not row:
+            return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+        if password:
+            if len(password) < 6:
+                return jsonify({"error": "Şifre en az 6 karakter olmalı."}), 400
+            execute(
+                conn,
+                "UPDATE admin_users SET role = ?, permissions = ?, password_hash = ? WHERE id = ?",
+                (role, json.dumps(permissions), generate_password_hash(password, method="pbkdf2:sha256"), user_id),
+            )
+        else:
+            execute(
+                conn,
+                "UPDATE admin_users SET role = ?, permissions = ? WHERE id = ?",
+                (role, json.dumps(permissions), user_id),
+            )
+        conn.commit()
+        updated = fetchone(conn, "SELECT * FROM admin_users WHERE id = ?", (user_id,))
+    item = admin_user_to_dict(updated)
+    if session.get("admin_username") == item["username"]:
+        session["admin_role"] = item["role"]
+        session["admin_permissions"] = item["permissions"]
+    return jsonify({"ok": True, "user": item})
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
-@login_required
+@permission_required("admin.users")
 def delete_admin_user(user_id):
     current = session.get("admin_username")
     with closing(get_db()) as conn:
@@ -1198,13 +1390,15 @@ def delete_admin_user(user_id):
 
 
 @app.route("/api/settings", methods=["GET"])
-@login_required
+@permission_required("module.settings", "admin.users")
 def get_settings():
     return jsonify({
         "public_base_url": get_server_base_url(),
         "database": "postgresql" if uses_postgres() else "sqlite",
         "telegram_enabled": bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID),
         "current_user": session.get("admin_username"),
+        "current_role": session.get("admin_role"),
+        "permissions": get_session_permissions(),
         "custom_domain_hint": (
             "Render → Settings → Custom Domain ekleyin, "
             "sonra PUBLIC_BASE_URL ortam değişkenini ayarlayın."
@@ -1213,7 +1407,7 @@ def get_settings():
 
 
 @app.route("/api/stats", methods=["GET"])
-@login_required
+@permission_required("tracking.dashboard")
 def stats():
     now = utcnow()
     cutoff = iso(now - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))

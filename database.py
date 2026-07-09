@@ -1,8 +1,11 @@
+import json
 import os
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
+
+from permissions import normalize_permissions
 
 APP_DIR = Path(__file__).resolve().parent
 DB_PATH = APP_DIR / "analytics.db"
@@ -185,6 +188,40 @@ def migrate_schema(conn):
         execute(conn, "ALTER TABLE visitor_sessions ADD COLUMN ip_address TEXT NOT NULL DEFAULT ''")
     if "user_agent" not in cols:
         execute(conn, "ALTER TABLE visitor_sessions ADD COLUMN user_agent TEXT NOT NULL DEFAULT ''")
+    conn.commit()
+    migrate_admin_users(conn)
+
+
+def migrate_admin_users(conn):
+    if uses_postgres():
+        cols = {
+            r["column_name"]
+            for r in fetchall(
+                conn,
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'admin_users'
+                """,
+            )
+        }
+    else:
+        cols = {r[1] for r in execute(conn, "PRAGMA table_info(admin_users)").fetchall()}
+
+    if "role" not in cols:
+        execute(conn, "ALTER TABLE admin_users ADD COLUMN role TEXT NOT NULL DEFAULT 'superadmin'")
+    if "permissions" not in cols:
+        execute(conn, "ALTER TABLE admin_users ADD COLUMN permissions TEXT NOT NULL DEFAULT '[\"*\"]'")
+    conn.commit()
+
+    rows = fetchall(conn, "SELECT id, role, permissions FROM admin_users")
+    for row in rows:
+        perms = normalize_permissions(row.get("permissions") if isinstance(row, dict) else row["permissions"])
+        if not perms:
+            execute(
+                conn,
+                "UPDATE admin_users SET role = ?, permissions = ? WHERE id = ?",
+                ("superadmin", json.dumps(["*"]), row["id"]),
+            )
     conn.commit()
 
 

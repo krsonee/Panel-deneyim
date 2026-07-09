@@ -214,6 +214,11 @@
     .settings-list dt { color: var(--muted); font-size: 0.68rem; text-transform: uppercase; margin-top: 0.75rem; }
     .settings-list dd { margin: 0.15rem 0 0; }
     .user-row { display: flex; align-items: center; justify-content: space-between; padding: 0.45rem 0; border-bottom: 1px solid var(--border); font-size: 0.78rem; }
+    .perm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem 0.75rem; margin-top: 0.5rem; max-height: 220px; overflow-y: auto; }
+    .perm-item { display: flex; align-items: flex-start; gap: 0.35rem; font-size: 0.72rem; }
+    .perm-item input { width: auto; margin-top: 0.15rem; }
+    .role-badge { display: inline-block; font-size: 0.65rem; padding: 0.15rem 0.45rem; border-radius: 999px; background: var(--accent-soft); color: #a5b4fc; margin-left: 0.35rem; }
+    [data-perm-hidden="1"] { display: none !important; }
 
     @media (max-width: 768px) {
       .sidebar { transform: translateX(-100%); }
@@ -230,10 +235,10 @@
       </div>
       <nav class="nav">
         <div class="nav-label">Modüller</div>
-        <a href="/admin" class="nav-item active"><span class="icon">📊</span> Link Takip & Analiz</a>
-        <span class="nav-item disabled"><span class="icon">💰</span> Muhasebe <span class="badge">Yakında</span></span>
-        <span class="nav-item disabled"><span class="icon">👥</span> CRM <span class="badge">Yakında</span></span>
-        <button type="button" class="nav-item" id="btn-open-settings" style="width:100%;border:none;background:none;cursor:pointer;font:inherit;text-align:left;">
+        <a href="/admin" class="nav-item active" data-perm="module.tracking"><span class="icon">📊</span> Link Takip & Analiz</a>
+        <span class="nav-item disabled" data-perm="module.accounting"><span class="icon">💰</span> Muhasebe <span class="badge">Yakında</span></span>
+        <span class="nav-item disabled" data-perm="module.crm"><span class="icon">👥</span> CRM <span class="badge">Yakında</span></span>
+        <button type="button" class="nav-item" id="btn-open-settings" data-perm-any="admin.users,module.settings" style="width:100%;border:none;background:none;cursor:pointer;font:inherit;text-align:left;">
           <span class="icon">⚙️</span> Ayarlar
         </button>
       </nav>
@@ -249,7 +254,7 @@
       <div class="main-inner">
         <div class="topbar">
           <div>
-            <h2>Link Takip & Analiz</h2>
+            <h2>Link Takip & Analiz <span class="role-badge" id="user-role-badge"></span></h2>
             <p>Sunucu: {{ server_url }} · 3 sn'de bir otomatik güncellenir</p>
           </div>
           <div class="live-pill" id="poll-status">Canlı akış aktif</div>
@@ -266,7 +271,7 @@
         </div>
 
         <!-- KPI Widgets -->
-        <section class="kpi-grid">
+        <section class="kpi-grid" data-perm="tracking.dashboard">
           <div class="kpi green">
             <div class="val" id="kpi-online">0</div>
             <div class="lbl">Şu An Aktif Oyuncu</div>
@@ -290,7 +295,7 @@
         </section>
 
         <!-- Grafikler -->
-        <section class="charts-grid">
+        <section class="charts-grid" data-perm="tracking.dashboard">
           <div class="chart-card">
             <h3>Domain Trafiği</h3>
             <p class="sub">Toplam oyuncu vs şu an online</p>
@@ -308,7 +313,7 @@
           </div>
         </section>
 
-        <section class="card">
+        <section class="card" data-perm="tracking.domains">
           <div class="card-head">Domain & Araçlar</div>
           <div class="card-body">
             <form id="add-link-form">
@@ -321,29 +326,36 @@
             <div class="tools-grid" style="margin-top:1rem;">
               <div class="tool-box">
                 <h4>📦 Toplu Domain Ekle</h4>
-                <p class="muted" style="font-size:0.72rem;margin-bottom:0.45rem;">Her satıra bir domain yaz (804, 805, makrogir.com…)</p>
-                <textarea id="bulk-domains" placeholder="makrogir.com&#10;makrobet804.com&#10;makrobet805.com"></textarea>
-                <div style="margin-top:0.45rem;display:flex;gap:0.4rem;">
-                  <input id="bulk-ref" placeholder="Ortak ref (opsiyonel)" style="flex:1;">
+                <p class="muted" style="font-size:0.72rem;margin-bottom:0.45rem;">
+                  Aralık: <strong>makrobet804 - 1084</strong> → 804’ten 1084’e kadar otomatik ekler.<br>
+                  Tek domain veya her satıra bir domain de yazabilirsin.
+                </p>
+                <textarea id="bulk-domains" placeholder="makrobet804 - 1084&#10;makrogir.com"></textarea>
+                <div style="margin-top:0.45rem;display:flex;gap:0.4rem;flex-wrap:wrap;">
+                  <input id="bulk-ref" placeholder="Ortak ref (opsiyonel)" style="flex:1;min-width:140px;">
+                  <button type="button" class="btn" id="btn-bulk-preview">Önizle</button>
                   <button type="button" class="btn btn-primary" id="btn-bulk-add">Toplu Ekle</button>
                 </div>
                 <p class="muted" id="bulk-result" style="font-size:0.7rem;margin-top:0.4rem;"></p>
-              </div>
-              <div class="tool-box">
-                <h4>🔗 Affiliate Link Üretici</h4>
-                <div class="form-row" style="grid-template-columns:1fr 1fr;">
-                  <div><label for="gen-domain">Domain</label><select id="gen-domain"><option value="">Seç…</option></select></div>
-                  <div><label for="gen-ref">Referans Kodu</label><input id="gen-ref" placeholder="ahmet123"></div>
-                </div>
-                <button type="button" class="btn btn-success" id="btn-gen-link" style="margin-top:0.45rem;">Link Oluştur</button>
-                <div class="link-out" id="gen-link-out">Link burada görünecek…</div>
-                <button type="button" class="btn btn-sm" id="btn-copy-link" style="margin-top:0.35rem;">Linki Kopyala</button>
               </div>
             </div>
           </div>
         </section>
 
-        <section class="card">
+        <section class="card" data-perm="tracking.links">
+          <div class="card-head">Affiliate Link Üretici</div>
+          <div class="card-body">
+            <div class="form-row" style="grid-template-columns:1fr 1fr auto;">
+              <div><label for="gen-domain">Domain</label><select id="gen-domain"><option value="">Seç…</option></select></div>
+              <div><label for="gen-ref">Referans Kodu</label><input id="gen-ref" placeholder="ahmet123"></div>
+              <div style="align-self:end"><button type="button" class="btn btn-success" id="btn-gen-link">Link Oluştur</button></div>
+            </div>
+            <div class="link-out" id="gen-link-out">Link burada görünecek…</div>
+            <button type="button" class="btn btn-sm" id="btn-copy-link" style="margin-top:0.35rem;">Linki Kopyala</button>
+          </div>
+        </section>
+
+        <section class="card" data-perm="tracking.reports">
           <div class="card-head"><span>Referans Raporu</span><span class="muted" id="ref-report-label" style="font-weight:400;font-size:0.75rem;"></span></div>
           <div class="table-wrap">
             <table>
@@ -353,7 +365,7 @@
           </div>
         </section>
 
-        <section class="card">
+        <section class="card" data-perm="tracking.domains">
           <div class="card-head"><span>Takip Edilen Domainler</span><a href="/demo" target="_blank" class="btn btn-sm">Demo Site</a></div>
           <div class="table-wrap">
             <table>
@@ -363,7 +375,7 @@
           </div>
         </section>
 
-        <section class="card">
+        <section class="card" data-perm="tracking.players">
           <div class="card-head"><span>Şu An Online</span><span class="muted" id="online-label" style="font-weight:400;font-size:0.75rem;"></span></div>
           <div class="table-wrap">
             <table>
@@ -383,10 +395,10 @@
           </div>
         </section>
 
-        <section class="card">
+        <section class="card" data-perm="tracking.players">
           <div class="card-head">
             <span>Tüm Oyuncular</span>
-            <div class="card-actions">
+            <div class="card-actions" data-perm="tracking.export">
               <button class="btn btn-success" id="btn-csv">Verileri Excel (CSV) Olarak İndir</button>
               <button class="btn" id="btn-export-json">JSON İndir</button>
               <button class="btn btn-danger" id="btn-clear">Oturumları Temizle</button>
@@ -432,17 +444,43 @@
       <div class="modal-body">
         <dl class="settings-list" id="settings-info"></dl>
         <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0;">
-        <h4 style="font-size:0.85rem;margin-bottom:0.5rem;">Admin Kullanıcıları</h4>
-        <div id="admin-users-list"></div>
-        <form id="add-user-form" style="margin-top:0.75rem;display:grid;grid-template-columns:1fr 1fr auto;gap:0.4rem;">
-          <input id="new-user-name" placeholder="Kullanıcı adı" required>
-          <input id="new-user-pass" type="password" placeholder="Şifre (min 6)" required>
-          <button type="submit" class="btn btn-primary">Ekle</button>
+        <h4 style="font-size:0.85rem;margin-bottom:0.5rem;" data-perm="admin.users">Admin Kullanıcıları</h4>
+        <div id="admin-users-list" data-perm="admin.users"></div>
+        <form id="add-user-form" style="margin-top:0.75rem;" data-perm="admin.users">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.5rem;">
+            <input id="new-user-name" placeholder="Kullanıcı adı" required>
+            <input id="new-user-pass" type="password" placeholder="Şifre (min 6)" required>
+          </div>
+          <label for="new-user-role">Rol Şablonu</label>
+          <select id="new-user-role" style="margin-bottom:0.5rem;"></select>
+          <label>Yetkiler (özel rol için işaretle)</label>
+          <div class="perm-grid" id="new-user-perms"></div>
+          <button type="submit" class="btn btn-primary" style="margin-top:0.6rem;">Kullanıcı Ekle</button>
         </form>
         <p class="muted" style="font-size:0.68rem;margin-top:0.75rem;">
           Telegram: Render → Environment → TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID<br>
           Özel domain: PUBLIC_BASE_URL=https://panel.makrogir.com
         </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit User Modal -->
+  <div class="modal-overlay" id="edit-user-modal">
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <h3 id="edit-user-title">Kullanıcı Yetkileri</h3>
+        <button class="modal-close" id="edit-user-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-user-id">
+        <label for="edit-user-role">Rol Şablonu</label>
+        <select id="edit-user-role" style="margin-bottom:0.5rem;"></select>
+        <label>Yeni şifre (opsiyonel)</label>
+        <input id="edit-user-pass" type="password" placeholder="Değiştirmek için yaz" style="margin-bottom:0.5rem;">
+        <label>Yetkiler</label>
+        <div class="perm-grid" id="edit-user-perms"></div>
+        <button type="button" class="btn btn-primary" id="btn-save-user-perms" style="margin-top:0.75rem;">Kaydet</button>
       </div>
     </div>
   </div>
@@ -473,6 +511,106 @@
       var COLORS = ["#6366f1","#22c55e","#f59e0b","#f43f5e","#06b6d4","#a855f7"];
       var currentPeriod = "all";
       var lastGeneratedUrl = "";
+      var myPermissions = [];
+      var myRole = "";
+      var roleTemplates = {};
+      var permissionCatalog = [];
+
+      function hasPerm(key) {
+        if (!key) return true;
+        if (myPermissions.indexOf("*") >= 0) return true;
+        return myPermissions.indexOf(key) >= 0;
+      }
+
+      function hasAnyPerm(keys) {
+        if (!keys) return true;
+        return keys.split(",").some(function(k) { return hasPerm(k.trim()); });
+      }
+
+      function applyPermissions() {
+        document.querySelectorAll("[data-perm]").forEach(function(el) {
+          el.setAttribute("data-perm-hidden", hasPerm(el.getAttribute("data-perm")) ? "0" : "1");
+        });
+        document.querySelectorAll("[data-perm-any]").forEach(function(el) {
+          el.setAttribute("data-perm-hidden", hasAnyPerm(el.getAttribute("data-perm-any")) ? "0" : "1");
+        });
+        var badge = document.getElementById("user-role-badge");
+        if (badge) {
+          var label = (roleTemplates[myRole] && roleTemplates[myRole].label) || myRole || "";
+          badge.textContent = label;
+          badge.style.display = label ? "inline-block" : "none";
+        }
+      }
+
+      function renderPermissionGrid(containerId, selected) {
+        var box = document.getElementById(containerId);
+        if (!box) return;
+        var sel = selected || [];
+        var groups = {};
+        permissionCatalog.forEach(function(p) {
+          if (!groups[p.group]) groups[p.group] = [];
+          groups[p.group].push(p);
+        });
+        var html = "";
+        Object.keys(groups).forEach(function(g) {
+          html += '<div style="grid-column:1/-1;font-size:0.65rem;color:var(--muted);margin-top:0.35rem;">'+esc(g)+'</div>';
+          groups[g].forEach(function(p) {
+            var checked = sel.indexOf("*") >= 0 || sel.indexOf(p.key) >= 0 ? " checked" : "";
+            html += '<label class="perm-item"><input type="checkbox" class="perm-cb" data-perm-key="'+esc(p.key)+'"'+checked+'><span>'+esc(p.label)+'</span></label>';
+          });
+        });
+        box.innerHTML = html;
+      }
+
+      function getCheckedPermissions(containerId) {
+        var keys = [];
+        document.querySelectorAll("#"+containerId+" .perm-cb:checked").forEach(function(cb) {
+          keys.push(cb.getAttribute("data-perm-key"));
+        });
+        return keys;
+      }
+
+      function fillRoleSelect(selectId, selectedRole) {
+        var sel = document.getElementById(selectId);
+        if (!sel) return;
+        sel.innerHTML = "";
+        Object.keys(roleTemplates).forEach(function(key) {
+          var t = roleTemplates[key];
+          sel.innerHTML += '<option value="'+esc(key)+'">'+esc(t.label)+' — '+esc(t.desc||"")+'</option>';
+        });
+        if (selectedRole) sel.value = selectedRole;
+      }
+
+      function applyRoleToPermGrid(roleKey, containerId) {
+        var t = roleTemplates[roleKey];
+        if (!t) return;
+        var perms = t.permissions || [];
+        document.querySelectorAll("#"+containerId+" .perm-cb").forEach(function(cb) {
+          var k = cb.getAttribute("data-perm-key");
+          cb.checked = perms.indexOf("*") >= 0 || perms.indexOf(k) >= 0;
+          cb.disabled = roleKey !== "custom" && roleKey !== "superadmin";
+        });
+      }
+
+      function loadMe(callback) {
+        fetch(API+"/api/me").then(function(r){
+          if (r.status === 401) { location.href = "/admin/login"; return null; }
+          return r.json();
+        }).then(function(data) {
+          if (!data) return;
+          myPermissions = data.permissions || [];
+          myRole = data.role || "";
+          roleTemplates = data.role_templates || {};
+          permissionCatalog = data.permission_catalog || [];
+          applyPermissions();
+          fillRoleSelect("new-user-role", "operator");
+          fillRoleSelect("edit-user-role", "operator");
+          renderPermissionGrid("new-user-perms", roleTemplates.operator ? roleTemplates.operator.permissions : []);
+          renderPermissionGrid("edit-user-perms", []);
+          applyRoleToPermGrid(document.getElementById("new-user-role").value, "new-user-perms");
+          if (callback) callback();
+        });
+      }
 
       function periodQuery() {
         return currentPeriod && currentPeriod !== "all" ? "?period=" + encodeURIComponent(currentPeriod) : "";
@@ -528,21 +666,38 @@
       }
 
       function loadSettings() {
+        if (!hasAnyPerm("admin.users,module.settings")) return;
         fetch(API+"/api/settings").then(function(r){return r.json();}).then(function(s) {
           document.getElementById("settings-info").innerHTML =
             '<dt>Panel URL</dt><dd>'+esc(s.public_base_url)+'</dd>'+
             '<dt>Veritabanı</dt><dd>'+(s.database==="postgresql"?"PostgreSQL ✅":"SQLite (yerel)")+'</dd>'+
             '<dt>Telegram Bildirimi</dt><dd>'+(s.telegram_enabled?"Aktif ✅":"Kapalı — env ayarla")+'</dd>'+
-            '<dt>Giriş Yapan</dt><dd>'+esc(s.current_user||"—")+'</dd>'+
+            '<dt>Giriş Yapan</dt><dd>'+esc(s.current_user||"—")+' ('+esc(s.current_role||"")+')</dd>'+
             '<dt>Özel Domain</dt><dd class="muted" style="font-size:0.72rem;">'+esc(s.custom_domain_hint)+'</dd>';
         });
+        if (!hasPerm("admin.users")) return;
         fetch(API+"/api/admin/users").then(function(r){return r.json();}).then(function(d) {
           var box = document.getElementById("admin-users-list");
           var users = d.users || [];
           box.innerHTML = users.length ? users.map(function(u) {
-            return '<div class="user-row"><span class="mono">'+esc(u.username)+'</span>'+
-              (users.length>1?'<button class="btn btn-sm btn-danger" data-del-user="'+u.id+'">Sil</button>':'')+'</div>';
+            return '<div class="user-row"><span><span class="mono">'+esc(u.username)+'</span> <span class="muted" style="font-size:0.65rem;">'+esc(u.role_label||u.role)+'</span></span>'+
+              '<span><button class="btn btn-sm" data-edit-user="'+u.id+'" data-user="'+esc(u.username)+'" data-role="'+esc(u.role)+'">Yetki</button> '+
+              (users.length>1?'<button class="btn btn-sm btn-danger" data-del-user="'+u.id+'">Sil</button>':'')+'</span></div>';
           }).join("") : '<p class="muted">Kullanıcı yok</p>';
+          box.querySelectorAll("[data-edit-user]").forEach(function(btn) {
+            btn.onclick = function() {
+              var uid = btn.getAttribute("data-edit-user");
+              var user = users.find(function(x){ return String(x.id) === String(uid); });
+              if (!user) return;
+              document.getElementById("edit-user-id").value = uid;
+              document.getElementById("edit-user-title").textContent = "Yetki — "+user.username;
+              document.getElementById("edit-user-pass").value = "";
+              fillRoleSelect("edit-user-role", user.role);
+              renderPermissionGrid("edit-user-perms", user.permissions || []);
+              applyRoleToPermGrid(user.role, "edit-user-perms");
+              document.getElementById("edit-user-modal").classList.add("open");
+            };
+          });
           box.querySelectorAll("[data-del-user]").forEach(function(btn) {
             btn.onclick = function() {
               if (!confirm("Bu admin silinsin mi?")) return;
@@ -927,15 +1082,25 @@
       var lastLinks = [];
       function refreshAll() {
         var pq = periodQuery();
-        fetch(API+"/api/stats"+pq).then(function(r){ if(r.status===401){location.href="/admin/login";return null;} return r.json(); })
-          .then(function(s){ if(!s)return; updateKpi(s.kpi); });
-
-        fetch(API+"/api/charts"+pq).then(function(r){return r.json();}).then(renderCharts);
-        fetch(API+"/api/reports/referrals"+pq).then(function(r){return r.json();}).then(function(d){ renderRefReport(d.report||[]); });
-        fetch(API+"/api/links").then(function(r){return r.json();}).then(function(d){ lastLinks=d.links||[]; renderLinks(lastLinks); updateFilters(allSessions,lastLinks); });
-        fetch(API+"/api/online").then(function(r){return r.json();}).then(function(d){ renderOnline(d.users||[]); });
-        fetch(API+"/api/sessions"+pq).then(function(r){return r.json();}).then(function(d){ renderSessions(d.sessions||[]); updateFilters(allSessions,lastLinks); });
-
+        if (hasPerm("tracking.dashboard")) {
+          fetch(API+"/api/stats"+pq).then(function(r){ if(r.status===401){location.href="/admin/login";return null;} return r.json(); })
+            .then(function(s){ if(!s)return; updateKpi(s.kpi); });
+          fetch(API+"/api/charts"+pq).then(function(r){return r.json();}).then(renderCharts).catch(function(){});
+        }
+        if (hasPerm("tracking.reports")) {
+          fetch(API+"/api/reports/referrals"+pq).then(function(r){return r.json();}).then(function(d){ renderRefReport(d.report||[]); }).catch(function(){});
+        }
+        if (hasPerm("tracking.domains") || hasPerm("tracking.links")) {
+          fetch(API+"/api/links").then(function(r){return r.json();}).then(function(d){
+            lastLinks=d.links||[]; renderLinks(lastLinks); updateFilters(allSessions,lastLinks);
+          }).catch(function(){});
+        }
+        if (hasPerm("tracking.players")) {
+          fetch(API+"/api/online").then(function(r){return r.json();}).then(function(d){ renderOnline(d.users||[]); }).catch(function(){});
+          fetch(API+"/api/sessions"+pq).then(function(r){return r.json();}).then(function(d){
+            renderSessions(d.sessions||[]); updateFilters(allSessions,lastLinks);
+          }).catch(function(){});
+        }
         document.getElementById("poll-status").textContent = "Son güncelleme: "+new Date().toLocaleTimeString("tr-TR");
       }
 
@@ -953,9 +1118,26 @@
         });
       });
 
+      document.getElementById("btn-bulk-preview").onclick = function() {
+        var text = document.getElementById("bulk-domains").value.trim();
+        if (!text) { alert("Metin girin."); return; }
+        fetch(API+"/api/links/bulk/preview", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ text: text })
+        }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+          .then(function(res) {
+            if (!res.ok) { alert(res.data.error || "Hata"); return; }
+            var d = res.data;
+            var msg = d.count + " domain oluşturulacak";
+            if (d.first && d.last) msg += " (" + d.first + " … " + d.last + ")";
+            document.getElementById("bulk-result").textContent = msg;
+          });
+      };
+
       document.getElementById("btn-bulk-add").onclick = function() {
         var text = document.getElementById("bulk-domains").value.trim();
-        if (!text) { alert("En az bir domain yazın."); return; }
+        if (!text) { alert("En az bir domain veya aralık yazın."); return; }
+        if (!confirm("Domainler eklenecek. Devam?")) return;
         fetch(API+"/api/links/bulk", {
           method:"POST", headers:{"Content-Type":"application/json"},
           body: JSON.stringify({ text: text, ref_code: document.getElementById("bulk-ref").value.trim() })
@@ -964,7 +1146,7 @@
             if (!res.ok) { alert(res.data.error || "Hata"); return; }
             var d = res.data;
             document.getElementById("bulk-result").textContent =
-              d.count_added + " eklendi, " + d.count_skipped + " zaten vardı.";
+              d.count_expanded + " domain işlendi → " + d.count_added + " eklendi, " + d.count_skipped + " zaten vardı.";
             document.getElementById("bulk-domains").value = "";
             refreshAll();
             toast("Toplu ekleme tamam!");
@@ -1000,23 +1182,56 @@
         applyTheme(next);
       };
 
-      document.getElementById("btn-open-settings").onclick = function() {
-        loadSettings();
-        document.getElementById("settings-modal").classList.add("open");
-      };
       document.getElementById("settings-close").onclick = function() {
         document.getElementById("settings-modal").classList.remove("open");
       };
       document.getElementById("settings-modal").onclick = function(e) {
         if (e.target === this) this.classList.remove("open");
       };
+      document.getElementById("new-user-role").addEventListener("change", function() {
+        applyRoleToPermGrid(this.value, "new-user-perms");
+      });
+      document.getElementById("edit-user-role").addEventListener("change", function() {
+        applyRoleToPermGrid(this.value, "edit-user-perms");
+      });
+      document.getElementById("edit-user-close").onclick = function() {
+        document.getElementById("edit-user-modal").classList.remove("open");
+      };
+      document.getElementById("edit-user-modal").onclick = function(e) {
+        if (e.target === this) this.classList.remove("open");
+      };
+      document.getElementById("btn-save-user-perms").onclick = function() {
+        var uid = document.getElementById("edit-user-id").value;
+        var role = document.getElementById("edit-user-role").value;
+        var perms = role === "custom" ? getCheckedPermissions("edit-user-perms") : (roleTemplates[role] ? roleTemplates[role].permissions : []);
+        var body = { role: role, permissions: perms };
+        var np = document.getElementById("edit-user-pass").value;
+        if (np) body.password = np;
+        fetch(API+"/api/admin/users/"+uid, {
+          method:"PUT", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify(body)
+        }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+          .then(function(res) {
+            if (!res.ok) { alert(res.data.error); return; }
+            if (res.data.user && res.data.user.username === document.getElementById("user-role-badge").textContent) {}
+            loadMe(function(){ applyPermissions(); refreshAll(); });
+            loadSettings();
+            document.getElementById("edit-user-modal").classList.remove("open");
+            toast("Yetkiler güncellendi!");
+          });
+      };
+
       document.getElementById("add-user-form").addEventListener("submit", function(e) {
         e.preventDefault();
+        var role = document.getElementById("new-user-role").value;
+        var perms = role === "custom" ? getCheckedPermissions("new-user-perms") : (roleTemplates[role] ? roleTemplates[role].permissions : []);
         fetch(API+"/api/admin/users", {
           method:"POST", headers:{"Content-Type":"application/json"},
           body: JSON.stringify({
             username: document.getElementById("new-user-name").value.trim(),
-            password: document.getElementById("new-user-pass").value
+            password: document.getElementById("new-user-pass").value,
+            role: role,
+            permissions: perms
           })
         }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
           .then(function(res) {
@@ -1027,6 +1242,12 @@
             toast("Admin eklendi!");
           });
       });
+
+      document.getElementById("btn-open-settings").onclick = function() {
+        if (!hasAnyPerm("admin.users,module.settings")) { toast("Yetkiniz yok"); return; }
+        loadSettings();
+        document.getElementById("settings-modal").classList.add("open");
+      };
 
       ["search-input","filter-domain","filter-ref","filter-device","filter-status"].forEach(function(id){
         document.getElementById(id).addEventListener("input", applyFilters);
@@ -1067,8 +1288,10 @@
       initColumnDrag();
       applyTableColOrder("online-table");
       applyTableColOrder("sessions-table");
-      refreshAll();
-      setInterval(refreshAll, 3000);
+      loadMe(function() {
+        refreshAll();
+        setInterval(refreshAll, 3000);
+      });
       setInterval(tickTimes, 1000);
     })();
   </script>
