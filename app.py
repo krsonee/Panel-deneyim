@@ -68,11 +68,36 @@ app.secret_key = SECRET_KEY
 def init_db():
     db_init_schema()
     migrate_domains()
+    ensure_primary_admin()
     seed_admin_users()
 
 
+def ensure_primary_admin():
+    """Ana admin hesabını env'deki kullanıcı adı/şifre ile senkron tutar (Render kurtarma)."""
+    if not ADMIN_USERNAME or not ADMIN_PASSWORD:
+        return
+    now = iso(utcnow())
+    ph = generate_password_hash(ADMIN_PASSWORD, method="pbkdf2:sha256")
+    perms = json.dumps(["*"])
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT id FROM admin_users WHERE username = ?", (ADMIN_USERNAME,))
+        if row:
+            execute(
+                conn,
+                "UPDATE admin_users SET password_hash = ?, role = ?, permissions = ? WHERE username = ?",
+                (ph, "superadmin", perms, ADMIN_USERNAME),
+            )
+        else:
+            execute(
+                conn,
+                "INSERT INTO admin_users (username, password_hash, role, permissions, created_at) VALUES (?, ?, ?, ?, ?)",
+                (ADMIN_USERNAME, ph, "superadmin", perms, now),
+            )
+        conn.commit()
+
+
 def seed_admin_users():
-    users = {ADMIN_USERNAME: ADMIN_PASSWORD}
+    users = {}
     raw = os.environ.get("ADMIN_USERS", "").strip()
     if raw:
         try:
@@ -82,7 +107,7 @@ def seed_admin_users():
     now = iso(utcnow())
     with closing(get_db()) as conn:
         for username, password in users.items():
-            if not username or not password:
+            if not username or not password or username == ADMIN_USERNAME:
                 continue
             row = fetchone(conn, "SELECT id FROM admin_users WHERE username = ?", (username,))
             if row:
@@ -98,8 +123,10 @@ def seed_admin_users():
 def admin_user_to_dict(row):
     if not row:
         return None
-    role = row["role"] if "role" in row.keys() else "custom"
+    role = row["role"] if "role" in row.keys() else "superadmin"
     perms = normalize_permissions(row["permissions"] if "permissions" in row.keys() else '["*"]')
+    if role == "superadmin" and not perms:
+        perms = ["*"]
     return {
         "id": row["id"],
         "username": row["username"],

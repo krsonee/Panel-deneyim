@@ -213,10 +213,11 @@ def migrate_admin_users(conn):
         execute(conn, "ALTER TABLE admin_users ADD COLUMN permissions TEXT NOT NULL DEFAULT '[\"*\"]'")
     conn.commit()
 
-    rows = fetchall(conn, "SELECT id, role, permissions FROM admin_users")
+    rows = fetchall(conn, "SELECT id, username, role, permissions FROM admin_users")
     for row in rows:
+        role = row.get("role") if isinstance(row, dict) else row["role"]
         perms = normalize_permissions(row.get("permissions") if isinstance(row, dict) else row["permissions"])
-        if not perms:
+        if not perms or (role == "superadmin" and "*" not in perms):
             execute(
                 conn,
                 "UPDATE admin_users SET role = ?, permissions = ? WHERE id = ?",
