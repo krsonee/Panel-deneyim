@@ -1,4 +1,4 @@
-# Render Blueprint
+# Render Blueprint — https://render.com/docs/blueprint-spec
 services:
   - type: web
     name: makropanel
@@ -6,6 +6,7 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.0"
@@ -17,8 +18,12 @@ services:
         value: admin
       - key: ADMIN_PASSWORD
         value: makro123
+      - key: DATABASE_URL
+        fromDatabase:
+          name: makropanel-db
+          property: connectionString
 
-# PostgreSQL (Render Dashboard → New PostgreSQL → DATABASE_URL otomatik bağlanır)
-# databases:
-#   - name: makropanel-db
-#     plan: free
+databases:
+  - name: makropanel-db
+    plan: basic-256mb
+    # basic-256mb ~$6/ay — veriler deploy sonrası da kalır (SQLite geçici diskte silinirdi)
