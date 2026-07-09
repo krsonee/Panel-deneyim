@@ -134,7 +134,11 @@ def admin_user_to_dict(row):
         return None
     role = row["role"] if "role" in row.keys() else "superadmin"
     perms = normalize_permissions(row["permissions"] if "permissions" in row.keys() else '["*"]')
-    if role == "superadmin" and not perms:
+    username = row["username"] if "username" in row.keys() else ""
+    if normalize_username(username) == normalize_username(ADMIN_USERNAME):
+        role = "superadmin"
+        perms = ["*"]
+    elif role == "superadmin" or not perms:
         perms = ["*"]
     return {
         "id": row["id"],
@@ -165,10 +169,17 @@ def get_session_permissions():
 
 
 def login_admin_user(user):
+    role = user.get("role", "custom")
+    perms = normalize_permissions(user.get("permissions", []))
+    if normalize_username(user.get("username")) == normalize_username(ADMIN_USERNAME):
+        role = "superadmin"
+        perms = ["*"]
+    elif role == "superadmin":
+        perms = ["*"]
     session["admin_logged_in"] = True
     session["admin_username"] = user["username"]
-    session["admin_role"] = user.get("role", "custom")
-    session["admin_permissions"] = user.get("permissions", [])
+    session["admin_role"] = role
+    session["admin_permissions"] = perms
 
 
 def verify_admin(username, password):
@@ -640,8 +651,10 @@ def index():
 @app.route("/admin/login", methods=["GET", "POST"])
 def login_page():
     if session.get("admin_logged_in"):
-        return redirect(url_for("admin_page"))
-    error = None
+        if has_permission(get_session_permissions(), "module.tracking"):
+            return redirect(url_for("admin_page"))
+        session.clear()
+    error = request.args.get("error")
     if request.method == "POST":
         username = normalize_username(request.form.get("username", ""))
         password = request.form.get("password", "")
@@ -649,8 +662,13 @@ def login_page():
         if user:
             login_admin_user(user)
             session.permanent = True
-            return redirect(url_for("admin_page"))
-        error = "Kullanıcı adı veya şifre hatalı."
+            if not has_permission(get_session_permissions(), "module.tracking"):
+                session.clear()
+                error = "Hesabınızda Link Takip yetkisi yok. Yöneticinize başvurun."
+            else:
+                return redirect(url_for("admin_page"))
+        else:
+            error = "Kullanıcı adı veya şifre hatalı."
     return render_template("login.html", error=error)
 
 
@@ -664,10 +682,8 @@ def logout():
 @login_required
 def admin_page():
     if not has_permission(get_session_permissions(), "module.tracking"):
-        return render_template(
-            "login.html",
-            error="Link Takip modülüne erişim yetkiniz yok. Yöneticinize başvurun.",
-        ), 403
+        session.clear()
+        return redirect(url_for("login_page", error="Link Takip modülüne erişim yetkiniz yok. Yöneticinize başvurun."))
     return render_template("admin.html", server_url=get_server_base_url())
 
 
