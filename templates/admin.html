@@ -26,6 +26,8 @@
     [data-theme="light"] .tag { color: #4338ca; }
     [data-theme="light"] th.col-dragging { color: #4338ca; }
     [data-theme="light"] .nav-item.active { color: #4338ca; }
+    [data-theme="light"] .perm-chip:has(input:checked) { color: #4338ca; }
+    [data-theme="light"] .user-avatar { color: #4338ca; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
     .app { display: flex; min-height: 100vh; }
@@ -213,11 +215,173 @@
     .settings-list { font-size: 0.8rem; line-height: 1.6; }
     .settings-list dt { color: var(--muted); font-size: 0.68rem; text-transform: uppercase; margin-top: 0.75rem; }
     .settings-list dd { margin: 0.15rem 0 0; }
-    .user-row { display: flex; align-items: center; justify-content: space-between; padding: 0.45rem 0; border-bottom: 1px solid var(--border); font-size: 0.78rem; }
-    .perm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem 0.75rem; margin-top: 0.5rem; max-height: 220px; overflow-y: auto; }
-    .perm-item { display: flex; align-items: flex-start; gap: 0.35rem; font-size: 0.72rem; }
-    .perm-item input { width: auto; margin-top: 0.15rem; }
+
+    .modal-settings { max-width: 640px !important; }
+    .modal-settings .modal-head h3 { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.02em; }
+    .modal-settings .modal-body { padding: 0; }
+    .settings-section { padding: 1.15rem 1.35rem; border-bottom: 1px solid var(--border); }
+    .settings-section:last-child { border-bottom: none; }
+    .settings-section-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+    .settings-section-head h4 {
+      font-size: 0.82rem; font-weight: 700; letter-spacing: -0.01em;
+      display: flex; align-items: center; gap: 0.45rem;
+    }
+    .settings-section-head h4 .sec-icon {
+      width: 1.65rem; height: 1.65rem; border-radius: 8px; display: inline-flex;
+      align-items: center; justify-content: center; font-size: 0.85rem;
+      background: var(--accent-soft); border: 1px solid rgba(99,102,241,0.25);
+    }
+    .settings-section-head .sec-count {
+      font-size: 0.68rem; color: var(--muted); font-weight: 500;
+      padding: 0.2rem 0.55rem; border-radius: 999px; background: var(--surface-2);
+      border: 1px solid var(--border);
+    }
+
+    .info-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.55rem;
+    }
+    @media (max-width: 520px) { .info-grid { grid-template-columns: 1fr; } }
+    .info-card {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+      padding: 0.75rem 0.85rem; min-height: 68px;
+    }
+    .info-card .info-label {
+      font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--muted); margin-bottom: 0.3rem;
+    }
+    .info-card .info-val { font-size: 0.82rem; font-weight: 600; line-height: 1.35; word-break: break-word; }
+    .info-card .info-val.ok { color: var(--green); }
+    .info-card .info-val.muted-sm { font-size: 0.72rem; font-weight: 500; color: var(--muted); }
+
+    .user-list { display: flex; flex-direction: column; gap: 0.55rem; }
+    .user-card {
+      display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+      padding: 0.75rem 0.85rem; background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 12px; transition: border-color 0.15s, background 0.15s;
+    }
+    .user-card:hover { border-color: rgba(99,102,241,0.35); background: rgba(99,102,241,0.04); }
+    .user-card-main { display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
+    .user-avatar {
+      width: 2.1rem; height: 2.1rem; border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem; font-weight: 800; text-transform: uppercase;
+      background: linear-gradient(135deg, rgba(99,102,241,0.35), rgba(99,102,241,0.12));
+      border: 1px solid rgba(99,102,241,0.35); color: #c7d2fe;
+    }
+    .user-card-name { font-size: 0.88rem; font-weight: 600; line-height: 1.2; }
+    .user-card-meta { font-size: 0.68rem; color: var(--muted); margin-top: 0.12rem; }
+    .user-card-actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
+    .btn-ghost {
+      padding: 0.38rem 0.65rem; border-radius: 8px; border: 1px solid var(--border);
+      background: transparent; color: var(--text); font-size: 0.72rem; font-weight: 600; cursor: pointer;
+    }
+    .btn-ghost:hover { background: var(--hover-bg); border-color: rgba(99,102,241,0.35); }
+    .btn-ghost.danger { color: var(--rose); border-color: rgba(244,63,94,0.25); }
+    .btn-ghost.danger:hover { background: rgba(244,63,94,0.08); }
+
+    .add-user-panel {
+      background: linear-gradient(180deg, rgba(99,102,241,0.06), transparent 120px);
+      border: 1px solid rgba(99,102,241,0.2); border-radius: 14px; padding: 1rem 1.05rem;
+    }
+    .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; margin-bottom: 0.85rem; }
+    @media (max-width: 520px) { .form-grid-2 { grid-template-columns: 1fr; } }
+    .field-label {
+      display: block; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.04em;
+      color: var(--muted); margin-bottom: 0.35rem;
+    }
+    .field-input {
+      width: 100%; padding: 0.62rem 0.8rem; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 0.85rem;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .field-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+    .field-input::placeholder { color: var(--muted); opacity: 0.7; }
+
+    .role-field { margin-bottom: 0.85rem; }
+    .role-select-wrap { position: relative; }
+    .role-select-wrap select {
+      width: 100%; padding: 0.62rem 2rem 0.62rem 0.8rem; appearance: none;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      color: var(--text); font-size: 0.85rem; cursor: pointer;
+    }
+    .role-select-wrap select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+    .role-select-wrap::after {
+      content: "▾"; position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%);
+      color: var(--muted); pointer-events: none; font-size: 0.85rem;
+    }
+    .role-desc {
+      margin-top: 0.45rem; font-size: 0.72rem; color: var(--muted); line-height: 1.45;
+      padding: 0.5rem 0.65rem; background: var(--surface-2); border-radius: 8px;
+      border-left: 3px solid var(--accent);
+    }
+
+    .perm-panel { margin-top: 0.25rem; }
+    .perm-panel-head {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.55rem;
+    }
+    .perm-panel-head span { font-size: 0.68rem; font-weight: 600; color: var(--muted); letter-spacing: 0.04em; }
+    .perm-panel-head .perm-hint { font-size: 0.65rem; color: var(--muted); font-weight: 500; }
+    .perm-groups { display: flex; flex-direction: column; gap: 0.55rem; max-height: 240px; overflow-y: auto; padding-right: 0.15rem; }
+    .perm-groups::-webkit-scrollbar { width: 5px; }
+    .perm-groups::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+    .perm-group {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px;
+      padding: 0.55rem 0.65rem 0.65rem;
+    }
+    .perm-group-title {
+      font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); margin-bottom: 0.45rem; padding-bottom: 0.35rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .perm-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .perm-chip {
+      position: relative; display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.38rem 0.62rem; border-radius: 999px; font-size: 0.7rem; font-weight: 500;
+      border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+      cursor: pointer; transition: all 0.15s; user-select: none;
+    }
+    .perm-chip input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+    .perm-chip .chip-dot {
+      width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--border);
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+    .perm-chip:has(input:checked) {
+      border-color: rgba(99,102,241,0.45); background: var(--accent-soft); color: #c7d2fe;
+    }
+    .perm-chip:has(input:checked) .chip-dot { background: var(--accent); box-shadow: 0 0 0 2px rgba(99,102,241,0.25); }
+    .perm-chip:has(input:disabled) { opacity: 0.55; cursor: not-allowed; }
+    .perm-chip.is-locked:has(input:checked) { opacity: 0.75; }
+
+    .btn-add-user {
+      width: 100%; margin-top: 0.85rem; padding: 0.72rem 1rem; border: none; border-radius: 10px;
+      background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff;
+      font-size: 0.85rem; font-weight: 700; cursor: pointer;
+      box-shadow: 0 4px 14px rgba(99,102,241,0.35); transition: transform 0.12s, filter 0.12s;
+    }
+    .btn-add-user:hover { filter: brightness(1.06); transform: translateY(-1px); }
+
+    .settings-tips {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
+    }
+    @media (max-width: 520px) { .settings-tips { grid-template-columns: 1fr; } }
+    .tip-card {
+      font-size: 0.68rem; line-height: 1.45; color: var(--muted);
+      padding: 0.65rem 0.75rem; border-radius: 10px;
+      background: var(--surface-2); border: 1px dashed var(--border);
+    }
+    .tip-card strong { display: block; font-size: 0.62rem; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--text); margin-bottom: 0.25rem; opacity: 0.85; }
+
     .role-badge { display: inline-block; font-size: 0.65rem; padding: 0.15rem 0.45rem; border-radius: 999px; background: var(--accent-soft); color: #a5b4fc; margin-left: 0.35rem; }
+    .role-pill {
+      display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.65rem; font-weight: 600;
+      padding: 0.18rem 0.5rem; border-radius: 999px; background: var(--accent-soft);
+      color: #a5b4fc; border: 1px solid rgba(99,102,241,0.25);
+    }
+    .edit-user-form .btn-add-user { margin-top: 0.5rem; }
     [data-perm-hidden="1"] { display: none !important; }
 
     @media (max-width: 768px) {
@@ -436,51 +600,106 @@
 
   <!-- Settings Modal -->
   <div class="modal-overlay" id="settings-modal">
-    <div class="modal" style="max-width:560px;">
+    <div class="modal modal-settings">
       <div class="modal-head">
-        <h3>Ayarlar</h3>
+        <h3>⚙️ Ayarlar</h3>
         <button class="modal-close" id="settings-close">&times;</button>
       </div>
       <div class="modal-body">
-        <dl class="settings-list" id="settings-info"></dl>
-        <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0;">
-        <h4 style="font-size:0.85rem;margin-bottom:0.5rem;" data-perm="admin.users">Admin Kullanıcıları</h4>
-        <div id="admin-users-list" data-perm="admin.users"></div>
-        <form id="add-user-form" style="margin-top:0.75rem;" data-perm="admin.users">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.5rem;">
-            <input id="new-user-name" placeholder="Kullanıcı adı" required>
-            <input id="new-user-pass" type="password" placeholder="Şifre (min 6)" required>
+        <section class="settings-section">
+          <div class="settings-section-head">
+            <h4><span class="sec-icon">📡</span> Sistem Bilgisi</h4>
           </div>
-          <label for="new-user-role">Rol Şablonu</label>
-          <select id="new-user-role" style="margin-bottom:0.5rem;"></select>
-          <label>Yetkiler (özel rol için işaretle)</label>
-          <div class="perm-grid" id="new-user-perms"></div>
-          <button type="submit" class="btn btn-primary" style="margin-top:0.6rem;">Kullanıcı Ekle</button>
-        </form>
-        <p class="muted" style="font-size:0.68rem;margin-top:0.75rem;">
-          Telegram: Render → Environment → TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID<br>
-          Özel domain: PUBLIC_BASE_URL=https://panel.makrogir.com
-        </p>
+          <div class="info-grid" id="settings-info"></div>
+        </section>
+
+        <section class="settings-section" data-perm="admin.users">
+          <div class="settings-section-head">
+            <h4><span class="sec-icon">👥</span> Admin Kullanıcıları</h4>
+            <span class="sec-count" id="admin-users-count">0 kullanıcı</span>
+          </div>
+          <div class="user-list" id="admin-users-list"></div>
+        </section>
+
+        <section class="settings-section" data-perm="admin.users">
+          <div class="settings-section-head">
+            <h4><span class="sec-icon">➕</span> Yeni Kullanıcı</h4>
+          </div>
+          <form id="add-user-form" class="add-user-panel">
+            <div class="form-grid-2">
+              <div>
+                <label class="field-label" for="new-user-name">Kullanıcı adı</label>
+                <input class="field-input" id="new-user-name" placeholder="ornek_kullanici" required>
+              </div>
+              <div>
+                <label class="field-label" for="new-user-pass">Şifre</label>
+                <input class="field-input" id="new-user-pass" type="password" placeholder="En az 6 karakter" required>
+              </div>
+            </div>
+            <div class="role-field">
+              <label class="field-label" for="new-user-role">Rol şablonu</label>
+              <div class="role-select-wrap">
+                <select id="new-user-role"></select>
+              </div>
+              <div class="role-desc" id="new-user-role-desc"></div>
+            </div>
+            <div class="perm-panel">
+              <div class="perm-panel-head">
+                <span>Yetkiler</span>
+                <span class="perm-hint">Özel rol seçince düzenlenebilir</span>
+              </div>
+              <div class="perm-groups" id="new-user-perms"></div>
+            </div>
+            <button type="submit" class="btn-add-user">Kullanıcı Ekle</button>
+          </form>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-tips">
+            <div class="tip-card">
+              <strong>Telegram Bildirimi</strong>
+              Render → Environment → TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+            </div>
+            <div class="tip-card">
+              <strong>Özel Domain</strong>
+              PUBLIC_BASE_URL=https://panel.makrogir.com
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </div>
 
   <!-- Edit User Modal -->
   <div class="modal-overlay" id="edit-user-modal">
-    <div class="modal" style="max-width:520px;">
+    <div class="modal modal-settings" style="max-width:560px;">
       <div class="modal-head">
         <h3 id="edit-user-title">Kullanıcı Yetkileri</h3>
         <button class="modal-close" id="edit-user-close">&times;</button>
       </div>
       <div class="modal-body">
-        <input type="hidden" id="edit-user-id">
-        <label for="edit-user-role">Rol Şablonu</label>
-        <select id="edit-user-role" style="margin-bottom:0.5rem;"></select>
-        <label>Yeni şifre (opsiyonel)</label>
-        <input id="edit-user-pass" type="password" placeholder="Değiştirmek için yaz" style="margin-bottom:0.5rem;">
-        <label>Yetkiler</label>
-        <div class="perm-grid" id="edit-user-perms"></div>
-        <button type="button" class="btn btn-primary" id="btn-save-user-perms" style="margin-top:0.75rem;">Kaydet</button>
+        <div class="settings-section edit-user-form" style="border:none;padding-top:1rem;">
+          <input type="hidden" id="edit-user-id">
+          <div class="role-field">
+            <label class="field-label" for="edit-user-role">Rol şablonu</label>
+            <div class="role-select-wrap">
+              <select id="edit-user-role"></select>
+            </div>
+            <div class="role-desc" id="edit-user-role-desc"></div>
+          </div>
+          <div style="margin-bottom:0.85rem;">
+            <label class="field-label" for="edit-user-pass">Yeni şifre (opsiyonel)</label>
+            <input class="field-input" id="edit-user-pass" type="password" placeholder="Değiştirmek için yaz">
+          </div>
+          <div class="perm-panel">
+            <div class="perm-panel-head">
+              <span>Yetkiler</span>
+              <span class="perm-hint">Özel rol seçince düzenlenebilir</span>
+            </div>
+            <div class="perm-groups" id="edit-user-perms"></div>
+          </div>
+          <button type="button" class="btn-add-user" id="btn-save-user-perms">Değişiklikleri Kaydet</button>
+        </div>
       </div>
     </div>
   </div>
@@ -553,11 +772,12 @@
         });
         var html = "";
         Object.keys(groups).forEach(function(g) {
-          html += '<div style="grid-column:1/-1;font-size:0.65rem;color:var(--muted);margin-top:0.35rem;">'+esc(g)+'</div>';
+          html += '<div class="perm-group"><div class="perm-group-title">'+esc(g)+'</div><div class="perm-chips">';
           groups[g].forEach(function(p) {
             var checked = sel.indexOf("*") >= 0 || sel.indexOf(p.key) >= 0 ? " checked" : "";
-            html += '<label class="perm-item"><input type="checkbox" class="perm-cb" data-perm-key="'+esc(p.key)+'"'+checked+'><span>'+esc(p.label)+'</span></label>';
+            html += '<label class="perm-chip"><input type="checkbox" class="perm-cb" data-perm-key="'+esc(p.key)+'"'+checked+'><span class="chip-dot"></span><span>'+esc(p.label)+'</span></label>';
           });
+          html += '</div></div>';
         });
         box.innerHTML = html;
       }
@@ -570,13 +790,21 @@
         return keys;
       }
 
+      function updateRoleDesc(selectId, descId) {
+        var sel = document.getElementById(selectId);
+        var desc = document.getElementById(descId);
+        if (!sel || !desc) return;
+        var t = roleTemplates[sel.value];
+        desc.textContent = t ? (t.desc || "") : "";
+      }
+
       function fillRoleSelect(selectId, selectedRole) {
         var sel = document.getElementById(selectId);
         if (!sel) return;
         sel.innerHTML = "";
         Object.keys(roleTemplates).forEach(function(key) {
           var t = roleTemplates[key];
-          sel.innerHTML += '<option value="'+esc(key)+'">'+esc(t.label)+' — '+esc(t.desc||"")+'</option>';
+          sel.innerHTML += '<option value="'+esc(key)+'">'+esc(t.label)+'</option>';
         });
         if (selectedRole) sel.value = selectedRole;
       }
@@ -585,10 +813,14 @@
         var t = roleTemplates[roleKey];
         if (!t) return;
         var perms = t.permissions || [];
-        document.querySelectorAll("#"+containerId+" .perm-cb").forEach(function(cb) {
+        var locked = roleKey !== "custom" && roleKey !== "superadmin";
+        document.querySelectorAll("#"+containerId+" .perm-chip").forEach(function(chip) {
+          var cb = chip.querySelector(".perm-cb");
+          if (!cb) return;
           var k = cb.getAttribute("data-perm-key");
           cb.checked = perms.indexOf("*") >= 0 || perms.indexOf(k) >= 0;
-          cb.disabled = roleKey !== "custom" && roleKey !== "superadmin";
+          cb.disabled = locked;
+          chip.classList.toggle("is-locked", locked);
         });
       }
 
@@ -608,6 +840,8 @@
           renderPermissionGrid("new-user-perms", roleTemplates.operator ? roleTemplates.operator.permissions : []);
           renderPermissionGrid("edit-user-perms", []);
           applyRoleToPermGrid(document.getElementById("new-user-role").value, "new-user-perms");
+          updateRoleDesc("new-user-role", "new-user-role-desc");
+          updateRoleDesc("edit-user-role", "edit-user-role-desc");
           if (callback) callback();
         });
       }
@@ -669,30 +903,41 @@
         if (!hasAnyPerm("admin.users,module.settings")) return;
         fetch(API+"/api/settings").then(function(r){return r.json();}).then(function(s) {
           document.getElementById("settings-info").innerHTML =
-            '<dt>Panel URL</dt><dd>'+esc(s.public_base_url)+'</dd>'+
-            '<dt>Veritabanı</dt><dd>'+(s.database==="postgresql"?"PostgreSQL ✅":"SQLite (yerel)")+'</dd>'+
-            '<dt>Telegram Bildirimi</dt><dd>'+(s.telegram_enabled?"Aktif ✅":"Kapalı — env ayarla")+'</dd>'+
-            '<dt>Giriş Yapan</dt><dd>'+esc(s.current_user||"—")+' ('+esc(s.current_role||"")+')</dd>'+
-            '<dt>Özel Domain</dt><dd class="muted" style="font-size:0.72rem;">'+esc(s.custom_domain_hint)+'</dd>';
+            '<div class="info-card"><div class="info-label">Panel URL</div><div class="info-val">'+esc(s.public_base_url)+'</div></div>'+
+            '<div class="info-card"><div class="info-label">Veritabanı</div><div class="info-val '+(s.database==="postgresql"?"ok":"")+'">'+(s.database==="postgresql"?"PostgreSQL":"SQLite (yerel)")+'</div></div>'+
+            '<div class="info-card"><div class="info-label">Telegram</div><div class="info-val '+(s.telegram_enabled?"ok":"")+'">'+(s.telegram_enabled?"Aktif":"Kapalı")+'</div></div>'+
+            '<div class="info-card"><div class="info-label">Giriş yapan</div><div class="info-val">'+esc(s.current_user||"—")+' <span class="role-pill">'+esc(s.current_role||"")+'</span></div></div>'+
+            '<div class="info-card" style="grid-column:1/-1;"><div class="info-label">Özel domain</div><div class="info-val muted-sm">'+esc(s.custom_domain_hint)+'</div></div>';
         });
         if (!hasPerm("admin.users")) return;
         fetch(API+"/api/admin/users").then(function(r){return r.json();}).then(function(d) {
           var box = document.getElementById("admin-users-list");
+          var countEl = document.getElementById("admin-users-count");
           var users = d.users || [];
+          if (countEl) countEl.textContent = users.length + " kullanıcı";
           box.innerHTML = users.length ? users.map(function(u) {
-            return '<div class="user-row"><span><span class="mono">'+esc(u.username)+'</span> <span class="muted" style="font-size:0.65rem;">'+esc(u.role_label||u.role)+'</span></span>'+
-              '<span><button class="btn btn-sm" data-edit-user="'+u.id+'" data-user="'+esc(u.username)+'" data-role="'+esc(u.role)+'">Yetki</button> '+
-              (users.length>1?'<button class="btn btn-sm btn-danger" data-del-user="'+u.id+'">Sil</button>':'')+'</span></div>';
-          }).join("") : '<p class="muted">Kullanıcı yok</p>';
+            var initial = (u.username || "?").charAt(0).toUpperCase();
+            return '<div class="user-card">'+
+              '<div class="user-card-main">'+
+                '<div class="user-avatar">'+esc(initial)+'</div>'+
+                '<div><div class="user-card-name">'+esc(u.username)+'</div>'+
+                '<div class="user-card-meta"><span class="role-pill">'+esc(u.role_label||u.role)+'</span></div></div>'+
+              '</div>'+
+              '<div class="user-card-actions">'+
+                '<button type="button" class="btn-ghost" data-edit-user="'+u.id+'">Yetki</button>'+
+                (users.length>1?'<button type="button" class="btn-ghost danger" data-del-user="'+u.id+'">Sil</button>':'')+
+              '</div></div>';
+          }).join("") : '<p class="muted" style="padding:0.5rem 0;">Henüz kullanıcı yok</p>';
           box.querySelectorAll("[data-edit-user]").forEach(function(btn) {
             btn.onclick = function() {
               var uid = btn.getAttribute("data-edit-user");
               var user = users.find(function(x){ return String(x.id) === String(uid); });
               if (!user) return;
               document.getElementById("edit-user-id").value = uid;
-              document.getElementById("edit-user-title").textContent = "Yetki — "+user.username;
+              document.getElementById("edit-user-title").textContent = user.username + " — Yetkiler";
               document.getElementById("edit-user-pass").value = "";
               fillRoleSelect("edit-user-role", user.role);
+              updateRoleDesc("edit-user-role", "edit-user-role-desc");
               renderPermissionGrid("edit-user-perms", user.permissions || []);
               applyRoleToPermGrid(user.role, "edit-user-perms");
               document.getElementById("edit-user-modal").classList.add("open");
@@ -1190,9 +1435,11 @@
       };
       document.getElementById("new-user-role").addEventListener("change", function() {
         applyRoleToPermGrid(this.value, "new-user-perms");
+        updateRoleDesc("new-user-role", "new-user-role-desc");
       });
       document.getElementById("edit-user-role").addEventListener("change", function() {
         applyRoleToPermGrid(this.value, "edit-user-perms");
+        updateRoleDesc("edit-user-role", "edit-user-role-desc");
       });
       document.getElementById("edit-user-close").onclick = function() {
         document.getElementById("edit-user-modal").classList.remove("open");
