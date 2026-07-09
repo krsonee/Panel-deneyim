@@ -125,6 +125,11 @@
     }
     .link-label { font-weight: 600; color: var(--text); }
     .link-label-empty { color: var(--muted); font-style: italic; font-size: 0.75rem; }
+    .links-table-foot {
+      display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+      padding: 0.65rem 1.15rem; border-top: 1px solid var(--border); background: var(--surface-2);
+    }
+    .links-table-foot .links-count { font-size: 0.72rem; color: var(--muted); }
 
     label { display: block; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.28rem; }
     input, select {
@@ -554,6 +559,10 @@
               <tbody id="links-table"><tr><td colspan="5" class="empty">Henüz domain yok</td></tr></tbody>
             </table>
           </div>
+          <div class="links-table-foot" id="links-table-foot" style="display:none;">
+            <button type="button" class="btn btn-sm" id="btn-links-toggle">Tümünü göster</button>
+            <span class="links-count" id="links-table-count"></span>
+          </div>
         </section>
 
         <section class="card" data-perm="tracking.players">
@@ -746,6 +755,9 @@
       var charts = { domain: null, affiliate: null, games: null };
       var COLORS = ["#6366f1","#22c55e","#f59e0b","#f43f5e","#06b6d4","#a855f7"];
       var currentPeriod = "all";
+      var LINKS_PAGE_SIZE = 5;
+      var linksExpanded = false;
+      var cachedLinks = [];
       var myPermissions = [];
       var myRole = "";
       var roleTemplates = {};
@@ -909,10 +921,28 @@
       }
 
       function renderLinks(links, trackingSnippet) {
-        var tbody = document.getElementById("links-table");
+        cachedLinks = links || [];
         if (trackingSnippet) updateTrackingSnippet(trackingSnippet);
-        if (!links.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz domain yok</td></tr>'; return; }
-        tbody.innerHTML = links.map(function(l) {
+        renderLinksRows();
+      }
+
+      function renderLinksRows() {
+        var tbody = document.getElementById("links-table");
+        var foot = document.getElementById("links-table-foot");
+        var btn = document.getElementById("btn-links-toggle");
+        var countEl = document.getElementById("links-table-count");
+        var links = cachedLinks;
+
+        if (!links.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz domain yok</td></tr>';
+          if (foot) foot.style.display = "none";
+          return;
+        }
+
+        var showAll = linksExpanded || links.length <= LINKS_PAGE_SIZE;
+        var visible = showAll ? links : links.slice(0, LINKS_PAGE_SIZE);
+
+        tbody.innerHTML = visible.map(function(l) {
           var ref = l.ref_code ? '<span class="tag">'+esc(l.ref_code)+'</span>' : '<span class="tag">Tüm site</span>';
           var on = l.online_count>0 ? '<span class="tag online">'+l.online_count+'</span>' : '<span class="tag offline">0</span>';
           var nameCell = l.label
@@ -921,6 +951,22 @@
           return '<tr><td>'+nameCell+'</td><td><strong>'+esc(l.domain)+'</strong></td><td>'+ref+'</td><td>'+on+'</td>'+
             '<td><button class="btn btn-sm btn-danger" onclick="deleteLink('+l.id+')">Sil</button></td></tr>';
         }).join("");
+
+        if (!foot || !btn) return;
+        if (links.length <= LINKS_PAGE_SIZE) {
+          foot.style.display = "none";
+          return;
+        }
+        foot.style.display = "flex";
+        var hidden = links.length - LINKS_PAGE_SIZE;
+        btn.textContent = linksExpanded
+          ? "▲ Daha az göster"
+          : "▼ Tümünü göster (" + hidden + " domain daha)";
+        if (countEl) {
+          countEl.textContent = linksExpanded
+            ? links.length + " domain listeleniyor"
+            : "İlk " + LINKS_PAGE_SIZE + " / " + links.length + " domain";
+        }
       }
 
       function loadSettings() {
@@ -1358,6 +1404,11 @@
         }
         document.getElementById("poll-status").textContent = "Son güncelleme: "+new Date().toLocaleTimeString("tr-TR");
       }
+
+      document.getElementById("btn-links-toggle").onclick = function() {
+        linksExpanded = !linksExpanded;
+        renderLinksRows();
+      };
 
       document.getElementById("add-link-form").addEventListener("submit", function(e) {
         e.preventDefault();
