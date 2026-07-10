@@ -5,7 +5,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
-from permissions import normalize_permissions
+from permissions import normalize_permissions, ensure_module_parents
 
 APP_DIR = Path(__file__).resolve().parent
 DB_PATH = APP_DIR / "analytics.db"
@@ -671,12 +671,19 @@ def migrate_admin_users(conn):
     rows = fetchall(conn, "SELECT id, username, role, permissions FROM admin_users")
     for row in rows:
         role = row.get("role") if isinstance(row, dict) else row["role"]
-        perms = normalize_permissions(row.get("permissions") if isinstance(row, dict) else row["permissions"])
+        raw_perms = row.get("permissions") if isinstance(row, dict) else row["permissions"]
+        perms = ensure_module_parents(normalize_permissions(raw_perms))
         if not perms or (role == "superadmin" and "*" not in perms):
             execute(
                 conn,
                 "UPDATE admin_users SET role = ?, permissions = ? WHERE id = ?",
                 ("superadmin", json.dumps(["*"]), row["id"]),
+            )
+        elif json.dumps(perms) != json.dumps(normalize_permissions(raw_perms)):
+            execute(
+                conn,
+                "UPDATE admin_users SET permissions = ? WHERE id = ?",
+                (json.dumps(perms), row["id"]),
             )
     conn.commit()
 

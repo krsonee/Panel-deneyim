@@ -112,13 +112,27 @@ def normalize_permissions(raw):
     return cleaned
 
 
+def ensure_module_parents(permissions):
+    """Alt yetki verildiyse ilgili modül anahtarını otomatik ekle (giriş engelini önler)."""
+    perms = normalize_permissions(permissions)
+    if "*" in perms:
+        return perms
+    if any(p.startswith("tracking.") for p in perms) and "module.tracking" not in perms:
+        perms.append("module.tracking")
+    if any(p.startswith("accounting.") for p in perms) and "module.accounting" not in perms:
+        perms.append("module.accounting")
+    if "admin.users" in perms and "module.settings" not in perms:
+        perms.append("module.settings")
+    return perms
+
+
 def permissions_from_role(role, custom_permissions=None):
     role = (role or "custom").strip().lower()
     if role == "superadmin":
         return ["*"]
     if role in ROLE_TEMPLATES and role != "custom":
-        return list(ROLE_TEMPLATES[role]["permissions"])
-    return normalize_permissions(custom_permissions)
+        return ensure_module_parents(list(ROLE_TEMPLATES[role]["permissions"]))
+    return ensure_module_parents(custom_permissions)
 
 
 def has_permission(user_permissions, required):
@@ -136,7 +150,15 @@ def has_any_module_access(user_permissions):
     perms = normalize_permissions(user_permissions)
     if "*" in perms:
         return True
-    return any(m in perms for m in MODULE_KEYS)
+    if any(m in perms for m in MODULE_KEYS):
+        return True
+    if any(p.startswith("tracking.") for p in perms):
+        return True
+    if any(p.startswith("accounting.") for p in perms):
+        return True
+    if "admin.users" in perms:
+        return True
+    return False
 
 
 def available_modules(user_permissions):
@@ -144,9 +166,9 @@ def available_modules(user_permissions):
     if "*" in perms:
         return ["tracking", "accounting", "settings"]
     mods = []
-    if "module.tracking" in perms:
+    if "module.tracking" in perms or any(p.startswith("tracking.") for p in perms):
         mods.append("tracking")
-    if "module.accounting" in perms:
+    if "module.accounting" in perms or any(p.startswith("accounting.") for p in perms):
         mods.append("accounting")
     if "module.settings" in perms or "admin.users" in perms:
         mods.append("settings")
