@@ -283,20 +283,41 @@
       .acc-vault-filter-select { width: 100%; }
     }
 
-    .charts-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.85rem; margin-bottom: 1rem; }
+    .charts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.85rem; margin-bottom: 0.85rem; }
     @media (max-width: 1000px) { .charts-grid { grid-template-columns: 1fr; } }
     .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1rem 1.1rem; }
     .chart-card h3 { font-size: 0.85rem; font-weight: 600; }
     .chart-card p.sub { font-size: 0.68rem; color: var(--muted); margin: 0.2rem 0 0.75rem; }
-    .chart-wrap { position: relative; height: 210px; }
+    .chart-wrap { position: relative; height: 190px; }
     .chart-empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); font-size: 0.78rem; background: rgba(6,10,16,0.75); border-radius: 8px; }
 
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 1rem; }
+    .top5-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.85rem; margin-bottom: 0.85rem; }
+    @media (max-width: 1100px) { .top5-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .top5-grid { grid-template-columns: 1fr; } }
+    .top5-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 0.9rem 1rem; }
+    .top5-card h3 { font-size: 0.8rem; font-weight: 600; margin: 0; }
+    .top5-card p.sub { font-size: 0.66rem; color: var(--muted); margin: 0.15rem 0 0.6rem; }
+    .top5-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+    .top5-list li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.76rem; }
+    .top5-list .top5-rank {
+      display: inline-flex; align-items: center; justify-content: center; width: 1.3rem; height: 1.3rem;
+      border-radius: 50%; background: var(--surface-2); font-size: 0.65rem; font-weight: 700; color: var(--muted); flex-shrink: 0;
+    }
+    .top5-list li:nth-child(1) .top5-rank { background: rgba(245,158,11,0.2); color: var(--amber); }
+    .top5-list li:nth-child(2) .top5-rank { background: rgba(148,163,184,0.2); color: #cbd5e1; }
+    .top5-list li:nth-child(3) .top5-rank { background: rgba(217,119,6,0.15); color: #d97706; }
+    .top5-list .top5-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .top5-list .top5-val { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .top5-list li.muted { justify-content: center; color: var(--muted); font-size: 0.72rem; }
+
+    [data-admin-only-hidden="1"] { display: none !important; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 0.85rem; }
     .card-head {
-      padding: 0.9rem 1.15rem; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.88rem;
+      padding: 0.75rem 1.1rem; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.85rem;
       display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;
     }
-    .card-body { padding: 1rem 1.15rem; }
+    .card-body { padding: 0.85rem 1.1rem; }
     .card-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 
     .form-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.55rem; }
@@ -370,8 +391,8 @@
     .btn-sm { padding: 0.28rem 0.55rem; font-size: 0.68rem; }
 
     .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
-    th { text-align: left; padding: 0.65rem 0.85rem; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+    th { text-align: left; padding: 0.5rem 0.7rem; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
     th.col-draggable { cursor: grab; user-select: none; touch-action: none; }
     th.col-draggable::before { content: "⋮⋮"; display: inline-block; margin-right: 0.35rem; opacity: 0.35; font-size: 0.55rem; letter-spacing: -0.08em; vertical-align: middle; }
     th.col-draggable:hover { color: var(--text); background: rgba(99,102,241,0.08); }
@@ -380,7 +401,7 @@
     th.col-drop-target { box-shadow: inset 0 -2px 0 var(--accent); color: var(--accent); }
     body.col-drag-active { cursor: grabbing; }
     body.col-drag-active * { cursor: grabbing !important; }
-    td { padding: 0.65rem 0.85rem; border-top: 1px solid var(--border); vertical-align: middle; }
+    td { padding: 0.48rem 0.7rem; border-top: 1px solid var(--border); vertical-align: middle; }
     tr.online td[data-col="status"] { box-shadow: inset 3px 0 0 var(--green); }
     tr.clickable { cursor: pointer; }
     tr.clickable:hover { background: var(--row-hover); }
@@ -798,13 +819,32 @@
           </div>
         </section>
 
+        <!-- Top 5 Kanallar -->
+        <section class="top5-grid" data-perm="tracking.smartico">
+          <div class="top5-card">
+            <h3>🚀 Top 5 Trafik</h3>
+            <p class="sub">En çok ziyaret getiren kanallar</p>
+            <ol class="top5-list" id="top5-traffic"><li class="muted">Veri yok</li></ol>
+          </div>
+          <div class="top5-card">
+            <h3>📝 Top 5 Kayıt</h3>
+            <p class="sub">En çok üye kazandıran kanallar</p>
+            <ol class="top5-list" id="top5-reg"><li class="muted">Veri yok</li></ol>
+          </div>
+          <div class="top5-card">
+            <h3>💳 Top 5 FTD</h3>
+            <p class="sub">En çok ilk yatırım getiren kanallar</p>
+            <ol class="top5-list" id="top5-ftd"><li class="muted">Veri yok</li></ol>
+          </div>
+          <div class="top5-card">
+            <h3>💰 Top 5 Yatırım</h3>
+            <p class="sub">En çok toplam yatırım getiren kanallar</p>
+            <ol class="top5-list" id="top5-deposit"><li class="muted">Veri yok</li></ol>
+          </div>
+        </section>
+
         <!-- Grafikler -->
         <section class="charts-grid" data-perm="tracking.dashboard">
-          <div class="chart-card">
-            <h3>Domain Trafiği</h3>
-            <p class="sub">Toplam oyuncu vs şu an online</p>
-            <div class="chart-wrap"><canvas id="chart-domains"></canvas><div class="chart-empty" id="empty-domains">Veri yok</div></div>
-          </div>
           <div class="chart-card">
             <h3>Affiliate Kanalları</h3>
             <p class="sub">Hangi ref linki kaç üye getirdi</p>
@@ -847,160 +887,6 @@
           </div>
         </section>
 
-        <section class="card" data-perm="tracking.reports">
-          <div class="card-head"><span>Referans Raporu</span><span class="muted" id="ref-report-label" style="font-weight:400;font-size:0.75rem;"></span></div>
-          <div class="table-wrap">
-            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
-            <div class="table-scroll" id="ref-report-table-scroll">
-              <table>
-                <thead><tr>
-                  <th class="col-sortable" data-sort="domain">Domain</th>
-                  <th class="col-sortable" data-sort="ref_label">Referans</th>
-                  <th class="col-sortable" data-sort="total_visitors">Toplam Ziyaretçi</th>
-                  <th class="col-sortable" data-sort="online_now">Online</th>
-                  <th class="col-sortable" data-sort="total_seconds">Toplam Süre</th>
-                  <th class="col-sortable" data-sort="unique_ips">Benzersiz IP</th>
-                  <th class="col-sortable" data-sort="last_seen_at">Son Görülme</th>
-                  <th>Affiliate Link</th>
-                </tr></thead>
-                <tbody id="ref-report-table"><tr><td colspan="8" class="empty">Veri yok</td></tr></tbody>
-              </table>
-            </div>
-            <div class="table-foot" id="ref-report-table-foot" style="display:none;">
-              <span class="table-count" id="ref-report-table-count"></span>
-              <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
-            </div>
-          </div>
-        </section>
-
-        <section class="card" data-perm="tracking.smartico">
-          <div class="card-head">
-            <span>Smartico Affiliate Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(ziyaret · kayıt · yatırım · komisyon)</span></span>
-            <div class="card-actions">
-              <input id="smartico-search" placeholder="🔎 Kanal/link ara…" style="width:150px;" autocomplete="off">
-              <label class="muted" style="font-size:0.72rem;display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
-                <input type="checkbox" id="smartico-hide-inactive" checked style="width:auto;margin:0;"> Hareketsizleri gizle (6 ay)
-              </label>
-              <span class="muted" id="smartico-updated" style="font-size:0.72rem;"></span>
-              <button type="button" class="btn btn-sm" id="btn-smartico-settings">⚙️ Ayarlar</button>
-              <button type="button" class="btn btn-sm" id="btn-smartico-refresh">Yenile</button>
-            </div>
-          </div>
-          <div class="card-body" id="smartico-settings-box" style="display:none;">
-            <p class="hint">Smartico BackOffice → <strong>Ayarlar</strong> bölümündeki "API Key to access Media reports, Balance API and Affiliates data" anahtarını buraya yapıştır. Anahtar sadece sunucuda saklanır.</p>
-            <form id="smartico-config-form">
-              <div class="form-row-4">
-                <div><label for="smartico-api-key">API Anahtarı</label><input id="smartico-api-key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx" autocomplete="off"></div>
-                <div><label for="smartico-api-host">API Host</label><input id="smartico-api-host" placeholder="https://boapi.smartico.ai"></div>
-                <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
-                <div style="align-self:end"><button type="button" class="btn btn-danger" id="btn-smartico-clear">Kaldır</button></div>
-              </div>
-            </form>
-          </div>
-          <div class="card-body" id="smartico-empty-box" style="display:none;">
-            <p class="hint">Henüz Smartico API anahtarı tanımlanmadı. Yukarıdaki <strong>⚙️ Ayarlar</strong> butonuna basıp anahtarı ekle, linklerin performansı burada görünsün.</p>
-          </div>
-          <div class="card-body" id="smartico-error-box" style="display:none;">
-            <p class="hint" style="color:#f87171;" id="smartico-error-text"></p>
-          </div>
-          <section class="kpi-grid" id="smartico-kpi-grid" style="display:none;padding:0 1rem 1rem;">
-            <div class="kpi">
-              <div class="val" id="smartico-kpi-visits">0</div>
-              <div class="lbl">Ziyaret</div>
-            </div>
-            <div class="kpi green">
-              <div class="val" id="smartico-kpi-regs">0</div>
-              <div class="lbl">Kayıt</div>
-            </div>
-            <div class="kpi amber">
-              <div class="val" id="smartico-kpi-ftd">0</div>
-              <div class="lbl">İlk Yatırım (FTD)</div>
-            </div>
-            <div class="kpi cyan">
-              <div class="val" id="smartico-kpi-deposit">0</div>
-              <div class="lbl">Toplam Yatırım</div>
-            </div>
-          </section>
-          <div class="table-wrap" id="smartico-table-wrap" style="display:none;">
-            <p class="hint" style="padding:0 1rem;margin-bottom:0.5rem;">
-              <strong>Şu An Online:</strong> kendi site takip sistemimizdeki anlık ziyaretçi verisiyle eşleştirilir. Otomatik eşleşmezse
-              <strong>🔗 Eşleştir</strong> ile hangi domain + referans koduna denk geldiğini elle bağlayabilirsin.
-            </p>
-            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
-            <div class="table-scroll" id="smartico-table-scroll">
-              <table>
-                <thead><tr>
-                  <th class="col-sortable" data-sort="affiliate_name">Affiliate / Kanal</th>
-                  <th class="col-sortable" data-sort="link_name">Link</th>
-                  <th class="col-sortable" data-sort="online_now">Şu An Online</th>
-                  <th class="col-sortable" data-sort="visit_count">Ziyaret</th>
-                  <th class="col-sortable" data-sort="registration_count">Kayıt</th>
-                  <th>İlk Yatırım</th>
-                  <th class="col-sortable" data-sort="deposit_total">Toplam Yatırım</th>
-                  <th class="col-sortable" data-sort="commissions_total">Komisyon</th>
-                </tr></thead>
-                <tbody id="smartico-table"><tr><td colspan="8" class="empty">Veri yok</td></tr></tbody>
-              </table>
-            </div>
-            <div class="table-foot" id="smartico-table-foot" style="display:none;">
-              <span class="table-count" id="smartico-table-count"></span>
-              <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
-            </div>
-          </div>
-        </section>
-
-        <section class="card" data-perm="tracking.blink">
-          <div class="card-head">
-            <span>bl.ink Link Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(kısa linkler · tıklama · şu an online)</span></span>
-            <div class="card-actions">
-              <input id="blink-search" placeholder="🔎 Link ara…" style="width:150px;" autocomplete="off">
-              <span class="muted" id="blink-updated" style="font-size:0.72rem;"></span>
-              <button type="button" class="btn btn-sm" id="btn-blink-settings">⚙️ Ayarlar</button>
-              <button type="button" class="btn btn-sm" id="btn-blink-refresh">Yenile</button>
-            </div>
-          </div>
-          <div class="card-body" id="blink-settings-box" style="display:none;">
-            <p class="hint">bl.ink hesabına giriş yapan <strong>email</strong> ve <strong>şifreyi</strong> gir. Bilgiler sadece sunucuda saklanır, kimseye gösterilmez.</p>
-            <form id="blink-config-form">
-              <div class="form-row-4">
-                <div><label for="blink-email">Email</label><input id="blink-email" type="email" placeholder="ornek@makrobet.com" autocomplete="off"></div>
-                <div><label for="blink-password">Şifre</label><input id="blink-password" type="password" placeholder="••••••••" autocomplete="off"></div>
-                <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
-                <div style="align-self:end"><button type="button" class="btn btn-danger" id="btn-blink-clear">Kaldır</button></div>
-              </div>
-            </form>
-          </div>
-          <div class="card-body" id="blink-empty-box" style="display:none;">
-            <p class="hint">Henüz bl.ink bağlantısı tanımlanmadı. Yukarıdaki <strong>⚙️ Ayarlar</strong> butonuna basıp email/şifreyi ekle, linklerin listesi burada görünsün.</p>
-          </div>
-          <div class="card-body" id="blink-error-box" style="display:none;">
-            <p class="hint" style="color:#f87171;" id="blink-error-text"></p>
-          </div>
-          <div class="table-wrap" id="blink-table-wrap" style="display:none;">
-            <p class="hint" style="padding:0 1rem;margin-bottom:0.5rem;">
-              <strong>Şu An Online:</strong> linkin gerçek yönlendirme adresindeki <code>?ref=</code> kodu otomatik okunup kendi tracker'ımızla eşleştirilir.
-              Eşleşmezse <strong>🔗 Eşleştir</strong> ile elle bağlayabilirsin.
-            </p>
-            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
-            <div class="table-scroll" id="blink-table-scroll">
-              <table>
-                <thead><tr>
-                  <th class="col-sortable" data-sort="short_link">Kısa Link</th>
-                  <th class="col-sortable" data-sort="redirect_url">Hedef Adres</th>
-                  <th class="col-sortable" data-sort="ref_code">Ref Kodu</th>
-                  <th class="col-sortable" data-sort="online_now">Şu An Online</th>
-                  <th class="col-sortable" data-sort="click_count">Tıklama</th>
-                </tr></thead>
-                <tbody id="blink-table"><tr><td colspan="5" class="empty">Veri yok</td></tr></tbody>
-              </table>
-            </div>
-            <div class="table-foot" id="blink-table-foot" style="display:none;">
-              <span class="table-count" id="blink-table-count"></span>
-              <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
-            </div>
-          </div>
-        </section>
-
         <section class="card" data-perm="tracking.domains">
           <div class="card-head"><span>Takip Edilen Domainler</span><a href="/demo" target="_blank" class="btn btn-sm">Demo Site</a></div>
           <div class="card-body" style="padding-top:0;">
@@ -1034,6 +920,87 @@
           </div>
         </section>
 
+        <section class="card" data-perm="tracking.smartico">
+          <div class="card-head">
+            <span>Smartico Affiliate Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(ziyaret · kayıt · yatırım · komisyon)</span></span>
+            <div class="card-actions">
+              <input id="smartico-search" placeholder="🔎 Kanal/link ara…" style="width:150px;" autocomplete="off">
+              <label class="muted" style="font-size:0.72rem;display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                <input type="checkbox" id="smartico-hide-inactive" checked style="width:auto;margin:0;"> Hareketsizleri gizle (6 ay)
+              </label>
+              <span class="muted" id="smartico-updated" style="font-size:0.72rem;"></span>
+              <button type="button" class="btn btn-sm" id="btn-smartico-settings" data-admin-only="1">⚙️ Ayarlar</button>
+              <button type="button" class="btn btn-sm" id="btn-smartico-refresh">Yenile</button>
+            </div>
+          </div>
+          <div class="card-body" id="smartico-settings-box" data-admin-only="1" style="display:none;">
+            <p class="hint">Smartico BackOffice → <strong>Ayarlar</strong> bölümündeki "API Key to access Media reports, Balance API and Affiliates data" anahtarını buraya yapıştır. Anahtar sadece sunucuda saklanır.</p>
+            <form id="smartico-config-form">
+              <div class="form-row-4">
+                <div><label for="smartico-api-key">API Anahtarı</label><input id="smartico-api-key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx" autocomplete="off"></div>
+                <div><label for="smartico-api-host">API Host</label><input id="smartico-api-host" placeholder="https://boapi.smartico.ai"></div>
+                <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+                <div style="align-self:end"><button type="button" class="btn btn-danger" id="btn-smartico-clear">Kaldır</button></div>
+              </div>
+            </form>
+          </div>
+          <div class="card-body" id="smartico-empty-box" style="display:none;">
+            <p class="hint">Henüz Smartico API anahtarı tanımlanmadı. Yukarıdaki <strong>⚙️ Ayarlar</strong> butonuna basıp anahtarı ekle, linklerin performansı burada görünsün.</p>
+          </div>
+          <div class="card-body" id="smartico-error-box" style="display:none;">
+            <p class="hint" style="color:#f87171;" id="smartico-error-text"></p>
+          </div>
+          <section class="kpi-grid" id="smartico-kpi-grid" style="display:none;padding:0 1rem 1rem;grid-template-columns:repeat(5,1fr);">
+            <div class="kpi">
+              <div class="val" id="smartico-kpi-visits">0</div>
+              <div class="lbl">Ziyaret</div>
+            </div>
+            <div class="kpi green">
+              <div class="val" id="smartico-kpi-regs">0</div>
+              <div class="lbl">Kayıt</div>
+            </div>
+            <div class="kpi amber">
+              <div class="val" id="smartico-kpi-ftd">0</div>
+              <div class="lbl">İlk Yatırım (FTD)</div>
+            </div>
+            <div class="kpi cyan">
+              <div class="val" id="smartico-kpi-deposit">0</div>
+              <div class="lbl">Toplam Yatırım</div>
+            </div>
+            <div class="kpi">
+              <div class="val" id="smartico-kpi-bonus">0</div>
+              <div class="lbl">Bonus / Düzeltme</div>
+            </div>
+          </section>
+          <div class="table-wrap" id="smartico-table-wrap" style="display:none;">
+            <p class="hint" style="padding:0 1rem;margin-bottom:0.5rem;">
+              <strong>Şu An Online:</strong> kendi site takip sistemimizdeki anlık ziyaretçi verisiyle eşleştirilir. Otomatik eşleşmezse
+              <strong>🔗 Eşleştir</strong> ile hangi domain + referans koduna denk geldiğini elle bağlayabilirsin.
+            </p>
+            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
+            <div class="table-scroll" id="smartico-table-scroll">
+              <table>
+                <thead><tr>
+                  <th class="col-sortable" data-sort="affiliate_name">Affiliate / Kanal</th>
+                  <th class="col-sortable" data-sort="link_name">Link</th>
+                  <th class="col-sortable" data-sort="online_now">Şu An Online</th>
+                  <th class="col-sortable" data-sort="visit_count">Ziyaret</th>
+                  <th class="col-sortable" data-sort="registration_count">Kayıt</th>
+                  <th>İlk Yatırım</th>
+                  <th class="col-sortable" data-sort="deposit_total">Toplam Yatırım</th>
+                  <th class="col-sortable" data-sort="commissions_total">Komisyon</th>
+                  <th class="col-sortable" data-sort="adjustments_total">Bonus/Düzeltme</th>
+                </tr></thead>
+                <tbody id="smartico-table"><tr><td colspan="9" class="empty">Veri yok</td></tr></tbody>
+              </table>
+            </div>
+            <div class="table-foot" id="smartico-table-foot" style="display:none;">
+              <span class="table-count" id="smartico-table-count"></span>
+              <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
+            </div>
+          </div>
+        </section>
+
         <section class="card" data-perm="tracking.players">
           <div class="card-head"><span>Şu An Online</span><span class="muted" id="online-label" style="font-weight:400;font-size:0.75rem;"></span></div>
           <div class="table-wrap">
@@ -1056,6 +1023,32 @@
             </div>
             <div class="table-foot" id="online-table-foot" style="display:none;">
               <span class="table-count" id="online-table-count"></span>
+              <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" data-perm="tracking.reports">
+          <div class="card-head"><span>Referans Raporu</span><span class="muted" id="ref-report-label" style="font-weight:400;font-size:0.75rem;"></span></div>
+          <div class="table-wrap">
+            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
+            <div class="table-scroll" id="ref-report-table-scroll">
+              <table>
+                <thead><tr>
+                  <th class="col-sortable" data-sort="domain">Domain</th>
+                  <th class="col-sortable" data-sort="ref_label">Referans</th>
+                  <th class="col-sortable" data-sort="total_visitors">Toplam Ziyaretçi</th>
+                  <th class="col-sortable" data-sort="online_now">Online</th>
+                  <th class="col-sortable" data-sort="total_seconds">Toplam Süre</th>
+                  <th class="col-sortable" data-sort="unique_ips">Benzersiz IP</th>
+                  <th class="col-sortable" data-sort="last_seen_at">Son Görülme</th>
+                  <th>Affiliate Link</th>
+                </tr></thead>
+                <tbody id="ref-report-table"><tr><td colspan="8" class="empty">Veri yok</td></tr></tbody>
+              </table>
+            </div>
+            <div class="table-foot" id="ref-report-table-foot" style="display:none;">
+              <span class="table-count" id="ref-report-table-count"></span>
               <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
             </div>
           </div>
@@ -1099,6 +1092,58 @@
             </div>
             <div class="table-foot" id="sessions-table-foot" style="display:none;">
               <span class="table-count" id="sessions-table-count"></span>
+              <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" data-perm="tracking.blink">
+          <div class="card-head">
+            <span>bl.ink Link Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(kısa linkler · tıklama · şu an online)</span></span>
+            <div class="card-actions">
+              <input id="blink-search" placeholder="🔎 Link ara…" style="width:150px;" autocomplete="off">
+              <span class="muted" id="blink-updated" style="font-size:0.72rem;"></span>
+              <button type="button" class="btn btn-sm" id="btn-blink-settings" data-admin-only="1">⚙️ Ayarlar</button>
+              <button type="button" class="btn btn-sm" id="btn-blink-refresh">Yenile</button>
+            </div>
+          </div>
+          <div class="card-body" id="blink-settings-box" data-admin-only="1" style="display:none;">
+            <p class="hint">bl.ink hesabına giriş yapan <strong>email</strong> ve <strong>şifreyi</strong> gir. Bilgiler sadece sunucuda saklanır, kimseye gösterilmez.</p>
+            <form id="blink-config-form">
+              <div class="form-row-4">
+                <div><label for="blink-email">Email</label><input id="blink-email" type="email" placeholder="ornek@makrobet.com" autocomplete="off"></div>
+                <div><label for="blink-password">Şifre</label><input id="blink-password" type="password" placeholder="••••••••" autocomplete="off"></div>
+                <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+                <div style="align-self:end"><button type="button" class="btn btn-danger" id="btn-blink-clear">Kaldır</button></div>
+              </div>
+            </form>
+          </div>
+          <div class="card-body" id="blink-empty-box" style="display:none;">
+            <p class="hint">Henüz bl.ink bağlantısı tanımlanmadı. Yukarıdaki <strong>⚙️ Ayarlar</strong> butonuna basıp email/şifreyi ekle, linklerin listesi burada görünsün.</p>
+          </div>
+          <div class="card-body" id="blink-error-box" style="display:none;">
+            <p class="hint" style="color:#f87171;" id="blink-error-text"></p>
+          </div>
+          <div class="table-wrap" id="blink-table-wrap" style="display:none;">
+            <p class="hint" style="padding:0 1rem;margin-bottom:0.5rem;">
+              <strong>Şu An Online:</strong> linkin gerçek yönlendirme adresindeki <code>?ref=</code> kodu otomatik okunup kendi tracker'ımızla eşleştirilir.
+              Eşleşmezse <strong>🔗 Eşleştir</strong> ile elle bağlayabilirsin.
+            </p>
+            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
+            <div class="table-scroll" id="blink-table-scroll">
+              <table>
+                <thead><tr>
+                  <th class="col-sortable" data-sort="short_link">Kısa Link</th>
+                  <th class="col-sortable" data-sort="redirect_url">Hedef Adres</th>
+                  <th class="col-sortable" data-sort="ref_code">Ref Kodu</th>
+                  <th class="col-sortable" data-sort="online_now">Şu An Online</th>
+                  <th class="col-sortable" data-sort="click_count">Tıklama</th>
+                </tr></thead>
+                <tbody id="blink-table"><tr><td colspan="5" class="empty">Veri yok</td></tr></tbody>
+              </table>
+            </div>
+            <div class="table-foot" id="blink-table-foot" style="display:none;">
+              <span class="table-count" id="blink-table-count"></span>
               <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
             </div>
           </div>
@@ -1338,6 +1383,28 @@
       var blinkLastResult = null;
       var smarticoAffiliateList = null;
       var smarticoAffiliateListLoading = false;
+      var refLabelMap = {};
+      var myUsername = "";
+
+      function loadRefLabelMap() {
+        if (!hasPerm("tracking.reports")) return;
+        fetch(API + "/api/reports/referral-labels").then(function(r) { return r.json(); })
+          .then(function(res) {
+            refLabelMap = (res && res.labels) || {};
+            if (typeof rerenderManagedTable === "function") {
+              ["online-table", "sessions-table", "links-table", "blink-table"].forEach(function(t) {
+                try { rerenderManagedTable(t); } catch (e) {}
+              });
+            }
+          }).catch(function() {});
+      }
+
+      function refDisplayLabel(code) {
+        var raw = (code || "").trim();
+        if (!raw) return "Direkt giriş";
+        var key = raw.toLowerCase();
+        return refLabelMap[key] || raw;
+      }
 
       function normalizeMatchText(s) {
         return String(s || "")
@@ -1504,6 +1571,10 @@
         document.querySelectorAll("[data-perm-any]").forEach(function(el) {
           el.setAttribute("data-perm-hidden", hasAnyPerm(el.getAttribute("data-perm-any")) ? "0" : "1");
         });
+        var isAdminUser = (myUsername || "").trim().toLowerCase() === "admin";
+        document.querySelectorAll("[data-admin-only]").forEach(function(el) {
+          el.setAttribute("data-admin-only-hidden", isAdminUser ? "0" : "1");
+        });
         var badge = document.getElementById("user-role-badge");
         if (badge) {
           var label = (roleTemplates[myRole] && roleTemplates[myRole].label) || myRole || "";
@@ -1586,7 +1657,9 @@
           roleTemplates = data.role_templates || {};
           permissionCatalog = data.permission_catalog || [];
           availableModules = data.available_modules || [];
+          myUsername = data.username || "";
           applyPermissions();
+          loadRefLabelMap();
           if (window.MakroAccounting && window.MakroAccounting.setPermissions) {
             window.MakroAccounting.setPermissions(myPermissions);
           }
@@ -1723,7 +1796,7 @@
         }
 
         tbody.innerHTML = links.map(function(l) {
-          var ref = l.ref_code ? '<span class="tag">'+esc(l.ref_code)+'</span>' : '<span class="tag">Tüm site</span>';
+          var ref = l.ref_code ? '<span class="tag">'+esc(refDisplayLabel(l.ref_code))+'</span>' : '<span class="tag">Tüm site</span>';
           var on = l.online_count>0 ? '<span class="tag online">'+l.online_count+'</span>' : '<span class="tag offline">0</span>';
           var nameCell = l.label
             ? '<span class="link-label">'+esc(l.label)+'</span>'
@@ -2128,13 +2201,14 @@
         opts = opts || {};
         var st = s.is_online ? '<span class="tag online">Online</span>' : '<span class="tag offline">Offline</span>';
         var ref = s.ref_code || "Direkt giriş";
+        var refShown = refDisplayLabel(s.ref_code);
         var flash = flashIds.has(s.session_id) ? " flash-row" : "";
         var click = opts.clickable ? " clickable" : "";
         var cells = {
           status: '<td data-col="status">'+st+'</td>',
           session_id: '<td data-col="session_id" class="mono" title="'+esc(s.session_id)+'">'+esc(s.session_short||s.session_id)+'</td>',
           domain: '<td data-col="domain">'+esc(s.domain)+'</td>',
-          ref: '<td data-col="ref"><span class="tag">'+esc(ref)+'</span></td>',
+          ref: '<td data-col="ref"><span class="tag">'+esc(refShown)+'</span></td>',
           ip: '<td data-col="ip" class="mono">'+esc(s.ip_address||"—")+'</td>',
           time: '<td data-col="time" class="time" data-seconds="'+s.total_seconds+'">'+fmtTime(s.total_seconds)+'</td>',
           games: '<td data-col="games">'+renderGames(s.games)+'</td>',
@@ -2153,45 +2227,16 @@
       function showEmpty(id, show) { var el=document.getElementById(id); if(el) el.style.display=show?"flex":"none"; }
 
       function renderCharts(data) {
-        var domains = data.domain_traffic||[];
         var channels = data.affiliate_channels||[];
         var games = data.game_clicks||[];
         var sig = JSON.stringify({
-          d: domains.map(function(x){ return [x.domain, x.total_players, x.online_now]; }),
           c: channels.map(function(x){ return [x.channel, x.members]; }),
           g: games.map(function(x){ return [x.game, x.clicks]; })
         });
-        if (sig === lastChartsSig && charts.domain) return;
+        if (sig === lastChartsSig && charts.affiliate) return;
         lastChartsSig = sig;
-        showEmpty("empty-domains", !domains.length);
         showEmpty("empty-affiliate", !channels.length);
         showEmpty("empty-games", !games.length);
-
-        var domainLabels = domains.map(function(d){ return d.domain; });
-        var domainTotals = domains.map(function(d){ return d.total_players; });
-        var domainOnline = domains.map(function(d){ return d.online_now; });
-
-        if (charts.domain) {
-          charts.domain.data.labels = domainLabels;
-          charts.domain.data.datasets[0].data = domainTotals;
-          charts.domain.data.datasets[1].data = domainOnline;
-          charts.domain.update("none");
-        } else {
-          charts.domain = new Chart(document.getElementById("chart-domains"), {
-            type: "bar",
-            data: {
-              labels: domainLabels,
-              datasets: [
-                { label: "Toplam Oyuncu", data: domainTotals, backgroundColor: "#6366f1aa", borderRadius: 5 },
-                { label: "Şu An Online", data: domainOnline, backgroundColor: "#22c55eaa", borderRadius: 5 }
-              ]
-            },
-            options: Object.assign({}, chartBaseOpts, {
-              plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } } },
-              scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
-            })
-          });
-        }
 
         var total = channels.reduce(function(a,c){ return a+c.members; }, 0) || 1;
         var affLabels = channels.map(function(c){ return c.channel+" ("+Math.round(c.members/total*100)+"%)"; });
@@ -2429,6 +2474,39 @@
         return n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       }
 
+      function renderTop5Lists(rows) {
+        var byAff = {};
+        (rows || []).forEach(function(r) {
+          var id = r.affiliate_id;
+          if (id == null) return;
+          if (!byAff[id]) byAff[id] = { name: r.affiliate_name || ("Affiliate #" + id), visit: 0, reg: 0, ftd: 0, deposit: 0 };
+          byAff[id].visit += r.visit_count || 0;
+          byAff[id].reg += r.registration_count || 0;
+          byAff[id].ftd += r.ftd_count || 0;
+          byAff[id].deposit += r.deposit_total || 0;
+        });
+        var list = Object.keys(byAff).map(function(k) { return byAff[k]; });
+
+        function top5(key) {
+          return list.filter(function(x) { return x[key] > 0; })
+            .sort(function(a, b) { return b[key] - a[key]; }).slice(0, 5);
+        }
+        function fillList(id, items, key, fmt) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          if (!items.length) { el.innerHTML = '<li class="muted">Veri yok</li>'; return; }
+          el.innerHTML = items.map(function(x, i) {
+            return '<li><span class="top5-rank">' + (i + 1) + '</span>' +
+              '<span class="top5-name" title="' + esc(x.name) + '">' + esc(x.name) + '</span>' +
+              '<span class="top5-val">' + fmt(x[key]) + '</span></li>';
+          }).join("");
+        }
+        fillList("top5-traffic", top5("visit"), "visit", fmtSmarticoNum);
+        fillList("top5-reg", top5("reg"), "reg", fmtSmarticoNum);
+        fillList("top5-ftd", top5("ftd"), "ftd", fmtSmarticoNum);
+        fillList("top5-deposit", top5("deposit"), "deposit", fmtSmarticoMoney);
+      }
+
       function setSmarticoView(mode) {
         var boxes = {
           empty: "smartico-empty-box",
@@ -2498,19 +2576,22 @@
           visit_count: function(r) { return r.visit_count || 0; },
           registration_count: function(r) { return r.registration_count || 0; },
           deposit_total: function(r) { return r.deposit_total || 0; },
-          commissions_total: function(r) { return r.commissions_total || 0; }
+          commissions_total: function(r) { return r.commissions_total || 0; },
+          adjustments_total: function(r) { return r.adjustments_total || 0; }
         });
         var s = result.summary || {};
         document.getElementById("smartico-kpi-visits").textContent = fmtSmarticoNum(s.visit_count);
         document.getElementById("smartico-kpi-regs").textContent = fmtSmarticoNum(s.registration_count);
         document.getElementById("smartico-kpi-ftd").textContent = fmtSmarticoNum(s.ftd_count);
         document.getElementById("smartico-kpi-deposit").textContent = fmtSmarticoMoney(s.deposit_total) + (result.currency ? " " + result.currency : "");
+        var bonusEl = document.getElementById("smartico-kpi-bonus");
+        if (bonusEl) bonusEl.textContent = fmtSmarticoMoney(s.adjustments_total) + (result.currency ? " " + result.currency : "");
         var tbody = document.getElementById("smartico-table");
         smarticoRowsById = {};
         updateTableFoot("smartico-table", rows.length);
         updateSortHeaders("smartico-table");
         if (!rows.length) {
-          tbody.innerHTML = '<tr><td colspan="8" class="empty">Bu dönem için veri yok</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="9" class="empty">Bu dönem için veri yok</td></tr>';
         } else {
           tbody.innerHTML = rows.map(function(r, idx) {
             var rowKey = String(r.affiliate_id) + "::" + String(r.link_id);
@@ -2532,11 +2613,13 @@
               '<td>' + fmtSmarticoNum(r.registration_count) + '</td>' +
               '<td>' + fmtSmarticoNum(r.ftd_count) + '</td>' +
               '<td>' + fmtSmarticoMoney(r.deposit_total) + '</td>' +
-              '<td>' + fmtSmarticoMoney(r.commissions_total) + '</td></tr>';
+              '<td>' + fmtSmarticoMoney(r.commissions_total) + '</td>' +
+              '<td>' + (r.adjustments_total ? fmtSmarticoMoney(r.adjustments_total) : '<span class="muted">0</span>') + '</td></tr>';
           }).join("");
         }
         setSmarticoView("data");
         document.getElementById("smartico-updated").textContent = "Son güncelleme: " + new Date().toLocaleTimeString("tr-TR") + (result.source === "cache" ? " (önbellek)" : "");
+        renderTop5Lists(result.rows || []);
       }
 
       function loadSmarticoReport(force) {
@@ -2638,7 +2721,7 @@
             var destLabel = r.redirect_url ? (r.redirect_url.length > 45 ? r.redirect_url.slice(0, 45) + "…" : r.redirect_url) : "—";
             return '<tr><td><a href="' + esc(r.short_link || "#") + '" target="_blank" rel="noopener">' + esc(r.short_link || r.alias || "#" + r.link_id) + '</a></td>' +
               '<td title="' + esc(r.redirect_url || "") + '">' + esc(destLabel) + '</td>' +
-              '<td>' + (r.ref_code ? '<span class="tag">' + esc(r.ref_code) + '</span>' : '<span class="muted">—</span>') + '</td>' +
+              '<td>' + (r.ref_code ? '<span class="tag">' + esc(refDisplayLabel(r.ref_code)) + '</span>' : '<span class="muted">—</span>') + '</td>' +
               '<td>' + onlineCell + '</td>' +
               '<td><strong>' + fmtSmarticoNum(r.click_count) + '</strong></td></tr>';
           }).join("");

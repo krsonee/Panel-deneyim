@@ -10,14 +10,18 @@ from database import get_db
 MODULE_ACCESS = ("tracking.blink",)
 
 
-def create_blink_blueprint(permission_required):
+def create_blink_blueprint(permission_required, admin_only_required=None):
     bp = Blueprint("blink", __name__, url_prefix="/api/blink")
 
     def perm(*keys):
         return permission_required(*keys)
 
+    def admin_only(view):
+        return admin_only_required(view) if admin_only_required else view
+
     @bp.route("/config", methods=["GET"])
     @perm(*MODULE_ACCESS)
+    @admin_only
     def get_config():
         with closing(get_db()) as conn:
             cfg = blink_api.get_config(conn)
@@ -28,6 +32,7 @@ def create_blink_blueprint(permission_required):
 
     @bp.route("/config", methods=["POST"])
     @perm(*MODULE_ACCESS)
+    @admin_only
     def save_config():
         data = request.get_json(silent=True) or {}
         email = (data.get("email") or "").strip()
@@ -45,6 +50,7 @@ def create_blink_blueprint(permission_required):
 
     @bp.route("/config", methods=["DELETE"])
     @perm(*MODULE_ACCESS)
+    @admin_only
     def delete_config():
         with closing(get_db()) as conn:
             blink_api.clear_config(conn)

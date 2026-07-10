@@ -12,14 +12,18 @@ MODULE_ACCESS = ("tracking.smartico",)
 _VALID_PERIODS = {"all", "today", "yesterday", "7days", "30days"}
 
 
-def create_smartico_blueprint(permission_required):
+def create_smartico_blueprint(permission_required, admin_only_required=None):
     bp = Blueprint("smartico", __name__, url_prefix="/api/smartico")
 
     def perm(*keys):
         return permission_required(*keys)
 
+    def admin_only(view):
+        return admin_only_required(view) if admin_only_required else view
+
     @bp.route("/config", methods=["GET"])
     @perm(*MODULE_ACCESS)
+    @admin_only
     def get_config():
         with closing(get_db()) as conn:
             cfg = smartico_api.get_config(conn)
@@ -31,6 +35,7 @@ def create_smartico_blueprint(permission_required):
 
     @bp.route("/config", methods=["POST"])
     @perm(*MODULE_ACCESS)
+    @admin_only
     def save_config():
         data = request.get_json(silent=True) or {}
         api_key = (data.get("api_key") or "").strip()
@@ -47,6 +52,7 @@ def create_smartico_blueprint(permission_required):
 
     @bp.route("/config", methods=["DELETE"])
     @perm(*MODULE_ACCESS)
+    @admin_only
     def delete_config():
         with closing(get_db()) as conn:
             smartico_api.clear_config(conn)

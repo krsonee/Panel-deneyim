@@ -617,6 +617,18 @@ def permission_required(*required_perms):
     return decorator
 
 
+def admin_only_required(view):
+    @wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        if (session.get("admin_username") or "").strip().lower() != "admin":
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Bu işlem sadece admin hesabı içindir."}), 403
+            return render_template("login.html", error="Bu sayfa için yetkiniz yok."), 403
+        return view(*args, **kwargs)
+    return wrapped
+
+
 def build_journey(session_data):
     """Kullanıcının kronolojik zaman tüneli."""
     ref = session_data["ref_code"] or "Direkt giriş"
@@ -1185,6 +1197,14 @@ def referral_report():
     return jsonify({"report": report, "period": period})
 
 
+@app.route("/api/reports/referral-labels", methods=["GET"])
+@permission_required("tracking.reports")
+def list_referral_labels():
+    with closing(get_db()) as conn:
+        labels = get_ref_code_labels(conn)
+    return jsonify({"labels": labels})
+
+
 @app.route("/api/reports/referral-labels", methods=["POST"])
 @permission_required("tracking.reports")
 def save_referral_label():
@@ -1627,8 +1647,8 @@ from smartico_routes import create_smartico_blueprint
 from blink_routes import create_blink_blueprint
 
 app.register_blueprint(create_accounting_blueprint(permission_required))
-app.register_blueprint(create_smartico_blueprint(permission_required))
-app.register_blueprint(create_blink_blueprint(permission_required))
+app.register_blueprint(create_smartico_blueprint(permission_required, admin_only_required))
+app.register_blueprint(create_blink_blueprint(permission_required, admin_only_required))
 
 
 def _run_startup():
