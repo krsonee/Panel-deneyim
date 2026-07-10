@@ -483,6 +483,11 @@ def migrate_accounting_employees_payroll(conn):
         ("bank_salary", "REAL NOT NULL DEFAULT 0"),
         ("crypto_salary", "REAL NOT NULL DEFAULT 0"),
         ("advance_amount", "REAL NOT NULL DEFAULT 0"),
+        ("crypto_wallet", "TEXT NOT NULL DEFAULT ''"),
+        ("bank_iban", "TEXT NOT NULL DEFAULT ''"),
+        ("bank_account_name", "TEXT NOT NULL DEFAULT ''"),
+        ("location", "TEXT NOT NULL DEFAULT ''"),
+        ("notes", "TEXT NOT NULL DEFAULT ''"),
     ]
     for name, typedef in new_cols:
         if name not in cols:

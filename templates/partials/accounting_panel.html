@@ -353,14 +353,14 @@
           <div><label>USD/TL</label><input type="number" id="acc-emp-rate-usd" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
           <div><label>EUR/TL</label><input type="number" id="acc-emp-rate-eur" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
           <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-emp-fx-preview"></p></div>
-          <div><label>Avans (dönem içi)</label><input type="number" id="acc-emp-advance" step="0.01" min="0" value="0"></div>
-          <div id="acc-emp-office-fields" class="acc-office-fields" hidden style="grid-column:span 3;">
-            <div class="form-row-4" style="margin-top:0.35rem;">
+          <div id="acc-emp-payment-fields" class="acc-office-fields" style="grid-column:1/-1;">
+            <div class="form-row-4" style="margin-top:0.15rem;">
               <div><label>Bankaya Yatacak</label><input type="number" id="acc-emp-bank" step="0.01" min="0" value="0"></div>
               <div><label>Kripto Ödenecek</label><input type="number" id="acc-emp-crypto" step="0.01" min="0" value="0"></div>
-              <div><label>Kalan (ofis)</label><input type="text" id="acc-emp-remaining" readonly class="muted" value="0"></div>
+              <div><label>Avans (dönem içi)</label><input type="number" id="acc-emp-advance" step="0.01" min="0" value="0"></div>
+              <div><label>Kalan</label><input type="text" id="acc-emp-remaining" readonly class="muted" value="0"></div>
             </div>
-            <p class="muted" style="font-size:0.72rem;margin-top:0.35rem;">Banka + Kripto + Avans toplamı maaşı geçemez.</p>
+            <p class="muted" style="font-size:0.72rem;margin-top:0.35rem;">Banka + Kripto + Avans toplamı maaşı geçemez. TRC20 cüzdan ve IBAN bilgilerini personel kaydından sonra tablodan girebilirsiniz.</p>
           </div>
           <div><label>Durum</label>
             <select id="acc-emp-status">
@@ -413,18 +413,21 @@
               <th>Personel</th>
               <th>Kategori</th>
               <th>Departman</th>
+              <th>Konum</th>
               <th>Başlangıç</th>
               <th>Çıkış</th>
               <th>Maaş</th>
-              <th class="acc-col-office">Banka</th>
-              <th class="acc-col-office">Kripto</th>
+              <th>Banka</th>
+              <th>Kripto</th>
               <th>Avans</th>
+              <th>Kalan</th>
+              <th>Ödeme Bilgisi</th>
               <th>Hak Ediş</th>
               <th>Net Ödeme</th>
               <th>Durum</th>
               <th></th>
             </tr></thead>
-            <tbody id="acc-emp-table"><tr><td colspan="13" class="empty">Personel yok</td></tr></tbody>
+            <tbody id="acc-emp-table"><tr><td colspan="16" class="empty">Personel yok</td></tr></tbody>
           </table>
         </div>
         <div class="table-foot" id="acc-emp-table-foot" style="display:none;">

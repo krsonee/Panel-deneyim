@@ -241,7 +241,9 @@ def enrich_employee_row(emp, period="month", reference=None):
     bank = float(row.get("bank_salary") or 0)
     crypto = float(row.get("crypto_salary") or 0)
     row["net_salary"] = round(max(salary - advance, 0), 2)
-    row["office_remaining"] = round(max(salary - advance - bank - crypto, 0), 2)
+    remaining = round(max(salary - advance - bank - crypto, 0), 2)
+    row["office_remaining"] = remaining
+    row["payment_remaining"] = remaining
     return row
 
 
@@ -255,15 +257,19 @@ def validate_advance_amount(salary, advance):
     return None
 
 
-def validate_office_amounts(salary, bank, crypto, advance, is_office):
-    if not is_office:
-        return None
+def validate_payment_split(salary, bank, crypto, advance):
     salary = float(salary or 0)
     bank = float(bank or 0)
     crypto = float(crypto or 0)
     advance = float(advance or 0)
     if bank < 0 or crypto < 0 or advance < 0:
-        return "Ofis personeli ödeme tutarları negatif olamaz."
+        return "Banka, kripto ve avans negatif olamaz."
     if round(bank + crypto + advance, 2) > round(salary, 2):
         return "Banka + Kripto + Avans toplamı maaşı geçemez."
     return None
+
+
+def validate_office_amounts(salary, bank, crypto, advance, is_office=True):
+    if not is_office:
+        return validate_advance_amount(salary, advance)
+    return validate_payment_split(salary, bank, crypto, advance)

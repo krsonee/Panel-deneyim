@@ -671,20 +671,13 @@
 
   function accUpdateEmpFormUi() {
     var statusEl = document.getElementById("acc-emp-status");
-    var catEl = document.getElementById("acc-emp-category");
     var endWrap = document.getElementById("acc-emp-end-wrap");
     var endEl = document.getElementById("acc-emp-end");
-    var officeWrap = document.getElementById("acc-emp-office-fields");
     if (endWrap && statusEl) {
       var left = statusEl.value === "left";
       endWrap.hidden = !left;
       if (endEl) endEl.required = left;
       if (left && endEl && !endEl.value) endEl.value = accToday();
-    }
-    if (officeWrap && catEl) {
-      var opt = catEl.options[catEl.selectedIndex];
-      var isOffice = opt && opt.getAttribute("data-office") === "1";
-      officeWrap.hidden = !isOffice;
     }
     accUpdateOfficeRemaining();
   }
@@ -1004,8 +997,19 @@
     });
   }
 
+  function accEmpPayInfoHtml(r, hidden) {
+    if (hidden) return accHiddenMoney();
+    return '<div class="acc-emp-payinfo">' +
+      '<label>TRC20</label>' +
+      accEmpInputHtml("crypto_wallet", r.crypto_wallet || "", r.id, "acc-emp-inline-wallet") +
+      '<label>IBAN</label>' +
+      accEmpInputHtml("bank_iban", r.bank_iban || "", r.id, "acc-emp-inline-wallet") +
+      '<label>Ad Soyad</label>' +
+      accEmpInputHtml("bank_account_name", r.bank_account_name || "", r.id, "acc-emp-inline-wide") +
+      "</div>";
+  }
+
   function accEmpRowHtml(r) {
-    var isOffice = accIsOfficeCategory(r.salary_category);
     var cur = r.currency || "TRY";
     var rowCls = r.status === "left" ? "acc-emp-row-left" : "";
     var deptOpts = accEmployeeDepartments.map(function (d) {
@@ -1015,52 +1019,61 @@
       return { value: c.slug, label: c.name };
     });
     var statusCls = r.status === "active" ? "active-status" : "left-status";
-    var nameCell = r.salary_hidden
+    var hidden = r.salary_hidden;
+    var nameCell = hidden
       ? accHiddenMoney()
       : accEmpInputHtml("name", r.name, r.id, "acc-emp-inline-wide");
-    var catCell = r.salary_hidden
-      ? accHiddenMoney()
-      : accEmpSelectHtml("salary_category", r.salary_category, r.id, catOpts);
+    var catCell = hidden ? accHiddenMoney() : accEmpSelectHtml("salary_category", r.salary_category, r.id, catOpts);
     var deptCell = accEmpSelectHtml("department", r.department, r.id, deptOpts);
+    var locCell = hidden
+      ? accHiddenMoney()
+      : accEmpInputHtml("location", r.location || "", r.id, "acc-emp-inline-wide");
     var startCell = accEmpInputHtml("start_date", r.start_date, r.id, "", "date");
     var endCell = r.status === "left"
       ? accEmpInputHtml("end_date", r.end_date || "", r.id, "", "date")
       : '<span class="muted">—</span>';
-    var salaryCell = r.salary_hidden
+    var salaryCell = hidden
       ? accHiddenMoney()
       : ('<div style="display:flex;align-items:center;gap:0.25rem;">' +
         accEmpInputHtml("salary", r.salary, r.id, "acc-emp-inline-salary", "number", "0.01") +
         '<small class="muted">' + accEsc(cur) + "</small></div>" +
-        '<small class="muted">' + (r.salary_hidden ? "" : accMoney(r.salary_try, "TRY") + " · " + accMoney(r.salary_usd, "USD") + " · " + accMoney(r.salary_eur, "EUR")) + "</small>");
-    var bankCell;
-    var cryptoCell;
-    if (r.salary_hidden) {
-      bankCell = cryptoCell = accHiddenMoney();
-    } else if (!isOffice) {
-      bankCell = cryptoCell = '<span class="muted">—</span>';
-    } else {
-      bankCell = accEmpInputHtml("bank_salary", r.bank_salary || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
-      cryptoCell = accEmpInputHtml("crypto_salary", r.crypto_salary || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
-    }
-    var advanceCell = r.salary_hidden
+        '<small class="muted">' + accMoney(r.salary_try, "TRY") + " · " + accMoney(r.salary_usd, "USD") + " · " + accMoney(r.salary_eur, "EUR") + "</small>");
+    var bankCell = hidden
+      ? accHiddenMoney()
+      : accEmpInputHtml("bank_salary", r.bank_salary || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
+    var cryptoCell = hidden
+      ? accHiddenMoney()
+      : accEmpInputHtml("crypto_salary", r.crypto_salary || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
+    var advanceCell = hidden
       ? accHiddenMoney()
       : accEmpInputHtml("advance_amount", r.advance_amount || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
-    var accrualCell = accMultiCurCellHtml(r.accrual, r.salary_hidden);
-    var netCell = accMultiCurCellHtml(r.net_accrual, r.salary_hidden);
+    var remainCell = hidden
+      ? accHiddenMoney()
+      : ('<span class="acc-emp-remain-cell">' + accMoney(r.payment_remaining != null ? r.payment_remaining : r.office_remaining, cur) + "</span>");
+    var payInfoCell = accEmpPayInfoHtml(r, hidden);
+    var accrualCell = accMultiCurCellHtml(r.accrual, hidden);
+    var netCell = accMultiCurCellHtml(r.net_accrual, hidden);
+    var notesField = hidden
+      ? ""
+      : ('<div style="margin-top:0.2rem;">' +
+        accEmpInputHtml("notes", r.notes || "", r.id, "acc-emp-inline-wide") + "</div>");
     var statusCell = accEmpSelectHtml("status", r.status || "active", r.id, [
       { value: "active", label: "Aktif Çalışıyor" },
       { value: "left", label: "Ayrıldı" }
     ], "acc-emp-status-select " + statusCls);
     return '<tr class="' + rowCls + '">' +
-      "<td>" + nameCell + "</td>" +
+      "<td>" + nameCell + notesField + "</td>" +
       "<td>" + catCell + "</td>" +
       "<td>" + deptCell + "</td>" +
+      "<td>" + locCell + "</td>" +
       '<td class="mono">' + startCell + "</td>" +
       '<td class="mono">' + endCell + "</td>" +
       "<td>" + salaryCell + "</td>" +
-      '<td class="acc-col-office">' + bankCell + "</td>" +
-      '<td class="acc-col-office">' + cryptoCell + "</td>" +
+      "<td>" + bankCell + "</td>" +
+      "<td>" + cryptoCell + "</td>" +
       "<td>" + advanceCell + "</td>" +
+      "<td>" + remainCell + "</td>" +
+      "<td>" + payInfoCell + "</td>" +
       "<td>" + accrualCell + "</td>" +
       "<td>" + netCell + "</td>" +
       "<td>" + statusCell + "</td>" +
@@ -1113,7 +1126,7 @@
     var ordered = accOrderEmployees(filtered);
     var activeRows = ordered.filter(function (r) { return r.status === "active"; });
     var leftRows = ordered.filter(function (r) { return r.status === "left"; });
-    var cols = 13;
+    var cols = 16;
 
     if (!filtered.length) {
       tbody.innerHTML = '<tr><td colspan="' + cols + '" class="empty">' +
@@ -1144,7 +1157,6 @@
     });
     accUpdateFoot("acc-emp", filtered.length, "personel");
     accUpdateEmpPayrollTotals(filtered);
-    accSetOfficeSalaryAccess(accCanViewOfficeSalaries);
   }
 
   function accSwitchTab(tab) {

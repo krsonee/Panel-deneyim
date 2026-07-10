@@ -20,6 +20,7 @@ from accounting_payroll import (
     redact_employee_for_view,
     validate_advance_amount,
     validate_office_amounts,
+    validate_payment_split,
 )
 from accounting_period import date_clause, default_accounting_period, period_label
 from permissions import has_permission
@@ -228,7 +229,6 @@ def create_accounting_blueprint(permission_required):
         )
         if not salary_category:
             return None, "Geçerli maaş kategorisi seçin."
-        is_office = salary_category in office_slugs
 
         salary = parse_amount(data.get("salary")) if data.get("salary") is not None else existing.get("salary")
         if salary is None:
@@ -240,8 +240,20 @@ def create_accounting_blueprint(permission_required):
         if bank is None or crypto is None or advance is None:
             return None, "Ödeme tutarları geçersiz."
 
-        if not is_office:
-            bank = crypto = 0.0
+        crypto_wallet = (
+            data.get("crypto_wallet") if "crypto_wallet" in data else existing.get("crypto_wallet") or ""
+        )
+        bank_iban = (data.get("bank_iban") if "bank_iban" in data else existing.get("bank_iban") or "")
+        bank_account_name = (
+            data.get("bank_account_name") if "bank_account_name" in data else existing.get("bank_account_name") or ""
+        )
+        location = (data.get("location") if "location" in data else existing.get("location") or "")
+        notes = (data.get("notes") if "notes" in data else existing.get("notes") or "")
+        crypto_wallet = (crypto_wallet or "").strip()[:120]
+        bank_iban = (bank_iban or "").strip().replace(" ", "")[:34]
+        bank_account_name = (bank_account_name or "").strip()[:120]
+        location = (location or "").strip()[:80]
+        notes = (notes or "").strip()[:500]
 
         if not name:
             return None, "Personel adı zorunludur."
@@ -254,14 +266,9 @@ def create_accounting_blueprint(permission_required):
         if date_err:
             return None, date_err
 
-        if is_office:
-            office_err = validate_office_amounts(salary, bank, crypto, advance, is_office)
-            if office_err:
-                return None, office_err
-        else:
-            adv_err = validate_advance_amount(salary, advance)
-            if adv_err:
-                return None, adv_err
+        pay_err = validate_payment_split(salary, bank, crypto, advance)
+        if pay_err:
+            return None, pay_err
 
         return {
             "name": name,
@@ -274,6 +281,11 @@ def create_accounting_blueprint(permission_required):
             "bank_salary": bank,
             "crypto_salary": crypto,
             "advance_amount": advance,
+            "crypto_wallet": crypto_wallet,
+            "bank_iban": bank_iban,
+            "bank_account_name": bank_account_name,
+            "location": location,
+            "notes": notes,
             "currency": data.get("currency") or existing.get("currency") or "TRY",
         }, None
 
@@ -899,7 +911,9 @@ def create_accounting_blueprint(permission_required):
             SET name = ?, department = ?, start_date = ?, end_date = ?, salary = ?, currency = ?,
                 salary_try = ?, salary_usd = ?, salary_eur = ?,
                 rate_usd_try = ?, rate_eur_try = ?, salary_category = ?,
-                bank_salary = ?, crypto_salary = ?, advance_amount = ?, status = ?
+                bank_salary = ?, crypto_salary = ?, advance_amount = ?,
+                crypto_wallet = ?, bank_iban = ?, bank_account_name = ?,
+                location = ?, notes = ?, status = ?
             WHERE id = ?
             """,
             (
@@ -908,6 +922,8 @@ def create_accounting_blueprint(permission_required):
                 fx["TRY"], fx["USD"], fx["EUR"],
                 fx["rate_usd_try"], fx["rate_eur_try"], payload["salary_category"],
                 payload["bank_salary"], payload["crypto_salary"], payload["advance_amount"],
+                payload["crypto_wallet"], payload["bank_iban"], payload["bank_account_name"],
+                payload["location"], payload["notes"],
                 payload["status"], emp_id,
             ),
         )
@@ -966,8 +982,8 @@ def create_accounting_blueprint(permission_required):
                 (name, department, start_date, end_date, salary, currency,
                  salary_try, salary_usd, salary_eur, rate_usd_try, rate_eur_try,
                  salary_category, bank_salary, crypto_salary, advance_amount,
-                 status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 crypto_wallet, bank_iban, bank_account_name, location, notes, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload["name"], payload["department"], payload["start_date"], payload["end_date"],
@@ -975,7 +991,9 @@ def create_accounting_blueprint(permission_required):
                     fx["TRY"], fx["USD"], fx["EUR"],
                     fx["rate_usd_try"], fx["rate_eur_try"],
                     payload["salary_category"], payload["bank_salary"], payload["crypto_salary"],
-                    payload["advance_amount"], payload["status"], now,
+                    payload["advance_amount"], payload["crypto_wallet"], payload["bank_iban"],
+                    payload["bank_account_name"], payload["location"], payload["notes"],
+                    payload["status"], now,
                 ),
             )
             conn.commit()
