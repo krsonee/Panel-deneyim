@@ -63,4 +63,36 @@ def create_smartico_blueprint(permission_required):
             result = smartico_api.fetch_media_report(conn, period=period, force=force)
         return jsonify(result)
 
+    @bp.route("/bindings", methods=["GET"])
+    @perm(*MODULE_ACCESS)
+    def list_bindings():
+        with closing(get_db()) as conn:
+            bindings = smartico_api.get_link_bindings(conn)
+        return jsonify({"bindings": bindings})
+
+    @bp.route("/bindings", methods=["POST"])
+    @perm(*MODULE_ACCESS)
+    def save_binding():
+        data = request.get_json(silent=True) or {}
+        try:
+            with closing(get_db()) as conn:
+                smartico_api.save_link_binding(
+                    conn,
+                    data.get("affiliate_id"),
+                    data.get("link_id"),
+                    data.get("domain"),
+                    data.get("ref_code"),
+                )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True})
+
+    @bp.route("/bindings", methods=["DELETE"])
+    @perm(*MODULE_ACCESS)
+    def remove_binding():
+        data = request.get_json(silent=True) or {}
+        with closing(get_db()) as conn:
+            smartico_api.delete_link_binding(conn, data.get("affiliate_id"), data.get("link_id"))
+        return jsonify({"ok": True})
+
     return bp

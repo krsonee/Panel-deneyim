@@ -7,13 +7,22 @@ mevcut tracked_links / visitor_sessions sistemini değiştirmez.
 """
 
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from http.client import RemoteDisconnected
 
-from database import get_smartico_setting, upsert_smartico_setting
+from database import (
+    execute,
+    fetchall,
+    get_smartico_setting,
+    iso,
+    upsert_smartico_setting,
+    uses_postgres,
+    utcnow,
+)
 
 DEFAULT_API_HOST = "https://boapi.smartico.ai"
 
@@ -21,6 +30,10 @@ _SETTING_API_KEY = "api_key"
 _SETTING_API_HOST = "api_host"
 
 _HTTP_TIMEOUT = 8
+
+# Kendi tracker.js sistemimizde bir ziyaretçi bu kadar saniye içinde
+# heartbeat göndermişse "online" sayılır (app.py ile aynı eşik).
+_ONLINE_THRESHOLD_SECONDS = 90
 
 _FETCH_ERRORS = (
     urllib.error.URLError,
@@ -76,6 +89,144 @@ def clear_config(conn):
 
 class SmarticoError(Exception):
     pass
+
+
+def _normalize_key(text):
+    """Karşılaştırma için: küçük harf, boşluk/tire/alt çizgi vs. temizlenmiş hâli."""
+    text = (text or "").strip().lower()
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def get_link_bindings(conn):
+    rows = fetchall(conn, "SELECT * FROM smartico_link_bindings ORDER BY created_at DESC")
+    return [dict(r) for r in rows]
+
+
+def get_link_bindings_map(conn):
+    """(affiliate_id, link_id) -> (domain, ref_code) eşlemesi."""
+    result = {}
+    for row in get_link_bindings(conn):
+        key = (str(row.get("affiliate_id") or ""), str(row.get("link_id") or ""))
+        result[key] = (row.get("domain") or "", row.get("ref_code") or "")
+    return result
+
+
+def save_link_binding(conn, affiliate_id, link_id, domain, ref_code):
+    affiliate_id = str(affiliate_id or "").strip()
+    link_id = str(link_id or "").strip()
+    domain = (domain or "").strip().lower()
+    ref_code = (ref_code or "").strip()
+    if not domain:
+        raise ValueError("Domain gerekli.")
+    now = iso(utcnow())
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            INSERT INTO smartico_link_bindings (affiliate_id, link_id, domain, ref_code, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (affiliate_id, link_id) DO UPDATE
+                SET domain = EXCLUDED.domain, ref_code = EXCLUDED.ref_code
+            """,
+            (affiliate_id, link_id, domain, ref_code, now),
+        )
+    else:
+        execute(
+            conn,
+            "DELETE FROM smartico_link_bindings WHERE affiliate_id = ? AND link_id = ?",
+            (affiliate_id, link_id),
+        )
+        execute(
+            conn,
+            """
+            INSERT INTO smartico_link_bindings (affiliate_id, link_id, domain, ref_code, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (affiliate_id, link_id, domain, ref_code, now),
+        )
+    conn.commit()
+
+
+def delete_link_binding(conn, affiliate_id, link_id):
+    execute(
+        conn,
+        "DELETE FROM smartico_link_bindings WHERE affiliate_id = ? AND link_id = ?",
+        (str(affiliate_id or "").strip(), str(link_id or "").strip()),
+    )
+    conn.commit()
+
+
+def _fetch_online_map(conn):
+    """Kendi tracker sistemimizden anlık online sayıları çıkar.
+
+    Dönüş:
+      by_domain_ref: {(domain, ref_code): online_count}  -> manuel eşleşmeler için
+      by_norm_key:   {normalize(ref_code veya label): online_count} -> otomatik ad eşleşmesi için
+    """
+    cutoff = iso(utcnow() - timedelta(seconds=_ONLINE_THRESHOLD_SECONDS))
+    session_rows = fetchall(
+        conn,
+        "SELECT domain, ref_code, COUNT(*) AS cnt FROM visitor_sessions "
+        "WHERE last_seen_at >= ? GROUP BY domain, ref_code",
+        (cutoff,),
+    )
+    by_domain_ref = {}
+    by_ref_norm = {}
+    for r in session_rows:
+        domain = (r["domain"] or "").strip().lower()
+        ref_code = (r["ref_code"] or "").strip().lower()
+        cnt = int(r["cnt"] or 0)
+        by_domain_ref[(domain, ref_code)] = by_domain_ref.get((domain, ref_code), 0) + cnt
+        norm = _normalize_key(ref_code)
+        if norm:
+            by_ref_norm[norm] = by_ref_norm.get(norm, 0) + cnt
+
+    link_rows = fetchall(conn, "SELECT domain, ref_code, label FROM tracked_links")
+    by_label_norm = {}
+    for r in link_rows:
+        label = (r["label"] or "").strip()
+        if not label:
+            continue
+        domain = (r["domain"] or "").strip().lower()
+        ref_code = (r["ref_code"] or "").strip().lower()
+        cnt = by_domain_ref.get((domain, ref_code), 0)
+        norm = _normalize_key(label)
+        if norm:
+            by_label_norm[norm] = by_label_norm.get(norm, 0) + cnt
+
+    return {"by_domain_ref": by_domain_ref, "by_ref_norm": by_ref_norm, "by_label_norm": by_label_norm}
+
+
+def _attach_online_counts(conn, rows):
+    bindings = get_link_bindings_map(conn)
+    online_map = _fetch_online_map(conn)
+    for row in rows:
+        key = (str(row.get("affiliate_id") or ""), str(row.get("link_id") or ""))
+        binding = bindings.get(key)
+        if binding:
+            domain, ref_code = binding
+            row["bind_domain"] = domain
+            row["bind_ref_code"] = ref_code
+            row["online_now"] = online_map["by_domain_ref"].get((domain.lower(), ref_code.lower()), 0)
+            row["online_source"] = "manual"
+            continue
+        row["bind_domain"] = None
+        row["bind_ref_code"] = None
+        candidates = [row.get("affiliate_name") or "", row.get("link_name") or ""]
+        online = None
+        for cand in candidates:
+            norm = _normalize_key(cand)
+            if not norm:
+                continue
+            if norm in online_map["by_ref_norm"]:
+                online = online_map["by_ref_norm"][norm]
+                break
+            if norm in online_map["by_label_norm"]:
+                online = online_map["by_label_norm"][norm]
+                break
+        row["online_now"] = online
+        row["online_source"] = "auto" if online is not None else None
+    return rows
 
 
 def _request(host, path, api_key, params=None):
@@ -167,7 +318,9 @@ def fetch_media_report(conn, period="all", force=False):
     now = datetime.now(timezone.utc)
     cached = _report_cache.get(cache_key)
     if not force and cached and now - cached["fetched_at"] < timedelta(seconds=_CACHE_SECONDS):
-        return {**cached["payload"], "source": "cache"}
+        payload = {**cached["payload"]}
+        payload["rows"] = _attach_online_counts(conn, [dict(r) for r in payload["rows"]])
+        return {**payload, "source": "cache"}
 
     params = {"group_by": "affiliate_id,link_id"}
     date_from, date_to = date_range_from_period(period)
@@ -179,7 +332,9 @@ def fetch_media_report(conn, period="all", force=False):
         data = _request(cfg["api_host"], "af2_media_report_op", cfg["api_key"], params)
     except SmarticoError as exc:
         if cached:
-            return {**cached["payload"], "source": "cache", "error": str(exc)}
+            payload = {**cached["payload"]}
+            payload["rows"] = _attach_online_counts(conn, [dict(r) for r in payload["rows"]])
+            return {**payload, "source": "cache", "error": str(exc)}
         return {"rows": [], "summary": _empty_summary(), "error": str(exc), "source": None}
 
     if not isinstance(data, dict):
@@ -187,7 +342,9 @@ def fetch_media_report(conn, period="all", force=False):
         if isinstance(data, str) and data.strip():
             msg = f"Smartico API hatası: {data.strip()}"
         if cached:
-            return {**cached["payload"], "source": "cache", "error": msg}
+            payload = {**cached["payload"]}
+            payload["rows"] = _attach_online_counts(conn, [dict(r) for r in payload["rows"]])
+            return {**payload, "source": "cache", "error": msg}
         return {"rows": [], "summary": _empty_summary(), "error": msg, "source": None}
 
     aff_names = fetch_affiliate_names(conn)
@@ -251,7 +408,8 @@ def fetch_media_report(conn, period="all", force=False):
         "currency": meta.get("operator_currency") or "",
     }
     _report_cache[cache_key] = {"fetched_at": now, "payload": payload}
-    return {**payload, "source": "live"}
+    live_payload = {**payload, "rows": _attach_online_counts(conn, [dict(r) for r in rows])}
+    return {**live_payload, "source": "live"}
 
 
 def _num(v):

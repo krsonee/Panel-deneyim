@@ -137,6 +137,17 @@ def init_schema(conn):
                 value TEXT NOT NULL DEFAULT ''
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS smartico_link_bindings (
+                id SERIAL PRIMARY KEY,
+                affiliate_id TEXT NOT NULL DEFAULT '',
+                link_id TEXT NOT NULL DEFAULT '',
+                domain TEXT NOT NULL,
+                ref_code TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                UNIQUE(affiliate_id, link_id)
+            )
+            """,
         ]
     else:
         statements = [
@@ -181,6 +192,17 @@ def init_schema(conn):
                 value TEXT NOT NULL DEFAULT ''
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS smartico_link_bindings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                affiliate_id TEXT NOT NULL DEFAULT '',
+                link_id TEXT NOT NULL DEFAULT '',
+                domain TEXT NOT NULL,
+                ref_code TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                UNIQUE(affiliate_id, link_id)
+            )
+            """,
         ]
     for sql in statements:
         execute(conn, sql)
@@ -218,6 +240,36 @@ def migrate_smartico(conn):
         )
         """,
     )
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS smartico_link_bindings (
+                id SERIAL PRIMARY KEY,
+                affiliate_id TEXT NOT NULL DEFAULT '',
+                link_id TEXT NOT NULL DEFAULT '',
+                domain TEXT NOT NULL,
+                ref_code TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                UNIQUE(affiliate_id, link_id)
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS smartico_link_bindings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                affiliate_id TEXT NOT NULL DEFAULT '',
+                link_id TEXT NOT NULL DEFAULT '',
+                domain TEXT NOT NULL,
+                ref_code TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                UNIQUE(affiliate_id, link_id)
+            )
+            """,
+        )
     conn.commit()
 
 
