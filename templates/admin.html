@@ -2,7 +2,10 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#060a10">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>MakroPanel — Link Takip & Analiz</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -34,6 +37,7 @@
     .sidebar {
       width: var(--sidebar-w); background: var(--sidebar); border-right: 1px solid var(--border);
       display: flex; flex-direction: column; flex-shrink: 0; position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+      transition: transform 0.25s ease;
     }
     .sidebar-brand { padding: 1.35rem 1.25rem; border-bottom: 1px solid var(--border); }
     .sidebar-brand h1 { font-size: 1.15rem; font-weight: 800; }
@@ -254,7 +258,12 @@
       padding: 0.65rem 1.15rem; border-top: 1px solid var(--border); background: var(--surface-2);
     }
     .table-foot .table-count { font-size: 0.72rem; color: var(--muted); }
-    .table-scroll { overflow-x: auto; }
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .scroll-hint {
+      display: none; font-size: 0.68rem; color: var(--muted); padding: 0.35rem 0.85rem;
+      background: var(--surface-2); border-bottom: 1px solid var(--border);
+    }
+    .scroll-hint::before { content: "↔ "; opacity: 0.75; }
     .table-scroll.scrollable {
       max-height: 420px;
       overflow-y: auto;
@@ -548,15 +557,107 @@
     .edit-user-form .btn-add-user { margin-top: 0.5rem; }
     [data-perm-hidden="1"] { display: none !important; }
 
+    .mobile-header { display: none; }
+    .sidebar-backdrop {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+      z-index: 49; opacity: 0; transition: opacity 0.25s ease;
+    }
+    .sidebar-backdrop.show { display: block; opacity: 1; }
+    body.sidebar-open { overflow: hidden; }
+
     @media (max-width: 768px) {
+      .mobile-header {
+        display: flex; align-items: center; gap: 0.65rem;
+        padding: 0.65rem 0.85rem;
+        padding-top: max(0.65rem, env(safe-area-inset-top));
+        background: var(--sidebar); border-bottom: 1px solid var(--border);
+        position: sticky; top: 0; z-index: 45;
+      }
+      .mobile-nav-toggle {
+        display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
+        min-width: 44px; min-height: 44px; padding: 0.45rem 0.65rem;
+        border-radius: 10px; flex-shrink: 0; touch-action: manipulation;
+      }
+      .mobile-title {
+        flex: 1; min-width: 0; font-size: 0.95rem; font-weight: 700;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
       .sidebar { transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); box-shadow: 8px 0 32px rgba(0,0,0,0.35); }
       .main { margin-left: 0; }
+      .main-inner {
+        padding: 0.75rem 0.85rem 1.5rem;
+        padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+      }
+      .topbar {
+        flex-direction: column; align-items: stretch; gap: 0.5rem; margin-bottom: 0.85rem;
+      }
+      .topbar > div:first-child h2,
+      .topbar > div:first-child p { display: none; }
+      .topbar .live-pill { align-self: flex-start; }
+      .period-bar {
+        width: 100%; flex-direction: column; align-items: stretch; gap: 0.45rem;
+        padding: 0.65rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      }
+      .period-bar select,
+      .period-bar input[type="month"] { width: 100%; min-width: 0; }
+      .period-bar > span { font-size: 0.72rem; line-height: 1.35; }
+      .kpi .val { font-size: 1.65rem; }
+      .acc-net-profit { font-size: 2rem; }
+      .acc-tabs {
+        flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+        scrollbar-width: none; position: sticky;
+        top: calc(52px + env(safe-area-inset-top, 0px)); z-index: 20;
+      }
+      .acc-tabs::-webkit-scrollbar { display: none; }
+      .acc-tab { flex-shrink: 0; min-height: 40px; padding: 0.5rem 0.85rem; touch-action: manipulation; }
+      .card-head { padding: 0.75rem 0.85rem; font-size: 0.82rem; flex-direction: column; align-items: flex-start; }
+      .card-body { padding: 0.85rem; }
+      .table-foot { flex-direction: column; align-items: stretch; gap: 0.45rem; padding: 0.65rem 0.85rem; }
+      .scroll-hint { display: block; }
+      .table-scroll.scrollable { max-height: min(420px, 55vh); }
+      .acc-payroll-scroll { max-height: min(320px, 45vh); }
+      #acc-emp-table-scroll table { min-width: 1280px; }
+      .acc-payroll-total {
+        flex-direction: column; align-items: stretch; text-align: center; gap: 0.45rem;
+      }
+      .acc-payroll-total-nums { text-align: center; }
+      .acc-emp-inline,
+      .acc-emp-inline-wide,
+      .acc-emp-inline-salary,
+      .acc-emp-inline-wallet,
+      .acc-emp-advance-inp {
+        max-width: none; min-width: 88px; min-height: 40px; font-size: 16px;
+      }
+      .acc-emp-payinfo { min-width: 160px; }
+      .acc-emp-payinfo input { min-width: 0; font-size: 16px; min-height: 40px; }
+      .acc-emp-filters .btn { width: 100%; min-height: 44px; }
+      input, select, .btn { font-size: 16px; touch-action: manipulation; }
+      .btn-sm { font-size: 0.82rem; min-height: 40px; padding: 0.45rem 0.7rem; }
+      .filter-bar { grid-template-columns: 1fr; padding: 0.65rem 0.85rem; }
+      .modal-overlay { padding: 0; align-items: flex-end; }
+      .modal {
+        max-width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0;
+        margin-bottom: 0;
+      }
+      .modal-close { min-width: 44px; min-height: 44px; font-size: 1.5rem; }
+      .toast {
+        left: 0.85rem; right: 0.85rem; bottom: max(0.85rem, env(safe-area-inset-bottom));
+        text-align: center;
+      }
+      .tools-grid { gap: 0.75rem; }
+      .tracking-code-panel pre { max-height: 120px; font-size: 0.62rem; }
+      .card-actions { width: 100%; }
+      .card-actions .btn { flex: 1; min-height: 44px; justify-content: center; }
+      .acc-options-row { flex-wrap: wrap; }
+      .acc-options-row .btn { width: 100%; min-height: 44px; }
+      .form-row-4 { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <div class="app">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar-nav">
       <div class="sidebar-brand">
         <h1>Makro<span>Panel</span></h1>
         <p>SaaS Yönetim Merkezi</p>
@@ -577,7 +678,13 @@
       </div>
     </aside>
 
+    <div class="sidebar-backdrop" id="sidebar-backdrop" aria-hidden="true"></div>
+
     <div class="main">
+      <header class="mobile-header" id="mobile-header">
+        <button type="button" class="btn mobile-nav-toggle" id="btn-mobile-nav" aria-label="Menüyü aç" aria-expanded="false" aria-controls="sidebar-nav">☰</button>
+        <span class="mobile-title" id="mobile-module-title">Link Takip</span>
+      </header>
       <div class="main-inner">
         <div id="module-tracking-panel" class="module-panel">
         <div class="topbar">
@@ -674,6 +781,7 @@
         <section class="card" data-perm="tracking.reports">
           <div class="card-head"><span>Referans Raporu</span><span class="muted" id="ref-report-label" style="font-weight:400;font-size:0.75rem;"></span></div>
           <div class="table-wrap">
+            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
             <div class="table-scroll" id="ref-report-table-scroll">
               <table>
                 <thead><tr>
@@ -709,6 +817,7 @@
             </div>
           </div>
           <div class="table-wrap">
+            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
             <div class="table-scroll" id="links-table-scroll">
               <table>
                 <thead><tr>
@@ -731,6 +840,7 @@
         <section class="card" data-perm="tracking.players">
           <div class="card-head"><span>Şu An Online</span><span class="muted" id="online-label" style="font-weight:400;font-size:0.75rem;"></span></div>
           <div class="table-wrap">
+            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
             <div class="table-scroll" id="online-table-scroll">
               <table>
                 <thead><tr>
@@ -773,6 +883,7 @@
           </div>
           <div class="filter-count" id="filter-count"></div>
           <div class="table-wrap">
+            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
             <div class="table-scroll" id="sessions-table-scroll">
               <table>
                 <thead><tr>
@@ -970,10 +1081,58 @@
         document.querySelectorAll(".nav-item[data-module]").forEach(function(el) {
           el.classList.toggle("active", el.getAttribute("data-module") === name);
         });
+        var mobileTitle = document.getElementById("mobile-module-title");
+        if (mobileTitle) {
+          mobileTitle.textContent = name === "accounting" ? "Muhasebe" : "Link Takip & Analiz";
+        }
+        if (typeof window.closeMobileSidebar === "function") window.closeMobileSidebar();
         trackingPollEnabled = name === "tracking";
         if (name === "accounting" && window.MakroAccounting) {
           window.MakroAccounting.onShow();
         }
+      }
+
+      function initMobileNav() {
+        var sidebar = document.querySelector(".sidebar");
+        var backdrop = document.getElementById("sidebar-backdrop");
+        var btn = document.getElementById("btn-mobile-nav");
+        if (!sidebar || !backdrop || !btn) return;
+
+        function closeMobileSidebar() {
+          sidebar.classList.remove("open");
+          backdrop.classList.remove("show");
+          document.body.classList.remove("sidebar-open");
+          btn.setAttribute("aria-expanded", "false");
+          btn.setAttribute("aria-label", "Menüyü aç");
+        }
+        function openMobileSidebar() {
+          sidebar.classList.add("open");
+          backdrop.classList.add("show");
+          document.body.classList.add("sidebar-open");
+          btn.setAttribute("aria-expanded", "true");
+          btn.setAttribute("aria-label", "Menüyü kapat");
+        }
+        window.closeMobileSidebar = closeMobileSidebar;
+
+        btn.addEventListener("click", function() {
+          if (sidebar.classList.contains("open")) closeMobileSidebar();
+          else openMobileSidebar();
+        });
+        backdrop.addEventListener("click", closeMobileSidebar);
+        document.querySelectorAll(".nav-item[data-module], .sidebar-foot a").forEach(function(el) {
+          el.addEventListener("click", function() {
+            if (window.matchMedia("(max-width: 768px)").matches) closeMobileSidebar();
+          });
+        });
+        var settingsBtn = document.getElementById("btn-open-settings");
+        if (settingsBtn) {
+          settingsBtn.addEventListener("click", function() {
+            if (window.matchMedia("(max-width: 768px)").matches) closeMobileSidebar();
+          });
+        }
+        window.addEventListener("resize", function() {
+          if (!window.matchMedia("(max-width: 768px)").matches) closeMobileSidebar();
+        });
       }
 
       function initModuleNav() {
@@ -1124,6 +1283,8 @@
         localStorage.setItem("makropanel_theme", theme);
         var btn = document.getElementById("btn-theme");
         if (btn) btn.textContent = theme === "light" ? "🌙 Koyu Tema" : "☀️ Açık Tema";
+        var themeMeta = document.querySelector('meta[name="theme-color"]');
+        if (themeMeta) themeMeta.setAttribute("content", theme === "light" ? "#f1f5f9" : "#060a10");
       }
 
       function initTheme() {
@@ -2130,6 +2291,7 @@
       initColumnDrag();
       initTableControls();
       initModuleNav();
+      initMobileNav();
       applyTableColOrder("online-table");
       applyTableColOrder("sessions-table");
       if (window.MakroAccounting) window.MakroAccounting.init();
