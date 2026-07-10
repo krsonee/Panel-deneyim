@@ -184,6 +184,21 @@ def compute_payroll_daily(employees, period="month", reference=None, include_off
     }
 
 
+def employee_active_in_period(emp, period="month", reference=None):
+    """Seçili dönemde en az bir gün aktif olan personel."""
+    from accounting_period import parse_period
+
+    start, end, key = parse_period(period, reference)
+    if key == "all" or start is None:
+        return True
+    day = start
+    while day <= end:
+        if employee_active_on(emp, day):
+            return True
+        day += timedelta(days=1)
+    return False
+
+
 def advance_in_currency(emp, currency):
     advance = float(emp.get("advance_amount") or 0)
     if advance <= 0:

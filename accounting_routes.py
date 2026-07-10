@@ -15,6 +15,7 @@ from accounting_fx import (
 from accounting_payroll import (
     category_lookup,
     compute_payroll_daily,
+    employee_active_in_period,
     enrich_employee_row,
     redact_employee_for_view,
     validate_advance_amount,
@@ -870,13 +871,58 @@ def create_accounting_blueprint(permission_required):
 
     # ── Personel ──
 
+    def fx_from_row(row):
+        return {
+            "amount": float(row["salary"]),
+            "currency": row["currency"] or "TRY",
+            "TRY": float(row["salary_try"] or 0),
+            "USD": float(row["salary_usd"] or 0),
+            "EUR": float(row["salary_eur"] or 0),
+            "rate_usd_try": float(row["rate_usd_try"] or 0),
+            "rate_eur_try": float(row["rate_eur_try"] or 0),
+        }
+
+    def needs_fx_recalc(data, row):
+        if any(k in data for k in ("rate_usd_try", "rate_eur_try", "auto_rate")):
+            return True
+        if "salary" in data and round(float(data["salary"]), 2) != round(float(row["salary"]), 2):
+            return True
+        if "currency" in data and (data.get("currency") or "").upper() != (row.get("currency") or "TRY").upper():
+            return True
+        return False
+
+    def apply_employee_update(conn, emp_id, payload, fx):
+        execute(
+            conn,
+            """
+            UPDATE acc_employees
+            SET name = ?, department = ?, start_date = ?, end_date = ?, salary = ?, currency = ?,
+                salary_try = ?, salary_usd = ?, salary_eur = ?,
+                rate_usd_try = ?, rate_eur_try = ?, salary_category = ?,
+                bank_salary = ?, crypto_salary = ?, advance_amount = ?, status = ?
+            WHERE id = ?
+            """,
+            (
+                payload["name"], payload["department"], payload["start_date"], payload["end_date"],
+                fx["amount"], fx["currency"],
+                fx["TRY"], fx["USD"], fx["EUR"],
+                fx["rate_usd_try"], fx["rate_eur_try"], payload["salary_category"],
+                payload["bank_salary"], payload["crypto_salary"], payload["advance_amount"],
+                payload["status"], emp_id,
+            ),
+        )
+
     @bp.route("/employees", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def list_employees():
         period = period_from_request()
         with closing(get_db()) as conn:
-            rows = fetchall(conn, "SELECT * FROM acc_employees ORDER BY name ASC")
+            all_rows = fetchall(conn, "SELECT * FROM acc_employees ORDER BY department ASC, name ASC")
             departments, salary_categories = payroll_context(conn)
+            rows = [
+                r for r in all_rows
+                if employee_active_in_period(dict(r), period)
+            ]
             employees = [prepare_employee_row(r, period, salary_categories) for r in rows]
             payroll_data = compute_payroll_daily(
                 [dict(r) for r in rows],
@@ -977,35 +1023,26 @@ def create_accounting_blueprint(permission_required):
             if err:
                 return jsonify({"error": err}), 400
 
-            rates, rate_err = rates_from_request(data, stored=dict(row))
-            if rate_err:
-                return jsonify({"error": rate_err}), 400
-            fx, err = build_money(payload["salary"], payload["currency"], rates)
-            if err:
-                return jsonify({"error": err}), 400
+            if needs_fx_recalc(data, dict(row)):
+                rates, rate_err = rates_from_request(data, stored=dict(row))
+                if rate_err:
+                    return jsonify({"error": rate_err}), 400
+                fx, err = build_money(payload["salary"], payload["currency"], rates)
+                if err:
+                    return jsonify({"error": err}), 400
+            else:
+                fx = fx_from_row(dict(row))
+                fx["amount"] = payload["salary"]
+                fx["currency"] = payload["currency"]
 
-            execute(
-                conn,
-                """
-                UPDATE acc_employees
-                SET name = ?, department = ?, start_date = ?, end_date = ?, salary = ?, currency = ?,
-                    salary_try = ?, salary_usd = ?, salary_eur = ?,
-                    rate_usd_try = ?, rate_eur_try = ?, salary_category = ?,
-                    bank_salary = ?, crypto_salary = ?, advance_amount = ?, status = ?
-                WHERE id = ?
-                """,
-                (
-                    payload["name"], payload["department"], payload["start_date"], payload["end_date"],
-                    fx["amount"], fx["currency"],
-                    fx["TRY"], fx["USD"], fx["EUR"],
-                    fx["rate_usd_try"], fx["rate_eur_try"], payload["salary_category"],
-                    payload["bank_salary"], payload["crypto_salary"], payload["advance_amount"],
-                    payload["status"], emp_id,
-                ),
-            )
+            apply_employee_update(conn, emp_id, payload, fx)
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_employees WHERE id = ?", (emp_id,))
-        return jsonify({"employee": prepare_employee_row(row, "all", salary_categories), **permissions_meta()})
+        period = period_from_request()
+        return jsonify({
+            "employee": prepare_employee_row(row, period, salary_categories),
+            **permissions_meta(),
+        })
 
     @bp.route("/employees/<int:emp_id>", methods=["DELETE"])
     @acc_perm(*MODULE_ACCESS)

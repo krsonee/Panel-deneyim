@@ -373,6 +373,13 @@
         </form>
       </div>
       <div class="card-body acc-emp-toolbar" style="padding-top:0;padding-bottom:0.65rem;border-top:1px solid var(--border);">
+        <div class="acc-emp-period-bar">
+          <div class="acc-emp-period-note">
+            <label>Maaş Dönemi</label>
+            <strong id="acc-emp-period-label">—</strong>
+            <small class="muted">Üst çubuktaki ay seçimi bu tabloyu filtreler</small>
+          </div>
+        </div>
         <div class="acc-emp-filters form-row-4">
           <div>
             <label>Kategori Filtresi</label>
@@ -403,19 +410,21 @@
         <div class="table-scroll" id="acc-emp-table-scroll">
           <table>
             <thead><tr>
-              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="name">Personel</th>
-              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="salary_category">Kategori</th>
-              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="department">Departman</th>
-              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="start_date">Başlangıç</th>
-              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="end_date">Çıkış</th>
-              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="salary">Maaş</th>
-              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="advance">Avans</th>
-              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="accrual">Hak Ediş</th>
-              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="net_accrual">Net Ödeme</th>
-              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="status">Durum</th>
+              <th>Personel</th>
+              <th>Kategori</th>
+              <th>Departman</th>
+              <th>Başlangıç</th>
+              <th>Çıkış</th>
+              <th>Maaş</th>
+              <th class="acc-col-office">Banka</th>
+              <th class="acc-col-office">Kripto</th>
+              <th>Avans</th>
+              <th>Hak Ediş</th>
+              <th>Net Ödeme</th>
+              <th>Durum</th>
               <th></th>
             </tr></thead>
-            <tbody id="acc-emp-table"><tr><td colspan="11" class="empty">Personel yok</td></tr></tbody>
+            <tbody id="acc-emp-table"><tr><td colspan="13" class="empty">Personel yok</td></tr></tbody>
           </table>
         </div>
         <div class="table-foot" id="acc-emp-table-foot" style="display:none;">
