@@ -3,10 +3,15 @@
 import json
 import urllib.error
 import urllib.request
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
 CURRENCIES = ("TRY", "USD", "EUR")
 CURRENCY_SYMBOLS = {"TRY": "₺", "USD": "$", "EUR": "€"}
+
+_SETTING_MANUAL = "exchange_manual"
+_SETTING_USD = "exchange_usd_try"
+_SETTING_EUR = "exchange_eur_try"
 
 _rate_cache = {
     "fetched_at": None,
@@ -59,8 +64,78 @@ def fetch_exchange_rates(force=False):
     return dict(_rate_cache)
 
 
+def _read_settings(conn):
+    from database import fetchall
+
+    rows = fetchall(conn, "SELECT key, value FROM acc_settings")
+    return {r["key"]: r["value"] for r in rows}
+
+
+def _apply_manual(result, settings):
+    if settings.get(_SETTING_MANUAL) != "1":
+        result["is_manual"] = False
+        return
+    try:
+        usd = float(settings[_SETTING_USD])
+        eur = float(settings[_SETTING_EUR])
+    except (KeyError, TypeError, ValueError):
+        result["is_manual"] = False
+        return
+    if usd <= 0 or eur <= 0:
+        result["is_manual"] = False
+        return
+    result["usd_try"] = usd
+    result["eur_try"] = eur
+    result["is_manual"] = True
+    result["source"] = "manual"
+
+
+def get_effective_rates(conn=None, force_auto=False):
+    auto = fetch_exchange_rates(force=force_auto)
+    result = {
+        "usd_try": auto["usd_try"],
+        "eur_try": auto["eur_try"],
+        "auto_usd_try": auto["usd_try"],
+        "auto_eur_try": auto["eur_try"],
+        "date": auto.get("date"),
+        "auto_source": auto.get("source"),
+        "source": auto.get("source"),
+        "is_manual": False,
+    }
+    if conn is not None:
+        _apply_manual(result, _read_settings(conn))
+        return result
+    try:
+        from database import get_db
+
+        with closing(get_db()) as db_conn:
+            _apply_manual(result, _read_settings(db_conn))
+    except Exception:
+        pass
+    return result
+
+
+def save_manual_rates(conn, usd_try, eur_try):
+    from database import iso, upsert_setting, utcnow
+
+    usd_try = round(float(usd_try), 4)
+    eur_try = round(float(eur_try), 4)
+    if usd_try <= 0 or eur_try <= 0:
+        raise ValueError("Kurlar pozitif olmalı")
+    upsert_setting(conn, _SETTING_MANUAL, "1")
+    upsert_setting(conn, _SETTING_USD, str(usd_try))
+    upsert_setting(conn, _SETTING_EUR, str(eur_try))
+    upsert_setting(conn, "exchange_updated_at", iso(utcnow()))
+
+
+def clear_manual_rates(conn):
+    from database import upsert_setting
+
+    upsert_setting(conn, _SETTING_MANUAL, "0")
+
+
 def convert_to_all(amount, currency, rates=None):
-    rates = rates or fetch_exchange_rates()
+    rates = rates or get_effective_rates()
     amount = round(float(amount), 2)
     currency = parse_currency(currency) or "TRY"
     usd_try = float(rates["usd_try"])

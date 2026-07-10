@@ -126,6 +126,14 @@
     .acc-invoice-box h4 { font-size: 0.88rem; margin-bottom: 0.45rem; }
     .acc-fx-preview { font-size: 0.72rem; color: var(--muted); min-height: 1.1rem; margin: 0.15rem 0 0.35rem; }
     .acc-rates-hint { font-size: 0.72rem; }
+    .acc-rates-panel {
+      display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.55rem;
+      margin: 0 0 1rem; padding: 0.65rem 0.75rem;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+    }
+    .acc-rate-field label { font-size: 0.65rem; color: var(--muted); display: block; margin-bottom: 0.2rem; }
+    .acc-rate-field input { width: 6.5rem; }
+    .acc-rate-badge { font-size: 0.68rem; margin-left: auto; align-self: center; }
 
     .charts-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.85rem; margin-bottom: 1rem; }
     @media (max-width: 1000px) { .charts-grid { grid-template-columns: 1fr; } }

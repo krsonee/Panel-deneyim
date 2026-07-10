@@ -20,7 +20,21 @@
       </select>
     </div>
   </div>
-  <p class="muted acc-rates-hint" id="acc-rates-hint" style="font-size:0.72rem;margin:-0.5rem 0 1rem;"></p>
+  <p class="muted acc-rates-hint" id="acc-rates-hint" style="font-size:0.72rem;margin:-0.5rem 0 0.5rem;"></p>
+  <div class="acc-rates-panel" id="acc-rates-panel">
+    <div class="acc-rate-field">
+      <label for="acc-rate-usd">USD/TL</label>
+      <input type="number" id="acc-rate-usd" step="0.0001" min="0.0001" placeholder="34.25">
+    </div>
+    <div class="acc-rate-field">
+      <label for="acc-rate-eur">EUR/TL</label>
+      <input type="number" id="acc-rate-eur" step="0.0001" min="0.0001" placeholder="37.10">
+    </div>
+    <button type="button" class="btn btn-sm" id="acc-rate-save">Kurları Kaydet</button>
+    <button type="button" class="btn btn-sm btn-ghost" id="acc-rate-auto">Otomatiğe Dön</button>
+    <button type="button" class="btn btn-sm btn-ghost" id="acc-rate-refresh">Kurları Yenile</button>
+    <span class="acc-rate-badge muted" id="acc-rate-mode"></span>
+  </div>
 
   <div class="acc-tabs" id="acc-tabs">
     <button type="button" class="acc-tab active" data-acc-tab="dashboard">Dashboard</button>

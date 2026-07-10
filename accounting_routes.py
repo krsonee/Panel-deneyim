@@ -5,7 +5,15 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request
 
-from accounting_fx import CURRENCIES, convert_to_all, fetch_exchange_rates, parse_currency
+from accounting_fx import (
+    CURRENCIES,
+    clear_manual_rates,
+    convert_to_all,
+    fetch_exchange_rates,
+    get_effective_rates,
+    parse_currency,
+    save_manual_rates,
+)
 from database import (
     execute,
     fetchall,
@@ -66,7 +74,22 @@ def create_accounting_blueprint(permission_required):
         amount = parse_amount(amount)
         if amount is None:
             return None, "Geçerli tutar girin."
+        if rates is None:
+            rates = get_effective_rates()
         return convert_to_all(amount, currency, rates), None
+
+    def rates_json(rates):
+        return {
+            "currencies": list(CURRENCIES),
+            "usd_try": rates["usd_try"],
+            "eur_try": rates["eur_try"],
+            "auto_usd_try": rates.get("auto_usd_try", rates["usd_try"]),
+            "auto_eur_try": rates.get("auto_eur_try", rates["eur_try"]),
+            "date": rates.get("date"),
+            "source": rates.get("source"),
+            "auto_source": rates.get("auto_source", rates.get("source")),
+            "is_manual": rates.get("is_manual", False),
+        }
 
     def kpi_for_period(conn, period):
         dep_sql, dep_params = date_clause("tx_date", period)
@@ -119,14 +142,35 @@ def create_accounting_blueprint(permission_required):
     @bp.route("/exchange-rates", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def exchange_rates():
-        rates = fetch_exchange_rates()
-        return jsonify({
-            "currencies": list(CURRENCIES),
-            "usd_try": rates["usd_try"],
-            "eur_try": rates["eur_try"],
-            "date": rates.get("date"),
-            "source": rates.get("source"),
-        })
+        with closing(get_db()) as conn:
+            rates = get_effective_rates(conn)
+        return jsonify(rates_json(rates))
+
+    @bp.route("/exchange-rates", methods=["PUT"])
+    @acc_perm(*MODULE_ACCESS)
+    def update_exchange_rates():
+        data = request.get_json(silent=True) or {}
+        use_manual = data.get("manual", True)
+        with closing(get_db()) as conn:
+            if use_manual:
+                usd = parse_amount(data.get("usd_try"))
+                eur = parse_amount(data.get("eur_try"))
+                if usd is None or eur is None or usd <= 0 or eur <= 0:
+                    return jsonify({"error": "Geçerli USD/TL ve EUR/TL kurları girin."}), 400
+                save_manual_rates(conn, usd, eur)
+            else:
+                clear_manual_rates(conn)
+            conn.commit()
+            rates = get_effective_rates(conn)
+        return jsonify(rates_json(rates))
+
+    @bp.route("/exchange-rates/refresh", methods=["POST"])
+    @acc_perm(*MODULE_ACCESS)
+    def refresh_exchange_rates():
+        fetch_exchange_rates(force=True)
+        with closing(get_db()) as conn:
+            rates = get_effective_rates(conn)
+        return jsonify(rates_json(rates))
 
     @bp.route("/convert", methods=["POST"])
     @acc_perm(*MODULE_ACCESS)
@@ -141,18 +185,13 @@ def create_accounting_blueprint(permission_required):
     @acc_perm(*ACC_READ)
     def dashboard():
         period = request.args.get("period", "all")
-        rates = fetch_exchange_rates()
         with closing(get_db()) as conn:
             kpi = kpi_for_period(conn, period)
+            rates = get_effective_rates(conn)
         return jsonify({
             "period": period,
             "kpi": kpi,
-            "rates": {
-                "usd_try": rates["usd_try"],
-                "eur_try": rates["eur_try"],
-                "date": rates.get("date"),
-                "source": rates.get("source"),
-            },
+            "rates": rates_json(rates),
         })
 
     # ── Payment methods (komisyon oranları) ──

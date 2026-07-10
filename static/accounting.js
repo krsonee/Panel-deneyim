@@ -7,7 +7,7 @@
   var accPaymentMethods = [];
   var accCategories = [];
   var accDisplayCurrency = localStorage.getItem("acc_display_currency") || "TRY";
-  var accRates = { usd_try: 34, eur_try: 37, date: null, source: "fallback" };
+  var accRates = { usd_try: 34, eur_try: 37, auto_usd_try: 34, auto_eur_try: 37, date: null, source: "fallback", is_manual: false };
   var ACC_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
 
   var accData = {
@@ -104,9 +104,35 @@
       accRates = res.data;
       var hint = document.getElementById("acc-rates-hint");
       if (hint) {
-        hint.textContent = "Güncel kur (1 USD = " + accRates.usd_try + " ₺, 1 EUR = " + accRates.eur_try +
-          " ₺) · " + (accRates.date || "") + " · " + (accRates.source || "");
+        var mode = accRates.is_manual ? "Manuel kur kullanılıyor" : "Otomatik kur";
+        var autoHint = "";
+        if (accRates.is_manual && accRates.auto_usd_try) {
+          autoHint = " · Otomatik: 1 USD = " + accRates.auto_usd_try + " ₺, 1 EUR = " + accRates.auto_eur_try + " ₺";
+        }
+        hint.textContent = mode + " · 1 USD = " + accRates.usd_try + " ₺, 1 EUR = " + accRates.eur_try +
+          " ₺ · " + (accRates.date || "") + autoHint;
       }
+      var usdEl = document.getElementById("acc-rate-usd");
+      var eurEl = document.getElementById("acc-rate-eur");
+      var modeEl = document.getElementById("acc-rate-mode");
+      if (usdEl) usdEl.value = accRates.usd_try;
+      if (eurEl) eurEl.value = accRates.eur_try;
+      if (modeEl) {
+        modeEl.textContent = accRates.is_manual ? "Manuel" : "Otomatik (" + (accRates.auto_source || accRates.source || "") + ")";
+      }
+    });
+  }
+
+  function accRatesSummary() {
+    var mode = accRates.is_manual ? "manuel" : "otomatik";
+    var usd = parseFloat(accRates.usd_try || 0).toFixed(2);
+    var eur = parseFloat(accRates.eur_try || 0).toFixed(2);
+    return "USD/TL: " + usd + " · EUR/TL: " + eur + " (" + mode + ")";
+  }
+
+  function accSavedToast(msg) {
+    return accLoadRates().then(function () {
+      accToast(msg + " · " + accRatesSummary());
     });
   }
 
@@ -551,7 +577,7 @@
       }).then(function (r) {
         if (r && r.ok) {
           document.getElementById("acc-tx-amount").value = "";
-          accLoadTransactions(); accLoadDashboard(); accToast("İşlem kaydedildi");
+          accLoadTransactions(); accLoadDashboard(); accSavedToast("İşlem kaydedildi");
         } else if (r) alert(r.data.error || "Hata");
       });
     });
@@ -612,7 +638,7 @@
         if (r && r.ok) {
           document.getElementById("acc-exp-amount").value = "";
           document.getElementById("acc-exp-desc").value = "";
-          accLoadExpenses(); accLoadDashboard(); accToast("Gider kaydedildi");
+          accLoadExpenses(); accLoadDashboard(); accSavedToast("Gider kaydedildi");
         } else if (r) alert(r.data.error || "Hata");
       });
     });
@@ -634,7 +660,7 @@
         if (r && r.ok) {
           document.getElementById("acc-vault-amount").value = "";
           document.getElementById("acc-vault-desc").value = "";
-          accLoadVault(); accToast("Kasa işlemi kaydedildi");
+          accLoadVault(); accSavedToast("Kasa işlemi kaydedildi");
         } else if (r) alert(r.data.error || "Hata");
       });
     });
@@ -656,7 +682,7 @@
         if (r && r.ok) {
           document.getElementById("acc-emp-name").value = "";
           document.getElementById("acc-emp-salary").value = "";
-          accLoadEmployees(); accToast("Personel eklendi");
+          accLoadEmployees(); accSavedToast("Personel eklendi");
         } else if (r) alert(r.data.error || "Hata");
       });
     });
@@ -664,6 +690,44 @@
     accBindFxPreview("acc-exp-amount", "acc-exp-currency", "acc-exp-fx-preview");
     accBindFxPreview("acc-vault-amount", "acc-vault-currency", "acc-vault-fx-preview");
     accBindFxPreview("acc-emp-salary", "acc-emp-currency", "acc-emp-fx-preview");
+
+    var rateSave = document.getElementById("acc-rate-save");
+    if (rateSave) {
+      rateSave.addEventListener("click", function () {
+        var usd = document.getElementById("acc-rate-usd").value;
+        var eur = document.getElementById("acc-rate-eur").value;
+        accApi("/api/accounting/exchange-rates", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ manual: true, usd_try: usd, eur_try: eur })
+        }).then(function (r) {
+          if (r && r.ok) accSavedToast("Kurlar kaydedildi");
+          else if (r) alert(r.data.error || "Hata");
+        });
+      });
+    }
+    var rateAuto = document.getElementById("acc-rate-auto");
+    if (rateAuto) {
+      rateAuto.addEventListener("click", function () {
+        accApi("/api/accounting/exchange-rates", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ manual: false })
+        }).then(function (r) {
+          if (r && r.ok) accSavedToast("Otomatik kurlara geçildi");
+          else if (r) alert(r.data.error || "Hata");
+        });
+      });
+    }
+    var rateRefresh = document.getElementById("acc-rate-refresh");
+    if (rateRefresh) {
+      rateRefresh.addEventListener("click", function () {
+        accApi("/api/accounting/exchange-rates/refresh", { method: "POST" }).then(function (r) {
+          if (r && r.ok) accSavedToast("Kurlar güncellendi");
+          else if (r) alert(r.data.error || "Hata");
+        });
+      });
+    }
   }
 
   function accInitUi() {
