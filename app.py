@@ -1291,7 +1291,7 @@ def chart_data():
     game_counts = {}
     domain_clicks = {}
     for row in game_rows:
-        for ev in json.loads(row[0] or "[]"):
+        for ev in json.loads(row["game_log"] or "[]"):
             name = ev.get("game", "Bilinmeyen")
             game_counts[name] = game_counts.get(name, 0) + 1
     for row in click_rows:
