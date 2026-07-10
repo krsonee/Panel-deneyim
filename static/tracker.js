@@ -10,10 +10,18 @@
   }
 
   var VISITOR_KEY = "affiliate_visitor_id";
+  var REF_KEY = "affiliate_ref_code";
   var domain = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
   if (domain === "127.0.0.1") domain = "localhost";
   var params = new URLSearchParams(window.location.search);
-  var refCode = params.get("ref") || "";
+  // ?ref= bizim kendi linklerimiz, ?affid= Smartico'nun affiliate linklerinin kullandığı parametre.
+  var paramRef = params.get("ref") || params.get("affid") || params.get("aff_id") || "";
+  var refCode = paramRef;
+  if (!refCode) {
+    try { refCode = localStorage.getItem(REF_KEY) || ""; } catch (e) { refCode = ""; }
+  } else {
+    try { localStorage.setItem(REF_KEY, refCode); } catch (e) { /* localStorage yoksa sorun değil */ }
+  }
 
   var visitorId = localStorage.getItem(VISITOR_KEY);
   if (!visitorId) {

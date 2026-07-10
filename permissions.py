@@ -21,6 +21,8 @@ PERMISSION_CATALOG = [
      "desc": "CSV, JSON indirme ve oturum temizleme"},
     {"key": "tracking.smartico", "label": "Smartico Affiliate Raporu", "group": "Link Takip",
      "desc": "Smartico API entegrasyonu, ayarları ve rapor görüntüleme"},
+    {"key": "tracking.blink", "label": "bl.ink Link Raporu", "group": "Link Takip",
+     "desc": "bl.ink API entegrasyonu, ayarları ve link/online rapor görüntüleme"},
     {"key": "accounting.dashboard", "label": "Muhasebe Özet", "group": "Muhasebe",
      "desc": "Muhasebe dashboard KPI kartları"},
     {"key": "accounting.transactions", "label": "Yatırım / Çekim", "group": "Muhasebe",
@@ -57,6 +59,7 @@ ROLE_TEMPLATES = {
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.domains",
             "tracking.players", "tracking.reports", "tracking.export", "tracking.smartico",
+            "tracking.blink",
         ],
     },
     "accountant": {
@@ -73,6 +76,7 @@ ROLE_TEMPLATES = {
         "desc": "Sadece görüntüleme, düzenleme yok",
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.players", "tracking.reports", "tracking.smartico",
+            "tracking.blink",
         ],
     },
     "affiliate_manager": {
@@ -80,6 +84,7 @@ ROLE_TEMPLATES = {
         "desc": "Raporlar ve dashboard",
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.reports", "tracking.smartico",
+            "tracking.blink",
         ],
     },
     "custom": {

@@ -1588,9 +1588,11 @@ def static_files(filename):
 
 from accounting_routes import create_accounting_blueprint
 from smartico_routes import create_smartico_blueprint
+from blink_routes import create_blink_blueprint
 
 app.register_blueprint(create_accounting_blueprint(permission_required))
 app.register_blueprint(create_smartico_blueprint(permission_required))
+app.register_blueprint(create_blink_blueprint(permission_required))
 
 
 def _run_startup():

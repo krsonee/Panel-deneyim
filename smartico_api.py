@@ -212,7 +212,14 @@ def _attach_online_counts(conn, rows):
             continue
         row["bind_domain"] = None
         row["bind_ref_code"] = None
-        candidates = [row.get("affiliate_name") or "", row.get("link_name") or ""]
+        # Öncelik: Smartico'nun linki yönlendirirken kullandığı ?affid=<affiliate_id> parametresi
+        # (bizim tracker.js artık bunu ref_code olarak kaydediyor) — isim tahmininden çok daha kesin.
+        affiliate_id = row.get("affiliate_id")
+        candidates = []
+        if affiliate_id is not None:
+            candidates.append(str(affiliate_id))
+        candidates.append(row.get("affiliate_name") or "")
+        candidates.append(row.get("link_name") or "")
         online = None
         for cand in candidates:
             norm = _normalize_key(cand)

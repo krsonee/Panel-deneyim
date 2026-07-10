@@ -941,6 +941,53 @@
           </div>
         </section>
 
+        <section class="card" data-perm="tracking.blink">
+          <div class="card-head">
+            <span>bl.ink Link Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(kısa linkler · tıklama · şu an online)</span></span>
+            <div class="card-actions">
+              <span class="muted" id="blink-updated" style="font-size:0.72rem;"></span>
+              <button type="button" class="btn btn-sm" id="btn-blink-settings">⚙️ Ayarlar</button>
+              <button type="button" class="btn btn-sm" id="btn-blink-refresh">Yenile</button>
+            </div>
+          </div>
+          <div class="card-body" id="blink-settings-box" style="display:none;">
+            <p class="hint">bl.ink hesabına giriş yapan <strong>email</strong> ve <strong>şifreyi</strong> gir. Bilgiler sadece sunucuda saklanır, kimseye gösterilmez.</p>
+            <form id="blink-config-form">
+              <div class="form-row-4">
+                <div><label for="blink-email">Email</label><input id="blink-email" type="email" placeholder="ornek@makrobet.com" autocomplete="off"></div>
+                <div><label for="blink-password">Şifre</label><input id="blink-password" type="password" placeholder="••••••••" autocomplete="off"></div>
+                <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+                <div style="align-self:end"><button type="button" class="btn btn-danger" id="btn-blink-clear">Kaldır</button></div>
+              </div>
+            </form>
+          </div>
+          <div class="card-body" id="blink-empty-box" style="display:none;">
+            <p class="hint">Henüz bl.ink bağlantısı tanımlanmadı. Yukarıdaki <strong>⚙️ Ayarlar</strong> butonuna basıp email/şifreyi ekle, linklerin listesi burada görünsün.</p>
+          </div>
+          <div class="card-body" id="blink-error-box" style="display:none;">
+            <p class="hint" style="color:#f87171;" id="blink-error-text"></p>
+          </div>
+          <div class="table-wrap" id="blink-table-wrap" style="display:none;">
+            <p class="hint" style="padding:0 1rem;margin-bottom:0.5rem;">
+              <strong>Şu An Online:</strong> linkin gerçek yönlendirme adresindeki <code>?ref=</code> kodu otomatik okunup kendi tracker'ımızla eşleştirilir.
+              Eşleşmezse <strong>🔗 Eşleştir</strong> ile elle bağlayabilirsin.
+            </p>
+            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
+            <div class="table-scroll" id="blink-table-scroll">
+              <table>
+                <thead><tr>
+                  <th>Kısa Link</th>
+                  <th>Hedef Adres</th>
+                  <th>Ref Kodu</th>
+                  <th>Şu An Online</th>
+                  <th>Tıklama</th>
+                </tr></thead>
+                <tbody id="blink-table"><tr><td colspan="5" class="empty">Veri yok</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <section class="card" data-perm="tracking.domains">
           <div class="card-head"><span>Takip Edilen Domainler</span><a href="/demo" target="_blank" class="btn btn-sm">Demo Site</a></div>
           <div class="card-body" style="padding-top:0;">
@@ -1196,6 +1243,30 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="blink-bind-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Linki Eşleştir</h3>
+        <button class="modal-close" id="blink-bind-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted" style="font-size:0.78rem;margin-bottom:1rem;">
+          <strong id="blink-bind-name"></strong> kısa linkinden gelen ziyaretçilerin sitede hangi
+          <strong>domain</strong> ve <strong>referans kodu (?ref=)</strong> ile takip edildiğini seç.
+        </p>
+        <div class="form-row-4">
+          <div>
+            <label for="blink-bind-domain">Domain</label>
+            <input id="blink-bind-domain" list="smartico-domain-list" placeholder="Örn: makrobet804.com" autocomplete="off">
+          </div>
+          <div><label for="blink-bind-ref">Referans Kodu (?ref=)</label><input id="blink-bind-ref" placeholder="Örn: mcasino" autocomplete="off"></div>
+          <div style="align-self:end"><button type="button" class="btn btn-primary" id="blink-bind-save">Kaydet</button></div>
+          <div style="align-self:end"><button type="button" class="btn btn-danger" id="blink-bind-remove" style="display:none;">Bağlantıyı Kaldır</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <script src="/static/accounting.js?v=20260710d"></script>
@@ -1236,6 +1307,11 @@
       var smarticoConfigLoaded = false;
       var smarticoRowsById = {};
       var smarticoBindTarget = null;
+      var blinkConfigured = null;
+      var blinkInFlight = false;
+      var blinkConfigLoaded = false;
+      var blinkRowsById = {};
+      var blinkBindTarget = null;
 
       function switchModule(name) {
         if (!name) return;
@@ -2343,6 +2419,88 @@
         }).catch(function() {});
       }
 
+      function setBlinkView(mode) {
+        document.getElementById("blink-empty-box").style.display = mode === "empty" ? "" : "none";
+        document.getElementById("blink-error-box").style.display = mode === "error" ? "" : "none";
+        document.getElementById("blink-table-wrap").style.display = mode === "data" ? "" : "none";
+      }
+
+      function renderBlinkReport(result) {
+        if (!result || result.error === "not_configured") {
+          setBlinkView("empty");
+          return;
+        }
+        if (result.error) {
+          document.getElementById("blink-error-text").textContent = "bl.ink API hatası: " + result.error;
+          if (!result.rows || !result.rows.length) { setBlinkView("error"); return; }
+        }
+        var rows = result.rows || [];
+        var tbody = document.getElementById("blink-table");
+        blinkRowsById = {};
+        if (!rows.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz link yok</td></tr>';
+        } else {
+          tbody.innerHTML = rows.map(function(r) {
+            var rowKey = String(r.link_id);
+            blinkRowsById[rowKey] = r;
+            var onlineCell;
+            if (r.online_now !== null && r.online_now !== undefined) {
+              var badgeClass = r.online_now > 0 ? "online" : "offline";
+              onlineCell = '<span class="tag ' + badgeClass + '">' + fmtSmarticoNum(r.online_now) + '</span> ' +
+                '<button type="button" class="btn btn-sm blink-bind-btn" data-row-key="' + esc(rowKey) + '" title="Eşleşmeyi düzenle">🔗</button>';
+            } else {
+              onlineCell = '<span class="muted">—</span> ' +
+                '<button type="button" class="btn btn-sm blink-bind-btn" data-row-key="' + esc(rowKey) + '">🔗 Eşleştir</button>';
+            }
+            var destLabel = r.redirect_url ? (r.redirect_url.length > 45 ? r.redirect_url.slice(0, 45) + "…" : r.redirect_url) : "—";
+            return '<tr><td><a href="' + esc(r.short_link || "#") + '" target="_blank" rel="noopener">' + esc(r.short_link || r.alias || "#" + r.link_id) + '</a></td>' +
+              '<td title="' + esc(r.redirect_url || "") + '">' + esc(destLabel) + '</td>' +
+              '<td>' + (r.ref_code ? '<span class="tag">' + esc(r.ref_code) + '</span>' : '<span class="muted">—</span>') + '</td>' +
+              '<td>' + onlineCell + '</td>' +
+              '<td><strong>' + fmtSmarticoNum(r.click_count) + '</strong></td></tr>';
+          }).join("");
+        }
+        setBlinkView("data");
+        document.getElementById("blink-updated").textContent = "Son güncelleme: " + new Date().toLocaleTimeString("tr-TR") + (result.source === "cache" ? " (önbellek)" : "");
+      }
+
+      function loadBlinkReport(force) {
+        if (!hasPerm("tracking.blink") || blinkConfigured === false) return;
+        if (blinkInFlight) return;
+        blinkInFlight = true;
+        fetch(API + "/api/blink/links" + (force ? "?force=1" : "")).then(function(r) {
+          if (r.status === 401) { location.href = "/admin/login"; return null; }
+          return r.json();
+        }).then(function(d) {
+          if (!d) return;
+          blinkConfigured = d.error !== "not_configured";
+          renderBlinkReport(d);
+        }).catch(function() {}).finally(function() { blinkInFlight = false; });
+      }
+
+      function renderBlinkConfig(cfg) {
+        blinkConfigured = !!cfg.configured;
+        document.getElementById("blink-email").placeholder = cfg.configured ? ("Kayıtlı: " + cfg.email_masked + " — değiştirmek için yeniden gir") : "ornek@makrobet.com";
+        if (cfg.configured) {
+          loadBlinkReport(false);
+        } else {
+          setBlinkView("empty");
+          document.getElementById("blink-settings-box").style.display = "";
+        }
+      }
+
+      function loadBlinkConfig() {
+        if (!hasPerm("tracking.blink")) return;
+        fetch(API + "/api/blink/config").then(function(r) {
+          if (r.status === 401) return null;
+          return r.json();
+        }).then(function(d) {
+          if (!d) return;
+          blinkConfigLoaded = true;
+          renderBlinkConfig(d);
+        }).catch(function() {});
+      }
+
       function refreshLive() {
         if (!trackingPollEnabled || document.hidden || liveInFlight) return;
         var pq = periodQuery();
@@ -2388,6 +2546,9 @@
         }
         if (hasPerm("tracking.smartico") && smarticoConfigured !== false) {
           jobs.push(Promise.resolve().then(function(){ loadSmarticoReport(false); }));
+        }
+        if (hasPerm("tracking.blink") && blinkConfigured !== false) {
+          jobs.push(Promise.resolve().then(function(){ loadBlinkReport(false); }));
         }
         if (!jobs.length) return;
         dashInFlight = true;
@@ -2436,6 +2597,7 @@
           trackingPollEnabled = currentModule === "tracking";
           if (trackingPollEnabled) refreshAll();
           if (!smarticoConfigLoaded) loadSmarticoConfig();
+          if (!blinkConfigLoaded) loadBlinkConfig();
           setInterval(refreshLive, REFRESH_LIVE_MS);
           setInterval(refreshDashboard, REFRESH_DASH_MS);
         });
@@ -2603,6 +2765,104 @@
           document.getElementById("smartico-bind-modal").classList.remove("open");
           toast("Eşleştirme kaldırıldı.");
           loadSmarticoReport(true);
+        });
+      });
+
+      bindOptional("btn-blink-settings", "click", function() {
+        var box = document.getElementById("blink-settings-box");
+        box.style.display = box.style.display === "none" ? "" : "none";
+      });
+
+      bindOptional("btn-blink-refresh", "click", function() {
+        loadBlinkReport(true);
+        toast("bl.ink verisi yenileniyor…");
+      });
+
+      bindOptional("btn-blink-clear", "click", function() {
+        if (!confirm("bl.ink bağlantısı kaldırılacak. Devam?")) return;
+        fetch(API+"/api/blink/config", { method: "DELETE" }).then(function(r){ return r.json(); }).then(function() {
+          document.getElementById("blink-email").value = "";
+          document.getElementById("blink-password").value = "";
+          document.getElementById("blink-email").placeholder = "ornek@makrobet.com";
+          blinkConfigured = false;
+          setBlinkView("empty");
+          toast("Kaldırıldı.");
+        });
+      });
+
+      bindOptional("blink-config-form", "submit", function(e) {
+        e.preventDefault();
+        var email = document.getElementById("blink-email").value.trim();
+        var password = document.getElementById("blink-password").value.trim();
+        if (!email || !password) { alert("Email ve şifreyi gir."); return; }
+        fetch(API+"/api/blink/config", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email, password: password })
+        }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (!res.ok) { alert(res.data.error || "Kaydedilemedi."); return; }
+            document.getElementById("blink-password").value = "";
+            renderBlinkConfig(res.data);
+            document.getElementById("blink-settings-box").style.display = "none";
+            toast("bl.ink bağlantısı kaydedildi!");
+          });
+      });
+
+      function openBlinkBindModal(rowKey) {
+        var row = blinkRowsById[rowKey];
+        if (!row) return;
+        blinkBindTarget = { link_id: row.link_id };
+        document.getElementById("blink-bind-name").textContent = row.short_link || row.alias || ("Link #" + row.link_id);
+        var domainList = document.getElementById("smartico-domain-list");
+        var domains = [];
+        (cachedLinks || []).forEach(function(l) { if (l.domain && domains.indexOf(l.domain) === -1) domains.push(l.domain); });
+        domainList.innerHTML = domains.map(function(d) { return '<option value="' + esc(d) + '"></option>'; }).join("");
+        document.getElementById("blink-bind-domain").value = row.bind_domain || row.dest_domain || domains[0] || "";
+        document.getElementById("blink-bind-ref").value = row.bind_ref_code || row.ref_code || "";
+        document.getElementById("blink-bind-remove").style.display = row.bind_domain ? "" : "none";
+        document.getElementById("blink-bind-modal").classList.add("open");
+      }
+
+      bindOptional("blink-table", "click", function(e) {
+        var btn = e.target.closest ? e.target.closest(".blink-bind-btn") : null;
+        if (!btn) return;
+        openBlinkBindModal(btn.getAttribute("data-row-key"));
+      });
+
+      bindOptional("blink-bind-close", "click", function() {
+        document.getElementById("blink-bind-modal").classList.remove("open");
+      });
+      bindOptional("blink-bind-modal", "click", function(e) {
+        if (e.target === this) this.classList.remove("open");
+      });
+
+      bindOptional("blink-bind-save", "click", function() {
+        if (!blinkBindTarget) return;
+        var domain = document.getElementById("blink-bind-domain").value.trim();
+        var refCode = document.getElementById("blink-bind-ref").value.trim();
+        if (!domain) { alert("Domain gerekli."); return; }
+        fetch(API + "/api/blink/bindings", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ link_id: blinkBindTarget.link_id, domain: domain, ref_code: refCode })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (!res.ok) { alert(res.data.error || "Kaydedilemedi."); return; }
+            document.getElementById("blink-bind-modal").classList.remove("open");
+            toast("Eşleştirme kaydedildi!");
+            loadBlinkReport(true);
+          });
+      });
+
+      bindOptional("blink-bind-remove", "click", function() {
+        if (!blinkBindTarget) return;
+        if (!confirm("Bu linkin eşleştirmesi kaldırılacak. Devam?")) return;
+        fetch(API + "/api/blink/bindings", {
+          method: "DELETE", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ link_id: blinkBindTarget.link_id })
+        }).then(function(r) { return r.json(); }).then(function() {
+          document.getElementById("blink-bind-modal").classList.remove("open");
+          toast("Eşleştirme kaldırıldı.");
+          loadBlinkReport(true);
         });
       });
 

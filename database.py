@@ -148,6 +148,21 @@ def init_schema(conn):
                 UNIQUE(affiliate_id, link_id)
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS blink_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT ''
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS blink_link_bindings (
+                id SERIAL PRIMARY KEY,
+                link_id TEXT NOT NULL UNIQUE,
+                domain TEXT NOT NULL,
+                ref_code TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """,
         ]
     else:
         statements = [
@@ -201,6 +216,21 @@ def init_schema(conn):
                 ref_code TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 UNIQUE(affiliate_id, link_id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS blink_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT ''
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS blink_link_bindings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                link_id TEXT NOT NULL UNIQUE,
+                domain TEXT NOT NULL,
+                ref_code TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
             )
             """,
         ]
@@ -267,6 +297,65 @@ def migrate_smartico(conn):
                 ref_code TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 UNIQUE(affiliate_id, link_id)
+            )
+            """,
+        )
+    conn.commit()
+
+
+def get_blink_setting(conn, key, default=None):
+    val = scalar(conn, "SELECT value FROM blink_settings WHERE key = ?", (key,))
+    return val if val is not None else default
+
+
+def upsert_blink_setting(conn, key, value):
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            INSERT INTO blink_settings (key, value) VALUES (?, ?)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            """,
+            (key, str(value)),
+        )
+    else:
+        execute(conn, "INSERT OR REPLACE INTO blink_settings (key, value) VALUES (?, ?)", (key, str(value)))
+    conn.commit()
+
+
+def migrate_blink(conn):
+    execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS blink_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        )
+        """,
+    )
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS blink_link_bindings (
+                id SERIAL PRIMARY KEY,
+                link_id TEXT NOT NULL UNIQUE,
+                domain TEXT NOT NULL,
+                ref_code TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS blink_link_bindings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                link_id TEXT NOT NULL UNIQUE,
+                domain TEXT NOT NULL,
+                ref_code TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
             )
             """,
         )
@@ -518,6 +607,14 @@ def migrate_schema(conn):
         except Exception:
             pass
         print(f"⚠️  migrate_smartico hata (atlanıyor, panel yine açılır): {exc}")
+    try:
+        migrate_blink(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_blink hata (atlanıyor, panel yine açılır): {exc}")
 
 
 def _table_columns(conn, table_name):
