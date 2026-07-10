@@ -161,7 +161,11 @@ def _fetch_online_map(conn):
 
     Dönüş:
       by_domain_ref: {(domain, ref_code): online_count}  -> manuel eşleşmeler için
-      by_norm_key:   {normalize(ref_code veya label): online_count} -> otomatik ad eşleşmesi için
+      by_ref_norm:   {normalize(ref_code): online_count} -> şu an gerçekten online olanlar
+      by_label_norm: {normalize(label): online_count}    -> tracked_links etiketi eşleşmesi
+      known_ref_norm: {normalize(ref_code), ...}          -> şu an online olmasa da HİÇ görülmüş kodlar
+                       (bu olmadan, kanaldan şu an kimse yoksa "eşleşmedi" ile "hiç görülmedi"
+                       ayırt edilemiyor, tüm sessiz kanallar yanlışlıkla "Eşleştir" gösteriyordu)
     """
     cutoff = iso(utcnow() - timedelta(seconds=_ONLINE_THRESHOLD_SECONDS))
     session_rows = fetchall(
@@ -181,6 +185,16 @@ def _fetch_online_map(conn):
         if norm:
             by_ref_norm[norm] = by_ref_norm.get(norm, 0) + cnt
 
+    known_rows = fetchall(
+        conn,
+        "SELECT DISTINCT ref_code FROM visitor_sessions WHERE ref_code IS NOT NULL AND ref_code != ''",
+    )
+    known_ref_norm = set()
+    for r in known_rows:
+        norm = _normalize_key(r["ref_code"] or "")
+        if norm:
+            known_ref_norm.add(norm)
+
     link_rows = fetchall(conn, "SELECT domain, ref_code, label FROM tracked_links")
     by_label_norm = {}
     for r in link_rows:
@@ -194,7 +208,12 @@ def _fetch_online_map(conn):
         if norm:
             by_label_norm[norm] = by_label_norm.get(norm, 0) + cnt
 
-    return {"by_domain_ref": by_domain_ref, "by_ref_norm": by_ref_norm, "by_label_norm": by_label_norm}
+    return {
+        "by_domain_ref": by_domain_ref,
+        "by_ref_norm": by_ref_norm,
+        "by_label_norm": by_label_norm,
+        "known_ref_norm": known_ref_norm,
+    }
 
 
 def _attach_online_counts(conn, rows):
@@ -237,6 +256,10 @@ def _attach_online_counts(conn, rows):
                 break
             if norm in online_map["by_label_norm"]:
                 online = online_map["by_label_norm"][norm]
+                break
+            if norm in online_map["known_ref_norm"]:
+                # Bu koddan biri var ama şu an (son 90sn) online değil -> 0, "Eşleştir" değil.
+                online = 0
                 break
         row["online_now"] = online
         row["online_source"] = "auto" if online is not None else None

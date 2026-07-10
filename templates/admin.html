@@ -2805,7 +2805,7 @@
         var domains = [];
         (cachedLinks || []).forEach(function(l) { if (l.domain && domains.indexOf(l.domain) === -1) domains.push(l.domain); });
         domainList.innerHTML = domains.map(function(d) { return '<option value="' + esc(d) + '"></option>'; }).join("");
-        document.getElementById("smartico-bind-domain").value = row.bind_domain || domains[0] || "";
+        document.getElementById("smartico-bind-domain").value = row.bind_domain || "";
         document.getElementById("smartico-bind-ref").value = row.bind_ref_code || row.affiliate_name || "";
         document.getElementById("smartico-bind-remove").style.display = row.bind_domain ? "" : "none";
         document.getElementById("smartico-bind-modal").classList.add("open");
@@ -2903,7 +2903,7 @@
         var domains = [];
         (cachedLinks || []).forEach(function(l) { if (l.domain && domains.indexOf(l.domain) === -1) domains.push(l.domain); });
         domainList.innerHTML = domains.map(function(d) { return '<option value="' + esc(d) + '"></option>'; }).join("");
-        document.getElementById("blink-bind-domain").value = row.bind_domain || row.dest_domain || domains[0] || "";
+        document.getElementById("blink-bind-domain").value = row.bind_domain || row.dest_domain || "";
         document.getElementById("blink-bind-ref").value = row.bind_ref_code || row.ref_code || "";
         document.getElementById("blink-bind-remove").style.display = row.bind_domain ? "" : "none";
         document.getElementById("blink-bind-modal").classList.add("open");
