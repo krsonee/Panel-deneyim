@@ -51,10 +51,20 @@
 
   function accApi(path, opts) {
     opts = opts || {};
-    return fetch(path, opts).then(function (r) {
+    var timeoutMs = opts.timeoutMs || 12000;
+    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = controller ? setTimeout(function () { controller.abort(); }, timeoutMs) : null;
+    var fetchOpts = Object.assign({}, opts);
+    delete fetchOpts.timeoutMs;
+    if (controller) fetchOpts.signal = controller.signal;
+    return fetch(path, fetchOpts).then(function (r) {
+      if (timer) clearTimeout(timer);
       if (r.status === 401) { location.href = "/admin/login"; return null; }
       return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; });
-    }).catch(function () { return null; });
+    }).catch(function () {
+      if (timer) clearTimeout(timer);
+      return null;
+    });
   }
 
   function accEsc(s) {
@@ -228,6 +238,14 @@
     return accApi("/api/accounting/exchange-rates").then(function (res) {
       if (!res || !res.ok) return;
       accApplyRates(res.data);
+    }).catch(function () {});
+  }
+
+  function accApplyFallbackRates() {
+    accApplyRates({
+      usd_try: accRates.usd_try || 34.25,
+      eur_try: accRates.eur_try || 37.10,
+      source: "fallback"
     });
   }
 
@@ -740,8 +758,14 @@
     });
   }
 
+  function accSetText(id, text) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+
   function accLoadDashboard() {
     accApi("/api/accounting/dashboard" + accPeriodQuery()).then(function (res) {
+      try {
       if (!res || !res.ok) {
         if (res && res.data && res.data.error) accToast(res.data.error);
         return;
@@ -755,13 +779,15 @@
       }
       var kpiAll = res.data.kpi || {};
       var k = kpiAll[accDisplayCurrency] || kpiAll.TRY || {};
-      document.getElementById("acc-kpi-deposits").textContent = accMoney(k.total_deposits, accDisplayCurrency);
-      document.getElementById("acc-kpi-withdrawals").textContent = accMoney(k.total_withdrawals, accDisplayCurrency);
-      document.getElementById("acc-kpi-commission").textContent = accMoney(k.total_commission, accDisplayCurrency);
-      document.getElementById("acc-kpi-expenses").textContent = accMoney(k.total_expenses, accDisplayCurrency);
+      accSetText("acc-kpi-deposits", accMoney(k.total_deposits, accDisplayCurrency));
+      accSetText("acc-kpi-withdrawals", accMoney(k.total_withdrawals, accDisplayCurrency));
+      accSetText("acc-kpi-commission", accMoney(k.total_commission, accDisplayCurrency));
+      accSetText("acc-kpi-expenses", accMoney(k.total_expenses, accDisplayCurrency));
       var netEl = document.getElementById("acc-kpi-net");
-      netEl.textContent = accMoney(k.net_profit, accDisplayCurrency);
-      netEl.classList.toggle("negative", (k.net_profit || 0) < 0);
+      if (netEl) {
+        netEl.textContent = accMoney(k.net_profit, accDisplayCurrency);
+        netEl.classList.toggle("negative", (k.net_profit || 0) < 0);
+      }
       var hint = document.getElementById("acc-kpi-payroll-hint");
       if (hint) {
         hint.textContent = "Personel hak edişi: " + accMoney(k.payroll_monthly || 0, accDisplayCurrency);
@@ -775,6 +801,9 @@
         }).join(" · ");
       }
       accRenderPayrollDaily(res.data.payroll_daily);
+      } catch (err) {
+        console.error("accLoadDashboard", err);
+      }
     });
   }
 
@@ -1838,10 +1867,11 @@
 
   window.MakroAccounting = {
     init: function () {
-      accInitForms();
-      accInitUi();
+      accApplyFallbackRates();
+      try { accInitForms(); } catch (err) { console.error("accInitForms", err); }
+      try { accInitUi(); } catch (err) { console.error("accInitUi", err); }
       accStartRatesPolling();
-      accSwitchTab("dashboard");
+      try { accSwitchTab("dashboard"); } catch (err) { console.error("accSwitchTab", err); }
       accLoadRates();
     },
     refresh: accRefreshAll,

@@ -400,7 +400,10 @@ def create_accounting_blueprint(permission_required):
     @bp.route("/exchange-rates", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def exchange_rates():
-        return jsonify(rates_json(fetch_exchange_rates()))
+        try:
+            return jsonify(rates_json(fetch_exchange_rates()))
+        except Exception:
+            return jsonify(rates_json(fetch_exchange_rates(force=True)))
 
     @bp.route("/convert", methods=["POST"])
     @acc_perm(*MODULE_ACCESS)
@@ -425,10 +428,14 @@ def create_accounting_blueprint(permission_required):
         payroll_daily = compute_payroll_daily(
             employees, period, include_office=payroll_include_office(), category_map=salary_categories
         )
+        try:
+            rates = rates_json(fetch_exchange_rates())
+        except Exception:
+            rates = rates_json(fetch_exchange_rates(force=True))
         return jsonify({
             **period_meta(period),
             "kpi": kpi,
-            "rates": rates_json(fetch_exchange_rates()),
+            "rates": rates,
             "payroll_daily": payroll_daily,
             "departments": departments,
             "salary_categories": salary_categories,

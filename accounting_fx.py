@@ -23,10 +23,10 @@ _SOFT_CACHE_SECONDS = 15
 
 _rate_cache = {
     "fetched_at": None,
-    "usd_try": None,
-    "eur_try": None,
+    "usd_try": 34.25,
+    "eur_try": 37.10,
     "date": None,
-    "source": None,
+    "source": "fallback",
 }
 
 

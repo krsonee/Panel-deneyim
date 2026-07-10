@@ -1103,7 +1103,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js"></script>
+  <script src="/static/accounting.js?v=20260710b"></script>
   <script>
     (function () {
       var API = "";
@@ -1326,8 +1326,11 @@
           fillRoleSelect("edit-user-role", "operator");
           renderPermissionGrid("new-user-perms", roleTemplates.operator ? roleTemplates.operator.permissions : []);
           renderPermissionGrid("edit-user-perms", []);
-          applyRoleToPermGrid(document.getElementById("new-user-role").value, "new-user-perms");
-          updateRoleDesc("new-user-role", "new-user-role-desc");
+          var newRoleEl = document.getElementById("new-user-role");
+          if (newRoleEl) {
+            applyRoleToPermGrid(newRoleEl.value, "new-user-perms");
+            updateRoleDesc("new-user-role", "new-user-role-desc");
+          }
           updateRoleDesc("edit-user-role", "edit-user-role-desc");
           var savedMod = localStorage.getItem("makropanel_module");
           var startMod = data.default_module || "tracking";
@@ -2187,7 +2190,51 @@
         refreshDashboard();
       }
 
-      document.getElementById("add-link-form").addEventListener("submit", function(e) {
+      function bindOptional(id, type, fn) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (type === "click") el.onclick = fn;
+        else el.addEventListener(type, fn);
+      }
+
+      function clearPanelOverlays() {
+        document.querySelectorAll(".modal-overlay.open").forEach(function (el) {
+          el.classList.remove("open");
+        });
+        var backdrop = document.getElementById("sidebar-backdrop");
+        if (backdrop) backdrop.classList.remove("show");
+        document.body.classList.remove("sidebar-open");
+      }
+
+      function bootstrapPanel() {
+        clearPanelOverlays();
+        initTheme();
+        initColumnDrag();
+        initTableControls();
+        initModuleNav();
+        initMobileNav();
+        applyTableColOrder("online-table");
+        applyTableColOrder("sessions-table");
+        try {
+          if (window.MakroAccounting) window.MakroAccounting.init();
+        } catch (err) {
+          console.error("MakroAccounting.init", err);
+        }
+        loadMe(function() {
+          trackingPollEnabled = currentModule === "tracking";
+          if (trackingPollEnabled) refreshAll();
+          setInterval(refreshLive, REFRESH_LIVE_MS);
+          setInterval(refreshDashboard, REFRESH_DASH_MS);
+        });
+        document.addEventListener("visibilitychange", function() {
+          if (!document.hidden && trackingPollEnabled) refreshAll();
+        });
+        setInterval(function() {
+          if (trackingPollEnabled) tickTimes();
+        }, 1000);
+      }
+
+      bindOptional("add-link-form", "submit", function(e) {
         e.preventDefault();
         var domain = document.getElementById("input-domain").value.trim();
         if (!domain) { alert("Domain girin."); return; }
@@ -2206,7 +2253,7 @@
         });
       });
 
-      document.getElementById("btn-bulk-preview").onclick = function() {
+      bindOptional("btn-bulk-preview", "click", function() {
         var text = document.getElementById("bulk-domains").value.trim();
         if (!text) { alert("Metin girin."); return; }
         fetch(API+"/api/links/bulk/preview", {
@@ -2222,7 +2269,7 @@
           });
       };
 
-      document.getElementById("btn-bulk-add").onclick = function() {
+      bindOptional("btn-bulk-add", "click", function() {
         var text = document.getElementById("bulk-domains").value.trim();
         if (!text) { alert("En az bir domain veya aralık yazın."); return; }
         if (!confirm("Domainler eklenecek. Devam?")) return;
@@ -2241,38 +2288,38 @@
           });
       };
 
-      document.getElementById("filter-period").addEventListener("change", function() {
+      bindOptional("filter-period", "change", function() {
         currentPeriod = this.value;
         resetRefreshSignatures();
         refreshAll();
       });
 
-      document.getElementById("btn-theme").onclick = function() {
+      bindOptional("btn-theme", "click", function() {
         var next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
         applyTheme(next);
       };
 
-      document.getElementById("settings-close").onclick = function() {
+      bindOptional("settings-close", "click", function() {
         document.getElementById("settings-modal").classList.remove("open");
-      };
-      document.getElementById("settings-modal").onclick = function(e) {
+      });
+      bindOptional("settings-modal", "click", function(e) {
         if (e.target === this) this.classList.remove("open");
-      };
-      document.getElementById("new-user-role").addEventListener("change", function() {
+      });
+      bindOptional("new-user-role", "change", function() {
         applyRoleToPermGrid(this.value, "new-user-perms");
         updateRoleDesc("new-user-role", "new-user-role-desc");
       });
-      document.getElementById("edit-user-role").addEventListener("change", function() {
+      bindOptional("edit-user-role", "change", function() {
         applyRoleToPermGrid(this.value, "edit-user-perms");
         updateRoleDesc("edit-user-role", "edit-user-role-desc");
       });
-      document.getElementById("edit-user-close").onclick = function() {
+      bindOptional("edit-user-close", "click", function() {
         document.getElementById("edit-user-modal").classList.remove("open");
-      };
-      document.getElementById("edit-user-modal").onclick = function(e) {
+      });
+      bindOptional("edit-user-modal", "click", function(e) {
         if (e.target === this) this.classList.remove("open");
-      };
-      document.getElementById("btn-save-user-perms").onclick = function() {
+      });
+      bindOptional("btn-save-user-perms", "click", function() {
         var uid = document.getElementById("edit-user-id").value;
         var role = document.getElementById("edit-user-role").value;
         var perms = role === "custom" ? getCheckedPermissions("edit-user-perms") : (roleTemplates[role] ? roleTemplates[role].permissions : []);
@@ -2293,7 +2340,7 @@
           });
       };
 
-      document.getElementById("add-user-form").addEventListener("submit", function(e) {
+      bindOptional("add-user-form", "submit", function(e) {
         e.preventDefault();
         var role = document.getElementById("new-user-role").value;
         var perms = role === "custom" ? getCheckedPermissions("new-user-perms") : (roleTemplates[role] ? roleTemplates[role].permissions : []);
@@ -2315,17 +2362,17 @@
           });
       });
 
-      document.getElementById("btn-open-settings").onclick = function() {
+      bindOptional("btn-open-settings", "click", function() {
         if (!hasAnyPerm("admin.users,module.settings")) { toast("Yetkiniz yok"); return; }
         loadSettings();
         document.getElementById("settings-modal").classList.add("open");
       };
 
       ["search-input","filter-domain","filter-ref","filter-device","filter-status"].forEach(function(id){
-        document.getElementById(id).addEventListener("input", applyFilters);
-        document.getElementById(id).addEventListener("change", applyFilters);
+        bindOptional(id, "input", applyFilters);
+        bindOptional(id, "change", applyFilters);
       });
-      document.getElementById("btn-clear-filter").onclick = function(){
+      bindOptional("btn-clear-filter", "click", function(){
         document.getElementById("search-input").value="";
         document.getElementById("filter-domain").value="";
         document.getElementById("filter-ref").value="";
@@ -2334,20 +2381,20 @@
         applyFilters();
       };
 
-      document.getElementById("btn-csv").onclick = function(){ window.location.href = API+"/api/data/export.csv"; toast("CSV indiriliyor…"); };
-      document.getElementById("btn-export-json").onclick = function(){
+      bindOptional("btn-csv", "click", function(){ window.location.href = API+"/api/data/export.csv"; toast("CSV indiriliyor…"); });
+      bindOptional("btn-export-json", "click", function(){
         fetch(API+"/api/data/export").then(function(r){return r.json();}).then(function(data){
           var a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)]));
           a.download="analiz-"+Date.now()+".json"; a.click(); toast("JSON indirildi!");
         });
       };
-      document.getElementById("btn-clear").onclick = function(){
+      bindOptional("btn-clear", "click", function(){
         if(!confirm("Tüm oturum verileri silinecek. Emin misin?")) return;
         fetch(API+"/api/data/clear-sessions",{method:"POST"}).then(function(){ prevSnapshot={}; resetRefreshSignatures(); refreshAll(); toast("Temizlendi."); });
       };
 
-      document.getElementById("modal-close").onclick = function(){ document.getElementById("journey-modal").classList.remove("open"); };
-      document.getElementById("journey-modal").onclick = function(e){ if(e.target===this) this.classList.remove("open"); };
+      bindOptional("modal-close", "click", function(){ document.getElementById("journey-modal").classList.remove("open"); });
+      bindOptional("journey-modal", "click", function(e){ if(e.target===this) this.classList.remove("open"); });
 
       window.copyCode = function(id){ var el=document.getElementById(id); if(el) navigator.clipboard.writeText(el.textContent).then(function(){toast("Kopyalandı!");}); };
       window.copyText = function(text){ if(text) navigator.clipboard.writeText(text).then(function(){toast("Kopyalandı!");}); };
@@ -2356,26 +2403,14 @@
         fetch(API+"/api/links/"+id,{method:"DELETE"}).then(function(){refreshAll();toast("Silindi.");});
       };
 
-      initTheme();
-      initColumnDrag();
-      initTableControls();
-      initModuleNav();
-      initMobileNav();
-      applyTableColOrder("online-table");
-      applyTableColOrder("sessions-table");
-      if (window.MakroAccounting) window.MakroAccounting.init();
-      loadMe(function() {
-        trackingPollEnabled = currentModule === "tracking";
-        if (trackingPollEnabled) refreshAll();
-        setInterval(refreshLive, REFRESH_LIVE_MS);
-        setInterval(refreshDashboard, REFRESH_DASH_MS);
-      });
-      document.addEventListener("visibilitychange", function() {
-        if (!document.hidden && trackingPollEnabled) refreshAll();
-      });
-      setInterval(function() {
-        if (trackingPollEnabled) tickTimes();
-      }, 1000);
+      try {
+        bootstrapPanel();
+      } catch (err) {
+        console.error("bootstrapPanel", err);
+        initModuleNav();
+        initMobileNav();
+        if (window.MakroAccounting) window.MakroAccounting.init();
+      }
     })();
   </script>
 </body>
