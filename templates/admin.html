@@ -877,6 +877,7 @@
           <div class="card-head">
             <span>Smartico Affiliate Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(ziyaret · kayıt · yatırım · komisyon)</span></span>
             <div class="card-actions">
+              <input id="smartico-search" placeholder="🔎 Kanal/link ara…" style="width:150px;" autocomplete="off">
               <label class="muted" style="font-size:0.72rem;display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
                 <input type="checkbox" id="smartico-hide-inactive" checked style="width:auto;margin:0;"> Hareketsizleri gizle (6 ay)
               </label>
@@ -952,6 +953,7 @@
           <div class="card-head">
             <span>bl.ink Link Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(kısa linkler · tıklama · şu an online)</span></span>
             <div class="card-actions">
+              <input id="blink-search" placeholder="🔎 Link ara…" style="width:150px;" autocomplete="off">
               <span class="muted" id="blink-updated" style="font-size:0.72rem;"></span>
               <button type="button" class="btn btn-sm" id="btn-blink-settings">⚙️ Ayarlar</button>
               <button type="button" class="btn btn-sm" id="btn-blink-refresh">Yenile</button>
@@ -2448,6 +2450,17 @@
         });
       }
 
+      function applySmarticoSearchFilter(rows) {
+        var input = document.getElementById("smartico-search");
+        var q = input ? normalizeMatchText(input.value) : "";
+        if (!q) return rows;
+        return rows.filter(function(r) {
+          return normalizeMatchText(r.affiliate_name).indexOf(q) !== -1 ||
+            normalizeMatchText(r.link_name).indexOf(q) !== -1 ||
+            normalizeMatchText(r.affiliate_id).indexOf(q) !== -1;
+        });
+      }
+
       function loadSmarticoActiveKeys() {
         if (!hasPerm("tracking.smartico") || smarticoConfigured === false) return;
         fetch(API + "/api/smartico/report?period=6months").then(function(r) {
@@ -2477,6 +2490,7 @@
         }
         smarticoLastResult = result;
         var rows = applySmarticoInactiveFilter(result.rows || []);
+        rows = applySmarticoSearchFilter(rows);
         rows = sortTableRows("smartico-table", rows, {
           affiliate_name: function(r) { return r.affiliate_name || ""; },
           link_name: function(r) { return r.link_name || ""; },
@@ -2572,6 +2586,18 @@
         document.getElementById("blink-table-wrap").style.display = mode === "data" ? "" : "none";
       }
 
+      function applyBlinkSearchFilter(rows) {
+        var input = document.getElementById("blink-search");
+        var q = input ? normalizeMatchText(input.value) : "";
+        if (!q) return rows;
+        return rows.filter(function(r) {
+          return normalizeMatchText(r.alias).indexOf(q) !== -1 ||
+            normalizeMatchText(r.short_link).indexOf(q) !== -1 ||
+            normalizeMatchText(r.redirect_url).indexOf(q) !== -1 ||
+            normalizeMatchText(r.ref_code).indexOf(q) !== -1;
+        });
+      }
+
       function renderBlinkReport(result) {
         if (!result || result.error === "not_configured") {
           setBlinkView("empty");
@@ -2582,7 +2608,8 @@
           if (!result.rows || !result.rows.length) { setBlinkView("error"); return; }
         }
         blinkLastResult = result;
-        var rows = sortTableRows("blink-table", result.rows || [], {
+        var rows = applyBlinkSearchFilter(result.rows || []);
+        rows = sortTableRows("blink-table", rows, {
           short_link: function(r) { return r.short_link || r.alias || ""; },
           redirect_url: function(r) { return r.redirect_url || ""; },
           ref_code: function(r) { return r.ref_code || ""; },
@@ -2841,6 +2868,10 @@
         if (smarticoLastResult) renderSmarticoReport(smarticoLastResult);
       });
 
+      bindOptional("smartico-search", "input", function() {
+        if (smarticoLastResult) renderSmarticoReport(smarticoLastResult);
+      });
+
       bindOptional("btn-smartico-clear", "click", function() {
         if (!confirm("Smartico API anahtarı kaldırılacak. Devam?")) return;
         fetch(API+"/api/smartico/config", { method: "DELETE" }).then(function(r){ return r.json(); }).then(function() {
@@ -2937,6 +2968,10 @@
       bindOptional("btn-blink-refresh", "click", function() {
         loadBlinkReport(true);
         toast("bl.ink verisi yenileniyor…");
+      });
+
+      bindOptional("blink-search", "input", function() {
+        if (blinkLastResult) renderBlinkReport(blinkLastResult);
       });
 
       bindOptional("btn-blink-clear", "click", function() {
