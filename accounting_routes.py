@@ -237,8 +237,11 @@ def create_accounting_blueprint(permission_required):
         bank = parse_office_amount(data.get("bank_salary")) if "bank_salary" in data else existing.get("bank_salary", 0)
         crypto = parse_office_amount(data.get("crypto_salary")) if "crypto_salary" in data else existing.get("crypto_salary", 0)
         advance = parse_office_amount(data.get("advance_amount")) if "advance_amount" in data else existing.get("advance_amount", 0)
-        if bank is None or crypto is None or advance is None:
+        bonus = parse_office_amount(data.get("bonus_amount")) if "bonus_amount" in data else existing.get("bonus_amount", 0)
+        if bank is None or crypto is None or advance is None or bonus is None:
             return None, "Ödeme tutarları geçersiz."
+        if bonus < 0:
+            return None, "Prim negatif olamaz."
 
         crypto_wallet = (
             data.get("crypto_wallet") if "crypto_wallet" in data else existing.get("crypto_wallet") or ""
@@ -281,6 +284,7 @@ def create_accounting_blueprint(permission_required):
             "bank_salary": bank,
             "crypto_salary": crypto,
             "advance_amount": advance,
+            "bonus_amount": bonus,
             "crypto_wallet": crypto_wallet,
             "bank_iban": bank_iban,
             "bank_account_name": bank_account_name,
@@ -911,7 +915,7 @@ def create_accounting_blueprint(permission_required):
             SET name = ?, department = ?, start_date = ?, end_date = ?, salary = ?, currency = ?,
                 salary_try = ?, salary_usd = ?, salary_eur = ?,
                 rate_usd_try = ?, rate_eur_try = ?, salary_category = ?,
-                bank_salary = ?, crypto_salary = ?, advance_amount = ?,
+                bank_salary = ?, crypto_salary = ?, advance_amount = ?, bonus_amount = ?,
                 crypto_wallet = ?, bank_iban = ?, bank_account_name = ?,
                 location = ?, notes = ?, status = ?
             WHERE id = ?
@@ -922,6 +926,7 @@ def create_accounting_blueprint(permission_required):
                 fx["TRY"], fx["USD"], fx["EUR"],
                 fx["rate_usd_try"], fx["rate_eur_try"], payload["salary_category"],
                 payload["bank_salary"], payload["crypto_salary"], payload["advance_amount"],
+                payload["bonus_amount"],
                 payload["crypto_wallet"], payload["bank_iban"], payload["bank_account_name"],
                 payload["location"], payload["notes"],
                 payload["status"], emp_id,
@@ -981,9 +986,9 @@ def create_accounting_blueprint(permission_required):
                 INSERT INTO acc_employees
                 (name, department, start_date, end_date, salary, currency,
                  salary_try, salary_usd, salary_eur, rate_usd_try, rate_eur_try,
-                 salary_category, bank_salary, crypto_salary, advance_amount,
+                 salary_category, bank_salary, crypto_salary, advance_amount, bonus_amount,
                  crypto_wallet, bank_iban, bank_account_name, location, notes, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload["name"], payload["department"], payload["start_date"], payload["end_date"],
@@ -991,9 +996,9 @@ def create_accounting_blueprint(permission_required):
                     fx["TRY"], fx["USD"], fx["EUR"],
                     fx["rate_usd_try"], fx["rate_eur_try"],
                     payload["salary_category"], payload["bank_salary"], payload["crypto_salary"],
-                    payload["advance_amount"], payload["crypto_wallet"], payload["bank_iban"],
-                    payload["bank_account_name"], payload["location"], payload["notes"],
-                    payload["status"], now,
+                    payload["advance_amount"], payload["bonus_amount"], payload["crypto_wallet"],
+                    payload["bank_iban"], payload["bank_account_name"], payload["location"],
+                    payload["notes"], payload["status"], now,
                 ),
             )
             conn.commit()

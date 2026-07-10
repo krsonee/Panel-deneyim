@@ -335,6 +335,7 @@
       <div class="card-body">
         <form id="acc-emp-form" class="form-row-4">
           <div><label>Personel Adı</label><input id="acc-emp-name" required></div>
+          <div><label>Referans</label><input id="acc-emp-reference" placeholder="Kim önerdi, avans notu…"></div>
           <div><label>Maaş Kategorisi</label>
             <select id="acc-emp-category" required></select>
           </div>
@@ -358,9 +359,10 @@
               <div><label>Bankaya Yatacak</label><input type="number" id="acc-emp-bank" step="0.01" min="0" value="0"></div>
               <div><label>Kripto Ödenecek</label><input type="number" id="acc-emp-crypto" step="0.01" min="0" value="0"></div>
               <div><label>Avans (dönem içi)</label><input type="number" id="acc-emp-advance" step="0.01" min="0" value="0"></div>
+              <div><label>Prim</label><input type="number" id="acc-emp-bonus" step="0.01" min="0" value="0" title="Hak edişe eklenir"></div>
               <div><label>Kalan</label><input type="text" id="acc-emp-remaining" readonly class="muted" value="0"></div>
             </div>
-            <p class="muted" style="font-size:0.72rem;margin-top:0.35rem;">Banka + Kripto + Avans toplamı maaşı geçemez. TRC20 cüzdan ve IBAN bilgilerini personel kaydından sonra tablodan girebilirsiniz.</p>
+            <p class="muted" style="font-size:0.72rem;margin-top:0.35rem;">Banka + Kripto + Avans toplamı maaşı geçemez. Prim hak edişe eklenir (avans düşülmez).</p>
           </div>
           <div><label>Durum</label>
             <select id="acc-emp-status">
@@ -411,6 +413,7 @@
           <table>
             <thead><tr>
               <th>Personel</th>
+              <th>Referans</th>
               <th>Kategori</th>
               <th>Departman</th>
               <th>Konum</th>
@@ -420,6 +423,7 @@
               <th>Banka</th>
               <th>Kripto</th>
               <th>Avans</th>
+              <th>Prim</th>
               <th>Kalan</th>
               <th>Ödeme Bilgisi</th>
               <th>Hak Ediş</th>
@@ -427,7 +431,7 @@
               <th>Durum</th>
               <th></th>
             </tr></thead>
-            <tbody id="acc-emp-table"><tr><td colspan="16" class="empty">Personel yok</td></tr></tbody>
+            <tbody id="acc-emp-table"><tr><td colspan="18" class="empty">Personel yok</td></tr></tbody>
           </table>
         </div>
         <div class="table-foot" id="acc-emp-table-foot" style="display:none;">

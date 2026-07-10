@@ -550,6 +550,23 @@
     return row.advance_amount || 0;
   }
 
+  function accUsdt(n) {
+    n = parseFloat(n) || 0;
+    return "USDT " + n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function accPayrollTriCurCellHtml(map, hidden) {
+    if (hidden) return accHiddenMoney();
+    if (!map) return accHiddenMoney();
+    var tryAmt = map.TRY != null ? map.TRY : 0;
+    var usdAmt = map.USD != null ? map.USD : 0;
+    return '<div class="acc-emp-tri-cur">' +
+      '<div><span class="acc-cur-tag">TL</span><span>' + accMoney(tryAmt, "TRY") + "</span></div>" +
+      '<div><span class="acc-cur-tag">USD</span><span>' + accMoney(usdAmt, "USD") + "</span></div>" +
+      '<div><span class="acc-cur-tag">USDT</span><span>' + accUsdt(usdAmt) + "</span></div>" +
+      "</div>";
+  }
+
   function accMultiCurCellHtml(map, hidden) {
     if (hidden) return accHiddenMoney();
     if (!map) return accHiddenMoney();
@@ -972,10 +989,11 @@
       }).join("") + "</select>";
   }
 
-  function accEmpInputHtml(field, value, empId, extraCls, type, step) {
+  function accEmpInputHtml(field, value, empId, extraCls, type, step, placeholder) {
     return '<input type="' + (type || "text") + '" class="acc-emp-inline ' + (extraCls || "") + '"' +
       ' data-emp-field="' + field + '" data-emp-id="' + empId + '"' +
       (step ? ' step="' + step + '"' : "") +
+      (placeholder ? ' placeholder="' + accEsc(placeholder) + '"' : "") +
       ' value="' + accEsc(value != null && value !== "" ? value : "") + '">';
   }
 
@@ -1025,9 +1043,12 @@
       : accEmpInputHtml("name", r.name, r.id, "acc-emp-inline-wide");
     var catCell = hidden ? accHiddenMoney() : accEmpSelectHtml("salary_category", r.salary_category, r.id, catOpts);
     var deptCell = accEmpSelectHtml("department", r.department, r.id, deptOpts);
+    var refCell = hidden
+      ? accHiddenMoney()
+      : accEmpInputHtml("notes", r.notes || "", r.id, "acc-emp-inline-wide", "text", null, "Referans / not");
     var locCell = hidden
       ? accHiddenMoney()
-      : accEmpInputHtml("location", r.location || "", r.id, "acc-emp-inline-wide");
+      : accEmpInputHtml("location", r.location || "", r.id, "acc-emp-inline-wide", "text", null, "Konum");
     var startCell = accEmpInputHtml("start_date", r.start_date, r.id, "", "date");
     var endCell = r.status === "left"
       ? accEmpInputHtml("end_date", r.end_date || "", r.id, "", "date")
@@ -1047,22 +1068,22 @@
     var advanceCell = hidden
       ? accHiddenMoney()
       : accEmpInputHtml("advance_amount", r.advance_amount || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
+    var bonusCell = hidden
+      ? accHiddenMoney()
+      : accEmpInputHtml("bonus_amount", r.bonus_amount || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
     var remainCell = hidden
       ? accHiddenMoney()
       : ('<span class="acc-emp-remain-cell">' + accMoney(r.payment_remaining != null ? r.payment_remaining : r.office_remaining, cur) + "</span>");
     var payInfoCell = accEmpPayInfoHtml(r, hidden);
-    var accrualCell = accMultiCurCellHtml(r.accrual, hidden);
-    var netCell = accMultiCurCellHtml(r.net_accrual, hidden);
-    var notesField = hidden
-      ? ""
-      : ('<div style="margin-top:0.2rem;">' +
-        accEmpInputHtml("notes", r.notes || "", r.id, "acc-emp-inline-wide") + "</div>");
+    var accrualCell = accPayrollTriCurCellHtml(r.accrual, hidden);
+    var netCell = accPayrollTriCurCellHtml(r.net_accrual, hidden);
     var statusCell = accEmpSelectHtml("status", r.status || "active", r.id, [
       { value: "active", label: "Aktif Çalışıyor" },
       { value: "left", label: "Ayrıldı" }
     ], "acc-emp-status-select " + statusCls);
     return '<tr class="' + rowCls + '">' +
-      "<td>" + nameCell + notesField + "</td>" +
+      "<td>" + nameCell + "</td>" +
+      "<td>" + refCell + "</td>" +
       "<td>" + catCell + "</td>" +
       "<td>" + deptCell + "</td>" +
       "<td>" + locCell + "</td>" +
@@ -1072,6 +1093,7 @@
       "<td>" + bankCell + "</td>" +
       "<td>" + cryptoCell + "</td>" +
       "<td>" + advanceCell + "</td>" +
+      "<td>" + bonusCell + "</td>" +
       "<td>" + remainCell + "</td>" +
       "<td>" + payInfoCell + "</td>" +
       "<td>" + accrualCell + "</td>" +
@@ -1086,7 +1108,7 @@
         var field = el.getAttribute("data-emp-field");
         var empId = el.getAttribute("data-emp-id");
         var patch = {};
-        if (field === "salary" || field === "bank_salary" || field === "crypto_salary" || field === "advance_amount") {
+        if (field === "salary" || field === "bank_salary" || field === "crypto_salary" || field === "advance_amount" || field === "bonus_amount") {
           var num = parseFloat(el.value);
           if (isNaN(num) || num < 0) {
             alert("Geçerli tutar girin.");
@@ -1126,7 +1148,7 @@
     var ordered = accOrderEmployees(filtered);
     var activeRows = ordered.filter(function (r) { return r.status === "active"; });
     var leftRows = ordered.filter(function (r) { return r.status === "left"; });
-    var cols = 16;
+    var cols = 18;
 
     if (!filtered.length) {
       tbody.innerHTML = '<tr><td colspan="' + cols + '" class="empty">' +
@@ -1342,6 +1364,7 @@
       var status = document.getElementById("acc-emp-status").value;
       var payload = Object.assign({
           name: document.getElementById("acc-emp-name").value.trim(),
+          notes: (document.getElementById("acc-emp-reference").value || "").trim(),
           salary_category: document.getElementById("acc-emp-category").value,
           department: document.getElementById("acc-emp-dept").value,
           start_date: document.getElementById("acc-emp-start").value,
@@ -1350,7 +1373,8 @@
             status: status,
             bank_salary: document.getElementById("acc-emp-bank").value || 0,
             crypto_salary: document.getElementById("acc-emp-crypto").value || 0,
-            advance_amount: document.getElementById("acc-emp-advance").value || 0
+            advance_amount: document.getElementById("acc-emp-advance").value || 0,
+            bonus_amount: document.getElementById("acc-emp-bonus").value || 0
         }, accReadFormRates("acc-emp-rate-usd", "acc-emp-rate-eur"));
       if (status === "left") {
         payload.end_date = document.getElementById("acc-emp-end").value;
@@ -1362,10 +1386,12 @@
       }).then(function (r) {
         if (r && r.ok) {
           document.getElementById("acc-emp-name").value = "";
+          document.getElementById("acc-emp-reference").value = "";
           document.getElementById("acc-emp-salary").value = "";
           document.getElementById("acc-emp-bank").value = "0";
           document.getElementById("acc-emp-crypto").value = "0";
           document.getElementById("acc-emp-advance").value = "0";
+          document.getElementById("acc-emp-bonus").value = "0";
           document.getElementById("acc-emp-status").value = "active";
           document.getElementById("acc-emp-end").value = "";
           accClearFormRates("acc-emp-rate-usd", "acc-emp-rate-eur");
@@ -1378,7 +1404,7 @@
       var el = document.getElementById(id);
       if (el) el.addEventListener("change", accUpdateEmpFormUi);
     });
-    ["acc-emp-salary", "acc-emp-bank", "acc-emp-crypto", "acc-emp-advance"].forEach(function (id) {
+    ["acc-emp-salary", "acc-emp-bank", "acc-emp-crypto", "acc-emp-advance", "acc-emp-bonus"].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.addEventListener("input", accUpdateOfficeRemaining);
     });

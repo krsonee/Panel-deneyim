@@ -102,7 +102,7 @@ def is_office_employee(emp, category_map=None):
 
 
 OFFICE_SALARY_FIELDS = (
-    "salary", "bank_salary", "crypto_salary", "advance_amount",
+    "salary", "bank_salary", "crypto_salary", "advance_amount", "bonus_amount",
     "salary_try", "salary_usd", "salary_eur", "net_salary", "office_remaining",
 )
 
@@ -199,19 +199,27 @@ def employee_active_in_period(emp, period="month", reference=None):
     return False
 
 
-def advance_in_currency(emp, currency):
-    advance = float(emp.get("advance_amount") or 0)
-    if advance <= 0:
+def amount_in_currency(emp, amount, currency):
+    amount = float(amount or 0)
+    if amount <= 0:
         return 0.0
     emp_currency = (emp.get("currency") or "TRY").upper()
     currency = (currency or "TRY").upper()
     if emp_currency == currency:
-        return round(advance, 2)
+        return round(amount, 2)
     salary = float(emp.get("salary") or 0)
     if salary <= 0:
         return 0.0
     monthly = float(emp.get(f"salary_{currency.lower()}") or 0)
-    return round(advance * (monthly / salary), 2)
+    return round(amount * (monthly / salary), 2)
+
+
+def advance_in_currency(emp, currency):
+    return amount_in_currency(emp, emp.get("advance_amount"), currency)
+
+
+def bonus_in_currency(emp, currency):
+    return amount_in_currency(emp, emp.get("bonus_amount"), currency)
 
 
 def enrich_employee_row(emp, period="month", reference=None):
@@ -228,9 +236,15 @@ def enrich_employee_row(emp, period="month", reference=None):
         start, end = period_date_range(period, reference)
     row = dict(emp)
     accrual = {}
+    bonus_by_currency = {cur: bonus_in_currency(row, cur) for cur in CURRENCIES}
     for cur in CURRENCIES:
-        accrual[cur] = employee_accrual_for_range(row, start, end, cur)
+        base = employee_accrual_for_range(row, start, end, cur)
+        accrual[cur] = round(base + bonus_by_currency[cur], 2)
     row["accrual"] = accrual
+    row["bonus_by_currency"] = bonus_by_currency
+    row["accrual_base"] = {
+        cur: round(accrual[cur] - bonus_by_currency[cur], 2) for cur in CURRENCIES
+    }
     advance_by_currency = {cur: advance_in_currency(row, cur) for cur in CURRENCIES}
     row["advance_by_currency"] = advance_by_currency
     row["net_accrual"] = {
