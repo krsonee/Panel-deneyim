@@ -1226,16 +1226,17 @@
       <div class="modal-body">
         <p class="muted" style="font-size:0.78rem;margin-bottom:1rem;">
           <strong id="smartico-bind-name"></strong> kanalından gelen ziyaretçilerin sitede hangi
-          <strong>domain</strong> ve <strong>referans kodu (?ref=)</strong> ile takip edildiğini seç.
-          Doğru eşleşirse "Şu An Online" sayısı otomatik hesaplanır.
+          <strong>referans kodu (?ref= / ?affid=)</strong> ile takip edildiğini seç. Eşleşme referans koduna
+          göre yapılır; ana site domaini (804 → 805 → 806…) değişse bile eşleşme bozulmaz, tekrar
+          girmene gerek kalmaz. Domain alanı sadece hatırlatma/bilgi amaçlıdır.
         </p>
         <div class="form-row-4">
           <div>
-            <label for="smartico-bind-domain">Domain</label>
+            <label for="smartico-bind-domain">Domain <span class="muted">(bilgi amaçlı)</span></label>
             <input id="smartico-bind-domain" list="smartico-domain-list" placeholder="Örn: makrobet804.com" autocomplete="off">
             <datalist id="smartico-domain-list"></datalist>
           </div>
-          <div><label for="smartico-bind-ref">Referans Kodu (?ref=)</label><input id="smartico-bind-ref" placeholder="Örn: mcasino" autocomplete="off"></div>
+          <div><label for="smartico-bind-ref">Referans Kodu (?ref= / ?affid=)</label><input id="smartico-bind-ref" placeholder="Örn: mcasino" autocomplete="off"></div>
           <div style="align-self:end"><button type="button" class="btn btn-primary" id="smartico-bind-save">Kaydet</button></div>
           <div style="align-self:end"><button type="button" class="btn btn-danger" id="smartico-bind-remove" style="display:none;">Bağlantıyı Kaldır</button></div>
         </div>
@@ -1252,14 +1253,16 @@
       <div class="modal-body">
         <p class="muted" style="font-size:0.78rem;margin-bottom:1rem;">
           <strong id="blink-bind-name"></strong> kısa linkinden gelen ziyaretçilerin sitede hangi
-          <strong>domain</strong> ve <strong>referans kodu (?ref=)</strong> ile takip edildiğini seç.
+          <strong>referans kodu (?ref= / ?affid=)</strong> ile takip edildiğini seç. Eşleşme referans koduna
+          göre yapılır; ana site domaini (804 → 805 → 806…) değişse bile eşleşme bozulmaz. Domain alanı
+          sadece hatırlatma/bilgi amaçlıdır.
         </p>
         <div class="form-row-4">
           <div>
-            <label for="blink-bind-domain">Domain</label>
+            <label for="blink-bind-domain">Domain <span class="muted">(bilgi amaçlı)</span></label>
             <input id="blink-bind-domain" list="smartico-domain-list" placeholder="Örn: makrobet804.com" autocomplete="off">
           </div>
-          <div><label for="blink-bind-ref">Referans Kodu (?ref=)</label><input id="blink-bind-ref" placeholder="Örn: mcasino" autocomplete="off"></div>
+          <div><label for="blink-bind-ref">Referans Kodu (?ref= / ?affid=)</label><input id="blink-bind-ref" placeholder="Örn: mcasino" autocomplete="off"></div>
           <div style="align-self:end"><button type="button" class="btn btn-primary" id="blink-bind-save">Kaydet</button></div>
           <div style="align-self:end"><button type="button" class="btn btn-danger" id="blink-bind-remove" style="display:none;">Bağlantıyı Kaldır</button></div>
         </div>

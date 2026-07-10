@@ -326,7 +326,14 @@ def _attach_online_counts(conn, rows):
             domain, ref_code = binding
             row["bind_domain"] = domain
             row["bind_ref_code"] = ref_code
-            row["online_now"] = online_map["by_domain_ref"].get((domain.lower(), ref_code.lower()), 0)
+            # Domain rotasyonlu oldugu icin (804 -> 805 -> 806 ...) once ref koduna
+            # gore tum domainlerdeki toplami ariyoruz, sadece bulunamazsa domain'e
+            # kilitli eski davranisa dusuyoruz.
+            norm = _normalize_key(ref_code)
+            online = online_map["by_ref_norm"].get(norm)
+            if online is None:
+                online = online_map["by_domain_ref"].get((domain.lower(), ref_code.lower()), 0)
+            row["online_now"] = online
             row["online_source"] = "manual"
             continue
         row["bind_domain"] = None
