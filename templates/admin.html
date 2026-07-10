@@ -125,11 +125,27 @@
     }
     .link-label { font-weight: 600; color: var(--text); }
     .link-label-empty { color: var(--muted); font-style: italic; font-size: 0.75rem; }
-    .links-table-foot {
+    .table-foot {
       display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
       padding: 0.65rem 1.15rem; border-top: 1px solid var(--border); background: var(--surface-2);
     }
-    .links-table-foot .links-count { font-size: 0.72rem; color: var(--muted); }
+    .table-foot .table-count { font-size: 0.72rem; color: var(--muted); }
+    .table-scroll { overflow-x: auto; }
+    .table-scroll.scrollable {
+      max-height: 420px;
+      overflow-y: auto;
+      scrollbar-gutter: stable;
+    }
+    .table-scroll thead th {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      background: var(--surface-2);
+    }
+    th.col-sortable { cursor: pointer; user-select: none; }
+    th.col-sortable:hover { color: var(--text); background: rgba(99,102,241,0.08); }
+    th.col-sortable.sorted-asc::after { content: " ↑"; font-size: 0.7rem; opacity: 0.9; }
+    th.col-sortable.sorted-desc::after { content: " ↓"; font-size: 0.7rem; opacity: 0.9; }
 
     label { display: block; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.28rem; }
     input, select {
@@ -534,10 +550,25 @@
         <section class="card" data-perm="tracking.reports">
           <div class="card-head"><span>Referans Raporu</span><span class="muted" id="ref-report-label" style="font-weight:400;font-size:0.75rem;"></span></div>
           <div class="table-wrap">
-            <table>
-              <thead><tr><th>Domain</th><th>Referans</th><th>Toplam Ziyaretçi</th><th>Online</th><th>Toplam Süre</th><th>Benzersiz IP</th><th>Son Görülme</th><th>Affiliate Link</th></tr></thead>
-              <tbody id="ref-report-table"><tr><td colspan="8" class="empty">Veri yok</td></tr></tbody>
-            </table>
+            <div class="table-scroll" id="ref-report-table-scroll">
+              <table>
+                <thead><tr>
+                  <th class="col-sortable" data-sort="domain">Domain</th>
+                  <th class="col-sortable" data-sort="ref_label">Referans</th>
+                  <th class="col-sortable" data-sort="total_visitors">Toplam Ziyaretçi</th>
+                  <th class="col-sortable" data-sort="online_now">Online</th>
+                  <th class="col-sortable" data-sort="total_seconds">Toplam Süre</th>
+                  <th class="col-sortable" data-sort="unique_ips">Benzersiz IP</th>
+                  <th class="col-sortable" data-sort="last_seen_at">Son Görülme</th>
+                  <th>Affiliate Link</th>
+                </tr></thead>
+                <tbody id="ref-report-table"><tr><td colspan="8" class="empty">Veri yok</td></tr></tbody>
+              </table>
+            </div>
+            <div class="table-foot" id="ref-report-table-foot" style="display:none;">
+              <button type="button" class="btn btn-sm" data-table-toggle="ref-report-table">Tümünü göster</button>
+              <span class="table-count" id="ref-report-table-count"></span>
+            </div>
           </div>
         </section>
 
@@ -554,34 +585,48 @@
             </div>
           </div>
           <div class="table-wrap">
-            <table>
-              <thead><tr><th>İsim</th><th>Domain</th><th>Referans</th><th>Online</th><th></th></tr></thead>
-              <tbody id="links-table"><tr><td colspan="5" class="empty">Henüz domain yok</td></tr></tbody>
-            </table>
-          </div>
-          <div class="links-table-foot" id="links-table-foot" style="display:none;">
-            <button type="button" class="btn btn-sm" id="btn-links-toggle">Tümünü göster</button>
-            <span class="links-count" id="links-table-count"></span>
+            <div class="table-scroll" id="links-table-scroll">
+              <table>
+                <thead><tr>
+                  <th class="col-sortable" data-sort="label">İsim</th>
+                  <th class="col-sortable" data-sort="domain">Domain</th>
+                  <th class="col-sortable" data-sort="ref_code">Referans</th>
+                  <th class="col-sortable" data-sort="online_count">Online</th>
+                  <th></th>
+                </tr></thead>
+                <tbody id="links-table"><tr><td colspan="5" class="empty">Henüz domain yok</td></tr></tbody>
+              </table>
+            </div>
+            <div class="table-foot" id="links-table-foot" style="display:none;">
+              <button type="button" class="btn btn-sm" data-table-toggle="links-table">Tümünü göster</button>
+              <span class="table-count" id="links-table-count"></span>
+            </div>
           </div>
         </section>
 
         <section class="card" data-perm="tracking.players">
           <div class="card-head"><span>Şu An Online</span><span class="muted" id="online-label" style="font-weight:400;font-size:0.75rem;"></span></div>
           <div class="table-wrap">
-            <table>
-              <thead><tr>
-                <th data-col="status">Durum</th>
-                <th data-col="session_id">Oturum ID</th>
-                <th data-col="domain">Domain</th>
-                <th data-col="ref">Referans</th>
-                <th data-col="ip">IP</th>
-                <th data-col="time">Süre</th>
-                <th data-col="games">Oyunlar</th>
-                <th data-col="device">Cihaz</th>
-                <th data-col="actions"></th>
-              </tr></thead>
-              <tbody id="online-table"><tr><td colspan="9" class="empty">Online oyuncu yok</td></tr></tbody>
-            </table>
+            <div class="table-scroll" id="online-table-scroll">
+              <table>
+                <thead><tr>
+                  <th class="col-sortable col-draggable" data-col="status">Durum</th>
+                  <th class="col-sortable col-draggable" data-col="session_id">Oturum ID</th>
+                  <th class="col-sortable col-draggable" data-col="domain">Domain</th>
+                  <th class="col-sortable col-draggable" data-col="ref">Referans</th>
+                  <th class="col-sortable col-draggable" data-col="ip">IP</th>
+                  <th class="col-sortable col-draggable" data-col="time">Süre</th>
+                  <th class="col-sortable col-draggable" data-col="games">Oyunlar</th>
+                  <th class="col-sortable col-draggable" data-col="device">Cihaz</th>
+                  <th data-col="actions"></th>
+                </tr></thead>
+                <tbody id="online-table"><tr><td colspan="9" class="empty">Online oyuncu yok</td></tr></tbody>
+              </table>
+            </div>
+            <div class="table-foot" id="online-table-foot" style="display:none;">
+              <button type="button" class="btn btn-sm" data-table-toggle="online-table">Tümünü göster</button>
+              <span class="table-count" id="online-table-count"></span>
+            </div>
           </div>
         </section>
 
@@ -604,20 +649,26 @@
           </div>
           <div class="filter-count" id="filter-count"></div>
           <div class="table-wrap">
-            <table>
-              <thead><tr>
-                <th data-col="status">Durum</th>
-                <th data-col="session_id">Oturum ID</th>
-                <th data-col="domain">Domain</th>
-                <th data-col="ref">Referans</th>
-                <th data-col="ip">IP</th>
-                <th data-col="time">Süre</th>
-                <th data-col="games">Oyunlar</th>
-                <th data-col="device">Cihaz</th>
-                <th data-col="actions"></th>
-              </tr></thead>
-              <tbody id="sessions-table"><tr><td colspan="9" class="empty">Veri yok</td></tr></tbody>
-            </table>
+            <div class="table-scroll" id="sessions-table-scroll">
+              <table>
+                <thead><tr>
+                  <th class="col-sortable col-draggable" data-col="status">Durum</th>
+                  <th class="col-sortable col-draggable" data-col="session_id">Oturum ID</th>
+                  <th class="col-sortable col-draggable" data-col="domain">Domain</th>
+                  <th class="col-sortable col-draggable" data-col="ref">Referans</th>
+                  <th class="col-sortable col-draggable" data-col="ip">IP</th>
+                  <th class="col-sortable col-draggable" data-col="time">Süre</th>
+                  <th class="col-sortable col-draggable" data-col="games">Oyunlar</th>
+                  <th class="col-sortable col-draggable" data-col="device">Cihaz</th>
+                  <th data-col="actions"></th>
+                </tr></thead>
+                <tbody id="sessions-table"><tr><td colspan="9" class="empty">Veri yok</td></tr></tbody>
+              </table>
+            </div>
+            <div class="table-foot" id="sessions-table-foot" style="display:none;">
+              <button type="button" class="btn btn-sm" data-table-toggle="sessions-table">Tümünü göster</button>
+              <span class="table-count" id="sessions-table-count"></span>
+            </div>
           </div>
         </section>
       </div>
@@ -755,9 +806,22 @@
       var charts = { domain: null, affiliate: null, games: null };
       var COLORS = ["#6366f1","#22c55e","#f59e0b","#f43f5e","#06b6d4","#a855f7"];
       var currentPeriod = "all";
-      var LINKS_PAGE_SIZE = 5;
-      var linksExpanded = false;
+      var TABLE_PAGE_SIZE = 10;
       var cachedLinks = [];
+      var cachedRefReport = [];
+      var cachedOnline = [];
+      var tablePager = {
+        "links-table": { expanded: false, sortKey: "domain", sortDir: "asc" },
+        "ref-report-table": { expanded: false, sortKey: "total_visitors", sortDir: "desc" },
+        "online-table": { expanded: false, sortKey: "time", sortDir: "desc" },
+        "sessions-table": { expanded: false, sortKey: "time", sortDir: "desc" }
+      };
+      var TABLE_LABELS = {
+        "links-table": "domain",
+        "ref-report-table": "kayıt",
+        "online-table": "oyuncu",
+        "sessions-table": "oyuncu"
+      };
       var myPermissions = [];
       var myRole = "";
       var roleTemplates = {};
@@ -895,10 +959,25 @@
       }
 
       function renderRefReport(rows) {
+        cachedRefReport = rows || [];
+        renderRefReportRows();
+      }
+
+      function renderRefReportRows() {
         var tbody = document.getElementById("ref-report-table");
-        document.getElementById("ref-report-label").textContent = (rows||[]).length ? rows.length + " kayıt" : "";
-        if (!rows || !rows.length) {
+        var rows = sortTableRows("ref-report-table", cachedRefReport, {
+          domain: function(r) { return r.domain || ""; },
+          ref_label: function(r) { return r.ref_label || ""; },
+          total_visitors: function(r) { return r.total_visitors || 0; },
+          online_now: function(r) { return r.online_now || 0; },
+          total_seconds: function(r) { return r.total_seconds || 0; },
+          unique_ips: function(r) { return r.unique_ips || 0; },
+          last_seen_at: function(r) { return r.last_seen_at || ""; }
+        });
+        document.getElementById("ref-report-label").textContent = cachedRefReport.length ? cachedRefReport.length + " kayıt" : "";
+        if (!rows.length) {
           tbody.innerHTML = '<tr><td colspan="8" class="empty">Veri yok</td></tr>';
+          updateTableFoot("ref-report-table", 0);
           return;
         }
         tbody.innerHTML = rows.map(function(r) {
@@ -913,6 +992,8 @@
         tbody.querySelectorAll("[data-copy-url]").forEach(function(btn) {
           btn.onclick = function() { copyText(btn.getAttribute("data-copy-url")); };
         });
+        updateTableFoot("ref-report-table", cachedRefReport.length);
+        updateSortHeaders("ref-report-table");
       }
 
       function updateTrackingSnippet(snippet) {
@@ -928,21 +1009,20 @@
 
       function renderLinksRows() {
         var tbody = document.getElementById("links-table");
-        var foot = document.getElementById("links-table-foot");
-        var btn = document.getElementById("btn-links-toggle");
-        var countEl = document.getElementById("links-table-count");
-        var links = cachedLinks;
+        var links = sortTableRows("links-table", cachedLinks, {
+          label: function(l) { return l.label || ""; },
+          domain: function(l) { return l.domain || ""; },
+          ref_code: function(l) { return l.ref_code || ""; },
+          online_count: function(l) { return l.online_count || 0; }
+        });
 
-        if (!links.length) {
+        if (!cachedLinks.length) {
           tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz domain yok</td></tr>';
-          if (foot) foot.style.display = "none";
+          updateTableFoot("links-table", 0);
           return;
         }
 
-        var showAll = linksExpanded || links.length <= LINKS_PAGE_SIZE;
-        var visible = showAll ? links : links.slice(0, LINKS_PAGE_SIZE);
-
-        tbody.innerHTML = visible.map(function(l) {
+        tbody.innerHTML = links.map(function(l) {
           var ref = l.ref_code ? '<span class="tag">'+esc(l.ref_code)+'</span>' : '<span class="tag">Tüm site</span>';
           var on = l.online_count>0 ? '<span class="tag online">'+l.online_count+'</span>' : '<span class="tag offline">0</span>';
           var nameCell = l.label
@@ -952,21 +1032,8 @@
             '<td><button class="btn btn-sm btn-danger" onclick="deleteLink('+l.id+')">Sil</button></td></tr>';
         }).join("");
 
-        if (!foot || !btn) return;
-        if (links.length <= LINKS_PAGE_SIZE) {
-          foot.style.display = "none";
-          return;
-        }
-        foot.style.display = "flex";
-        var hidden = links.length - LINKS_PAGE_SIZE;
-        btn.textContent = linksExpanded
-          ? "▲ Daha az göster"
-          : "▼ Tümünü göster (" + hidden + " domain daha)";
-        if (countEl) {
-          countEl.textContent = linksExpanded
-            ? links.length + " domain listeleniyor"
-            : "İlk " + LINKS_PAGE_SIZE + " / " + links.length + " domain";
-        }
+        updateTableFoot("links-table", cachedLinks.length);
+        updateSortHeaders("links-table");
       }
 
       function loadSettings() {
@@ -1041,6 +1108,139 @@
       function esc(s) { var d=document.createElement("div"); d.textContent=s||""; return d.innerHTML; }
       function toast(m) { var t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},2200); }
 
+      function compareSortValues(a, b, dir) {
+        var mul = dir === "asc" ? 1 : -1;
+        if (a == null && b == null) return 0;
+        if (a == null || a === "") return 1;
+        if (b == null || b === "") return -1;
+        if (typeof a === "number" && typeof b === "number") return (a - b) * mul;
+        if (typeof a === "boolean" && typeof b === "boolean") return ((a === b) ? 0 : (a ? 1 : -1)) * mul;
+        return String(a).localeCompare(String(b), "tr", { numeric: true, sensitivity: "base" }) * mul;
+      }
+
+      function sortTableRows(tableId, rows, getters) {
+        var st = tablePager[tableId];
+        var list = (rows || []).slice();
+        if (!st || !st.sortKey) return paginateTableRows(tableId, list);
+        var getter = getters[st.sortKey] || function(r) { return r[st.sortKey]; };
+        list.sort(function(a, b) { return compareSortValues(getter(a), getter(b), st.sortDir); });
+        return paginateTableRows(tableId, list);
+      }
+
+      function paginateTableRows(tableId, rows) {
+        var st = tablePager[tableId];
+        if (!st || st.expanded || rows.length <= TABLE_PAGE_SIZE) return rows;
+        return rows.slice(0, TABLE_PAGE_SIZE);
+      }
+
+      function updateTableFoot(tableId, total) {
+        var foot = document.getElementById(tableId + "-foot");
+        var countEl = document.getElementById(tableId + "-count");
+        var scroll = document.getElementById(tableId + "-scroll");
+        var st = tablePager[tableId];
+        var label = TABLE_LABELS[tableId] || "kayıt";
+        if (!foot || !st) return;
+        if (!total || total <= TABLE_PAGE_SIZE) {
+          foot.style.display = "none";
+          if (scroll) scroll.classList.remove("scrollable");
+          return;
+        }
+        foot.style.display = "flex";
+        var btn = foot.querySelector("[data-table-toggle]");
+        var hidden = total - TABLE_PAGE_SIZE;
+        if (btn) {
+          btn.textContent = st.expanded
+            ? "▲ Daha az göster"
+            : "▼ Tümünü göster (" + hidden + " " + label + " daha)";
+        }
+        if (countEl) {
+          countEl.textContent = st.expanded
+            ? total + " " + label + " listeleniyor"
+            : "İlk " + TABLE_PAGE_SIZE + " / " + total + " " + label;
+        }
+        if (scroll) scroll.classList.toggle("scrollable", st.expanded);
+      }
+
+      function updateSortHeaders(tableId) {
+        var st = tablePager[tableId];
+        var tbody = document.getElementById(tableId);
+        if (!tbody || !st) return;
+        var table = tbody.closest("table");
+        if (!table) return;
+        table.querySelectorAll("th.col-sortable").forEach(function(th) {
+          var key = th.getAttribute("data-sort") || th.getAttribute("data-col");
+          var active = key === st.sortKey;
+          th.classList.toggle("sorted-asc", active && st.sortDir === "asc");
+          th.classList.toggle("sorted-desc", active && st.sortDir === "desc");
+        });
+      }
+
+      function toggleTableSort(tableId, sortKey) {
+        if (!sortKey || !tablePager[tableId]) return;
+        var st = tablePager[tableId];
+        if (st.sortKey === sortKey) {
+          st.sortDir = st.sortDir === "asc" ? "desc" : "asc";
+        } else {
+          st.sortKey = sortKey;
+          st.sortDir = (sortKey === "domain" || sortKey === "ref_label" || sortKey === "ref_code" || sortKey === "label" || sortKey === "session_id" || sortKey === "ip" || sortKey === "device") ? "asc" : "desc";
+        }
+        rerenderManagedTable(tableId);
+      }
+
+      function toggleTableExpand(tableId) {
+        if (!tablePager[tableId]) return;
+        tablePager[tableId].expanded = !tablePager[tableId].expanded;
+        rerenderManagedTable(tableId);
+      }
+
+      function rerenderManagedTable(tableId) {
+        if (tableId === "links-table") renderLinksRows();
+        else if (tableId === "ref-report-table") renderRefReportRows();
+        else if (tableId === "online-table") renderOnlineRows();
+        else if (tableId === "sessions-table") renderSessionsBody();
+      }
+
+      var sessionSortGetters = {
+        status: function(s) { return s.is_online ? 1 : 0; },
+        session_id: function(s) { return s.session_id || ""; },
+        domain: function(s) { return s.domain || ""; },
+        ref: function(s) { return s.ref_code || ""; },
+        ip: function(s) { return s.ip_address || ""; },
+        time: function(s) { return s.total_seconds || 0; },
+        games: function(s) { return (s.games || []).length; },
+        device: function(s) { return s.device_category || s.device_display || ""; }
+      };
+
+      function sessionMatchesFilters(s) {
+        var q = document.getElementById("search-input").value.trim().toLowerCase();
+        var dom = document.getElementById("filter-domain").value;
+        var ref = document.getElementById("filter-ref").value;
+        var dev = document.getElementById("filter-device").value;
+        var st = document.getElementById("filter-status").value;
+        var refLabel = s.ref_code || "Direkt giriş";
+        var hay = (s.session_id + " " + (s.ip_address||"") + " " + s.domain + " " + refLabel).toLowerCase();
+        if (q && hay.indexOf(q) < 0) return false;
+        if (dom && s.domain !== dom) return false;
+        if (ref && refLabel !== ref) return false;
+        if (dev && (s.device_category || "") !== dev) return false;
+        if (st === "online" && !s.is_online) return false;
+        if (st === "offline" && s.is_online) return false;
+        return true;
+      }
+
+      function initTableControls() {
+        document.querySelectorAll("[data-table-toggle]").forEach(function(btn) {
+          btn.onclick = function() { toggleTableExpand(btn.getAttribute("data-table-toggle")); };
+        });
+        document.querySelectorAll("th.col-sortable[data-sort]").forEach(function(th) {
+          th.title = "Sıralamak için tıkla";
+          th.addEventListener("click", function() {
+            var tableId = th.closest("table").querySelector("tbody").id;
+            toggleTableSort(tableId, th.getAttribute("data-sort"));
+          });
+        });
+      }
+
       var COL_ORDER_PREFIX = "makropanel_col_order_";
       var SESSION_COL_KEYS = ["status","session_id","domain","ref","ip","time","games","device","actions"];
       var dragColKey = null;
@@ -1107,7 +1307,11 @@
           table.setAttribute("data-col-drag", "1");
           table.querySelectorAll("thead th[data-col]").forEach(function(th) {
             th.classList.add("col-draggable");
-            th.title = "Basılı tutup sürükleyerek sırayı değiştir";
+            if (th.classList.contains("col-sortable")) {
+              th.title = "Tıkla: sırala · Sürükle: sütun taşı";
+            } else {
+              th.title = "Basılı tutup sürükleyerek sırayı değiştir";
+            }
             th.addEventListener("mousedown", onColDragStart);
           });
         });
@@ -1122,26 +1326,35 @@
 
       function onColDragStart(e) {
         if (e.button !== 0) return;
-        var table = this.closest("table");
+        var th = this;
+        var table = th.closest("table");
         var tbody = table && table.querySelector("tbody");
-        dragTableId = tbody ? tbody.id : null;
-        dragColKey = this.getAttribute("data-col");
-        dropColKey = null;
-        this.classList.add("col-dragging");
-        document.body.classList.add("col-drag-active");
+        var tableId = tbody ? tbody.id : null;
+        var startX = e.clientX;
+        var startY = e.clientY;
+        var dragStarted = false;
 
         function onMove(ev) {
+          if (!dragStarted) {
+            if (Math.abs(ev.clientX - startX) < 8 && Math.abs(ev.clientY - startY) < 8) return;
+            dragStarted = true;
+            dragTableId = tableId;
+            dragColKey = th.getAttribute("data-col");
+            dropColKey = null;
+            th.classList.add("col-dragging");
+            document.body.classList.add("col-drag-active");
+          }
           ev.preventDefault();
-          document.querySelectorAll("th.col-drop-target").forEach(function(th) {
-            th.classList.remove("col-drop-target");
+          document.querySelectorAll("th.col-drop-target").forEach(function(el) {
+            el.classList.remove("col-drop-target");
           });
           var el = document.elementFromPoint(ev.clientX, ev.clientY);
-          var th = el && el.closest("th[data-col]");
-          if (th && table && th.closest("table") === table) {
-            var key = th.getAttribute("data-col");
+          var target = el && el.closest("th[data-col]");
+          if (target && table && target.closest("table") === table) {
+            var key = target.getAttribute("data-col");
             if (key !== dragColKey) {
               dropColKey = key;
-              th.classList.add("col-drop-target");
+              target.classList.add("col-drop-target");
             } else {
               dropColKey = null;
             }
@@ -1150,23 +1363,26 @@
           }
         }
 
-        function onUp(ev) {
+        function onUp() {
           document.removeEventListener("mousemove", onMove);
           document.removeEventListener("mouseup", onUp);
-          if (dropColKey && dragColKey && dragTableId) {
-            reorderColumns(dragTableId, dragColKey, dropColKey);
-            toast("Bu tablonun sütun sırası güncellendi");
+          if (dragStarted) {
+            if (dropColKey && dragColKey && dragTableId) {
+              reorderColumns(dragTableId, dragColKey, dropColKey);
+              toast("Bu tablonun sütun sırası güncellendi");
+            }
+            clearColDragMarkers();
+            dragColKey = null;
+            dropColKey = null;
+            dragTableId = null;
+          } else {
+            var key = th.getAttribute("data-col");
+            if (key && key !== "actions" && tableId) toggleTableSort(tableId, key);
           }
-          dragColKey = null;
-          dropColKey = null;
-          dragTableId = null;
-          clearColDragMarkers();
         }
 
         document.addEventListener("mousemove", onMove);
         document.addEventListener("mouseup", onUp);
-        e.preventDefault();
-        e.stopPropagation();
       }
 
       function shortUa(ua) {
@@ -1358,41 +1574,54 @@
       }
 
       function applyFilters() {
-        var q = document.getElementById("search-input").value.trim().toLowerCase();
-        var dom = document.getElementById("filter-domain").value;
-        var ref = document.getElementById("filter-ref").value;
-        var dev = document.getElementById("filter-device").value;
-        var st = document.getElementById("filter-status").value;
-        var vis = 0;
-        document.querySelectorAll("#sessions-table tr[data-session-id]").forEach(function(row) {
-          var ok = (!q||row.textContent.toLowerCase().indexOf(q)>=0) && (!dom||row.getAttribute("data-domain")===dom)
-            && (!ref||row.getAttribute("data-ref")===ref) && (!dev||row.getAttribute("data-device")===dev)
-            && (!st||row.getAttribute("data-status")===st);
-          row.classList.toggle("hidden-row", !ok);
-          if (ok) vis++;
-        });
-        document.getElementById("filter-count").textContent = vis+" / "+allSessions.length+" oyuncu";
+        renderSessionsBody();
       }
 
       function renderOnline(users) {
+        cachedOnline = users || [];
+        document.getElementById("online-label").textContent = cachedOnline.length ? cachedOnline.length + " kişi sitede" : "";
+        renderOnlineRows();
+      }
+
+      function renderOnlineRows() {
         var tbody = document.getElementById("online-table");
-        document.getElementById("online-label").textContent = users.length ? users.length+" kişi sitede" : "";
-        if (!users.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">Online yok</td></tr>'; return; }
+        var users = sortTableRows("online-table", cachedOnline, sessionSortGetters);
+        if (!cachedOnline.length) {
+          tbody.innerHTML = '<tr><td colspan="9" class="empty">Online yok</td></tr>';
+          updateTableFoot("online-table", 0);
+          return;
+        }
         tbody.innerHTML = users.map(function(u){ return sessionRow(u, { detailBtn: true, tableId: "online-table" }); }).join("");
         applyTableColOrder("online-table");
         bindJourneyButtons();
+        updateTableFoot("online-table", cachedOnline.length);
+        updateSortHeaders("online-table");
       }
 
       function renderSessions(sessions) {
         allSessions = sessions || [];
         detectChanges(allSessions);
+        renderSessionsBody();
+      }
+
+      function renderSessionsBody() {
         var tbody = document.getElementById("sessions-table");
-        if (!allSessions.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">Veri yok</td></tr>'; return; }
-        tbody.innerHTML = allSessions.map(function(s){ return sessionRow(s, { clickable: true, detailBtn: true, tableId: "sessions-table" }); }).join("");
+        var filtered = allSessions.filter(sessionMatchesFilters);
+        document.getElementById("filter-count").textContent = filtered.length + " / " + allSessions.length + " oyuncu";
+        if (!filtered.length) {
+          tbody.innerHTML = allSessions.length
+            ? '<tr><td colspan="9" class="empty">Filtreye uygun oyuncu yok</td></tr>'
+            : '<tr><td colspan="9" class="empty">Veri yok</td></tr>';
+          updateTableFoot("sessions-table", filtered.length);
+          return;
+        }
+        var visible = sortTableRows("sessions-table", filtered, sessionSortGetters);
+        tbody.innerHTML = visible.map(function(s){ return sessionRow(s, { clickable: true, detailBtn: true, tableId: "sessions-table" }); }).join("");
         applyTableColOrder("sessions-table");
-        applyFilters();
         bindJourneyButtons();
         bindRowClicks();
+        updateTableFoot("sessions-table", filtered.length);
+        updateSortHeaders("sessions-table");
       }
 
       function bindJourneyButtons() {
@@ -1554,11 +1783,6 @@
         refreshLive();
         refreshDashboard();
       }
-
-      document.getElementById("btn-links-toggle").onclick = function() {
-        linksExpanded = !linksExpanded;
-        renderLinksRows();
-      };
 
       document.getElementById("add-link-form").addEventListener("submit", function(e) {
         e.preventDefault();
@@ -1731,6 +1955,7 @@
 
       initTheme();
       initColumnDrag();
+      initTableControls();
       applyTableColOrder("online-table");
       applyTableColOrder("sessions-table");
       loadMe(function() {
