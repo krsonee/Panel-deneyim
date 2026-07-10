@@ -19,7 +19,7 @@ from accounting_payroll import (
     redact_employee_for_view,
     validate_office_amounts,
 )
-from permissions import has_permission
+from accounting_period import date_clause, default_accounting_period, period_label
 from database import (
     execute,
     fetchall,
@@ -102,18 +102,6 @@ def create_accounting_blueprint(permission_required):
             return value[:10]
         except ValueError:
             return None
-
-    def date_clause(column, period):
-        period = (period or "all").strip().lower()
-        now = utcnow()
-        if period == "today":
-            return f" AND {column} >= ?", (now.strftime("%Y-%m-%d"),)
-        if period == "month":
-            return f" AND {column} >= ?", (now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%d"),)
-        if period == "30days":
-            start = (now - timedelta(days=30)).strftime("%Y-%m-%d")
-            return f" AND {column} >= ?", (start,)
-        return "", ()
 
     def parse_rate(value):
         if value is None or value == "":
@@ -262,6 +250,13 @@ def create_accounting_blueprint(permission_required):
         salary_categories = fetch_salary_categories(conn)
         return departments, salary_categories
 
+    def period_from_request():
+        period = (request.args.get("period") or "").strip()
+        return period or default_accounting_period()
+
+    def period_meta(period):
+        return {"period": period, "period_label": period_label(period)}
+
     def kpi_for_period(conn, period):
         dep_sql, dep_params = date_clause("tx_date", period)
         wdr_sql, wdr_params = date_clause("tx_date", period)
@@ -332,7 +327,7 @@ def create_accounting_blueprint(permission_required):
     @bp.route("/dashboard", methods=["GET"])
     @acc_perm(*ACC_READ)
     def dashboard():
-        period = request.args.get("period", "all")
+        period = period_from_request()
         with closing(get_db()) as conn:
             kpi = kpi_for_period(conn, period)
             employees = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employees")]
@@ -341,7 +336,7 @@ def create_accounting_blueprint(permission_required):
             employees, period, include_office=payroll_include_office(), category_map=salary_categories
         )
         return jsonify({
-            "period": period,
+            **period_meta(period),
             "kpi": kpi,
             "rates": rates_json(fetch_exchange_rates()),
             "payroll_daily": payroll_daily,
@@ -454,7 +449,7 @@ def create_accounting_blueprint(permission_required):
     @bp.route("/transactions", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def list_transactions():
-        period = request.args.get("period", "all")
+        period = period_from_request()
         date_sql, date_params = date_clause("t.tx_date", period)
         with closing(get_db()) as conn:
             rows = fetchall(
@@ -468,7 +463,7 @@ def create_accounting_blueprint(permission_required):
                 """,
                 date_params,
             )
-        return jsonify({"transactions": [dict(r) for r in rows], "period": period})
+        return jsonify({**period_meta(period), "transactions": [dict(r) for r in rows]})
 
     @bp.route("/transactions", methods=["POST"])
     @acc_perm(*MODULE_ACCESS)
@@ -593,7 +588,7 @@ def create_accounting_blueprint(permission_required):
     @bp.route("/expenses", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def list_expenses():
-        period = request.args.get("period", "all")
+        period = period_from_request()
         date_sql, date_params = date_clause("e.expense_date", period)
         with closing(get_db()) as conn:
             rows = fetchall(
@@ -607,7 +602,7 @@ def create_accounting_blueprint(permission_required):
                 """,
                 date_params,
             )
-        return jsonify({"expenses": [dict(r) for r in rows], "period": period})
+        return jsonify({**period_meta(period), "expenses": [dict(r) for r in rows]})
 
     @bp.route("/expenses", methods=["POST"])
     @acc_perm(*MODULE_ACCESS)
@@ -677,7 +672,7 @@ def create_accounting_blueprint(permission_required):
     @bp.route("/vault-transactions", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def list_vault_transactions():
-        period = request.args.get("period", "all")
+        period = period_from_request()
         date_sql, date_params = date_clause("tx_date", period)
         with closing(get_db()) as conn:
             rows = fetchall(
@@ -689,7 +684,7 @@ def create_accounting_blueprint(permission_required):
                 """,
                 date_params,
             )
-        return jsonify({"vault_transactions": [dict(r) for r in rows], "period": period})
+        return jsonify({**period_meta(period), "vault_transactions": [dict(r) for r in rows]})
 
     @bp.route("/vault-transactions", methods=["POST"])
     @acc_perm(*MODULE_ACCESS)
@@ -847,7 +842,7 @@ def create_accounting_blueprint(permission_required):
     @bp.route("/employees", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def list_employees():
-        period = request.args.get("period", "all")
+        period = period_from_request()
         with closing(get_db()) as conn:
             rows = fetchall(conn, "SELECT * FROM acc_employees ORDER BY name ASC")
             departments, salary_categories = payroll_context(conn)
@@ -859,6 +854,7 @@ def create_accounting_blueprint(permission_required):
                 category_map=salary_categories,
             )
         return jsonify({
+            **period_meta(period),
             "employees": employees,
             "monthly_payroll_total": payroll_data["period_accrual"],
             "payroll_accrual": payroll_data["period_accrual"],

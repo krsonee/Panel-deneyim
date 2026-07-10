@@ -2,7 +2,8 @@
   "use strict";
 
   var ACC_PAGE = 10;
-  var accPeriod = "all";
+  var accPeriod = localStorage.getItem("acc_period") || "";
+  var accPeriodMode = localStorage.getItem("acc_period_mode") || "pick";
   var accActiveTab = "dashboard";
   var accPaymentMethods = [];
   var accCategories = [];
@@ -190,8 +191,41 @@
     return new Date().toISOString().slice(0, 10);
   }
 
+  function accCurrentMonth() {
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  }
+
+  function accResolvePeriod() {
+    var modeEl = document.getElementById("acc-filter-period");
+    var monthEl = document.getElementById("acc-filter-month");
+    var mode = modeEl ? modeEl.value : accPeriodMode;
+    if (mode === "all" || mode === "30days" || mode === "today") {
+      if (monthEl) monthEl.disabled = true;
+      accPeriod = mode;
+    } else {
+      if (monthEl) {
+        monthEl.disabled = false;
+        if (!monthEl.value) monthEl.value = accCurrentMonth();
+        accPeriod = monthEl.value || accCurrentMonth();
+      } else {
+        accPeriod = accCurrentMonth();
+      }
+    }
+    accPeriodMode = mode;
+    localStorage.setItem("acc_period", accPeriod);
+    localStorage.setItem("acc_period_mode", accPeriodMode);
+    return accPeriod;
+  }
+
+  function accUpdatePeriodLabel(label) {
+    var el = document.getElementById("acc-period-label");
+    if (el && label) el.textContent = "· " + label;
+  }
+
   function accPeriodQuery() {
-    return accPeriod && accPeriod !== "all" ? "?period=" + encodeURIComponent(accPeriod) : "";
+    var p = accResolvePeriod();
+    return p ? "?period=" + encodeURIComponent(p) : "";
   }
 
   function accCompare(a, b, dir) {
@@ -529,6 +563,7 @@
       accApplyPermissionsMeta(res.data);
       if (res.data.salary_categories) accApplySalaryCategories(res.data.salary_categories);
       if (res.data.departments) accApplyDepartments(res.data.departments);
+      if (res.data.period_label) accUpdatePeriodLabel(res.data.period_label);
       if (res.data.rates) {
         accRates = res.data.rates;
         accUpdateRatePlaceholders();
@@ -604,6 +639,7 @@
   function accLoadTransactions() {
     return accApi("/api/accounting/transactions" + accPeriodQuery()).then(function (res) {
       if (!res || !res.ok) return;
+      if (res.data.period_label) accUpdatePeriodLabel(res.data.period_label);
       accData["acc-tx"].rows = res.data.transactions || [];
       accRenderTransactions();
     });
@@ -677,6 +713,7 @@
   function accLoadExpenses() {
     return accApi("/api/accounting/expenses" + accPeriodQuery()).then(function (res) {
       if (!res || !res.ok) return;
+      if (res.data.period_label) accUpdatePeriodLabel(res.data.period_label);
       accData["acc-exp"].rows = res.data.expenses || [];
       accRenderExpenses();
     });
@@ -716,6 +753,7 @@
   function accLoadVault() {
     return accApi("/api/accounting/vault-transactions" + accPeriodQuery()).then(function (res) {
       if (!res || !res.ok) return;
+      if (res.data.period_label) accUpdatePeriodLabel(res.data.period_label);
       accData["acc-vault"].rows = res.data.vault_transactions || [];
       accRenderVault();
     });
@@ -760,6 +798,7 @@
       accApplyPermissionsMeta(res.data);
       if (res.data.salary_categories) accApplySalaryCategories(res.data.salary_categories);
       if (res.data.departments) accApplyDepartments(res.data.departments);
+      if (res.data.period_label) accUpdatePeriodLabel(res.data.period_label);
       accData["acc-emp"].rows = res.data.employees || [];
       var payroll = res.data.payroll_accrual || res.data.monthly_payroll_total || {};
       document.getElementById("acc-payroll-total").textContent = accMoney(
@@ -1070,7 +1109,22 @@
     accBindFxPreview("acc-emp-salary", "acc-emp-currency", "acc-emp-fx-preview", "acc-emp-rate-usd", "acc-emp-rate-eur");
   }
 
+  function accInitPeriodFilter() {
+    var modeEl = document.getElementById("acc-filter-period");
+    var monthEl = document.getElementById("acc-filter-month");
+    if (modeEl) modeEl.value = accPeriodMode;
+    if (monthEl) {
+      if (accPeriodMode === "pick" && /^\d{4}-\d{2}$/.test(accPeriod)) {
+        monthEl.value = accPeriod;
+      } else {
+        monthEl.value = accCurrentMonth();
+      }
+    }
+    accResolvePeriod();
+  }
+
   function accInitUi() {
+    accInitPeriodFilter();
     var dispCur = document.getElementById("acc-display-currency");
     if (dispCur) {
       dispCur.value = accDisplayCurrency;
@@ -1091,9 +1145,18 @@
       });
     });
     document.getElementById("acc-filter-period").addEventListener("change", function () {
-      accPeriod = this.value;
+      accResolvePeriod();
       accRefreshAll();
     });
+    var accMonthFilter = document.getElementById("acc-filter-month");
+    if (accMonthFilter) {
+      accMonthFilter.addEventListener("change", function () {
+        var modeEl = document.getElementById("acc-filter-period");
+        if (modeEl) modeEl.value = "pick";
+        accResolvePeriod();
+        accRefreshAll();
+      });
+    }
     document.querySelectorAll("[data-acc-toggle]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         accToggleExpand(btn.getAttribute("data-acc-toggle"));

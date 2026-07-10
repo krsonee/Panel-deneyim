@@ -3,6 +3,8 @@
 import calendar
 from datetime import date, datetime, timedelta, timezone
 
+from accounting_period import parse_period, utc_today
+
 DEFAULT_SALARY_CATEGORIES = {
     "office": "Ofis personeli",
     "turkey": "Türkiye çalışanlar",
@@ -52,15 +54,14 @@ def parse_employee_date(value):
 
 
 def period_date_range(period, reference=None):
-    reference = reference or datetime.now(timezone.utc).date()
-    period = (period or "all").strip().lower()
-    if period == "today":
-        return reference, reference
-    if period == "month":
+    start, end, key = parse_period(period, reference)
+    if key == "all":
+        reference = reference or utc_today()
+        return date(reference.year, 1, 1), reference
+    if start is None:
+        reference = reference or utc_today()
         return reference.replace(day=1), reference
-    if period == "30days":
-        return reference - timedelta(days=29), reference
-    return reference.replace(day=1), reference
+    return start, end
 
 
 def employee_active_on(emp, day):
@@ -182,7 +183,17 @@ def compute_payroll_daily(employees, period="month", reference=None, include_off
 
 
 def enrich_employee_row(emp, period="month", reference=None):
-    start, end = period_date_range(period, reference)
+    reference = reference or utc_today()
+    _, _, key = parse_period(period, reference)
+    if key == "all":
+        start = parse_employee_date(emp.get("start_date")) or reference
+        end = reference
+        if (emp.get("status") or "").lower() == "left":
+            left_end = parse_employee_date(emp.get("end_date"))
+            if left_end:
+                end = min(end, left_end)
+    else:
+        start, end = period_date_range(period, reference)
     row = dict(emp)
     accrual = {}
     for cur in CURRENCIES:
