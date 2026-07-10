@@ -215,6 +215,74 @@
     .acc-payroll-scroll { max-height: 320px; overflow: auto; }
     .acc-payroll-total-row td { border-top: 1px solid var(--border); padding-top: 0.65rem; }
 
+    .acc-vault-dash { margin-bottom: 1rem; }
+    .acc-vault-dash-head {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem;
+      flex-wrap: wrap; margin-bottom: 0.75rem;
+    }
+    .acc-vault-dash-title { font-size: 1rem; font-weight: 700; }
+    .acc-vault-dash-sub { font-size: 0.72rem; margin-top: 0.15rem; }
+    .acc-vault-total-pill {
+      text-align: right; padding: 0.55rem 0.85rem; border-radius: 12px;
+      background: var(--surface); border: 1px solid var(--border); min-width: 140px;
+    }
+    .acc-vault-total-pill strong { display: block; font-size: 1.15rem; color: var(--green); margin-top: 0.15rem; }
+    .acc-vault-cards {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem;
+    }
+    .acc-vault-card {
+      position: relative; padding: 1rem 1rem 0.85rem; border-radius: 14px;
+      background: var(--surface); border: 1px solid var(--border); overflow: hidden;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .acc-vault-card:hover { transform: translateY(-2px); border-color: rgba(99,102,241,0.35); }
+    .acc-vault-card::before {
+      content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: var(--vault-accent, var(--accent));
+    }
+    .acc-vault-card-head { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.65rem; }
+    .acc-vault-card-icon { font-size: 1.25rem; line-height: 1; }
+    .acc-vault-card-name { font-weight: 700; font-size: 0.88rem; flex: 1; min-width: 0; }
+    .acc-vault-card-bal { font-size: 1.35rem; font-weight: 800; line-height: 1.15; color: var(--green); }
+    .acc-vault-card-bal.negative { color: var(--rose); }
+    .acc-vault-card-sub { font-size: 0.78rem; color: var(--muted); margin-top: 0.25rem; }
+    .acc-vault-card-stats {
+      display: flex; gap: 0.5rem; margin-top: 0.65rem; padding-top: 0.55rem;
+      border-top: 1px dashed var(--border); font-size: 0.68rem; flex-wrap: wrap;
+    }
+    .acc-vault-card-stats span { white-space: nowrap; }
+    .acc-vault-stat-in { color: var(--green); }
+    .acc-vault-stat-out { color: var(--rose); }
+    .acc-vault-card-actions { display: flex; gap: 0.25rem; margin-left: auto; }
+    .acc-vault-card-actions button {
+      background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; padding: 0.15rem;
+    }
+    .acc-vault-card-actions button:hover { color: var(--text); }
+    .acc-vault-chip-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .acc-vault-chip {
+      display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.65rem;
+      border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: 0.72rem;
+    }
+    .acc-vault-chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .acc-vault-chip button { background: none; border: none; color: var(--rose); cursor: pointer; font-size: 0.95rem; line-height: 1; }
+    .acc-vault-create-form { margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px dashed var(--border); }
+    .acc-vault-ledger-scroll { max-height: 480px; overflow: auto; }
+    .acc-vault-ledger-table { min-width: 1100px; }
+    .acc-vault-ledger-table .acc-vault-out { color: var(--rose); font-weight: 600; }
+    .acc-vault-ledger-table .acc-vault-in { color: var(--green); font-weight: 600; }
+    .acc-vault-ledger-table .acc-vault-bal { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .acc-vault-ledger-table .acc-vault-desc a { color: var(--cyan); word-break: break-all; }
+    .acc-vault-filter-select { width: auto; min-width: 160px; font-size: 0.78rem; padding: 0.35rem 0.55rem; }
+    .acc-vault-form-grid { align-items: end; }
+    .acc-vault-fee-actions { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; }
+    .acc-vault-fee-actions .btn-sm { padding: 0.22rem 0.45rem; font-size: 0.65rem; }
+    .acc-vault-ledger-table .acc-vault-fee { color: var(--amber); font-weight: 600; font-size: 0.72rem; }
+    @media (max-width: 768px) {
+      .acc-vault-cards { grid-template-columns: 1fr; }
+      .acc-vault-ledger-table { min-width: 980px; }
+      .acc-vault-filter-select { width: 100%; }
+    }
+
     .charts-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.85rem; margin-bottom: 1rem; }
     @media (max-width: 1000px) { .charts-grid { grid-template-columns: 1fr; } }
     .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1rem 1.1rem; }

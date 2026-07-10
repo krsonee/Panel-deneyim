@@ -405,6 +405,7 @@ def migrate_schema(conn):
     migrate_accounting_settings(conn)
     migrate_accounting_employees_payroll(conn)
     migrate_accounting_employee_options(conn)
+    migrate_accounting_vaults(conn)
 
 
 def _table_columns(conn, table_name):
@@ -546,6 +547,182 @@ def migrate_accounting_employee_options(conn):
     now = iso(utcnow())
     seed_employee_departments(conn, now)
     seed_salary_categories(conn, now)
+    conn.commit()
+
+
+def migrate_accounting_vaults(conn):
+    from accounting_vault import DEFAULT_VAULT_METHODS, VAULT_ICONS, VAULT_PALETTE
+
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_vaults (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT NOT NULL DEFAULT '',
+                color TEXT NOT NULL DEFAULT '#6366f1',
+                icon TEXT NOT NULL DEFAULT '💰',
+                opening_usdt REAL NOT NULL DEFAULT 0,
+                opening_try REAL NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_vault_methods (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_vaults (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT NOT NULL DEFAULT '',
+                color TEXT NOT NULL DEFAULT '#6366f1',
+                icon TEXT NOT NULL DEFAULT '💰',
+                opening_usdt REAL NOT NULL DEFAULT 0,
+                opening_try REAL NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_vault_methods (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+
+    tx_cols = _table_columns(conn, "acc_vault_transactions")
+    if tx_cols:
+        for name, typedef in (
+            ("vault_id", "INTEGER"),
+            ("method_name", "TEXT NOT NULL DEFAULT ''"),
+            ("usdt_in", "REAL NOT NULL DEFAULT 0"),
+            ("usdt_out", "REAL NOT NULL DEFAULT 0"),
+            ("fee_usdt", "REAL NOT NULL DEFAULT 0"),
+        ):
+            if name not in tx_cols:
+                execute(conn, f"ALTER TABLE acc_vault_transactions ADD COLUMN {name} {typedef}")
+
+    now = iso(utcnow())
+    for idx, method in enumerate(DEFAULT_VAULT_METHODS):
+        if uses_postgres():
+            execute(
+                conn,
+                """
+                INSERT INTO acc_vault_methods (name, sort_order, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT (name) DO NOTHING
+                """,
+                (method, idx, now),
+            )
+        else:
+            execute(
+                conn,
+                """
+                INSERT OR IGNORE INTO acc_vault_methods (name, sort_order, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (method, idx, now),
+            )
+
+    vault_count = scalar(conn, "SELECT COUNT(*) FROM acc_vaults") or 0
+    if vault_count == 0:
+        execute(
+            conn,
+            """
+            INSERT INTO acc_vaults
+            (name, description, color, icon, opening_usdt, opening_try, sort_order, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("Ana Kasa", "Varsayılan USDT kasası", VAULT_PALETTE[0], VAULT_ICONS[0], 0, 0, 0, 1, now),
+        )
+
+    vault_rows = fetchall(conn, "SELECT id, name FROM acc_vaults")
+    name_to_id = {r["name"]: r["id"] for r in vault_rows}
+
+    if tx_cols:
+        unnamed = fetchall(
+            conn,
+            """
+            SELECT DISTINCT vault_name FROM acc_vault_transactions
+            WHERE vault_name IS NOT NULL AND TRIM(vault_name) != ''
+            """,
+        )
+        sort_order = len(vault_rows)
+        for row in unnamed:
+            vname = (row["vault_name"] or "").strip()
+            if not vname or vname in name_to_id:
+                continue
+            color = VAULT_PALETTE[sort_order % len(VAULT_PALETTE)]
+            icon = VAULT_ICONS[sort_order % len(VAULT_ICONS)]
+            vid = insert_returning_id(
+                conn,
+                """
+                INSERT INTO acc_vaults
+                (name, description, color, icon, opening_usdt, opening_try, sort_order, is_active, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (vname, "", color, icon, 0, 0, sort_order, 1, now),
+            )
+            name_to_id[vname] = vid
+            sort_order += 1
+
+        if "vault_id" in (_table_columns(conn, "acc_vault_transactions") or set()):
+            for vname, vid in name_to_id.items():
+                execute(
+                    conn,
+                    """
+                    UPDATE acc_vault_transactions
+                    SET vault_id = ?
+                    WHERE vault_id IS NULL AND vault_name = ?
+                    """,
+                    (vid, vname),
+                )
+
+            legacy = fetchall(
+                conn,
+                """
+                SELECT id, tx_type, amount_usd, amount, usdt_in, usdt_out
+                FROM acc_vault_transactions
+                WHERE (usdt_in = 0 AND usdt_out = 0) AND (amount_usd > 0 OR amount > 0)
+                """,
+            )
+            for row in legacy:
+                amt = row["amount_usd"] or row["amount"] or 0
+                if (row["tx_type"] or "") == "in":
+                    execute(
+                        conn,
+                        "UPDATE acc_vault_transactions SET usdt_in = ?, usdt_out = 0 WHERE id = ?",
+                        (amt, row["id"]),
+                    )
+                elif (row["tx_type"] or "") == "out":
+                    execute(
+                        conn,
+                        "UPDATE acc_vault_transactions SET usdt_out = ?, usdt_in = 0 WHERE id = ?",
+                        (amt, row["id"]),
+                    )
+
     conn.commit()
 
 

@@ -19,6 +19,9 @@
   var ACC_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
 
   var accCanViewOfficeSalaries = false;
+  var accVaults = [];
+  var accVaultMethods = [];
+  var accVaultFilterId = localStorage.getItem("acc_vault_filter") || "";
 
   var accData = {
     "acc-tx": { rows: [], expanded: false, sortKey: "tx_date", sortDir: "desc" },
@@ -144,12 +147,16 @@
   }
 
   function accReadFormRates(usdId, eurId) {
-    var usdEl = document.getElementById(usdId);
-    var eurEl = document.getElementById(eurId);
+    var usdEl = usdId ? document.getElementById(usdId) : null;
+    var eurEl = eurId ? document.getElementById(eurId) : null;
     var body = {};
-    if (usdEl && usdEl.value.trim() && eurEl && eurEl.value.trim()) {
-      body.rate_usd_try = usdEl.value.trim();
-      body.rate_eur_try = eurEl.value.trim();
+    var usdVal = usdEl && usdEl.value.trim();
+    var eurVal = eurEl && eurEl.value.trim();
+    if (usdVal && eurVal) {
+      body.rate_usd_try = usdVal;
+      body.rate_eur_try = eurVal;
+    } else if (usdVal) {
+      body.rate_usd_try = usdVal;
     } else {
       body.auto_rate = true;
     }
@@ -172,6 +179,10 @@
     if (!data || !data.usd_try || !data.eur_try) return;
     accRates = data;
     accUpdateRatePlaceholders();
+    if (accActiveTab === "vault") {
+      accUpdateVaultFormRateBadge();
+      accUpdateVaultTlPreview();
+    }
   }
 
   function accRateTimeLabel() {
@@ -911,36 +922,262 @@
     accUpdateSortHeaders("acc-exp");
   }
 
+  function accFmtVaultDate(iso) {
+    if (!iso) return "—";
+    var p = String(iso).slice(0, 10).split("-");
+    if (p.length === 3) return p[2] + "." + p[1] + "." + p[0];
+    return iso;
+  }
+
+  function accLinkify(text) {
+    if (!text) return "—";
+    var safe = accEsc(text);
+    return safe.replace(/(https?:\/\/[^\s<]+)/g, function (url) {
+      return '<a href="' + url + '" target="_blank" rel="noopener">' + url + "</a>";
+    });
+  }
+
+  function accVaultQuery() {
+    var q = accPeriodQuery();
+    if (accVaultFilterId) {
+      q += (q.indexOf("?") >= 0 ? "&" : "?") + "vault_id=" + encodeURIComponent(accVaultFilterId);
+    }
+    return q;
+  }
+
+  function accRenderVaultDashboard(vaults, totals) {
+    var cardsEl = document.getElementById("acc-vault-cards");
+    var totalUsdt = document.getElementById("acc-vault-total-usdt");
+    var totalTry = document.getElementById("acc-vault-total-try");
+    if (!cardsEl) return;
+
+    if (!vaults || !vaults.length) {
+      cardsEl.innerHTML = '<div class="acc-vault-card muted">Henüz kasa yok — aşağıdan ekleyin.</div>';
+    } else {
+      cardsEl.innerHTML = vaults.map(function (v) {
+        var balClass = (v.balance_usdt || 0) < 0 ? " acc-vault-card-bal negative" : " acc-vault-card-bal";
+        var period = v.period || {};
+        return '<div class="acc-vault-card" data-vault-card="' + v.id + '" style="--vault-accent:' + accEsc(v.color || "#6366f1") + '">' +
+          '<div class="acc-vault-card-head">' +
+          '<span class="acc-vault-card-icon">' + accEsc(v.icon || "💰") + '</span>' +
+          '<span class="acc-vault-card-name">' + accEsc(v.name) + '</span>' +
+          '<div class="acc-vault-card-actions">' +
+          '<button type="button" title="Bakiyeyi kopyala" data-copy-vault-bal="' + v.id + '">📋</button>' +
+          '<button type="button" title="Defterde filtrele" data-filter-vault="' + v.id + '">🔍</button>' +
+          "</div></div>" +
+          '<div class="' + balClass.trim() + '">' + accUsdt(v.balance_usdt || 0) + "</div>" +
+          '<div class="acc-vault-card-sub">' + accMoney(v.balance_try || 0, "TRY") + " · " + (v.total_tx_count || 0) + " hareket</div>" +
+          '<div class="acc-vault-card-stats">' +
+          '<span class="acc-vault-stat-in">↑ ' + accUsdt(period.usdt_in || 0) + "</span>" +
+          '<span class="acc-vault-stat-out">↓ ' + accUsdt(period.usdt_out || 0) + "</span>" +
+          (period.fee_usdt > 0 ? '<span class="muted">Fee ' + accUsdt(period.fee_usdt) + "</span>" : "") +
+          '<span class="muted">Net ' + accUsdt(period.net_usdt || 0) + "</span>" +
+          "</div></div>";
+      }).join("");
+
+      cardsEl.querySelectorAll("[data-vault-card]").forEach(function (card) {
+        card.addEventListener("click", function (e) {
+          if (e.target.closest("button")) return;
+          var id = card.getAttribute("data-vault-card");
+          accSetVaultFilter(id);
+        });
+      });
+      cardsEl.querySelectorAll("[data-filter-vault]").forEach(function (btn) {
+        btn.onclick = function (e) {
+          e.stopPropagation();
+          accSetVaultFilter(btn.getAttribute("data-filter-vault"));
+        };
+      });
+      cardsEl.querySelectorAll("[data-copy-vault-bal]").forEach(function (btn) {
+        btn.onclick = function (e) {
+          e.stopPropagation();
+          var vid = parseInt(btn.getAttribute("data-copy-vault-bal"), 10);
+          var vault = vaults.find(function (v) { return v.id === vid; });
+          if (!vault) return;
+          var text = vault.name + ": " + accUsdt(vault.balance_usdt) + " / " + accMoney(vault.balance_try, "TRY");
+          navigator.clipboard.writeText(text).then(function () { accToast("Bakiye kopyalandı"); });
+        };
+      });
+    }
+
+    if (totalUsdt) totalUsdt.textContent = totals ? accUsdt(totals.balance_usdt || 0) : "—";
+    if (totalTry) totalTry.textContent = totals ? accMoney(totals.balance_try || 0, "TRY") : "";
+  }
+
+  function accFillVaultSelects(vaults) {
+    var sel = document.getElementById("acc-vault-select");
+    var filter = document.getElementById("acc-vault-filter");
+    var opts = (vaults || []).map(function (v) {
+      return '<option value="' + v.id + '">' + accEsc(v.icon || "💰") + " " + accEsc(v.name) + "</option>";
+    }).join("");
+    if (sel) {
+      var prev = sel.value;
+      sel.innerHTML = opts || '<option value="">Kasa yok</option>';
+      if (prev && vaults.some(function (v) { return String(v.id) === prev; })) sel.value = prev;
+      else if (vaults.length) sel.value = String(vaults[0].id);
+    }
+    if (filter) {
+      var prevF = accVaultFilterId || filter.value;
+      filter.innerHTML = '<option value="">Tüm kasalar</option>' + opts;
+      filter.value = prevF || "";
+      accVaultFilterId = filter.value;
+    }
+  }
+
+  function accRenderVaultChips(vaults) {
+    var box = document.getElementById("acc-vault-chip-list");
+    if (!box) return;
+    if (!vaults || !vaults.length) {
+      box.innerHTML = '<span class="muted" style="font-size:0.75rem;">Kasa ekleyerek başlayın.</span>';
+      return;
+    }
+    box.innerHTML = vaults.map(function (v) {
+      return '<span class="acc-vault-chip">' +
+        '<span class="acc-vault-chip-dot" style="background:' + accEsc(v.color || "#6366f1") + '"></span>' +
+        accEsc(v.name) +
+        ' <button type="button" title="Kaldır" data-del-vault-id="' + v.id + '">&times;</button></span>';
+    }).join("");
+    box.querySelectorAll("[data-del-vault-id]").forEach(function (btn) {
+      btn.onclick = function () {
+        var id = btn.getAttribute("data-del-vault-id");
+        if (!confirm("Kasa silinsin / pasifleştirilsin mi?")) return;
+        accApi("/api/accounting/vaults/" + id, { method: "DELETE" }).then(function (r) {
+          if (r && r.ok) {
+            if (String(accVaultFilterId) === String(id)) accSetVaultFilter("");
+            accLoadVault();
+            accToast(r.data.deactivated ? "Kasa pasifleştirildi" : "Kasa silindi");
+          } else if (r) alert(r.data.error || "Hata");
+        });
+      };
+    });
+  }
+
+  function accRenderVaultMethods(methods) {
+    var list = document.getElementById("acc-vault-method-list");
+    if (!list) return;
+    list.innerHTML = (methods || []).map(function (m) {
+      return "<option value=\"" + accEsc(m) + "\"></option>";
+    }).join("");
+  }
+
+  function accSetVaultFilter(vaultId) {
+    accVaultFilterId = vaultId ? String(vaultId) : "";
+    localStorage.setItem("acc_vault_filter", accVaultFilterId);
+    var filter = document.getElementById("acc-vault-filter");
+    if (filter) filter.value = accVaultFilterId;
+    accLoadVault();
+    if (vaultId) accToast("Kasa filtresi uygulandı");
+  }
+
+  function accUpdateVaultTlPreview() {
+    var usdtEl = document.getElementById("acc-vault-usdt");
+    var dirEl = document.getElementById("acc-vault-direction");
+    var rateEl = document.getElementById("acc-vault-rate-usd");
+    var feeEl = document.getElementById("acc-vault-fee");
+    var outEl = document.getElementById("acc-vault-tl-preview");
+    var netEl = document.getElementById("acc-vault-net-preview");
+    if (!usdtEl || !outEl) return;
+    var amount = parseFloat(usdtEl.value) || 0;
+    var fee = parseFloat(feeEl && feeEl.value) || 0;
+    var rate = parseFloat(rateEl && rateEl.value) || accRates.usd_try || 0;
+    var dir = dirEl ? dirEl.value : "in";
+    if (!amount || !rate) {
+      outEl.value = "";
+      if (netEl) netEl.value = "";
+      return;
+    }
+    var delta = dir === "out" ? -(amount + fee) : (amount - fee);
+    var tl = delta * rate;
+    outEl.value = accMoney(Math.abs(tl), "TRY") + (tl < 0 ? " (net giden)" : " (net gelen)");
+    if (netEl) {
+      if (dir === "out") {
+        netEl.value = accUsdt(amount + fee) + " kasadan düşer · transfer " + accUsdt(amount) + " + fee " + accUsdt(fee);
+      } else {
+        netEl.value = accUsdt(Math.max(0, amount - fee)) + " kasaya net girer";
+      }
+    }
+  }
+
+  function accSuggestVaultFee() {
+    var amount = document.getElementById("acc-vault-usdt").value;
+    var dir = document.getElementById("acc-vault-direction").value;
+    return accApi(
+      "/api/accounting/vault-transactions/suggest-fee?amount=" +
+      encodeURIComponent(amount || 0) + "&direction=" + encodeURIComponent(dir || "out")
+    ).then(function (res) {
+      if (!res || !res.ok) return;
+      var feeEl = document.getElementById("acc-vault-fee");
+      if (feeEl) feeEl.value = res.data.fee_usdt != null ? res.data.fee_usdt : 0;
+      var hint = document.getElementById("acc-vault-fee-hint");
+      if (hint && res.data.note) hint.textContent = res.data.note;
+      accUpdateVaultTlPreview();
+    });
+  }
+
+  function accUpdateVaultFormRateBadge() {
+    var badge = document.getElementById("acc-vault-form-rate-badge");
+    if (!badge) return;
+    if (accRates.usd_try) badge.textContent = "Canlı kur: " + accRates.usd_try.toFixed(4) + " ₺";
+    else badge.textContent = "";
+  }
+
   function accLoadVault() {
-    return accApi("/api/accounting/vault-transactions" + accPeriodQuery()).then(function (res) {
+    return accApi("/api/accounting/vault-transactions" + accVaultQuery()).then(function (res) {
       if (!res || !res.ok) return;
       if (res.data.period_label) accUpdatePeriodLabel(res.data.period_label);
+      accVaults = res.data.vaults || [];
+      accVaultMethods = res.data.methods || [];
       accData["acc-vault"].rows = res.data.vault_transactions || [];
+      accFillVaultSelects(accVaults);
+      accRenderVaultChips(accVaults);
+      accRenderVaultMethods(accVaultMethods);
+      accRenderVaultDashboard(accVaults, res.data.totals);
       accRenderVault();
+      accUpdateVaultFormRateBadge();
     });
   }
 
   function accRenderVault() {
     var tbody = document.getElementById("acc-vault-table");
+    if (!tbody) return;
     var rows = accSortRows("acc-vault", accData["acc-vault"].rows, {
       tx_date: function (r) { return r.tx_date; },
-      vault_name: function (r) { return r.vault_name; },
-      tx_type: function (r) { return r.tx_type; },
+      method_name: function (r) { return r.method_name; },
+      usdt_out: function (r) { return r.usdt_out; },
+      usdt_in: function (r) { return r.usdt_in; },
+      fee_usdt: function (r) { return r.fee_usdt; },
+      tl_signed: function (r) { return r.tl_signed; },
+      rate_display: function (r) { return r.rate_display; },
+      balance_usdt: function (r) { return r.balance_usdt; },
+      balance_try: function (r) { return r.balance_try; },
       description: function (r) { return r.description; },
-      amount: function (r) { return r.amount; }
+      vault_name: function (r) { return r.vault_name; }
     });
     if (!accData["acc-vault"].rows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">Kayıt yok</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" class="empty">Kayıt yok</td></tr>';
       accUpdateFoot("acc-vault", 0, "kayıt");
       return;
     }
     tbody.innerHTML = rows.map(function (r) {
-      return '<tr><td class="mono">' + accEsc(r.tx_date) + '</td>' +
-        '<td><strong>' + accEsc(r.vault_name) + '</strong></td>' +
-        '<td><span class="tag ' + (r.tx_type === "in" ? "online" : "offline") + '">' + accVaultTypeLabel(r.tx_type) + '</span></td>' +
-        '<td>' + accEsc(r.description || "—") + '</td>' +
-        '<td>' + accMoneyCellHtml(r, "amount") + '</td>' +
-        '<td><button class="btn btn-sm btn-danger" data-del-vault="' + r.id + '">Sil</button></td></tr>';
+      var outCell = r.usdt_out > 0 ? '<span class="acc-vault-out">' + accMoney(-r.usdt_out, "USD") + "</span>" : "—";
+      var inCell = r.usdt_in > 0 ? '<span class="acc-vault-in">' + accMoney(r.usdt_in, "USD") + "</span>" : "—";
+      var feeCell = r.fee_usdt > 0 ? '<span class="acc-vault-fee">' + accUsdt(r.fee_usdt) + "</span>" : "—";
+      var tl = parseFloat(r.tl_signed) || 0;
+      var tlCell = tl === 0 ? "—" : '<span class="' + (tl < 0 ? "acc-vault-out" : "acc-vault-in") + '">' + accMoney(tl, "TRY") + "</span>";
+      var kur = r.rate_display > 0 ? parseFloat(r.rate_display).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—";
+      return "<tr>" +
+        '<td class="mono">' + accFmtVaultDate(r.tx_date) + "</td>" +
+        "<td><strong>" + accEsc(r.method_name || "—") + "</strong></td>" +
+        "<td>" + outCell + "</td>" +
+        "<td>" + inCell + "</td>" +
+        "<td>" + feeCell + "</td>" +
+        "<td>" + tlCell + "</td>" +
+        '<td class="mono">' + kur + "</td>" +
+        '<td class="acc-vault-bal">' + (r.balance_usdt != null ? accUsdt(r.balance_usdt) : "—") + "</td>" +
+        '<td class="acc-vault-bal">' + (r.balance_try != null ? accMoney(r.balance_try, "TRY") : "—") + "</td>" +
+        '<td class="acc-vault-desc">' + accLinkify(r.description) + "</td>" +
+        "<td>" + accEsc(r.vault_name || "—") + "</td>" +
+        '<td><button class="btn btn-sm btn-danger" data-del-vault="' + r.id + '">Sil</button></td></tr>";
     }).join("");
     tbody.querySelectorAll("[data-del-vault]").forEach(function (btn) {
       btn.onclick = function () {
@@ -1337,25 +1574,95 @@
 
     document.getElementById("acc-vault-form").addEventListener("submit", function (e) {
       e.preventDefault();
+      var body = Object.assign({
+        tx_date: document.getElementById("acc-vault-date").value,
+        vault_id: parseInt(document.getElementById("acc-vault-select").value, 10),
+        method_name: document.getElementById("acc-vault-method").value.trim(),
+        direction: document.getElementById("acc-vault-direction").value,
+        usdt_amount: document.getElementById("acc-vault-usdt").value,
+        fee_usdt: document.getElementById("acc-vault-fee").value || 0,
+        description: document.getElementById("acc-vault-desc").value.trim()
+      }, accReadFormRates("acc-vault-rate-usd", null));
       accApi("/api/accounting/vault-transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(Object.assign({
-          tx_date: document.getElementById("acc-vault-date").value,
-          vault_name: document.getElementById("acc-vault-name").value.trim(),
-          tx_type: document.getElementById("acc-vault-type").value,
-          amount: document.getElementById("acc-vault-amount").value,
-          currency: document.getElementById("acc-vault-currency").value,
-          description: document.getElementById("acc-vault-desc").value.trim()
-        }, accReadFormRates("acc-vault-rate-usd", "acc-vault-rate-eur")))
+        body: JSON.stringify(body)
       }).then(function (r) {
         if (r && r.ok) {
-          document.getElementById("acc-vault-amount").value = "";
+          document.getElementById("acc-vault-usdt").value = "";
+          document.getElementById("acc-vault-fee").value = "0";
           document.getElementById("acc-vault-desc").value = "";
-          accClearFormRates("acc-vault-rate-usd", "acc-vault-rate-eur");
-          accLoadVault(); accSavedToast("Kasa işlemi kaydedildi", r.data.rates);
+          document.getElementById("acc-vault-method").value = "";
+          accClearFormRates("acc-vault-rate-usd", null);
+          accUpdateVaultTlPreview();
+          accLoadVault();
+          accSavedToast("Kasa hareketi kaydedildi", r.data.rates);
         } else if (r) alert(r.data.error || "Hata");
       });
+    });
+
+    var vaultAddToggle = document.getElementById("acc-vault-add-toggle");
+    var vaultCreateForm = document.getElementById("acc-vault-create-form");
+    var vaultAddCancel = document.getElementById("acc-vault-add-cancel");
+    if (vaultAddToggle && vaultCreateForm) {
+      vaultAddToggle.onclick = function () { vaultCreateForm.hidden = !vaultCreateForm.hidden; };
+    }
+    if (vaultAddCancel && vaultCreateForm) {
+      vaultAddCancel.onclick = function () { vaultCreateForm.hidden = true; };
+    }
+    var vaultCreate = document.getElementById("acc-vault-create-form");
+    if (vaultCreate) {
+      vaultCreate.addEventListener("submit", function (e) {
+        e.preventDefault();
+        accApi("/api/accounting/vaults", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: document.getElementById("acc-vault-new-name").value.trim(),
+            opening_usdt: document.getElementById("acc-vault-new-open-usdt").value || 0,
+            opening_try: document.getElementById("acc-vault-new-open-try").value || 0
+          })
+        }).then(function (r) {
+          if (r && r.ok) {
+            document.getElementById("acc-vault-new-name").value = "";
+            document.getElementById("acc-vault-new-open-usdt").value = "0";
+            document.getElementById("acc-vault-new-open-try").value = "0";
+            vaultCreateForm.hidden = true;
+            accLoadVault();
+            accToast("Kasa eklendi");
+          } else if (r) alert(r.data.error || "Hata");
+        });
+      });
+    }
+    var vaultFilter = document.getElementById("acc-vault-filter");
+    if (vaultFilter) {
+      vaultFilter.addEventListener("change", function () {
+        accSetVaultFilter(vaultFilter.value);
+      });
+    }
+    var vaultFeeSuggest = document.getElementById("acc-vault-fee-suggest");
+    if (vaultFeeSuggest) vaultFeeSuggest.onclick = accSuggestVaultFee;
+    document.querySelectorAll(".acc-vault-fee-preset").forEach(function (btn) {
+      btn.onclick = function () {
+        var feeEl = document.getElementById("acc-vault-fee");
+        if (feeEl) feeEl.value = btn.getAttribute("data-fee") || "0";
+        accUpdateVaultTlPreview();
+      };
+    });
+    var vaultDir = document.getElementById("acc-vault-direction");
+    if (vaultDir) {
+      vaultDir.addEventListener("change", function () {
+        if (vaultDir.value === "in") {
+          var feeEl = document.getElementById("acc-vault-fee");
+          if (feeEl) feeEl.value = "0";
+        }
+        accUpdateVaultTlPreview();
+      });
+    }
+    ["acc-vault-usdt", "acc-vault-direction", "acc-vault-rate-usd", "acc-vault-fee"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener("input", accUpdateVaultTlPreview);
+      if (el) el.addEventListener("change", accUpdateVaultTlPreview);
     });
 
     document.getElementById("acc-emp-form").addEventListener("submit", function (e) {
@@ -1411,7 +1718,6 @@
     accUpdateEmpFormUi();
     accBindFxPreview("acc-tx-amount", "acc-tx-currency", "acc-tx-fx-preview", "acc-tx-rate-usd", "acc-tx-rate-eur");
     accBindFxPreview("acc-exp-amount", "acc-exp-currency", "acc-exp-fx-preview", "acc-exp-rate-usd", "acc-exp-rate-eur");
-    accBindFxPreview("acc-vault-amount", "acc-vault-currency", "acc-vault-fx-preview", "acc-vault-rate-usd", "acc-vault-rate-eur");
     accBindFxPreview("acc-emp-salary", "acc-emp-currency", "acc-emp-fx-preview", "acc-emp-rate-usd", "acc-emp-rate-eur");
   }
 

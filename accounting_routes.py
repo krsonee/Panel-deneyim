@@ -22,7 +22,17 @@ from accounting_payroll import (
     validate_office_amounts,
     validate_payment_split,
 )
-from accounting_period import date_clause, default_accounting_period, period_label
+from accounting_period import date_clause, default_accounting_period, period_date_range, period_label
+from accounting_vault import (
+    VAULT_ICONS,
+    VAULT_PALETTE,
+    build_vault_dashboard,
+    build_vault_tx_payload,
+    collect_method_suggestions,
+    compute_running_balances,
+    enrich_vault_transaction,
+    suggest_exodus_trc20_fee,
+)
 from permissions import has_permission
 from database import (
     execute,
@@ -58,6 +68,38 @@ def fetch_salary_categories(conn):
     for row in rows:
         row["is_office"] = bool(row.get("is_office"))
     return rows
+
+
+def fetch_vaults(conn, active_only=True):
+    sql = "SELECT * FROM acc_vaults"
+    if active_only:
+        sql += " WHERE is_active = 1"
+    sql += " ORDER BY sort_order ASC, id ASC"
+    return [dict(r) for r in fetchall(conn, sql)]
+
+
+def fetch_vault_methods(conn):
+    return [
+        dict(r)
+        for r in fetchall(
+            conn,
+            "SELECT * FROM acc_vault_methods ORDER BY sort_order ASC, name ASC",
+        )
+    ]
+
+
+def vault_lookup_map(vaults):
+    return {v["id"]: v for v in vaults}
+
+
+def group_transactions_by_vault(rows):
+    grouped = {}
+    for row in rows:
+        vid = row.get("vault_id")
+        if vid is None:
+            continue
+        grouped.setdefault(vid, []).append(dict(row))
+    return grouped
 
 
 def unique_salary_slug(conn, base_slug):
@@ -717,67 +759,328 @@ def create_accounting_blueprint(permission_required):
 
     # ── Kasa takip ──
 
+    @bp.route("/vaults", methods=["GET"])
+    @acc_perm(*MODULE_ACCESS)
+    def list_vaults():
+        with closing(get_db()) as conn:
+            vaults = fetch_vaults(conn, active_only=False)
+            txs = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_vault_transactions ORDER BY tx_date ASC, id ASC")]
+        lookup = vault_lookup_map(vaults)
+        grouped = group_transactions_by_vault(txs)
+        period = period_from_request()
+        p_start, p_end = period_date_range(period)
+        p_start_s = p_start.isoformat() if p_start else None
+        p_end_s = p_end.isoformat() if p_end else None
+        dashboard = build_vault_dashboard(vaults, grouped, p_start_s, p_end_s)
+        return jsonify({"vaults": dashboard["vaults"], "totals": dashboard["totals"]})
+
+    @bp.route("/vaults", methods=["POST"])
+    @acc_perm(*MODULE_ACCESS)
+    def create_vault():
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Kasa adı zorunludur."}), 400
+        description = (data.get("description") or "").strip()
+        try:
+            opening_usdt = float(data.get("opening_usdt") or 0)
+            opening_try = float(data.get("opening_try") or 0)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Açılış bakiyesi geçersiz."}), 400
+
+        now = iso(utcnow())
+        with closing(get_db()) as conn:
+            count = scalar(conn, "SELECT COUNT(*) FROM acc_vaults") or 0
+            color = (data.get("color") or VAULT_PALETTE[count % len(VAULT_PALETTE)]).strip()
+            icon = (data.get("icon") or VAULT_ICONS[count % len(VAULT_ICONS)]).strip()
+            try:
+                vid = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO acc_vaults
+                    (name, description, color, icon, opening_usdt, opening_try, sort_order, is_active, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+                    """,
+                    (name, description, color, icon, opening_usdt, opening_try, count, now),
+                )
+                conn.commit()
+            except Exception as exc:
+                if integrity_error_type(exc):
+                    return jsonify({"error": "Bu kasa adı zaten var."}), 409
+                raise
+            row = fetchone(conn, "SELECT * FROM acc_vaults WHERE id = ?", (vid,))
+        return jsonify({"vault": dict(row)}), 201
+
+    @bp.route("/vaults/<int:vault_id>", methods=["PUT"])
+    @acc_perm(*MODULE_ACCESS)
+    def update_vault(vault_id):
+        data = request.get_json(silent=True) or {}
+        with closing(get_db()) as conn:
+            existing = fetchone(conn, "SELECT * FROM acc_vaults WHERE id = ?", (vault_id,))
+            if not existing:
+                return jsonify({"error": "Kasa bulunamadı."}), 404
+
+            fields = []
+            params = []
+            if "name" in data:
+                name = (data.get("name") or "").strip()
+                if not name:
+                    return jsonify({"error": "Kasa adı boş olamaz."}), 400
+                fields.append("name = ?")
+                params.append(name)
+            for key in ("description", "color", "icon"):
+                if key in data:
+                    fields.append(f"{key} = ?")
+                    params.append((data.get(key) or "").strip())
+            for key in ("opening_usdt", "opening_try", "sort_order", "is_active"):
+                if key in data:
+                    try:
+                        val = int(data[key]) if key in ("sort_order", "is_active") else float(data[key])
+                    except (TypeError, ValueError):
+                        return jsonify({"error": f"{key} geçersiz."}), 400
+                    fields.append(f"{key} = ?")
+                    params.append(val)
+
+            if not fields:
+                return jsonify({"vault": dict(existing)})
+            params.append(vault_id)
+            try:
+                execute(conn, f"UPDATE acc_vaults SET {', '.join(fields)} WHERE id = ?", params)
+                conn.commit()
+            except Exception as exc:
+                if integrity_error_type(exc):
+                    return jsonify({"error": "Bu kasa adı zaten var."}), 409
+                raise
+            row = fetchone(conn, "SELECT * FROM acc_vaults WHERE id = ?", (vault_id,))
+        return jsonify({"vault": dict(row)})
+
+    @bp.route("/vaults/<int:vault_id>", methods=["DELETE"])
+    @acc_perm(*MODULE_ACCESS)
+    def delete_vault(vault_id):
+        with closing(get_db()) as conn:
+            tx_count = scalar(
+                conn,
+                "SELECT COUNT(*) FROM acc_vault_transactions WHERE vault_id = ?",
+                (vault_id,),
+            )
+            if tx_count:
+                execute(conn, "UPDATE acc_vaults SET is_active = 0 WHERE id = ?", (vault_id,))
+            else:
+                execute(conn, "DELETE FROM acc_vaults WHERE id = ?", (vault_id,))
+            conn.commit()
+        return jsonify({"ok": True, "deactivated": bool(tx_count)})
+
+    @bp.route("/vault-methods", methods=["GET"])
+    @acc_perm(*MODULE_ACCESS)
+    def list_vault_methods():
+        with closing(get_db()) as conn:
+            presets = fetch_vault_methods(conn)
+            txs = fetchall(conn, "SELECT method_name FROM acc_vault_transactions")
+        names = collect_method_suggestions([dict(r) for r in txs], [p["name"] for p in presets])
+        return jsonify({"methods": names})
+
+    @bp.route("/vault-transactions/suggest-fee", methods=["GET"])
+    @acc_perm(*MODULE_ACCESS)
+    def suggest_vault_fee():
+        direction = (request.args.get("direction") or "out").strip().lower()
+        try:
+            amount = float(request.args.get("amount") or 0)
+        except (TypeError, ValueError):
+            amount = 0
+        fee, note = suggest_exodus_trc20_fee(amount, direction)
+        return jsonify({"fee_usdt": fee, "note": note, "auto": False})
+
     @bp.route("/vault-transactions", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def list_vault_transactions():
         period = period_from_request()
+        vault_id = request.args.get("vault_id", type=int)
         date_sql, date_params = date_clause("tx_date", period)
         with closing(get_db()) as conn:
-            rows = fetchall(
-                conn,
-                f"""
-                SELECT * FROM acc_vault_transactions
-                WHERE 1=1{date_sql}
-                ORDER BY tx_date DESC, id DESC
-                """,
-                date_params,
-            )
-        return jsonify({**period_meta(period), "vault_transactions": [dict(r) for r in rows]})
+            vaults = fetch_vaults(conn, active_only=False)
+            lookup = vault_lookup_map(vaults)
+            all_rows = [
+                dict(r)
+                for r in fetchall(
+                    conn,
+                    """
+                    SELECT * FROM acc_vault_transactions
+                    ORDER BY tx_date ASC, id ASC
+                    """,
+                )
+            ]
+            filtered_rows = [
+                dict(r)
+                for r in fetchall(
+                    conn,
+                    f"""
+                    SELECT * FROM acc_vault_transactions
+                    WHERE 1=1{date_sql}
+                    ORDER BY tx_date DESC, id DESC
+                    """,
+                    date_params,
+                )
+            ]
+            methods = fetch_vault_methods(conn)
+
+        if vault_id:
+            filtered_rows = [r for r in filtered_rows if r.get("vault_id") == vault_id]
+
+        balance_by_id = {}
+        grouped_full = group_transactions_by_vault(all_rows)
+        for vid, vtxs in grouped_full.items():
+            vault = lookup.get(vid)
+            opening_usdt = vault.get("opening_usdt") if vault else 0
+            opening_try = vault.get("opening_try") if vault else 0
+            _, bmap = compute_running_balances(vtxs, opening_usdt, opening_try, lookup)
+            balance_by_id.update(bmap)
+
+        enriched = []
+        for row in filtered_rows:
+            item = enrich_vault_transaction(dict(row), lookup)
+            bal = balance_by_id.get(row["id"])
+            if bal:
+                item["balance_usdt"] = bal.get("balance_usdt")
+                item["balance_try"] = bal.get("balance_try")
+            enriched.append(item)
+
+        p_start, p_end = period_date_range(period)
+        p_start_s = p_start.isoformat() if p_start else None
+        p_end_s = p_end.isoformat() if p_end else None
+        active_vaults = [v for v in vaults if v.get("is_active")]
+        dashboard = build_vault_dashboard(active_vaults, grouped_full, p_start_s, p_end_s)
+        method_names = collect_method_suggestions(all_rows, [m["name"] for m in methods])
+
+        return jsonify(
+            {
+                **period_meta(period),
+                "vaults": dashboard["vaults"],
+                "totals": dashboard["totals"],
+                "methods": method_names,
+                "vault_transactions": enriched,
+            }
+        )
 
     @bp.route("/vault-transactions", methods=["POST"])
     @acc_perm(*MODULE_ACCESS)
     def create_vault_transaction():
         data = request.get_json(silent=True) or {}
         tx_date = parse_date(data.get("tx_date"))
-        vault_name = (data.get("vault_name") or "").strip()
-        tx_type = (data.get("tx_type") or "").strip().lower()
         description = (data.get("description") or "").strip()
-        amount = parse_amount(data.get("amount"))
+        method_name = (data.get("method_name") or "").strip()
 
         if not tx_date:
             return jsonify({"error": "Geçerli tarih girin."}), 400
-        if not vault_name:
-            return jsonify({"error": "Kasa adı zorunludur."}), 400
-        if tx_type not in ("in", "out"):
-            return jsonify({"error": "İşlem türü Giriş veya Çıkış olmalı."}), 400
-        if amount is None or amount <= 0:
-            return jsonify({"error": "Geçerli tutar girin."}), 400
-        rates, rate_err = rates_from_request(data)
-        if rate_err:
-            return jsonify({"error": rate_err}), 400
-        fx, err = build_money(amount, data.get("currency"), rates)
-        if err:
-            return jsonify({"error": err}), 400
 
-        now = iso(utcnow())
+        direction = (data.get("direction") or data.get("tx_type") or "").strip().lower()
+        usdt_amount = data.get("usdt_amount")
+        if usdt_amount is None:
+            usdt_amount = data.get("amount")
+
+        rate_usd = parse_rate(data.get("rate_usd_try"))
+        payload = None
+        if direction in ("in", "out") and usdt_amount not in (None, ""):
+            if not rate_usd:
+                rates, rate_err = rates_from_request(data)
+                if rate_err:
+                    return jsonify({"error": rate_err}), 400
+                rate_usd = rates["usd_try"]
+            payload, err = build_vault_tx_payload(
+                usdt_amount,
+                direction,
+                rate_usd,
+                description,
+                method_name,
+                fee_usdt=data.get("fee_usdt"),
+            )
+            if err:
+                return jsonify({"error": err}), 400
+        else:
+            vault_name_legacy = (data.get("vault_name") or "").strip()
+            tx_type = direction
+            amount = parse_amount(data.get("amount"))
+            if tx_type not in ("in", "out"):
+                return jsonify({"error": "İşlem yönü Gelen veya Giden olmalı."}), 400
+            if amount is None or amount <= 0:
+                return jsonify({"error": "Geçerli tutar girin."}), 400
+            rates, rate_err = rates_from_request(data)
+            if rate_err:
+                return jsonify({"error": rate_err}), 400
+            fx, fx_err = build_money(amount, data.get("currency"), rates)
+            if fx_err:
+                return jsonify({"error": fx_err}), 400
+            payload = {
+                "tx_type": tx_type,
+                "method_name": method_name,
+                "description": description,
+                "usdt_in": fx["USD"] if tx_type == "in" else 0,
+                "usdt_out": fx["USD"] if tx_type == "out" else 0,
+                "amount": fx["amount"],
+                "currency": fx["currency"],
+                "amount_usd": fx["USD"],
+                "amount_try": fx["TRY"],
+                "amount_eur": fx["EUR"],
+                "rate_usd_try": fx["rate_usd_try"],
+                "rate_eur_try": fx["rate_eur_try"],
+            }
+
+        vault_id = data.get("vault_id")
+        vault_name = (data.get("vault_name") or "").strip()
         with closing(get_db()) as conn:
+            if vault_id:
+                vault = fetchone(conn, "SELECT * FROM acc_vaults WHERE id = ?", (int(vault_id),))
+                if not vault:
+                    return jsonify({"error": "Kasa bulunamadı."}), 404
+                vault_id = vault["id"]
+                vault_name = vault["name"]
+            elif vault_name:
+                vault = fetchone(conn, "SELECT * FROM acc_vaults WHERE name = ?", (vault_name,))
+                if not vault:
+                    return jsonify({"error": "Kasa bulunamadı."}), 404
+                vault_id = vault["id"]
+            else:
+                return jsonify({"error": "Kasa seçin."}), 400
+
+            now = iso(utcnow())
             vid = insert_returning_id(
                 conn,
                 """
                 INSERT INTO acc_vault_transactions
-                (tx_date, vault_name, tx_type, description, amount, currency,
+                (tx_date, vault_id, vault_name, tx_type, method_name, description,
+                 amount, currency, usdt_in, usdt_out, fee_usdt,
                  amount_try, amount_usd, amount_eur, rate_usd_try, rate_eur_try, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    tx_date, vault_name, tx_type, description, fx["amount"], fx["currency"],
-                    fx["TRY"], fx["USD"], fx["EUR"],
-                    fx["rate_usd_try"], fx["rate_eur_try"], now,
+                    tx_date,
+                    vault_id,
+                    vault_name,
+                    payload["tx_type"],
+                    payload.get("method_name", ""),
+                    payload.get("description", ""),
+                    payload["amount"],
+                    payload.get("currency", "USD"),
+                    payload.get("usdt_in", 0),
+                    payload.get("usdt_out", 0),
+                    payload.get("fee_usdt", 0),
+                    payload.get("amount_try", 0),
+                    payload.get("amount_usd", 0),
+                    payload.get("amount_eur", 0),
+                    payload.get("rate_usd_try", 0),
+                    payload.get("rate_eur_try", 0),
+                    now,
                 ),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_vault_transactions WHERE id = ?", (vid,))
-        return jsonify({"vault_transaction": dict(row), "rates": used_rates_payload(fx)}), 201
+
+        enriched = enrich_vault_transaction(dict(row))
+        return jsonify(
+            {
+                "vault_transaction": enriched,
+                "rates": {"usd_try": enriched.get("rate_display"), "eur_try": enriched.get("rate_eur_try")},
+            }
+        ), 201
 
     @bp.route("/vault-transactions/<int:tx_id>", methods=["DELETE"])
     @acc_perm(*MODULE_ACCESS)

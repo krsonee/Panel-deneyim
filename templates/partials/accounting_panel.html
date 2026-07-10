@@ -241,46 +241,117 @@
 
   <!-- Kasa -->
   <div class="acc-pane" id="acc-pane-vault" data-acc-pane="vault" hidden>
+    <!-- Dashboard -->
+    <section class="acc-vault-dash">
+      <div class="acc-vault-dash-head">
+        <div>
+          <h3 class="acc-vault-dash-title">Kasa Özeti</h3>
+          <p class="muted acc-vault-dash-sub">Güncel bakiyeler — üst çubuktaki dönem seçimi hareket özetini etkiler</p>
+        </div>
+        <div class="acc-vault-total-pill" id="acc-vault-total-pill">
+          <span class="muted">Toplam</span>
+          <strong id="acc-vault-total-usdt">—</strong>
+          <small class="muted" id="acc-vault-total-try"></small>
+        </div>
+      </div>
+      <div class="acc-vault-cards" id="acc-vault-cards">
+        <div class="acc-vault-card acc-vault-card-loading muted">Yükleniyor…</div>
+      </div>
+    </section>
+
+    <!-- Kasa yönetimi -->
     <section class="card">
-      <div class="card-head"><span>Kasa İşlemi</span></div>
+      <div class="card-head">
+        <span>Kasalarım</span>
+        <button type="button" class="btn btn-sm btn-primary" id="acc-vault-add-toggle">+ Yeni Kasa</button>
+      </div>
+      <div class="card-body acc-vault-manage-body">
+        <form id="acc-vault-create-form" class="acc-vault-create-form" hidden>
+          <div class="form-row-4 acc-vault-create-grid">
+            <div><label>Kasa Adı</label><input id="acc-vault-new-name" placeholder="Ana USDT, Operasyon…" required></div>
+            <div><label>Açılış USDT</label><input type="number" id="acc-vault-new-open-usdt" step="0.01" value="0"></div>
+            <div><label>Açılış TL</label><input type="number" id="acc-vault-new-open-try" step="0.01" value="0"></div>
+            <div style="align-self:end;display:flex;gap:0.35rem;">
+              <button type="submit" class="btn btn-primary btn-sm">Ekle</button>
+              <button type="button" class="btn btn-sm" id="acc-vault-add-cancel">İptal</button>
+            </div>
+          </div>
+        </form>
+        <div class="acc-vault-chip-list" id="acc-vault-chip-list"></div>
+      </div>
+    </section>
+
+    <!-- İşlem girişi -->
+    <section class="card">
+      <div class="card-head">
+        <span>Yeni Kasa Hareketi</span>
+        <span class="muted" id="acc-vault-form-rate-badge" style="font-size:0.72rem;"></span>
+      </div>
       <div class="card-body">
-        <form id="acc-vault-form" class="form-row-4">
+        <form id="acc-vault-form" class="form-row-4 acc-vault-form-grid">
+          <div><label>Kasa</label><select id="acc-vault-select" required></select></div>
           <div><label>Tarih</label><input type="date" id="acc-vault-date" required></div>
-          <div><label>Kasa Adı</label><input id="acc-vault-name" placeholder="Tether-1, BTC-Ana…" required></div>
-          <div><label>İşlem Türü</label>
-            <select id="acc-vault-type" required>
-              <option value="in">Giriş</option>
-              <option value="out">Çıkış</option>
+          <div><label>Yöntem</label>
+            <input id="acc-vault-method" list="acc-vault-method-list" placeholder="Masraf, Devir, Garanti Fast…" required>
+            <datalist id="acc-vault-method-list"></datalist>
+          </div>
+          <div><label>İşlem Yönü</label>
+            <select id="acc-vault-direction" required>
+              <option value="in">Gelen USDT</option>
+              <option value="out">Giden USDT</option>
             </select>
           </div>
-          <div><label>Para Birimi</label>
-            <select id="acc-vault-currency" class="acc-currency-select" required>
-              <option value="TRY">₺ TRY</option>
-              <option value="USD">$ USD</option>
-              <option value="EUR">€ EUR</option>
-            </select>
+          <div><label>USDT Tutarı</label><input type="number" id="acc-vault-usdt" step="0.01" min="0.01" required placeholder="2950"></div>
+          <div><label>Ağ Fee (USDT)</label>
+            <input type="number" id="acc-vault-fee" step="0.01" min="0" value="0" placeholder="Exodus Network Fee">
+            <div class="acc-vault-fee-actions">
+              <button type="button" class="btn btn-sm" id="acc-vault-fee-suggest" title="Exodus TRC20 tahmini">Exodus tahmini</button>
+              <button type="button" class="btn btn-sm acc-vault-fee-preset" data-fee="1">1</button>
+              <button type="button" class="btn btn-sm acc-vault-fee-preset" data-fee="1.5">1.5</button>
+              <button type="button" class="btn btn-sm acc-vault-fee-preset" data-fee="2">2</button>
+            </div>
+            <p class="muted acc-vault-fee-hint" id="acc-vault-fee-hint" style="font-size:0.68rem;margin-top:0.35rem;line-height:1.35;">
+              Soğuk cüzdan (Exodus) gönderiminde Network Fee kasadan ayrıca düşer. Exodus onay ekranındaki ücreti girin.
+            </p>
           </div>
-          <div><label>Tutar</label><input type="number" id="acc-vault-amount" step="0.01" min="0.01" required></div>
-          <div><label>USD/TL</label><input type="number" id="acc-vault-rate-usd" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
-          <div><label>EUR/TL</label><input type="number" id="acc-vault-rate-eur" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
-          <div style="grid-column:1/-1"><label>Açıklama</label><input id="acc-vault-desc" placeholder="Tahsilat, transfer…"></div>
-          <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-vault-fx-preview"></p></div>
+          <div><label>Kur (USD/TL)</label><input type="number" id="acc-vault-rate-usd" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
+          <div><label>TL Karşılığı (fee dahil)</label><input type="text" id="acc-vault-tl-preview" readonly class="muted"></div>
+          <div style="grid-column:1/-1"><label>Kasadan net düşüş / artış</label><input type="text" id="acc-vault-net-preview" readonly class="muted"></div>
+          <div style="grid-column:1/-1"><label>Açıklama</label><input id="acc-vault-desc" placeholder="Sunucu ödemesi, personel maaşı, tronscan linki…"></div>
           <div><button type="submit" class="btn btn-primary">Kaydet</button></div>
         </form>
       </div>
+    </section>
+
+    <!-- Defter -->
+    <section class="card">
+      <div class="card-head">
+        <span>Kasa Defteri</span>
+        <div class="acc-vault-ledger-filters">
+          <select id="acc-vault-filter" class="acc-vault-filter-select">
+            <option value="">Tüm kasalar</option>
+          </select>
+        </div>
+      </div>
       <div class="table-wrap">
-        <div class="scroll-hint">Tabloyu yatay kaydırın</div>
-        <div class="table-scroll" id="acc-vault-table-scroll">
-          <table>
+        <div class="scroll-hint">Excel defteri gibi yatay kaydırın — Kalan sütunları kronolojik bakiyedir</div>
+        <div class="table-scroll acc-vault-ledger-scroll" id="acc-vault-table-scroll">
+          <table class="acc-vault-ledger-table">
             <thead><tr>
               <th class="col-sortable" data-acc-sort="acc-vault" data-sort="tx_date">Tarih</th>
-              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="vault_name">Kasa</th>
-              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="tx_type">Tür</th>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="method_name">Yöntem</th>
+              <th class="col-sortable acc-vault-col-out" data-acc-sort="acc-vault" data-sort="usdt_out">Giden USDT</th>
+              <th class="col-sortable acc-vault-col-in" data-acc-sort="acc-vault" data-sort="usdt_in">Gelen USDT</th>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="fee_usdt">Fee USDT</th>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="tl_signed">TL Karşılığı</th>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="rate_display">Kur</th>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="balance_usdt">Kalan USDT</th>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="balance_try">Kalan TL</th>
               <th class="col-sortable" data-acc-sort="acc-vault" data-sort="description">Açıklama</th>
-              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="amount">Tutar</th>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="vault_name">Kasa</th>
               <th></th>
             </tr></thead>
-            <tbody id="acc-vault-table"><tr><td colspan="6" class="empty">Kayıt yok</td></tr></tbody>
+            <tbody id="acc-vault-table"><tr><td colspan="12" class="empty">Kayıt yok</td></tr></tbody>
           </table>
         </div>
         <div class="table-foot" id="acc-vault-table-foot" style="display:none;">
