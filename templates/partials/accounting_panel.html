@@ -352,12 +352,12 @@
           <div><label>USD/TL</label><input type="number" id="acc-emp-rate-usd" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
           <div><label>EUR/TL</label><input type="number" id="acc-emp-rate-eur" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
           <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-emp-fx-preview"></p></div>
-          <div id="acc-emp-office-fields" class="acc-office-fields" hidden style="grid-column:1/-1;">
+          <div><label>Avans (dönem içi)</label><input type="number" id="acc-emp-advance" step="0.01" min="0" value="0"></div>
+          <div id="acc-emp-office-fields" class="acc-office-fields" hidden style="grid-column:span 3;">
             <div class="form-row-4" style="margin-top:0.35rem;">
               <div><label>Bankaya Yatacak</label><input type="number" id="acc-emp-bank" step="0.01" min="0" value="0"></div>
               <div><label>Kripto Ödenecek</label><input type="number" id="acc-emp-crypto" step="0.01" min="0" value="0"></div>
-              <div><label>Avans</label><input type="number" id="acc-emp-advance" step="0.01" min="0" value="0"></div>
-              <div><label>Kalan</label><input type="text" id="acc-emp-remaining" readonly class="muted" value="0"></div>
+              <div><label>Kalan (ofis)</label><input type="text" id="acc-emp-remaining" readonly class="muted" value="0"></div>
             </div>
             <p class="muted" style="font-size:0.72rem;margin-top:0.35rem;">Banka + Kripto + Avans toplamı maaşı geçemez.</p>
           </div>
@@ -371,6 +371,33 @@
           <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
         </form>
       </div>
+      <div class="card-body acc-emp-toolbar" style="padding-top:0;padding-bottom:0.65rem;border-top:1px solid var(--border);">
+        <div class="acc-emp-filters form-row-4">
+          <div>
+            <label>Kategori Filtresi</label>
+            <select id="acc-emp-filter-cat">
+              <option value="">Tüm kategoriler</option>
+            </select>
+          </div>
+          <div>
+            <label>Departman Filtresi</label>
+            <select id="acc-emp-filter-dept">
+              <option value="">Tüm departmanlar</option>
+            </select>
+          </div>
+          <div>
+            <label>Tablo Para Birimi</label>
+            <select id="acc-emp-currency-view">
+              <option value="TRY">₺ TRY</option>
+              <option value="USD">$ USD</option>
+              <option value="EUR">€ EUR</option>
+            </select>
+          </div>
+          <div style="align-self:end;">
+            <button type="button" class="btn btn-sm" id="acc-emp-filter-clear">Filtreyi Temizle</button>
+          </div>
+        </div>
+      </div>
       <div class="table-wrap">
         <div class="table-scroll" id="acc-emp-table-scroll">
           <table>
@@ -381,11 +408,13 @@
               <th class="col-sortable" data-acc-sort="acc-emp" data-sort="start_date">Başlangıç</th>
               <th class="col-sortable" data-acc-sort="acc-emp" data-sort="end_date">Çıkış</th>
               <th class="col-sortable" data-acc-sort="acc-emp" data-sort="salary">Maaş</th>
+              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="advance">Avans</th>
               <th class="col-sortable" data-acc-sort="acc-emp" data-sort="accrual">Hak Ediş</th>
+              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="net_accrual">Net Ödeme</th>
               <th class="col-sortable" data-acc-sort="acc-emp" data-sort="status">Durum</th>
               <th></th>
             </tr></thead>
-            <tbody id="acc-emp-table"><tr><td colspan="9" class="empty">Personel yok</td></tr></tbody>
+            <tbody id="acc-emp-table"><tr><td colspan="11" class="empty">Personel yok</td></tr></tbody>
           </table>
         </div>
         <div class="table-foot" id="acc-emp-table-foot" style="display:none;">
@@ -394,8 +423,11 @@
         </div>
       </div>
       <div class="acc-payroll-total">
-        <span>Dönem Toplam Personel Hak Edişi:</span>
-        <strong id="acc-payroll-total">$0</strong>
+        <span>Dönem Toplam (filtreli):</span>
+        <div class="acc-payroll-total-nums">
+          <strong id="acc-payroll-total">$0</strong>
+          <small class="muted" id="acc-payroll-total-sub"></small>
+        </div>
       </div>
     </section>
   </div>

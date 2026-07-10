@@ -9,7 +9,10 @@
   var accCategories = [];
   var accEmployeeDepartments = [];
   var accSalaryCategories = [];
+  var accEmpFilterCat = "";
+  var accEmpFilterDept = "";
   var accDisplayCurrency = localStorage.getItem("acc_display_currency") || "TRY";
+  var accEmpCurrencyView = localStorage.getItem("acc_emp_currency_view") || accDisplayCurrency;
   var accRates = { usd_try: 34, eur_try: 37, date: null, source: "fallback" };
   var ACC_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
 
@@ -342,12 +345,14 @@
     accRenderSalaryCatChips();
     accBuildPayrollTableHead();
     accRefreshEmpSelects();
+    accRefreshEmpFilters();
   }
 
   function accApplyDepartments(departments) {
     if (departments && departments.length) accEmployeeDepartments = departments;
     accRenderDeptChips();
     accRefreshEmpSelects();
+    accRefreshEmpFilters();
   }
 
   function accRefreshEmpSelects() {
@@ -480,7 +485,89 @@
 
   function accAccrualValue(row) {
     if (!row || !row.accrual) return 0;
-    return row.accrual[accDisplayCurrency] != null ? row.accrual[accDisplayCurrency] : row.accrual.TRY || 0;
+    var cur = accEmpCurrencyView;
+    return row.accrual[cur] != null ? row.accrual[cur] : 0;
+  }
+
+  function accNetAccrualValue(row) {
+    if (!row || !row.net_accrual) return accAccrualValue(row);
+    var cur = accEmpCurrencyView;
+    return row.net_accrual[cur] != null ? row.net_accrual[cur] : 0;
+  }
+
+  function accAdvanceDisplay(row) {
+    if (!row) return 0;
+    if (row.advance_by_currency && row.advance_by_currency[accEmpCurrencyView] != null) {
+      return row.advance_by_currency[accEmpCurrencyView];
+    }
+    return row.advance_amount || 0;
+  }
+
+  function accMultiCurCellHtml(map, hidden) {
+    if (hidden) return accHiddenMoney();
+    if (!map) return accHiddenMoney();
+    var cur = accEmpCurrencyView;
+    var main = accMoney(map[cur] != null ? map[cur] : 0, cur);
+    var others = ["TRY", "USD", "EUR"].filter(function (c) { return c !== cur; });
+    var sub = others.map(function (c) { return accMoney(map[c] || 0, c); }).join(" · ");
+    return "<strong>" + main + '</strong><br><small class="muted">' + sub + "</small>";
+  }
+
+  function accFilteredEmployees() {
+    return (accData["acc-emp"].rows || []).filter(function (r) {
+      if (accEmpFilterCat && r.salary_category !== accEmpFilterCat) return false;
+      if (accEmpFilterDept && r.department !== accEmpFilterDept) return false;
+      return true;
+    });
+  }
+
+  function accRefreshEmpFilters() {
+    var catSel = document.getElementById("acc-emp-filter-cat");
+    var deptSel = document.getElementById("acc-emp-filter-dept");
+    var curSel = document.getElementById("acc-emp-currency-view");
+    if (catSel) {
+      var prev = accEmpFilterCat || catSel.value;
+      catSel.innerHTML = '<option value="">Tüm kategoriler</option>' +
+        accSalaryCategories.map(function (c) {
+          return '<option value="' + accEsc(c.slug) + '">' + accEsc(c.name) + "</option>";
+        }).join("");
+      catSel.value = prev || "";
+      accEmpFilterCat = catSel.value;
+    }
+    if (deptSel) {
+      var prevD = accEmpFilterDept || deptSel.value;
+      deptSel.innerHTML = '<option value="">Tüm departmanlar</option>' +
+        accEmployeeDepartments.map(function (d) {
+          return '<option value="' + accEsc(d.name) + '">' + accEsc(d.name) + "</option>";
+        }).join("");
+      deptSel.value = prevD || "";
+      accEmpFilterDept = deptSel.value;
+    }
+    if (curSel) {
+      curSel.value = accEmpCurrencyView;
+    }
+  }
+
+  function accUpdateEmpPayrollTotals(rows) {
+    rows = rows || accFilteredEmployees();
+    var cur = accEmpCurrencyView;
+    var gross = 0;
+    var net = 0;
+    var advance = 0;
+    rows.forEach(function (r) {
+      if (r.salary_hidden) return;
+      gross += accAccrualValue(r);
+      net += accNetAccrualValue(r);
+      advance += accAdvanceDisplay(r);
+    });
+    var totalEl = document.getElementById("acc-payroll-total");
+    var subEl = document.getElementById("acc-payroll-total-sub");
+    if (totalEl) totalEl.textContent = accMoney(net, cur);
+    if (subEl) {
+      subEl.textContent = "Hak ediş: " + accMoney(gross, cur) +
+        " · Avans: " + accMoney(advance, cur) +
+        " · Net: " + accMoney(net, cur);
+    }
   }
 
   function accRenderPayrollDaily(payrollDaily) {
@@ -818,55 +905,88 @@
       if (res.data.departments) accApplyDepartments(res.data.departments);
       if (res.data.period_label) accUpdatePeriodLabel(res.data.period_label);
       accData["acc-emp"].rows = res.data.employees || [];
-      var payroll = res.data.payroll_accrual || res.data.monthly_payroll_total || {};
-      document.getElementById("acc-payroll-total").textContent = accMoney(
-        payroll[accDisplayCurrency] != null ? payroll[accDisplayCurrency] : payroll.TRY || 0,
-        accDisplayCurrency
-      );
+      accRefreshEmpFilters();
+      accUpdateEmpPayrollTotals();
       accRenderEmployees();
+    });
+  }
+
+  function accSaveEmployeeAdvance(empId, value, inputEl) {
+    accApi("/api/accounting/employees/" + empId, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ advance_amount: value })
+    }).then(function (r) {
+      if (r && r.ok) {
+        accLoadEmployees();
+        accLoadDashboard();
+        accToast("Avans güncellendi");
+      } else if (r) {
+        alert(r.data.error || "Hata");
+        if (inputEl) accLoadEmployees();
+      }
     });
   }
 
   function accRenderEmployees() {
     var tbody = document.getElementById("acc-emp-table");
-    var rows = accSortRows("acc-emp", accData["acc-emp"].rows, {
+    var filtered = accFilteredEmployees();
+    var rows = accSortRows("acc-emp", filtered, {
       name: function (r) { return r.name; },
       salary_category: function (r) { return r.salary_category; },
       department: function (r) { return r.department; },
       start_date: function (r) { return r.start_date; },
       end_date: function (r) { return r.end_date; },
       salary: function (r) { return r.salary; },
+      advance: function (r) { return accAdvanceDisplay(r); },
       accrual: function (r) { return accAccrualValue(r); },
+      net_accrual: function (r) { return accNetAccrualValue(r); },
       status: function (r) { return r.status; }
     });
-    if (!accData["acc-emp"].rows.length) {
-      tbody.innerHTML = '<tr><td colspan="9" class="empty">Personel yok</td></tr>';
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="11" class="empty">' +
+        (accData["acc-emp"].rows.length ? "Filtreye uygun personel yok" : "Personel yok") + "</td></tr>";
       accUpdateFoot("acc-emp", 0, "personel");
+      accUpdateEmpPayrollTotals([]);
       return;
     }
     tbody.innerHTML = rows.map(function (r) {
       var officeInfo = "";
       if (accIsOfficeCategory(r.salary_category) && accCanViewOfficeSalaries) {
         officeInfo = '<br><small class="muted">Banka: ' + accMoney(r.bank_salary || 0, r.currency || "TRY") +
-          " · Kripto: " + accMoney(r.crypto_salary || 0, r.currency || "TRY") +
-          " · Avans: " + accMoney(r.advance_amount || 0, r.currency || "TRY") + "</small>";
+          " · Kripto: " + accMoney(r.crypto_salary || 0, r.currency || "TRY") + "</small>";
       } else if (accIsOfficeCategory(r.salary_category) && r.salary_hidden) {
         officeInfo = '<br><small class="muted">Ofis maaş detayı gizli</small>';
       }
       var salaryCell = r.salary_hidden ? accHiddenMoney() : accMoneyCellHtml(r, "salary");
-      var accrualCell = r.salary_hidden ? accHiddenMoney() : ("<strong>" + accMoney(accAccrualValue(r), accDisplayCurrency) + "</strong>");
+      var advanceCell = r.salary_hidden
+        ? accHiddenMoney()
+        : ('<input type="number" class="acc-emp-advance-inp" data-emp-advance="' + r.id +
+          '" value="' + (r.advance_amount || 0) + '" step="0.01" min="0" title="Personel para birimi: ' +
+          accEsc(r.currency || "TRY") + '">');
+      var accrualCell = accMultiCurCellHtml(r.accrual, r.salary_hidden);
+      var netCell = accMultiCurCellHtml(r.net_accrual, r.salary_hidden);
       return '<tr><td><strong>' + accEsc(r.name) + '</strong>' + officeInfo + '</td>' +
         '<td><span class="tag">' + accEsc(accCategoryLabel(r.salary_category)) + '</span></td>' +
         '<td>' + accEsc(r.department) + '</td>' +
         '<td class="mono">' + accEsc(r.start_date) + '</td>' +
         '<td class="mono">' + accEsc(r.end_date || "—") + '</td>' +
         '<td>' + salaryCell + '</td>' +
+        '<td>' + advanceCell + '</td>' +
         '<td>' + accrualCell + '</td>' +
+        '<td>' + netCell + '</td>' +
         '<td><span class="tag ' + (r.status === "active" ? "online" : "offline") + '">' + accStatusLabel(r.status) + '</span></td>' +
         '<td><button class="btn btn-sm" data-toggle-emp="' + r.id + '" data-status="' + (r.status === "active" ? "left" : "active") + '">' +
         (r.status === "active" ? "Ayrıldı" : "Aktif") + '</button> ' +
         '<button class="btn btn-sm btn-danger" data-del-emp="' + r.id + '">Sil</button></td></tr>';
     }).join("");
+    tbody.querySelectorAll("[data-emp-advance]").forEach(function (inp) {
+      inp.addEventListener("change", function () {
+        var val = parseFloat(inp.value);
+        if (isNaN(val) || val < 0) { inp.value = "0"; val = 0; }
+        accSaveEmployeeAdvance(inp.getAttribute("data-emp-advance"), val, inp);
+      });
+    });
     tbody.querySelectorAll("[data-toggle-emp]").forEach(function (btn) {
       btn.onclick = function () {
         var newStatus = btn.getAttribute("data-status");
@@ -893,7 +1013,8 @@
           .then(function (r) { if (r && r.ok) { accLoadEmployees(); accLoadDashboard(); accToast("Silindi"); } });
       };
     });
-    accUpdateFoot("acc-emp", accData["acc-emp"].rows.length, "personel");
+    accUpdateFoot("acc-emp", filtered.length, "personel");
+    accUpdateEmpPayrollTotals(filtered);
     accUpdateSortHeaders("acc-emp");
   }
 
@@ -1187,6 +1308,40 @@
     });
     var goto = document.getElementById("acc-goto-commissions");
     if (goto) goto.addEventListener("click", function () { accSwitchTab("commissions"); });
+
+    var empFilterCat = document.getElementById("acc-emp-filter-cat");
+    var empFilterDept = document.getElementById("acc-emp-filter-dept");
+    var empCurView = document.getElementById("acc-emp-currency-view");
+    var empFilterClear = document.getElementById("acc-emp-filter-clear");
+    if (empFilterCat) {
+      empFilterCat.addEventListener("change", function () {
+        accEmpFilterCat = empFilterCat.value;
+        accRenderEmployees();
+      });
+    }
+    if (empFilterDept) {
+      empFilterDept.addEventListener("change", function () {
+        accEmpFilterDept = empFilterDept.value;
+        accRenderEmployees();
+      });
+    }
+    if (empCurView) {
+      empCurView.addEventListener("change", function () {
+        accEmpCurrencyView = empCurView.value;
+        localStorage.setItem("acc_emp_currency_view", accEmpCurrencyView);
+        accRenderEmployees();
+      });
+    }
+    if (empFilterClear) {
+      empFilterClear.addEventListener("click", function () {
+        accEmpFilterCat = "";
+        accEmpFilterDept = "";
+        if (empFilterCat) empFilterCat.value = "";
+        if (empFilterDept) empFilterDept.value = "";
+        accRenderEmployees();
+      });
+    }
+    accRefreshEmpFilters();
   }
 
   window.MakroAccounting = {

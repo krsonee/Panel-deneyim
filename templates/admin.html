@@ -160,9 +160,16 @@
     .acc-payroll-total {
       display: flex; align-items: center; justify-content: space-between; gap: 1rem;
       padding: 0.85rem 1.15rem; border-top: 1px solid var(--border); background: var(--surface-2);
-      font-size: 0.85rem;
+      font-size: 0.85rem; flex-wrap: wrap;
     }
-    .acc-payroll-total strong { font-size: 1.15rem; color: var(--amber); }
+    .acc-payroll-total-nums { text-align: right; }
+    .acc-payroll-total-nums small { display: block; font-size: 0.72rem; margin-top: 0.15rem; }
+    .acc-payroll-total strong { font-size: 1.15rem; color: var(--amber); display: block; }
+    .acc-emp-filters select { width: 100%; }
+    .acc-emp-advance-inp {
+      width: 88px; padding: 0.28rem 0.4rem; font-size: 0.78rem;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text);
+    }
     .acc-placeholder .acc-invoice-box {
       max-width: 520px; margin: 0 auto; padding: 1.25rem; border-radius: 12px;
       border: 1px dashed var(--border); background: var(--surface-2); text-align: left;

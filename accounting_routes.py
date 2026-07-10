@@ -17,6 +17,7 @@ from accounting_payroll import (
     compute_payroll_daily,
     enrich_employee_row,
     redact_employee_for_view,
+    validate_advance_amount,
     validate_office_amounts,
 )
 from accounting_period import date_clause, default_accounting_period, period_label
@@ -212,10 +213,10 @@ def create_accounting_blueprint(permission_required):
         crypto = parse_office_amount(data.get("crypto_salary")) if "crypto_salary" in data else existing.get("crypto_salary", 0)
         advance = parse_office_amount(data.get("advance_amount")) if "advance_amount" in data else existing.get("advance_amount", 0)
         if bank is None or crypto is None or advance is None:
-            return None, "Ofis personeli ödeme tutarları geçersiz."
+            return None, "Ödeme tutarları geçersiz."
 
         if not is_office:
-            bank = crypto = advance = 0.0
+            bank = crypto = 0.0
 
         if not name:
             return None, "Personel adı zorunludur."
@@ -228,9 +229,14 @@ def create_accounting_blueprint(permission_required):
         if date_err:
             return None, date_err
 
-        office_err = validate_office_amounts(salary, bank, crypto, advance, is_office)
-        if office_err:
-            return None, office_err
+        if is_office:
+            office_err = validate_office_amounts(salary, bank, crypto, advance, is_office)
+            if office_err:
+                return None, office_err
+        else:
+            adv_err = validate_advance_amount(salary, advance)
+            if adv_err:
+                return None, adv_err
 
         return {
             "name": name,

@@ -115,6 +115,8 @@ def redact_employee_for_view(emp, can_view_office, category_map=None):
     for field in OFFICE_SALARY_FIELDS:
         row[field] = None
     row["accrual"] = {cur: None for cur in CURRENCIES}
+    row["net_accrual"] = {cur: None for cur in CURRENCIES}
+    row["advance_by_currency"] = {cur: None for cur in CURRENCIES}
     row["salary_hidden"] = True
     return row
 
@@ -182,6 +184,21 @@ def compute_payroll_daily(employees, period="month", reference=None, include_off
     }
 
 
+def advance_in_currency(emp, currency):
+    advance = float(emp.get("advance_amount") or 0)
+    if advance <= 0:
+        return 0.0
+    emp_currency = (emp.get("currency") or "TRY").upper()
+    currency = (currency or "TRY").upper()
+    if emp_currency == currency:
+        return round(advance, 2)
+    salary = float(emp.get("salary") or 0)
+    if salary <= 0:
+        return 0.0
+    monthly = float(emp.get(f"salary_{currency.lower()}") or 0)
+    return round(advance * (monthly / salary), 2)
+
+
 def enrich_employee_row(emp, period="month", reference=None):
     reference = reference or utc_today()
     _, _, key = parse_period(period, reference)
@@ -199,6 +216,11 @@ def enrich_employee_row(emp, period="month", reference=None):
     for cur in CURRENCIES:
         accrual[cur] = employee_accrual_for_range(row, start, end, cur)
     row["accrual"] = accrual
+    advance_by_currency = {cur: advance_in_currency(row, cur) for cur in CURRENCIES}
+    row["advance_by_currency"] = advance_by_currency
+    row["net_accrual"] = {
+        cur: round(max(accrual[cur] - advance_by_currency[cur], 0), 2) for cur in CURRENCIES
+    }
     salary = float(row.get("salary") or 0)
     advance = float(row.get("advance_amount") or 0)
     bank = float(row.get("bank_salary") or 0)
@@ -206,6 +228,16 @@ def enrich_employee_row(emp, period="month", reference=None):
     row["net_salary"] = round(max(salary - advance, 0), 2)
     row["office_remaining"] = round(max(salary - advance - bank - crypto, 0), 2)
     return row
+
+
+def validate_advance_amount(salary, advance):
+    advance = float(advance or 0)
+    salary = float(salary or 0)
+    if advance < 0:
+        return "Avans negatif olamaz."
+    if round(advance, 2) > round(salary, 2):
+        return "Avans maaşı geçemez."
+    return None
 
 
 def validate_office_amounts(salary, bank, crypto, advance, is_office):
