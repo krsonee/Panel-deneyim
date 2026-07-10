@@ -16,6 +16,7 @@ _SETTING_USD = "exchange_usd_try"
 _SETTING_EUR = "exchange_eur_try"
 
 _HTTP_HEADERS = {"User-Agent": "MakroPanel/1.0"}
+_FETCH_TIMEOUT = 4
 
 # Kısa süreli önbellek yalnızca arka arkaya gelen istekleri azaltır; kayıt anında kullanılmaz.
 _SOFT_CACHE_SECONDS = 15
@@ -52,7 +53,7 @@ def _fetch_truncgil():
         "https://finans.truncgil.com/v4/today.json",
         headers=_HTTP_HEADERS,
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
         data = json.loads(resp.read().decode())
     usd = data.get("USD") or {}
     eur = data.get("EUR") or {}
@@ -66,7 +67,7 @@ def _fetch_tcmb():
         "https://www.tcmb.gov.tr/kurlar/today.xml",
         headers=_HTTP_HEADERS,
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
         root = ET.fromstring(resp.read())
     usd_try = eur_try = None
     date_label = root.get("Date") or root.get("Tarih")
@@ -86,7 +87,7 @@ def _fetch_er_api():
         "https://open.er-api.com/v6/latest/USD",
         headers=_HTTP_HEADERS,
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
         data = json.loads(resp.read().decode())
     if data.get("result") != "success":
         raise ValueError("er-api unsuccessful")
@@ -103,7 +104,7 @@ def _fetch_frankfurter():
         "https://api.frankfurter.app/latest?from=USD&to=TRY,EUR",
         headers=_HTTP_HEADERS,
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
         data = json.loads(resp.read().decode())
     usd_try = float(data["rates"]["TRY"])
     eur_per_usd = float(data["rates"]["EUR"])
@@ -118,7 +119,7 @@ def _fetch_exchangerate_host():
         "https://api.exchangerate.host/latest?base=USD&symbols=TRY,EUR",
         headers=_HTTP_HEADERS,
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
         data = json.loads(resp.read().decode())
     if not data.get("success", True):
         raise ValueError("exchangerate.host unsuccessful")
@@ -196,7 +197,9 @@ def fetch_exchange_rates(force=False, fresh=False):
         return _cache_result(now, usd_try, eur_try, date, source)
     except Exception:
         if has_cached:
-            return dict(_rate_cache)
+            cached = dict(_rate_cache)
+            cached["source"] = cached.get("source") or "cache"
+            return cached
         return _cache_result(
             now,
             _rate_cache.get("usd_try") or 34.25,

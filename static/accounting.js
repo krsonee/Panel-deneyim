@@ -54,7 +54,7 @@
     return fetch(path, opts).then(function (r) {
       if (r.status === 401) { location.href = "/admin/login"; return null; }
       return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; });
-    });
+    }).catch(function () { return null; });
   }
 
   function accEsc(s) {
@@ -176,8 +176,17 @@
   }
 
   function accApplyRates(data) {
-    if (!data || !data.usd_try || !data.eur_try) return;
-    accRates = data;
+    if (!data) return;
+    var usd = parseFloat(data.usd_try);
+    var eur = parseFloat(data.eur_try);
+    if (!usd && !eur) return;
+    accRates = {
+      usd_try: usd || accRates.usd_try,
+      eur_try: eur || accRates.eur_try,
+      date: data.date != null ? data.date : accRates.date,
+      source: data.source || accRates.source,
+      fetched_at: data.fetched_at != null ? data.fetched_at : accRates.fetched_at
+    };
     accUpdateRatePlaceholders();
     if (accActiveTab === "vault") {
       accUpdateVaultFormRateBadge();
@@ -205,9 +214,13 @@
     });
     var badge = document.getElementById("acc-live-rates-badge");
     if (badge) {
-      badge.textContent = accRates.usd_try && accRates.eur_try
-        ? "Yeni kayıt referans · USD/TL " + accFormatRate(accRates.usd_try) + " · EUR/TL " + accFormatRate(accRates.eur_try) + accRateTimeLabel()
-        : "Kur yükleniyor…";
+      if (accRates.usd_try && accRates.eur_try) {
+        var srcNote = accRates.source === "fallback" ? " (yaklaşık)" : "";
+        badge.textContent = "USD/TL " + accFormatRate(accRates.usd_try) +
+          " · EUR/TL " + accFormatRate(accRates.eur_try) + srcNote + accRateTimeLabel();
+      } else {
+        badge.textContent = "Kur yükleniyor…";
+      }
     }
   }
 
@@ -1445,13 +1458,18 @@
     else if (accActiveTab === "payroll") { accLoadEmpOptions(); accLoadEmployees(); }
   }
 
+  function accBindForm(formId, handler) {
+    var form = document.getElementById(formId);
+    if (form) form.addEventListener("submit", handler);
+  }
+
   function accInitForms() {
     ["acc-tx-date", "acc-exp-date", "acc-vault-date", "acc-emp-start"].forEach(function (id) {
       var el = document.getElementById(id);
       if (el && !el.value) el.value = accToday();
     });
 
-    document.getElementById("acc-tx-form").addEventListener("submit", function (e) {
+    accBindForm("acc-tx-form", function (e) {
       e.preventDefault();
       accApi("/api/accounting/transactions", {
         method: "POST",
@@ -1472,7 +1490,7 @@
       });
     });
 
-    document.getElementById("acc-pm-form").addEventListener("submit", function (e) {
+    accBindForm("acc-pm-form", function (e) {
       e.preventDefault();
       var txType = document.getElementById("acc-pm-type").value;
       if (!txType) { alert("İşlem türü seçin: Yatırım veya Çekim."); return; }
@@ -1498,7 +1516,7 @@
       txTypeEl.addEventListener("change", accRefreshTxPaymentSelect);
     }
 
-    document.getElementById("acc-cat-form").addEventListener("submit", function (e) {
+    accBindForm("acc-cat-form", function (e) {
       e.preventDefault();
       accApi("/api/accounting/expense-categories", {
         method: "POST",
@@ -1550,7 +1568,7 @@
       });
     }
 
-    document.getElementById("acc-exp-form").addEventListener("submit", function (e) {
+    accBindForm("acc-exp-form", function (e) {
       e.preventDefault();
       accApi("/api/accounting/expenses", {
         method: "POST",
@@ -1572,8 +1590,7 @@
       });
     });
 
-    var vaultForm = document.getElementById("acc-vault-form");
-    if (vaultForm) vaultForm.addEventListener("submit", function (e) {
+    accBindForm("acc-vault-form", function (e) {
       e.preventDefault();
       var body = Object.assign({
         tx_date: document.getElementById("acc-vault-date").value,
@@ -1666,7 +1683,7 @@
       if (el) el.addEventListener("change", accUpdateVaultTlPreview);
     });
 
-    document.getElementById("acc-emp-form").addEventListener("submit", function (e) {
+    accBindForm("acc-emp-form", function (e) {
       e.preventDefault();
       accUpdateEmpFormUi();
       var status = document.getElementById("acc-emp-status").value;
@@ -1757,7 +1774,8 @@
         accSwitchTab(btn.getAttribute("data-acc-tab"));
       });
     });
-    document.getElementById("acc-filter-period").addEventListener("change", function () {
+    var accFilterPeriod = document.getElementById("acc-filter-period");
+    if (accFilterPeriod) accFilterPeriod.addEventListener("change", function () {
       accResolvePeriod();
       accRefreshAll();
     });
@@ -1820,12 +1838,11 @@
 
   window.MakroAccounting = {
     init: function () {
-      accLoadRates().then(function () {
-        accInitForms();
-        accInitUi();
-        accStartRatesPolling();
-        accSwitchTab("dashboard");
-      });
+      accInitForms();
+      accInitUi();
+      accStartRatesPolling();
+      accSwitchTab("dashboard");
+      accLoadRates();
     },
     refresh: accRefreshAll,
     onShow: function () {

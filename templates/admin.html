@@ -628,9 +628,9 @@
     .mobile-header { display: none; }
     .sidebar-backdrop {
       display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
-      z-index: 49; opacity: 0; transition: opacity 0.25s ease;
+      z-index: 49; opacity: 0; transition: opacity 0.25s ease; pointer-events: none;
     }
-    .sidebar-backdrop.show { display: block; opacity: 1; }
+    .sidebar-backdrop.show { display: block; opacity: 1; pointer-events: auto; }
     body.sidebar-open { overflow: hidden; }
 
     @media (max-width: 768px) {
@@ -1201,6 +1201,7 @@
         window.addEventListener("resize", function() {
           if (!window.matchMedia("(max-width: 768px)").matches) closeMobileSidebar();
         });
+        closeMobileSidebar();
       }
 
       function initModuleNav() {
