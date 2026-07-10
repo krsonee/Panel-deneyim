@@ -172,7 +172,162 @@ def init_schema(conn):
         ]
     for sql in statements:
         execute(conn, sql)
+    init_accounting_schema(conn)
     conn.commit()
+
+
+def init_accounting_schema(conn):
+    if uses_postgres():
+        statements = [
+            """
+            CREATE TABLE IF NOT EXISTS acc_payment_methods (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                commission_rate REAL NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS acc_finance_transactions (
+                id SERIAL PRIMARY KEY,
+                tx_date TEXT NOT NULL,
+                payment_method_id INTEGER NOT NULL REFERENCES acc_payment_methods(id),
+                tx_type TEXT NOT NULL,
+                amount REAL NOT NULL,
+                commission_rate REAL NOT NULL DEFAULT 0,
+                commission_amount REAL NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS acc_expense_categories (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS acc_expenses (
+                id SERIAL PRIMARY KEY,
+                expense_date TEXT NOT NULL,
+                category_id INTEGER NOT NULL REFERENCES acc_expense_categories(id),
+                description TEXT NOT NULL DEFAULT '',
+                amount REAL NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS acc_vault_transactions (
+                id SERIAL PRIMARY KEY,
+                tx_date TEXT NOT NULL,
+                vault_name TEXT NOT NULL,
+                tx_type TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                amount REAL NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS acc_employees (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                department TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                salary REAL NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_acc_fin_tx_date ON acc_finance_transactions(tx_date)",
+            "CREATE INDEX IF NOT EXISTS idx_acc_exp_date ON acc_expenses(expense_date)",
+            "CREATE INDEX IF NOT EXISTS idx_acc_vault_date ON acc_vault_transactions(tx_date)",
+        ]
+    else:
+        statements = [
+            """
+            CREATE TABLE IF NOT EXISTS acc_payment_methods (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                commission_rate REAL NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS acc_finance_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tx_date TEXT NOT NULL,
+                payment_method_id INTEGER NOT NULL,
+                tx_type TEXT NOT NULL,
+                amount REAL NOT NULL,
+                commission_rate REAL NOT NULL DEFAULT 0,
+                commission_amount REAL NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (payment_method_id) REFERENCES acc_payment_methods(id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS acc_expense_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS acc_expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                expense_date TEXT NOT NULL,
+                category_id INTEGER NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                amount REAL NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (category_id) REFERENCES acc_expense_categories(id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS acc_vault_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tx_date TEXT NOT NULL,
+                vault_name TEXT NOT NULL,
+                tx_type TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                amount REAL NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS acc_employees (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                department TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                salary REAL NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_acc_fin_tx_date ON acc_finance_transactions(tx_date)",
+            "CREATE INDEX IF NOT EXISTS idx_acc_exp_date ON acc_expenses(expense_date)",
+            "CREATE INDEX IF NOT EXISTS idx_acc_vault_date ON acc_vault_transactions(tx_date)",
+        ]
+    for sql in statements:
+        execute(conn, sql)
+    seed_accounting_defaults(conn)
+    conn.commit()
+
+
+def seed_accounting_defaults(conn):
+    defaults = ["Marketing", "Fatura Ödemesi", "Maaş Ödemesi", "Ofis Giderleri"]
+    now = iso(utcnow())
+    for name in defaults:
+        exists = scalar(conn, "SELECT COUNT(*) FROM acc_expense_categories WHERE name = ?", (name,))
+        if not exists:
+            insert_returning_id(
+                conn,
+                "INSERT INTO acc_expense_categories (name, created_at) VALUES (?, ?)",
+                (name, now),
+            )
 
 
 def migrate_schema(conn):

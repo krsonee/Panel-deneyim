@@ -1,0 +1,283 @@
+<div id="module-accounting-panel" class="module-panel" hidden>
+  <div class="topbar">
+    <div>
+      <h2>Muhasebe <span class="role-badge" id="acc-role-badge"></span></h2>
+      <p>Finans, gider, kasa ve personel yönetimi</p>
+    </div>
+    <div class="period-bar">
+      <label for="acc-filter-period" class="muted" style="font-size:0.72rem;">Dönem:</label>
+      <select id="acc-filter-period">
+        <option value="all">Tüm Zamanlar</option>
+        <option value="month">Bu Ay</option>
+        <option value="30days">Son 30 Gün</option>
+        <option value="today">Bugün</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="acc-tabs" id="acc-tabs">
+    <button type="button" class="acc-tab active" data-acc-tab="dashboard">Dashboard</button>
+    <button type="button" class="acc-tab" data-acc-tab="transactions">Yatırım / Çekim</button>
+    <button type="button" class="acc-tab" data-acc-tab="commissions">Komisyon</button>
+    <button type="button" class="acc-tab" data-acc-tab="expenses">Cari Gider</button>
+    <button type="button" class="acc-tab" data-acc-tab="vault">Tahsilat & Kasa</button>
+    <button type="button" class="acc-tab" data-acc-tab="payroll">Personel</button>
+    <button type="button" class="acc-tab" data-acc-tab="invoices">Fatura</button>
+  </div>
+
+  <!-- Dashboard -->
+  <div class="acc-pane active" id="acc-pane-dashboard" data-acc-pane="dashboard">
+    <section class="kpi-grid acc-kpi-grid">
+      <div class="kpi green">
+        <div class="val" id="acc-kpi-deposits">—</div>
+        <div class="lbl">Toplam Site Yatırımı</div>
+      </div>
+      <div class="kpi rose">
+        <div class="val" id="acc-kpi-withdrawals">—</div>
+        <div class="lbl">Toplam Çekim</div>
+      </div>
+      <div class="kpi amber">
+        <div class="val" id="acc-kpi-commission">—</div>
+        <div class="lbl">Net Komisyon Masrafı</div>
+      </div>
+      <div class="kpi">
+        <div class="val" id="acc-kpi-expenses">—</div>
+        <div class="lbl">Toplam Cari Gider</div>
+        <div class="sub muted" id="acc-kpi-payroll-hint"></div>
+      </div>
+    </section>
+    <section class="card acc-profit-card">
+      <div class="card-body" style="text-align:center;padding:1.5rem;">
+        <div class="muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;">Net Kâr</div>
+        <div class="acc-net-profit" id="acc-kpi-net">—</div>
+        <p class="muted" style="font-size:0.72rem;margin-top:0.5rem;">
+          Yatırım − Çekim − Komisyon − Cari Gider
+        </p>
+      </div>
+    </section>
+  </div>
+
+  <!-- Yatırım / Çekim -->
+  <div class="acc-pane" id="acc-pane-transactions" data-acc-pane="transactions" hidden>
+    <section class="card">
+      <div class="card-head"><span>Yeni İşlem</span></div>
+      <div class="card-body">
+        <form id="acc-tx-form" class="form-row-4">
+          <div><label>Tarih</label><input type="date" id="acc-tx-date" required></div>
+          <div><label>Payment Yöntemi</label><select id="acc-tx-payment" required></select></div>
+          <div><label>İşlem Türü</label>
+            <select id="acc-tx-type" required>
+              <option value="deposit">Yatırım</option>
+              <option value="withdrawal">Çekim</option>
+            </select>
+          </div>
+          <div><label>Miktar ($)</label><input type="number" id="acc-tx-amount" step="0.01" min="0.01" required></div>
+          <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+        </form>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><span>Site Yatırım / Çekim Kayıtları</span></div>
+      <div class="table-wrap">
+        <div class="table-scroll" id="acc-tx-table-scroll">
+          <table>
+            <thead><tr>
+              <th class="col-sortable" data-acc-sort="acc-tx" data-sort="tx_date">Tarih</th>
+              <th class="col-sortable" data-acc-sort="acc-tx" data-sort="payment_name">Yöntem</th>
+              <th class="col-sortable" data-acc-sort="acc-tx" data-sort="tx_type">Tür</th>
+              <th class="col-sortable" data-acc-sort="acc-tx" data-sort="amount">Miktar</th>
+              <th class="col-sortable" data-acc-sort="acc-tx" data-sort="commission_rate">Kom. %</th>
+              <th class="col-sortable" data-acc-sort="acc-tx" data-sort="commission_amount">Kom. Tutar</th>
+              <th></th>
+            </tr></thead>
+            <tbody id="acc-tx-table"><tr><td colspan="7" class="empty">Kayıt yok</td></tr></tbody>
+          </table>
+        </div>
+        <div class="table-foot" id="acc-tx-table-foot" style="display:none;">
+          <button type="button" class="btn btn-sm" data-acc-toggle="acc-tx">Tümünü göster</button>
+          <span class="table-count" id="acc-tx-table-count"></span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Komisyon -->
+  <div class="acc-pane" id="acc-pane-commissions" data-acc-pane="commissions" hidden>
+    <section class="card">
+      <div class="card-head"><span>Payment & Komisyon Oranı</span></div>
+      <div class="card-body">
+        <p class="muted" style="font-size:0.75rem;margin-bottom:0.75rem;">
+          Oran değişince geçmiş işlemler etkilenmez — sadece yeni kayıtlar güncel orandan hesaplanır.
+        </p>
+        <form id="acc-pm-form" class="form-row" style="grid-template-columns:1fr 120px auto;">
+          <div><label>Payment Adı</label><input id="acc-pm-name" placeholder="Papara, Havale, Kripto…" required></div>
+          <div><label>Komisyon %</label><input type="number" id="acc-pm-rate" step="0.01" min="0" value="0" required></div>
+          <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
+        </form>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Payment</th><th>Komisyon %</th><th>Son Güncelleme</th><th></th></tr></thead>
+          <tbody id="acc-pm-table"><tr><td colspan="4" class="empty">Henüz payment tanımı yok</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- Cari Gider -->
+  <div class="acc-pane" id="acc-pane-expenses" data-acc-pane="expenses" hidden>
+    <section class="card">
+      <div class="card-head"><span>Gider Kategorileri</span></div>
+      <div class="card-body">
+        <form id="acc-cat-form" class="form-row" style="grid-template-columns:1fr auto;">
+          <div><label>Yeni Kategori</label><input id="acc-cat-name" placeholder="Marketing, Maaş…" required></div>
+          <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
+        </form>
+        <div class="acc-chip-list" id="acc-cat-chips"></div>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><span>Gider Girişi</span></div>
+      <div class="card-body">
+        <form id="acc-exp-form" class="form-row-4">
+          <div><label>Tarih</label><input type="date" id="acc-exp-date" required></div>
+          <div><label>Kategori</label><select id="acc-exp-category" required></select></div>
+          <div><label>Tutar ($)</label><input type="number" id="acc-exp-amount" step="0.01" min="0.01" required></div>
+          <div><label>Açıklama</label><input id="acc-exp-desc" placeholder="Opsiyonel"></div>
+          <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+        </form>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll" id="acc-exp-table-scroll">
+          <table>
+            <thead><tr>
+              <th class="col-sortable" data-acc-sort="acc-exp" data-sort="expense_date">Tarih</th>
+              <th class="col-sortable" data-acc-sort="acc-exp" data-sort="category_name">Kategori</th>
+              <th class="col-sortable" data-acc-sort="acc-exp" data-sort="description">Açıklama</th>
+              <th class="col-sortable" data-acc-sort="acc-exp" data-sort="amount">Tutar</th>
+              <th></th>
+            </tr></thead>
+            <tbody id="acc-exp-table"><tr><td colspan="5" class="empty">Gider yok</td></tr></tbody>
+          </table>
+        </div>
+        <div class="table-foot" id="acc-exp-table-foot" style="display:none;">
+          <button type="button" class="btn btn-sm" data-acc-toggle="acc-exp">Tümünü göster</button>
+          <span class="table-count" id="acc-exp-table-count"></span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Kasa -->
+  <div class="acc-pane" id="acc-pane-vault" data-acc-pane="vault" hidden>
+    <section class="card">
+      <div class="card-head"><span>Kasa İşlemi</span></div>
+      <div class="card-body">
+        <form id="acc-vault-form" class="form-row-4">
+          <div><label>Tarih</label><input type="date" id="acc-vault-date" required></div>
+          <div><label>Kasa Adı</label><input id="acc-vault-name" placeholder="Tether-1, BTC-Ana…" required></div>
+          <div><label>İşlem Türü</label>
+            <select id="acc-vault-type" required>
+              <option value="in">Giriş</option>
+              <option value="out">Çıkış</option>
+            </select>
+          </div>
+          <div><label>Tutar ($)</label><input type="number" id="acc-vault-amount" step="0.01" min="0.01" required></div>
+          <div style="grid-column:1/-1"><label>Açıklama</label><input id="acc-vault-desc" placeholder="Tahsilat, transfer…"></div>
+          <div><button type="submit" class="btn btn-primary">Kaydet</button></div>
+        </form>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll" id="acc-vault-table-scroll">
+          <table>
+            <thead><tr>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="tx_date">Tarih</th>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="vault_name">Kasa</th>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="tx_type">Tür</th>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="description">Açıklama</th>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="amount">Tutar</th>
+              <th></th>
+            </tr></thead>
+            <tbody id="acc-vault-table"><tr><td colspan="6" class="empty">Kayıt yok</td></tr></tbody>
+          </table>
+        </div>
+        <div class="table-foot" id="acc-vault-table-foot" style="display:none;">
+          <button type="button" class="btn btn-sm" data-acc-toggle="acc-vault">Tümünü göster</button>
+          <span class="table-count" id="acc-vault-table-count"></span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Personel -->
+  <div class="acc-pane" id="acc-pane-payroll" data-acc-pane="payroll" hidden>
+    <section class="card">
+      <div class="card-head"><span>Personel Ekle</span></div>
+      <div class="card-body">
+        <form id="acc-emp-form" class="form-row-4">
+          <div><label>Personel Adı</label><input id="acc-emp-name" required></div>
+          <div><label>Departman</label>
+            <select id="acc-emp-dept" required>
+              <option value="Risk">Risk</option>
+              <option value="Canlı Destek">Canlı Destek</option>
+              <option value="Call Center">Call Center</option>
+              <option value="Finans">Finans</option>
+              <option value="Pazarlama">Pazarlama</option>
+              <option value="Diğer">Diğer</option>
+            </select>
+          </div>
+          <div><label>İşe Başlangıç</label><input type="date" id="acc-emp-start" required></div>
+          <div><label>Maaş ($)</label><input type="number" id="acc-emp-salary" step="0.01" min="0" required></div>
+          <div><label>Durum</label>
+            <select id="acc-emp-status">
+              <option value="active">Aktif Çalışıyor</option>
+              <option value="left">Ayrıldı</option>
+            </select>
+          </div>
+          <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
+        </form>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll" id="acc-emp-table-scroll">
+          <table>
+            <thead><tr>
+              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="name">Personel</th>
+              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="department">Departman</th>
+              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="start_date">Başlangıç</th>
+              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="salary">Maaş</th>
+              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="status">Durum</th>
+              <th></th>
+            </tr></thead>
+            <tbody id="acc-emp-table"><tr><td colspan="6" class="empty">Personel yok</td></tr></tbody>
+          </table>
+        </div>
+        <div class="table-foot" id="acc-emp-table-foot" style="display:none;">
+          <button type="button" class="btn btn-sm" data-acc-toggle="acc-emp">Tümünü göster</button>
+          <span class="table-count" id="acc-emp-table-count"></span>
+        </div>
+      </div>
+      <div class="acc-payroll-total">
+        <span>Aylık Toplam Personel Masrafı (aktif):</span>
+        <strong id="acc-payroll-total">$0</strong>
+      </div>
+    </section>
+  </div>
+
+  <!-- Fatura placeholder -->
+  <div class="acc-pane" id="acc-pane-invoices" data-acc-pane="invoices" hidden>
+    <section class="card acc-placeholder">
+      <div class="card-body" style="padding:2rem;text-align:center;">
+        <div style="font-size:2.5rem;margin-bottom:0.75rem;">🧾</div>
+        <h3 style="margin-bottom:0.5rem;">Fatura Hesaplama</h3>
+        <p class="muted" style="max-width:480px;margin:0 auto 1.25rem;font-size:0.85rem;line-height:1.5;">
+          Bu alan ileride fatura şablonları için hazırlanmıştır. Şimdilik sağlayıcı ve komisyon tanımlarını buradan yönetebilirsiniz.
+        </p>
+        <div class="acc-invoice-box">
+          <h4>Sağlayıcı ve Komisyon Tanımlama Alanı</h4>
+          <p class="muted">Payment komisyon oranları <strong>Komisyon</strong> sekmesinden tanımlanır. Fatura formülleri eklendiğinde bu ekran otomatik güncellenecek.</p>
+          <button type="button" class="btn btn-primary" id="acc-goto-commissions">Komisyon Yönetimine Git</button>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

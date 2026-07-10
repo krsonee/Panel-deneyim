@@ -6,7 +6,7 @@ PERMISSION_CATALOG = [
     {"key": "module.tracking", "label": "Link Takip & Analiz", "group": "Modüller",
      "desc": "Ana takip modülüne erişim"},
     {"key": "module.accounting", "label": "Muhasebe", "group": "Modüller",
-     "desc": "Muhasebe modülü (yakında)"},
+     "desc": "Muhasebe modülüne erişim"},
     {"key": "module.crm", "label": "CRM", "group": "Modüller",
      "desc": "CRM modülü (yakında)"},
     {"key": "module.settings", "label": "Ayarlar", "group": "Modüller",
@@ -21,11 +21,27 @@ PERMISSION_CATALOG = [
      "desc": "Affiliate / ref performans tablosu"},
     {"key": "tracking.export", "label": "Veri Dışa Aktarma", "group": "Link Takip",
      "desc": "CSV, JSON indirme ve oturum temizleme"},
+    {"key": "accounting.dashboard", "label": "Muhasebe Özet", "group": "Muhasebe",
+     "desc": "Muhasebe dashboard KPI kartları"},
+    {"key": "accounting.transactions", "label": "Yatırım / Çekim", "group": "Muhasebe",
+     "desc": "Site yatırım ve çekim işlemleri"},
+    {"key": "accounting.commissions", "label": "Komisyon Yönetimi", "group": "Muhasebe",
+     "desc": "Payment komisyon oranları"},
+    {"key": "accounting.expenses", "label": "Cari Gider", "group": "Muhasebe",
+     "desc": "Gider kategorileri ve masraf girişi"},
+    {"key": "accounting.vault", "label": "Tahsilat & Kasa", "group": "Muhasebe",
+     "desc": "Kasa giriş/çıkış takibi"},
+    {"key": "accounting.payroll", "label": "Personel Maaş", "group": "Muhasebe",
+     "desc": "Personel ve maaş tablosu"},
+    {"key": "accounting.invoices", "label": "Fatura Hesaplama", "group": "Muhasebe",
+     "desc": "Fatura şablonu alanı (yakında)"},
     {"key": "admin.users", "label": "Kullanıcı Yönetimi", "group": "Yönetim",
      "desc": "Admin ekleme, silme ve yetki düzenleme"},
 ]
 
 ALL_PERMISSION_KEYS = [p["key"] for p in PERMISSION_CATALOG]
+
+MODULE_KEYS = ("module.tracking", "module.accounting", "module.crm", "module.settings")
 
 ROLE_TEMPLATES = {
     "superadmin": {
@@ -39,6 +55,15 @@ ROLE_TEMPLATES = {
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.domains",
             "tracking.players", "tracking.reports", "tracking.export",
+        ],
+    },
+    "accountant": {
+        "label": "Muhasebeci",
+        "desc": "Muhasebe modülünde tam yetki",
+        "permissions": [
+            "module.accounting", "accounting.dashboard", "accounting.transactions",
+            "accounting.commissions", "accounting.expenses", "accounting.vault",
+            "accounting.payroll", "accounting.invoices",
         ],
     },
     "viewer": {
@@ -105,3 +130,35 @@ def has_permission(user_permissions, required):
     if isinstance(required, (list, tuple, set)):
         return any(p in perms for p in required)
     return required in perms
+
+
+def has_any_module_access(user_permissions):
+    perms = normalize_permissions(user_permissions)
+    if "*" in perms:
+        return True
+    return any(m in perms for m in MODULE_KEYS)
+
+
+def available_modules(user_permissions):
+    perms = normalize_permissions(user_permissions)
+    if "*" in perms:
+        return ["tracking", "accounting", "crm", "settings"]
+    mods = []
+    if "module.tracking" in perms:
+        mods.append("tracking")
+    if "module.accounting" in perms:
+        mods.append("accounting")
+    if "module.crm" in perms:
+        mods.append("crm")
+    if "module.settings" in perms or "admin.users" in perms:
+        mods.append("settings")
+    return mods
+
+
+def default_module_for_user(user_permissions):
+    mods = available_modules(user_permissions)
+    if "tracking" in mods:
+        return "tracking"
+    if "accounting" in mods:
+        return "accounting"
+    return mods[0] if mods else None

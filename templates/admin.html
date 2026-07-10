@@ -86,6 +86,45 @@
     .kpi.green .val { color: var(--green); }
     .kpi .lbl { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-top: 0.35rem; }
     .kpi .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+    .kpi.rose::after { background: var(--rose); }
+    .kpi.rose .val { color: var(--rose); }
+
+    .module-panel[hidden] { display: none !important; }
+    .nav-item[data-module] { width: 100%; border: none; background: none; cursor: pointer; font: inherit; text-align: left; }
+    .acc-tabs {
+      display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 1rem;
+      padding: 0.35rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    }
+    .acc-tab {
+      padding: 0.45rem 0.85rem; border-radius: 8px; border: 1px solid transparent;
+      background: transparent; color: var(--muted); font-size: 0.75rem; font-weight: 600; cursor: pointer;
+    }
+    .acc-tab:hover { color: var(--text); background: var(--surface-2); }
+    .acc-tab.active { background: var(--accent-soft); color: #c7d2fe; border-color: rgba(99,102,241,0.35); }
+    .acc-pane { display: none; }
+    .acc-pane.active { display: block; }
+    .acc-kpi-grid { margin-bottom: 1rem; }
+    .acc-profit-card { margin-bottom: 1rem; }
+    .acc-net-profit { font-size: 2.5rem; font-weight: 800; color: var(--green); margin-top: 0.35rem; }
+    .acc-net-profit.negative { color: var(--rose); }
+    .acc-chip-list { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.65rem; }
+    .acc-chip {
+      display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.55rem;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; font-size: 0.72rem;
+    }
+    .acc-chip button { background: none; border: none; color: var(--rose); cursor: pointer; font-size: 1rem; line-height: 1; }
+    .acc-payroll-total {
+      display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+      padding: 0.85rem 1.15rem; border-top: 1px solid var(--border); background: var(--surface-2);
+      font-size: 0.85rem;
+    }
+    .acc-payroll-total strong { font-size: 1.15rem; color: var(--amber); }
+    .acc-placeholder .acc-invoice-box {
+      max-width: 520px; margin: 0 auto; padding: 1.25rem; border-radius: 12px;
+      border: 1px dashed var(--border); background: var(--surface-2); text-align: left;
+    }
+    .acc-invoice-box h4 { font-size: 0.88rem; margin-bottom: 0.45rem; }
+    .acc-invoice-box p { font-size: 0.78rem; margin-bottom: 0.85rem; }
 
     .charts-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.85rem; margin-bottom: 1rem; }
     @media (max-width: 1000px) { .charts-grid { grid-template-columns: 1fr; } }
@@ -439,8 +478,8 @@
       </div>
       <nav class="nav">
         <div class="nav-label">Modüller</div>
-        <a href="/admin" class="nav-item active" data-perm="module.tracking"><span class="icon">📊</span> Link Takip & Analiz</a>
-        <span class="nav-item disabled" data-perm="module.accounting"><span class="icon">💰</span> Muhasebe <span class="badge">Yakında</span></span>
+        <button type="button" class="nav-item active" data-module="tracking" data-perm="module.tracking"><span class="icon">📊</span> Link Takip & Analiz</button>
+        <button type="button" class="nav-item" data-module="accounting" data-perm="module.accounting"><span class="icon">💰</span> Muhasebe</button>
         <span class="nav-item disabled" data-perm="module.crm"><span class="icon">👥</span> CRM <span class="badge">Yakında</span></span>
         <button type="button" class="nav-item" id="btn-open-settings" data-perm-any="admin.users,module.settings" style="width:100%;border:none;background:none;cursor:pointer;font:inherit;text-align:left;">
           <span class="icon">⚙️</span> Ayarlar
@@ -456,6 +495,7 @@
 
     <div class="main">
       <div class="main-inner">
+        <div id="module-tracking-panel" class="module-panel">
         <div class="topbar">
           <div>
             <h2>Link Takip & Analiz <span class="role-badge" id="user-role-badge"></span></h2>
@@ -671,6 +711,9 @@
             </div>
           </div>
         </section>
+        </div><!-- /module-tracking-panel -->
+
+        {% include 'partials/accounting_panel.html' %}
       </div>
     </div>
   </div>
@@ -797,6 +840,7 @@
 
   <div class="toast" id="toast"></div>
 
+  <script src="/static/accounting.js"></script>
   <script>
     (function () {
       var API = "";
@@ -826,6 +870,35 @@
       var myRole = "";
       var roleTemplates = {};
       var permissionCatalog = [];
+      var currentModule = "{{ default_module|default('tracking') }}";
+      var availableModules = [];
+      var trackingPollEnabled = false;
+
+      function switchModule(name) {
+        if (!name) return;
+        if (availableModules.indexOf(name) < 0 && myPermissions.indexOf("*") < 0) return;
+        currentModule = name;
+        localStorage.setItem("makropanel_module", name);
+        var trackPanel = document.getElementById("module-tracking-panel");
+        var accPanel = document.getElementById("module-accounting-panel");
+        if (trackPanel) trackPanel.hidden = name !== "tracking";
+        if (accPanel) accPanel.hidden = name !== "accounting";
+        document.querySelectorAll(".nav-item[data-module]").forEach(function(el) {
+          el.classList.toggle("active", el.getAttribute("data-module") === name);
+        });
+        trackingPollEnabled = name === "tracking";
+        if (name === "accounting" && window.MakroAccounting) {
+          window.MakroAccounting.onShow();
+        }
+      }
+
+      function initModuleNav() {
+        document.querySelectorAll(".nav-item[data-module]").forEach(function(btn) {
+          btn.addEventListener("click", function() {
+            switchModule(btn.getAttribute("data-module"));
+          });
+        });
+      }
 
       function hasPerm(key) {
         if (!key) return true;
@@ -926,7 +999,14 @@
           myRole = data.role || "";
           roleTemplates = data.role_templates || {};
           permissionCatalog = data.permission_catalog || [];
+          availableModules = data.available_modules || [];
           applyPermissions();
+          var badge = document.getElementById("acc-role-badge");
+          if (badge) {
+            var label = (roleTemplates[myRole] && roleTemplates[myRole].label) || myRole || "";
+            badge.textContent = label;
+            badge.style.display = label ? "inline-block" : "none";
+          }
           fillRoleSelect("new-user-role", "operator");
           fillRoleSelect("edit-user-role", "operator");
           renderPermissionGrid("new-user-perms", roleTemplates.operator ? roleTemplates.operator.permissions : []);
@@ -934,6 +1014,11 @@
           applyRoleToPermGrid(document.getElementById("new-user-role").value, "new-user-perms");
           updateRoleDesc("new-user-role", "new-user-role-desc");
           updateRoleDesc("edit-user-role", "edit-user-role-desc");
+          var savedMod = localStorage.getItem("makropanel_module");
+          var startMod = data.default_module || "tracking";
+          if (savedMod && availableModules.indexOf(savedMod) >= 0) startMod = savedMod;
+          else if (availableModules.indexOf(startMod) < 0 && availableModules.length) startMod = availableModules[0];
+          switchModule(startMod);
           if (callback) callback();
         });
       }
@@ -1107,6 +1192,7 @@
       function fmtDate(iso) { return iso ? new Date(iso).toLocaleString("tr-TR") : "—"; }
       function esc(s) { var d=document.createElement("div"); d.textContent=s||""; return d.innerHTML; }
       function toast(m) { var t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},2200); }
+      window.toast = toast;
 
       function compareSortValues(a, b, dir) {
         var mul = dir === "asc" ? 1 : -1;
@@ -1729,7 +1815,7 @@
       }
 
       function refreshLive() {
-        if (document.hidden || liveInFlight) return;
+        if (!trackingPollEnabled || document.hidden || liveInFlight) return;
         var pq = periodQuery();
         if (!hasPerm("tracking.players")) return;
         liveInFlight = true;
@@ -1746,7 +1832,7 @@
       }
 
       function refreshDashboard() {
-        if (document.hidden || dashInFlight) return;
+        if (!trackingPollEnabled || document.hidden || dashInFlight) return;
         var pq = periodQuery();
         var jobs = [];
         if (hasPerm("tracking.dashboard")) {
@@ -1956,17 +2042,22 @@
       initTheme();
       initColumnDrag();
       initTableControls();
+      initModuleNav();
       applyTableColOrder("online-table");
       applyTableColOrder("sessions-table");
+      if (window.MakroAccounting) window.MakroAccounting.init();
       loadMe(function() {
-        refreshAll();
+        trackingPollEnabled = currentModule === "tracking";
+        if (trackingPollEnabled) refreshAll();
         setInterval(refreshLive, REFRESH_LIVE_MS);
         setInterval(refreshDashboard, REFRESH_DASH_MS);
       });
       document.addEventListener("visibilitychange", function() {
-        if (!document.hidden) refreshAll();
+        if (!document.hidden && trackingPollEnabled) refreshAll();
       });
-      setInterval(tickTimes, 1000);
+      setInterval(function() {
+        if (trackingPollEnabled) tickTimes();
+      }, 1000);
     })();
   </script>
 </body>

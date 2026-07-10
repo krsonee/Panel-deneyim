@@ -31,6 +31,9 @@ from permissions import (
     ALL_PERMISSION_KEYS,
     PERMISSION_CATALOG,
     ROLE_TEMPLATES,
+    available_modules,
+    default_module_for_user,
+    has_any_module_access,
     has_permission,
     normalize_permissions,
     permissions_from_role,
@@ -673,7 +676,7 @@ def index():
 @app.route("/admin/login", methods=["GET", "POST"])
 def login_page():
     if session.get("admin_logged_in"):
-        if has_permission(get_session_permissions(), "module.tracking"):
+        if has_any_module_access(get_session_permissions()):
             return redirect(url_for("admin_page"))
         session.clear()
     error = request.args.get("error")
@@ -684,9 +687,9 @@ def login_page():
         if user:
             login_admin_user(user)
             session.permanent = True
-            if not has_permission(get_session_permissions(), "module.tracking"):
+            if not has_any_module_access(get_session_permissions()):
                 session.clear()
-                error = "Hesabınızda Link Takip yetkisi yok. Yöneticinize başvurun."
+                error = "Hesabınızda panel erişim yetkisi yok. Yöneticinize başvurun."
             else:
                 return redirect(url_for("admin_page"))
         else:
@@ -703,10 +706,15 @@ def logout():
 @app.route("/admin")
 @login_required
 def admin_page():
-    if not has_permission(get_session_permissions(), "module.tracking"):
+    perms = get_session_permissions()
+    if not has_any_module_access(perms):
         session.clear()
-        return redirect(url_for("login_page", error="Link Takip modülüne erişim yetkiniz yok. Yöneticinize başvurun."))
-    return render_template("admin.html", server_url=get_server_base_url())
+        return redirect(url_for("login_page", error="Panele erişim yetkiniz yok. Yöneticinize başvurun."))
+    return render_template(
+        "admin.html",
+        server_url=get_server_base_url(),
+        default_module=default_module_for_user(perms),
+    )
 
 
 @app.route("/api/me", methods=["GET"])
@@ -719,6 +727,8 @@ def api_me():
         "permissions": perms,
         "role_templates": ROLE_TEMPLATES,
         "permission_catalog": PERMISSION_CATALOG,
+        "available_modules": available_modules(perms),
+        "default_module": default_module_for_user(perms),
     })
 
 
@@ -1574,6 +1584,11 @@ def stats():
 @app.route("/static/<path:filename>")
 def static_files(filename):
     return send_from_directory(APP_DIR / "static", filename)
+
+
+from accounting_routes import create_accounting_blueprint
+
+app.register_blueprint(create_accounting_blueprint(permission_required))
 
 
 init_db()
