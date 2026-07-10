@@ -392,8 +392,8 @@
     if (countEl) countEl.textContent = rows.length + " kayıt";
     chips.innerHTML = rows.length
       ? rows.map(function (d) {
-          return '<span class="acc-chip">' + accEsc(d.name) +
-            ' <button type="button" data-del-dept="' + d.id + '" title="Sil">×</button></span>';
+          return '<span class="acc-chip" title="' + accEsc(d.name) + '"><span class="acc-chip-text">' + accEsc(d.name) +
+            '</span> <button type="button" data-del-dept="' + d.id + '" title="Sil">×</button></span>';
         }).join("")
       : '<span class="acc-chip-empty">Henüz departman yok</span>';
     chips.querySelectorAll("[data-del-dept]").forEach(function (btn) {
@@ -419,7 +419,8 @@
     chips.innerHTML = rows.length
       ? rows.map(function (c) {
           var tag = c.is_office ? ' <small class="muted">(ofis)</small>' : "";
-          return '<span class="acc-chip">' + accEsc(c.name) + tag +
+          var label = c.name + (c.is_office ? " (ofis)" : "");
+          return '<span class="acc-chip" title="' + accEsc(label) + '"><span class="acc-chip-text">' + accEsc(c.name) + '</span>' + tag +
             ' <button type="button" data-del-salary-cat="' + c.id + '" title="Sil">×</button></span>';
         }).join("")
       : '<span class="acc-chip-empty">Henüz kategori yok</span>';

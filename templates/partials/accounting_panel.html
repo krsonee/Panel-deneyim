@@ -298,10 +298,10 @@
               <span class="acc-options-count" id="acc-dept-count">0 kayıt</span>
             </div>
             <form id="acc-dept-form" class="acc-options-form">
-              <div class="acc-options-fields">
+              <div class="acc-options-row">
                 <input id="acc-dept-name" placeholder="Risk, Finans…" required>
+                <button type="submit" class="btn btn-primary btn-sm">Ekle</button>
               </div>
-              <button type="submit" class="btn btn-primary btn-sm">Ekle</button>
             </form>
             <div class="acc-chip-scroll">
               <div class="acc-chip-list" id="acc-dept-chips"></div>
@@ -313,14 +313,14 @@
               <span class="acc-options-count" id="acc-salary-cat-count">0 kayıt</span>
             </div>
             <form id="acc-salary-cat-form" class="acc-options-form">
-              <div class="acc-options-fields">
+              <div class="acc-options-row">
                 <input id="acc-salary-cat-name" placeholder="Ofis, Saha ekibi…" required>
-                <label class="acc-options-check">
-                  <input type="checkbox" id="acc-salary-cat-office">
-                  Ofis personeli (banka/kripto/avans)
-                </label>
+                <button type="submit" class="btn btn-primary btn-sm">Ekle</button>
               </div>
-              <button type="submit" class="btn btn-primary btn-sm">Ekle</button>
+              <label class="acc-options-check" for="acc-salary-cat-office">
+                <input type="checkbox" id="acc-salary-cat-office">
+                <span title="Banka, kripto ve avans alanları açılır">Ofis personeli</span>
+              </label>
             </form>
             <div class="acc-chip-scroll">
               <div class="acc-chip-list" id="acc-salary-cat-chips"></div>
