@@ -1007,6 +1007,9 @@
           permissionCatalog = data.permission_catalog || [];
           availableModules = data.available_modules || [];
           applyPermissions();
+          if (window.MakroAccounting && window.MakroAccounting.setPermissions) {
+            window.MakroAccounting.setPermissions(myPermissions);
+          }
           var badge = document.getElementById("acc-role-badge");
           if (badge) {
             var label = (roleTemplates[myRole] && roleTemplates[myRole].label) || myRole || "";

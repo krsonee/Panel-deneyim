@@ -15,12 +15,33 @@
     crypto: "Kripto maaş alacaklar"
   };
 
+  var accCanViewOfficeSalaries = false;
+
   var accData = {
     "acc-tx": { rows: [], expanded: false, sortKey: "tx_date", sortDir: "desc" },
     "acc-exp": { rows: [], expanded: false, sortKey: "expense_date", sortDir: "desc" },
     "acc-vault": { rows: [], expanded: false, sortKey: "tx_date", sortDir: "desc" },
     "acc-emp": { rows: [], expanded: false, sortKey: "name", sortDir: "asc" }
   };
+
+  function accSetOfficeSalaryAccess(canView) {
+    accCanViewOfficeSalaries = !!canView;
+    document.querySelectorAll(".acc-col-office").forEach(function (el) {
+      el.hidden = !accCanViewOfficeSalaries;
+    });
+    var note = document.getElementById("acc-payroll-office-note");
+    if (note) note.hidden = accCanViewOfficeSalaries;
+  }
+
+  function accHiddenMoney() {
+    return '<span class="muted">Gizli</span>';
+  }
+
+  function accApplyPermissionsMeta(data) {
+    if (data && typeof data.can_view_office_salaries !== "undefined") {
+      accSetOfficeSalaryAccess(data.can_view_office_salaries);
+    }
+  }
 
   function accApi(path, opts) {
     opts = opts || {};
@@ -289,6 +310,10 @@
     var totalEl = document.getElementById("acc-payroll-daily-total");
     var subEl = document.getElementById("acc-payroll-daily-sub");
     if (!tbody) return;
+    var hideOffice = payrollDaily && payrollDaily.office_totals_hidden;
+    if (typeof payrollDaily !== "undefined" && payrollDaily && typeof payrollDaily.office_totals_hidden !== "undefined") {
+      accSetOfficeSalaryAccess(!payrollDaily.office_totals_hidden);
+    }
     if (!payrollDaily || !payrollDaily.days || !payrollDaily.days.length) {
       tbody.innerHTML = '<tr><td colspan="6" class="empty">Veri yok</td></tr>';
       if (totalEl) totalEl.textContent = "—";
@@ -297,6 +322,7 @@
     }
     if (subEl) {
       subEl.textContent = (payrollDaily.period_start || "") + " → " + (payrollDaily.period_end || "");
+      if (hideOffice) subEl.textContent += " · Ofis hariç toplam";
     }
     tbody.innerHTML = payrollDaily.days.slice().reverse().map(function (day) {
       var cur = accDisplayCurrency;
@@ -305,8 +331,9 @@
       var crypto = (day.by_category && day.by_category.crypto) ? day.by_category.crypto[cur] : 0;
       var total = day.totals ? day.totals[cur] : 0;
       return '<tr><td class="mono">' + accEsc(day.date) + '</td>' +
-        '<td>' + (day.active_count || 0) + '</td>' +
-        '<td>' + accMoney(office, cur) + '</td>' +
+        '<td>' + (day.active_count || 0) + (day.office_hidden ? ' <small class="muted">(ofis gizli)</small>' : '') + '</td>' +
+        '<td class="acc-col-office"' + (accCanViewOfficeSalaries ? '' : ' hidden') + '>' +
+        (accCanViewOfficeSalaries ? accMoney(office, cur) : accHiddenMoney()) + '</td>' +
         '<td>' + accMoney(turkey, cur) + '</td>' +
         '<td>' + accMoney(crypto, cur) + '</td>' +
         '<td><strong>' + accMoney(total, cur) + '</strong></td></tr>';
@@ -359,6 +386,7 @@
   function accLoadDashboard() {
     accApi("/api/accounting/dashboard" + accPeriodQuery()).then(function (res) {
       if (!res || !res.ok) return;
+      accApplyPermissionsMeta(res.data);
       if (res.data.rates) {
         accRates = res.data.rates;
         accUpdateRatePlaceholders();
@@ -587,6 +615,7 @@
   function accLoadEmployees() {
     return accApi("/api/accounting/employees" + accPeriodQuery()).then(function (res) {
       if (!res || !res.ok) return;
+      accApplyPermissionsMeta(res.data);
       accData["acc-emp"].rows = res.data.employees || [];
       var payroll = res.data.payroll_accrual || res.data.monthly_payroll_total || {};
       document.getElementById("acc-payroll-total").textContent = accMoney(
@@ -616,18 +645,22 @@
     }
     tbody.innerHTML = rows.map(function (r) {
       var officeInfo = "";
-      if (r.salary_category === "office") {
+      if (r.salary_category === "office" && accCanViewOfficeSalaries) {
         officeInfo = '<br><small class="muted">Banka: ' + accMoney(r.bank_salary || 0, r.currency || "TRY") +
           " · Kripto: " + accMoney(r.crypto_salary || 0, r.currency || "TRY") +
           " · Avans: " + accMoney(r.advance_amount || 0, r.currency || "TRY") + "</small>";
+      } else if (r.salary_category === "office" && r.salary_hidden) {
+        officeInfo = '<br><small class="muted">Ofis maaş detayı gizli</small>';
       }
+      var salaryCell = r.salary_hidden ? accHiddenMoney() : accMoneyCellHtml(r, "salary");
+      var accrualCell = r.salary_hidden ? accHiddenMoney() : ("<strong>" + accMoney(accAccrualValue(r), accDisplayCurrency) + "</strong>");
       return '<tr><td><strong>' + accEsc(r.name) + '</strong>' + officeInfo + '</td>' +
         '<td><span class="tag">' + accEsc(accCategoryLabel(r.salary_category)) + '</span></td>' +
         '<td>' + accEsc(r.department) + '</td>' +
         '<td class="mono">' + accEsc(r.start_date) + '</td>' +
         '<td class="mono">' + accEsc(r.end_date || "—") + '</td>' +
-        '<td>' + accMoneyCellHtml(r, "salary") + '</td>' +
-        '<td><strong>' + accMoney(accAccrualValue(r), accDisplayCurrency) + '</strong></td>' +
+        '<td>' + salaryCell + '</td>' +
+        '<td>' + accrualCell + '</td>' +
         '<td><span class="tag ' + (r.status === "active" ? "online" : "offline") + '">' + accStatusLabel(r.status) + '</span></td>' +
         '<td><button class="btn btn-sm" data-toggle-emp="' + r.id + '" data-status="' + (r.status === "active" ? "left" : "active") + '">' +
         (r.status === "active" ? "Ayrıldı" : "Aktif") + '</button> ' +
@@ -903,6 +936,11 @@
     refresh: accRefreshAll,
     onShow: function () {
       accLoadRates().then(accRefreshAll);
+    },
+    setPermissions: function (perms) {
+      var list = perms || [];
+      var canView = list.indexOf("*") >= 0 || list.indexOf("accounting.payroll.office_salaries") >= 0;
+      accSetOfficeSalaryAccess(canView);
     }
   };
 })();

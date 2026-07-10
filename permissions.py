@@ -31,6 +31,8 @@ PERMISSION_CATALOG = [
      "desc": "Kasa giriş/çıkış takibi"},
     {"key": "accounting.payroll", "label": "Personel Maaş", "group": "Muhasebe",
      "desc": "Personel ve maaş tablosu"},
+    {"key": "accounting.payroll.office_salaries", "label": "Ofis Personeli Maaşları", "group": "Muhasebe",
+     "desc": "Ofis personeli maaş tutarları, dağılım ve toplamları"},
     {"key": "accounting.invoices", "label": "Fatura Hesaplama", "group": "Muhasebe",
      "desc": "Fatura şablonu alanı (yakında)"},
     {"key": "admin.users", "label": "Kullanıcı Yönetimi", "group": "Yönetim",
@@ -61,7 +63,7 @@ ROLE_TEMPLATES = {
         "permissions": [
             "module.accounting", "accounting.dashboard", "accounting.transactions",
             "accounting.commissions", "accounting.expenses", "accounting.vault",
-            "accounting.payroll", "accounting.invoices",
+            "accounting.payroll", "accounting.payroll.office_salaries", "accounting.invoices",
         ],
     },
     "viewer": {

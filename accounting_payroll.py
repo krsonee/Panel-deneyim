@@ -65,7 +65,29 @@ def employee_accrual_for_range(emp, start, end, currency="TRY"):
     return round(total, 2)
 
 
-def compute_payroll_daily(employees, period="month", reference=None):
+def is_office_employee(emp):
+    return (emp.get("salary_category") or "turkey").lower() == "office"
+
+
+OFFICE_SALARY_FIELDS = (
+    "salary", "bank_salary", "crypto_salary", "advance_amount",
+    "salary_try", "salary_usd", "salary_eur", "net_salary", "office_remaining",
+)
+
+
+def redact_employee_for_view(emp, can_view_office):
+    row = dict(emp)
+    if can_view_office or not is_office_employee(row):
+        row["salary_hidden"] = False
+        return row
+    for field in OFFICE_SALARY_FIELDS:
+        row[field] = None
+    row["accrual"] = {cur: None for cur in CURRENCIES}
+    row["salary_hidden"] = True
+    return row
+
+
+def compute_payroll_daily(employees, period="month", reference=None, include_office=True):
     start, end = period_date_range(period, reference)
     days = []
     day = start
@@ -73,13 +95,19 @@ def compute_payroll_daily(employees, period="month", reference=None):
         totals = {cur: 0.0 for cur in CURRENCIES}
         by_category = {key: {cur: 0.0 for cur in CURRENCIES} for key in SALARY_CATEGORIES}
         active_count = 0
+        office_count = 0
         for emp in employees:
             if not employee_active_on(emp, day):
                 continue
-            active_count += 1
             cat = (emp.get("salary_category") or "turkey").lower()
             if cat not in by_category:
                 cat = "turkey"
+            is_office = cat == "office"
+            active_count += 1
+            if is_office:
+                office_count += 1
+            if is_office and not include_office:
+                continue
             for cur in CURRENCIES:
                 amt = employee_daily_amount(emp, day, cur)
                 totals[cur] += amt
@@ -87,6 +115,8 @@ def compute_payroll_daily(employees, period="month", reference=None):
         days.append({
             "date": day.isoformat(),
             "active_count": active_count,
+            "office_count": office_count,
+            "office_hidden": not include_office and office_count > 0,
             "totals": {cur: round(totals[cur], 2) for cur in CURRENCIES},
             "by_category": {
                 cat: {cur: round(by_category[cat][cur], 2) for cur in CURRENCIES}
@@ -113,6 +143,7 @@ def compute_payroll_daily(employees, period="month", reference=None):
         "days": days,
         "period_accrual": period_accrual,
         "by_category_accrual": by_category_accrual,
+        "office_totals_hidden": not include_office,
     }
 
 

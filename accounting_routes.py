@@ -3,7 +3,7 @@
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
 from accounting_fx import (
     CURRENCIES,
@@ -15,8 +15,10 @@ from accounting_payroll import (
     SALARY_CATEGORIES,
     compute_payroll_daily,
     enrich_employee_row,
+    redact_employee_for_view,
     validate_office_amounts,
 )
+from permissions import has_permission
 from database import (
     execute,
     fetchall,
@@ -31,6 +33,7 @@ from database import (
 
 MODULE_ACCESS = ("module.accounting",)
 ACC_READ = ("module.accounting", "accounting.dashboard")
+ACC_OFFICE_SALARIES = "accounting.payroll.office_salaries"
 
 
 def create_accounting_blueprint(permission_required):
@@ -38,6 +41,19 @@ def create_accounting_blueprint(permission_required):
 
     def acc_perm(*keys):
         return permission_required(*keys)
+
+    def can_view_office_salaries():
+        return has_permission(session.get("admin_permissions"), ACC_OFFICE_SALARIES)
+
+    def permissions_meta():
+        return {"can_view_office_salaries": can_view_office_salaries()}
+
+    def payroll_include_office():
+        return can_view_office_salaries()
+
+    def prepare_employee_row(row, period):
+        enriched = enrich_employee_row(dict(row), period)
+        return redact_employee_for_view(enriched, can_view_office_salaries())
 
     def parse_amount(value):
         try:
@@ -204,7 +220,7 @@ def create_accounting_blueprint(permission_required):
         wdr_sql, wdr_params = date_clause("tx_date", period)
         exp_sql, exp_params = date_clause("expense_date", period)
         employees = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employees")]
-        payroll_data = compute_payroll_daily(employees, period)
+        payroll_data = compute_payroll_daily(employees, period, include_office=payroll_include_office())
         payroll_accrual = payroll_data["period_accrual"]
         result = {}
         for cur in CURRENCIES:
@@ -270,13 +286,14 @@ def create_accounting_blueprint(permission_required):
         with closing(get_db()) as conn:
             kpi = kpi_for_period(conn, period)
             employees = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employees")]
-        payroll_daily = compute_payroll_daily(employees, period)
+        payroll_daily = compute_payroll_daily(employees, period, include_office=payroll_include_office())
         return jsonify({
             "period": period,
             "kpi": kpi,
             "rates": rates_json(fetch_exchange_rates()),
             "payroll_daily": payroll_daily,
             "salary_categories": SALARY_CATEGORIES,
+            **permissions_meta(),
         })
 
     # ── Payment methods (komisyon oranları) ──
@@ -681,13 +698,16 @@ def create_accounting_blueprint(permission_required):
         period = request.args.get("period", "all")
         with closing(get_db()) as conn:
             rows = fetchall(conn, "SELECT * FROM acc_employees ORDER BY name ASC")
-            employees = [enrich_employee_row(dict(r), period) for r in rows]
-            payroll_data = compute_payroll_daily([dict(r) for r in rows], period)
+            employees = [prepare_employee_row(r, period) for r in rows]
+            payroll_data = compute_payroll_daily(
+                [dict(r) for r in rows], period, include_office=payroll_include_office()
+            )
         return jsonify({
             "employees": employees,
             "monthly_payroll_total": payroll_data["period_accrual"],
             "payroll_accrual": payroll_data["period_accrual"],
             "salary_categories": SALARY_CATEGORIES,
+            **permissions_meta(),
         })
 
     @bp.route("/employees", methods=["POST"])
@@ -728,8 +748,9 @@ def create_accounting_blueprint(permission_required):
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_employees WHERE id = ?", (eid,))
         return jsonify({
-            "employee": enrich_employee_row(dict(row)),
+            "employee": prepare_employee_row(row, "all"),
             "rates": used_rates_payload(fx),
+            **permissions_meta(),
         }), 201
 
     @bp.route("/employees/<int:emp_id>", methods=["PUT"])
@@ -776,7 +797,7 @@ def create_accounting_blueprint(permission_required):
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_employees WHERE id = ?", (emp_id,))
-        return jsonify({"employee": enrich_employee_row(dict(row))})
+        return jsonify({"employee": prepare_employee_row(row, "all"), **permissions_meta()})
 
     @bp.route("/employees/<int:emp_id>", methods=["DELETE"])
     @acc_perm(*MODULE_ACCESS)
