@@ -48,6 +48,7 @@ from database import (
     iso,
     scalar,
     utcnow,
+    uses_postgres,
 )
 
 # ── Ortam değişkenleri (Render → Environment) ──
