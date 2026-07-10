@@ -314,6 +314,7 @@
     }
     .tracking-code-head h4 { font-size: 0.82rem; font-weight: 600; }
     .tracking-code-panel .hint { font-size: 0.68rem; color: var(--muted); margin-bottom: 0.55rem; line-height: 1.4; }
+    p.hint { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.7rem; line-height: 1.5; }
     .tracking-code-panel pre {
       background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
       padding: 0.65rem 0.75rem; font-size: 0.68rem; color: var(--code-text);
@@ -872,6 +873,69 @@
           </div>
         </section>
 
+        <section class="card" data-perm="tracking.smartico">
+          <div class="card-head">
+            <span>Smartico Affiliate Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(ziyaret · kayıt · yatırım · komisyon)</span></span>
+            <div class="card-actions">
+              <span class="muted" id="smartico-updated" style="font-size:0.72rem;"></span>
+              <button type="button" class="btn btn-sm" id="btn-smartico-settings">⚙️ Ayarlar</button>
+              <button type="button" class="btn btn-sm" id="btn-smartico-refresh">Yenile</button>
+            </div>
+          </div>
+          <div class="card-body" id="smartico-settings-box" style="display:none;">
+            <p class="hint">Smartico BackOffice → <strong>Ayarlar</strong> bölümündeki "API Key to access Media reports, Balance API and Affiliates data" anahtarını buraya yapıştır. Anahtar sadece sunucuda saklanır.</p>
+            <form id="smartico-config-form">
+              <div class="form-row-4">
+                <div><label for="smartico-api-key">API Anahtarı</label><input id="smartico-api-key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx" autocomplete="off"></div>
+                <div><label for="smartico-api-host">API Host</label><input id="smartico-api-host" placeholder="https://boapi.smartico.ai"></div>
+                <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+                <div style="align-self:end"><button type="button" class="btn btn-danger" id="btn-smartico-clear">Kaldır</button></div>
+              </div>
+            </form>
+          </div>
+          <div class="card-body" id="smartico-empty-box" style="display:none;">
+            <p class="hint">Henüz Smartico API anahtarı tanımlanmadı. Yukarıdaki <strong>⚙️ Ayarlar</strong> butonuna basıp anahtarı ekle, linklerin performansı burada görünsün.</p>
+          </div>
+          <div class="card-body" id="smartico-error-box" style="display:none;">
+            <p class="hint" style="color:#f87171;" id="smartico-error-text"></p>
+          </div>
+          <section class="kpi-grid" id="smartico-kpi-grid" style="display:none;padding:0 1rem 1rem;">
+            <div class="kpi">
+              <div class="val" id="smartico-kpi-visits">0</div>
+              <div class="lbl">Ziyaret</div>
+            </div>
+            <div class="kpi green">
+              <div class="val" id="smartico-kpi-regs">0</div>
+              <div class="lbl">Kayıt</div>
+            </div>
+            <div class="kpi amber">
+              <div class="val" id="smartico-kpi-ftd">0</div>
+              <div class="lbl">İlk Yatırım (FTD)</div>
+            </div>
+            <div class="kpi cyan">
+              <div class="val" id="smartico-kpi-deposit">0</div>
+              <div class="lbl">Toplam Yatırım</div>
+            </div>
+          </section>
+          <div class="table-wrap" id="smartico-table-wrap" style="display:none;">
+            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
+            <div class="table-scroll" id="smartico-table-scroll">
+              <table>
+                <thead><tr>
+                  <th>Affiliate / Kanal</th>
+                  <th>Link</th>
+                  <th>Ziyaret</th>
+                  <th>Kayıt</th>
+                  <th>İlk Yatırım</th>
+                  <th>Toplam Yatırım</th>
+                  <th>Komisyon</th>
+                </tr></thead>
+                <tbody id="smartico-table"><tr><td colspan="7" class="empty">Veri yok</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <section class="card" data-perm="tracking.domains">
           <div class="card-head"><span>Takip Edilen Domainler</span><a href="/demo" target="_blank" class="btn btn-sm">Demo Site</a></div>
           <div class="card-body" style="padding-top:0;">
@@ -1136,6 +1200,9 @@
       var currentModule = "{{ default_module|default('tracking') }}";
       var availableModules = [];
       var trackingPollEnabled = false;
+      var smarticoConfigured = null;
+      var smarticoInFlight = false;
+      var smarticoConfigLoaded = false;
 
       function switchModule(name) {
         if (!name) return;
@@ -2134,6 +2201,102 @@
         renderRefReport(rows);
       }
 
+      function fmtSmarticoNum(n) {
+        n = Number(n) || 0;
+        return n.toLocaleString("tr-TR");
+      }
+
+      function fmtSmarticoMoney(n) {
+        n = Number(n) || 0;
+        return n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      function setSmarticoView(mode) {
+        var boxes = {
+          empty: "smartico-empty-box",
+          error: "smartico-error-box",
+          data: null
+        };
+        document.getElementById("smartico-empty-box").style.display = mode === "empty" ? "" : "none";
+        document.getElementById("smartico-error-box").style.display = mode === "error" ? "" : "none";
+        document.getElementById("smartico-kpi-grid").style.display = mode === "data" ? "" : "none";
+        document.getElementById("smartico-table-wrap").style.display = mode === "data" ? "" : "none";
+      }
+
+      function renderSmarticoReport(result) {
+        if (!result || result.error === "not_configured") {
+          setSmarticoView("empty");
+          return;
+        }
+        if (result.error) {
+          document.getElementById("smartico-error-text").textContent = "Smartico API hatası: " + result.error;
+          if (!result.rows || !result.rows.length) { setSmarticoView("error"); return; }
+        }
+        var rows = result.rows || [];
+        var s = result.summary || {};
+        document.getElementById("smartico-kpi-visits").textContent = fmtSmarticoNum(s.visit_count);
+        document.getElementById("smartico-kpi-regs").textContent = fmtSmarticoNum(s.registration_count);
+        document.getElementById("smartico-kpi-ftd").textContent = fmtSmarticoNum(s.ftd_count);
+        document.getElementById("smartico-kpi-deposit").textContent = fmtSmarticoMoney(s.deposit_total) + (result.currency ? " " + result.currency : "");
+        var tbody = document.getElementById("smartico-table");
+        if (!rows.length) {
+          tbody.innerHTML = '<tr><td colspan="7" class="empty">Bu dönem için veri yok</td></tr>';
+        } else {
+          tbody.innerHTML = rows.map(function(r) {
+            var channel = r.affiliate_name || (r.affiliate_id != null ? "Affiliate #" + r.affiliate_id : "—");
+            return '<tr><td>' + esc(channel) + '</td>' +
+              '<td>' + esc(r.link_name || ("Link #" + r.link_id)) + '</td>' +
+              '<td><strong>' + fmtSmarticoNum(r.visit_count) + '</strong></td>' +
+              '<td>' + fmtSmarticoNum(r.registration_count) + '</td>' +
+              '<td>' + fmtSmarticoNum(r.ftd_count) + '</td>' +
+              '<td>' + fmtSmarticoMoney(r.deposit_total) + '</td>' +
+              '<td>' + fmtSmarticoMoney(r.commissions_total) + '</td></tr>';
+          }).join("");
+        }
+        setSmarticoView("data");
+        document.getElementById("smartico-updated").textContent = "Son güncelleme: " + new Date().toLocaleTimeString("tr-TR") + (result.source === "cache" ? " (önbellek)" : "");
+      }
+
+      function loadSmarticoReport(force) {
+        if (!hasPerm("tracking.smartico") || smarticoConfigured === false) return;
+        if (smarticoInFlight) return;
+        smarticoInFlight = true;
+        var pq = periodQuery();
+        var url = API + "/api/smartico/report" + (pq ? pq + "&" : "?") + "period=" + encodeURIComponent(currentPeriod) + (force ? "&force=1" : "");
+        fetch(url).then(function(r) {
+          if (r.status === 401) { location.href = "/admin/login"; return null; }
+          return r.json();
+        }).then(function(d) {
+          if (!d) return;
+          smarticoConfigured = d.error !== "not_configured";
+          renderSmarticoReport(d);
+        }).catch(function() {}).finally(function() { smarticoInFlight = false; });
+      }
+
+      function renderSmarticoConfig(cfg) {
+        smarticoConfigured = !!cfg.configured;
+        document.getElementById("smartico-api-host").value = cfg.api_host || "https://boapi.smartico.ai";
+        document.getElementById("smartico-api-key").placeholder = cfg.configured ? ("Kayıtlı: " + cfg.api_key_masked + " — değiştirmek için yeni anahtar yapıştır") : "xxxxxxxx-xxxx-xxxx-xxxx";
+        if (cfg.configured) {
+          loadSmarticoReport(false);
+        } else {
+          setSmarticoView("empty");
+          document.getElementById("smartico-settings-box").style.display = "";
+        }
+      }
+
+      function loadSmarticoConfig() {
+        if (!hasPerm("tracking.smartico")) return;
+        fetch(API + "/api/smartico/config").then(function(r) {
+          if (r.status === 401) return null;
+          return r.json();
+        }).then(function(d) {
+          if (!d) return;
+          smarticoConfigLoaded = true;
+          renderSmarticoConfig(d);
+        }).catch(function() {});
+      }
+
       function refreshLive() {
         if (!trackingPollEnabled || document.hidden || liveInFlight) return;
         var pq = periodQuery();
@@ -2176,6 +2339,9 @@
               updateFilters(allSessions, lastLinks);
             }).catch(function(){})
           );
+        }
+        if (hasPerm("tracking.smartico") && smarticoConfigured !== false) {
+          jobs.push(Promise.resolve().then(function(){ loadSmarticoReport(false); }));
         }
         if (!jobs.length) return;
         dashInFlight = true;
@@ -2223,6 +2389,7 @@
         loadMe(function() {
           trackingPollEnabled = currentModule === "tracking";
           if (trackingPollEnabled) refreshAll();
+          if (!smarticoConfigLoaded) loadSmarticoConfig();
           setInterval(refreshLive, REFRESH_LIVE_MS);
           setInterval(refreshDashboard, REFRESH_DASH_MS);
         });
@@ -2292,6 +2459,46 @@
         currentPeriod = this.value;
         resetRefreshSignatures();
         refreshAll();
+        if (smarticoConfigured !== false) loadSmarticoReport(false);
+      });
+
+      bindOptional("btn-smartico-settings", "click", function() {
+        var box = document.getElementById("smartico-settings-box");
+        box.style.display = box.style.display === "none" ? "" : "none";
+      });
+
+      bindOptional("btn-smartico-refresh", "click", function() {
+        loadSmarticoReport(true);
+        toast("Smartico verisi yenileniyor…");
+      });
+
+      bindOptional("btn-smartico-clear", "click", function() {
+        if (!confirm("Smartico API anahtarı kaldırılacak. Devam?")) return;
+        fetch(API+"/api/smartico/config", { method: "DELETE" }).then(function(r){ return r.json(); }).then(function() {
+          document.getElementById("smartico-api-key").value = "";
+          document.getElementById("smartico-api-key").placeholder = "xxxxxxxx-xxxx-xxxx-xxxx";
+          smarticoConfigured = false;
+          setSmarticoView("empty");
+          toast("Kaldırıldı.");
+        });
+      });
+
+      bindOptional("smartico-config-form", "submit", function(e) {
+        e.preventDefault();
+        var apiKey = document.getElementById("smartico-api-key").value.trim();
+        var apiHost = document.getElementById("smartico-api-host").value.trim();
+        if (!apiKey) { alert("API anahtarını yapıştır."); return; }
+        fetch(API+"/api/smartico/config", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ api_key: apiKey, api_host: apiHost })
+        }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (!res.ok) { alert(res.data.error || "Kaydedilemedi."); return; }
+            document.getElementById("smartico-api-key").value = "";
+            renderSmarticoConfig(res.data);
+            document.getElementById("smartico-settings-box").style.display = "none";
+            toast("Smartico bağlantısı kaydedildi!");
+          });
       });
 
       bindOptional("btn-theme", "click", function() {

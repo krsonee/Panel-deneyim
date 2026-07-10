@@ -19,6 +19,8 @@ PERMISSION_CATALOG = [
      "desc": "Affiliate / ref performans tablosu"},
     {"key": "tracking.export", "label": "Veri Dışa Aktarma", "group": "Link Takip",
      "desc": "CSV, JSON indirme ve oturum temizleme"},
+    {"key": "tracking.smartico", "label": "Smartico Affiliate Raporu", "group": "Link Takip",
+     "desc": "Smartico API entegrasyonu, ayarları ve rapor görüntüleme"},
     {"key": "accounting.dashboard", "label": "Muhasebe Özet", "group": "Muhasebe",
      "desc": "Muhasebe dashboard KPI kartları"},
     {"key": "accounting.transactions", "label": "Yatırım / Çekim", "group": "Muhasebe",
@@ -54,7 +56,7 @@ ROLE_TEMPLATES = {
         "desc": "Takip modülünde tam yetki, kullanıcı yönetimi yok",
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.domains",
-            "tracking.players", "tracking.reports", "tracking.export",
+            "tracking.players", "tracking.reports", "tracking.export", "tracking.smartico",
         ],
     },
     "accountant": {
@@ -70,14 +72,14 @@ ROLE_TEMPLATES = {
         "label": "İzleyici",
         "desc": "Sadece görüntüleme, düzenleme yok",
         "permissions": [
-            "module.tracking", "tracking.dashboard", "tracking.players", "tracking.reports",
+            "module.tracking", "tracking.dashboard", "tracking.players", "tracking.reports", "tracking.smartico",
         ],
     },
     "affiliate_manager": {
         "label": "Affiliate Yöneticisi",
         "desc": "Raporlar ve dashboard",
         "permissions": [
-            "module.tracking", "tracking.dashboard", "tracking.reports",
+            "module.tracking", "tracking.dashboard", "tracking.reports", "tracking.smartico",
         ],
     },
     "custom": {

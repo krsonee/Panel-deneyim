@@ -131,6 +131,12 @@ def init_schema(conn):
             """,
             "CREATE INDEX IF NOT EXISTS idx_sessions_last_seen ON visitor_sessions(last_seen_at)",
             "CREATE INDEX IF NOT EXISTS idx_sessions_link ON visitor_sessions(tracked_link_id)",
+            """
+            CREATE TABLE IF NOT EXISTS smartico_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT ''
+            )
+            """,
         ]
     else:
         statements = [
@@ -169,10 +175,49 @@ def init_schema(conn):
             """,
             "CREATE INDEX IF NOT EXISTS idx_sessions_last_seen ON visitor_sessions(last_seen_at)",
             "CREATE INDEX IF NOT EXISTS idx_sessions_link ON visitor_sessions(tracked_link_id)",
+            """
+            CREATE TABLE IF NOT EXISTS smartico_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT ''
+            )
+            """,
         ]
     for sql in statements:
         execute(conn, sql)
     init_accounting_schema(conn)
+    conn.commit()
+
+
+def get_smartico_setting(conn, key, default=None):
+    val = scalar(conn, "SELECT value FROM smartico_settings WHERE key = ?", (key,))
+    return val if val is not None else default
+
+
+def upsert_smartico_setting(conn, key, value):
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            INSERT INTO smartico_settings (key, value) VALUES (?, ?)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            """,
+            (key, str(value)),
+        )
+    else:
+        execute(conn, "INSERT OR REPLACE INTO smartico_settings (key, value) VALUES (?, ?)", (key, str(value)))
+    conn.commit()
+
+
+def migrate_smartico(conn):
+    execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS smartico_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        )
+        """,
+    )
     conn.commit()
 
 
@@ -413,6 +458,14 @@ def migrate_schema(conn):
         except Exception:
             pass
         print(f"⚠️  migrate_accounting_vaults hata (atlanıyor, panel yine açılır): {exc}")
+    try:
+        migrate_smartico(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_smartico hata (atlanıyor, panel yine açılır): {exc}")
 
 
 def _table_columns(conn, table_name):
