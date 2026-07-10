@@ -371,6 +371,7 @@ def migrate_schema(conn):
     migrate_accounting_payment_methods(conn)
     migrate_accounting_currency(conn)
     migrate_accounting_settings(conn)
+    migrate_accounting_employees_payroll(conn)
 
 
 def _table_columns(conn, table_name):
@@ -436,6 +437,23 @@ def migrate_accounting_settings(conn):
             )
             """,
         )
+    conn.commit()
+
+
+def migrate_accounting_employees_payroll(conn):
+    cols = _table_columns(conn, "acc_employees")
+    if not cols:
+        return
+    new_cols = [
+        ("salary_category", "TEXT NOT NULL DEFAULT 'turkey'"),
+        ("end_date", "TEXT"),
+        ("bank_salary", "REAL NOT NULL DEFAULT 0"),
+        ("crypto_salary", "REAL NOT NULL DEFAULT 0"),
+        ("advance_amount", "REAL NOT NULL DEFAULT 0"),
+    ]
+    for name, typedef in new_cols:
+        if name not in cols:
+            execute(conn, f"ALTER TABLE acc_employees ADD COLUMN {name} {typedef}")
     conn.commit()
 
 

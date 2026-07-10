@@ -9,6 +9,11 @@
   var accDisplayCurrency = localStorage.getItem("acc_display_currency") || "TRY";
   var accRates = { usd_try: 34, eur_try: 37, date: null, source: "fallback" };
   var ACC_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
+  var ACC_SALARY_CATEGORIES = {
+    office: "Ofis personeli",
+    turkey: "Türkiye çalışanlar",
+    crypto: "Kripto maaş alacaklar"
+  };
 
   var accData = {
     "acc-tx": { rows: [], expanded: false, sortKey: "tx_date", sortDir: "desc" },
@@ -270,10 +275,94 @@
     return s === "active" ? "Aktif Çalışıyor" : "Ayrıldı";
   }
 
+  function accCategoryLabel(cat) {
+    return ACC_SALARY_CATEGORIES[cat] || cat || "—";
+  }
+
+  function accAccrualValue(row) {
+    if (!row || !row.accrual) return 0;
+    return row.accrual[accDisplayCurrency] != null ? row.accrual[accDisplayCurrency] : row.accrual.TRY || 0;
+  }
+
+  function accRenderPayrollDaily(payrollDaily) {
+    var tbody = document.getElementById("acc-payroll-daily-table");
+    var totalEl = document.getElementById("acc-payroll-daily-total");
+    var subEl = document.getElementById("acc-payroll-daily-sub");
+    if (!tbody) return;
+    if (!payrollDaily || !payrollDaily.days || !payrollDaily.days.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">Veri yok</td></tr>';
+      if (totalEl) totalEl.textContent = "—";
+      if (subEl) subEl.textContent = "";
+      return;
+    }
+    if (subEl) {
+      subEl.textContent = (payrollDaily.period_start || "") + " → " + (payrollDaily.period_end || "");
+    }
+    tbody.innerHTML = payrollDaily.days.slice().reverse().map(function (day) {
+      var cur = accDisplayCurrency;
+      var office = (day.by_category && day.by_category.office) ? day.by_category.office[cur] : 0;
+      var turkey = (day.by_category && day.by_category.turkey) ? day.by_category.turkey[cur] : 0;
+      var crypto = (day.by_category && day.by_category.crypto) ? day.by_category.crypto[cur] : 0;
+      var total = day.totals ? day.totals[cur] : 0;
+      return '<tr><td class="mono">' + accEsc(day.date) + '</td>' +
+        '<td>' + (day.active_count || 0) + '</td>' +
+        '<td>' + accMoney(office, cur) + '</td>' +
+        '<td>' + accMoney(turkey, cur) + '</td>' +
+        '<td>' + accMoney(crypto, cur) + '</td>' +
+        '<td><strong>' + accMoney(total, cur) + '</strong></td></tr>';
+    }).join("");
+    if (totalEl && payrollDaily.period_accrual) {
+      totalEl.textContent = accMoney(
+        payrollDaily.period_accrual[accDisplayCurrency] != null
+          ? payrollDaily.period_accrual[accDisplayCurrency]
+          : payrollDaily.period_accrual.TRY || 0,
+        accDisplayCurrency
+      );
+    }
+  }
+
+  function accUpdateEmpFormUi() {
+    var statusEl = document.getElementById("acc-emp-status");
+    var catEl = document.getElementById("acc-emp-category");
+    var endWrap = document.getElementById("acc-emp-end-wrap");
+    var endEl = document.getElementById("acc-emp-end");
+    var officeWrap = document.getElementById("acc-emp-office-fields");
+    if (endWrap && statusEl) {
+      var left = statusEl.value === "left";
+      endWrap.hidden = !left;
+      if (endEl) endEl.required = left;
+      if (left && endEl && !endEl.value) endEl.value = accToday();
+    }
+    if (officeWrap && catEl) {
+      officeWrap.hidden = catEl.value !== "office";
+    }
+    accUpdateOfficeRemaining();
+  }
+
+  function accUpdateOfficeRemaining() {
+    var salaryEl = document.getElementById("acc-emp-salary");
+    var bankEl = document.getElementById("acc-emp-bank");
+    var cryptoEl = document.getElementById("acc-emp-crypto");
+    var advanceEl = document.getElementById("acc-emp-advance");
+    var remainEl = document.getElementById("acc-emp-remaining");
+    if (!remainEl || !salaryEl) return;
+    var salary = parseFloat(salaryEl.value) || 0;
+    var bank = parseFloat(bankEl && bankEl.value) || 0;
+    var crypto = parseFloat(cryptoEl && cryptoEl.value) || 0;
+    var advance = parseFloat(advanceEl && advanceEl.value) || 0;
+    remainEl.value = Math.max(salary - bank - crypto - advance, 0).toLocaleString("tr-TR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
   function accLoadDashboard() {
     accApi("/api/accounting/dashboard" + accPeriodQuery()).then(function (res) {
       if (!res || !res.ok) return;
-      if (res.data.rates) accRates = res.data.rates;
+      if (res.data.rates) {
+        accRates = res.data.rates;
+        accUpdateRatePlaceholders();
+      }
       var kpiAll = res.data.kpi || {};
       var k = kpiAll[accDisplayCurrency] || kpiAll.TRY || {};
       document.getElementById("acc-kpi-deposits").textContent = accMoney(k.total_deposits, accDisplayCurrency);
@@ -284,8 +373,8 @@
       netEl.textContent = accMoney(k.net_profit, accDisplayCurrency);
       netEl.classList.toggle("negative", (k.net_profit || 0) < 0);
       var hint = document.getElementById("acc-kpi-payroll-hint");
-      if (hint && k.payroll_monthly) {
-        hint.textContent = "Aktif personel aylık: " + accMoney(k.payroll_monthly, accDisplayCurrency);
+      if (hint) {
+        hint.textContent = "Personel hak edişi: " + accMoney(k.payroll_monthly || 0, accDisplayCurrency);
       }
       var sub = document.getElementById("acc-kpi-net-sub");
       if (sub && kpiAll.TRY) {
@@ -295,6 +384,7 @@
           return c + ": " + accMoney(kk ? kk.net_profit : 0, c);
         }).join(" · ");
       }
+      accRenderPayrollDaily(res.data.payroll_daily);
     });
   }
 
@@ -495,10 +585,10 @@
   }
 
   function accLoadEmployees() {
-    return accApi("/api/accounting/employees").then(function (res) {
+    return accApi("/api/accounting/employees" + accPeriodQuery()).then(function (res) {
       if (!res || !res.ok) return;
       accData["acc-emp"].rows = res.data.employees || [];
-      var payroll = res.data.monthly_payroll_total || {};
+      var payroll = res.data.payroll_accrual || res.data.monthly_payroll_total || {};
       document.getElementById("acc-payroll-total").textContent = accMoney(
         payroll[accDisplayCurrency] != null ? payroll[accDisplayCurrency] : payroll.TRY || 0,
         accDisplayCurrency
@@ -511,21 +601,33 @@
     var tbody = document.getElementById("acc-emp-table");
     var rows = accSortRows("acc-emp", accData["acc-emp"].rows, {
       name: function (r) { return r.name; },
+      salary_category: function (r) { return r.salary_category; },
       department: function (r) { return r.department; },
       start_date: function (r) { return r.start_date; },
+      end_date: function (r) { return r.end_date; },
       salary: function (r) { return r.salary; },
+      accrual: function (r) { return accAccrualValue(r); },
       status: function (r) { return r.status; }
     });
     if (!accData["acc-emp"].rows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">Personel yok</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="empty">Personel yok</td></tr>';
       accUpdateFoot("acc-emp", 0, "personel");
       return;
     }
     tbody.innerHTML = rows.map(function (r) {
-      return '<tr><td><strong>' + accEsc(r.name) + '</strong></td>' +
+      var officeInfo = "";
+      if (r.salary_category === "office") {
+        officeInfo = '<br><small class="muted">Banka: ' + accMoney(r.bank_salary || 0, r.currency || "TRY") +
+          " · Kripto: " + accMoney(r.crypto_salary || 0, r.currency || "TRY") +
+          " · Avans: " + accMoney(r.advance_amount || 0, r.currency || "TRY") + "</small>";
+      }
+      return '<tr><td><strong>' + accEsc(r.name) + '</strong>' + officeInfo + '</td>' +
+        '<td><span class="tag">' + accEsc(accCategoryLabel(r.salary_category)) + '</span></td>' +
         '<td>' + accEsc(r.department) + '</td>' +
         '<td class="mono">' + accEsc(r.start_date) + '</td>' +
+        '<td class="mono">' + accEsc(r.end_date || "—") + '</td>' +
         '<td>' + accMoneyCellHtml(r, "salary") + '</td>' +
+        '<td><strong>' + accMoney(accAccrualValue(r), accDisplayCurrency) + '</strong></td>' +
         '<td><span class="tag ' + (r.status === "active" ? "online" : "offline") + '">' + accStatusLabel(r.status) + '</span></td>' +
         '<td><button class="btn btn-sm" data-toggle-emp="' + r.id + '" data-status="' + (r.status === "active" ? "left" : "active") + '">' +
         (r.status === "active" ? "Ayrıldı" : "Aktif") + '</button> ' +
@@ -533,18 +635,28 @@
     }).join("");
     tbody.querySelectorAll("[data-toggle-emp]").forEach(function (btn) {
       btn.onclick = function () {
+        var newStatus = btn.getAttribute("data-status");
+        var body = { status: newStatus };
+        if (newStatus === "left") {
+          var endDate = prompt("Çıkış tarihi (YYYY-MM-DD):", accToday());
+          if (!endDate) return;
+          body.end_date = endDate;
+        }
         accApi("/api/accounting/employees/" + btn.getAttribute("data-toggle-emp"), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: btn.getAttribute("data-status") })
-        }).then(function (r) { if (r && r.ok) accLoadEmployees(); });
+          body: JSON.stringify(body)
+        }).then(function (r) {
+          if (r && r.ok) { accLoadEmployees(); accLoadDashboard(); }
+          else if (r) alert(r.data.error || "Hata");
+        });
       };
     });
     tbody.querySelectorAll("[data-del-emp]").forEach(function (btn) {
       btn.onclick = function () {
         if (!confirm("Silinsin mi?")) return;
         accApi("/api/accounting/employees/" + btn.getAttribute("data-del-emp"), { method: "DELETE" })
-          .then(function (r) { if (r && r.ok) accLoadEmployees(); });
+          .then(function (r) { if (r && r.ok) { accLoadEmployees(); accLoadDashboard(); accToast("Silindi"); } });
       };
     });
     accUpdateFoot("acc-emp", accData["acc-emp"].rows.length, "personel");
@@ -692,26 +804,51 @@
 
     document.getElementById("acc-emp-form").addEventListener("submit", function (e) {
       e.preventDefault();
-      accApi("/api/accounting/employees", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(Object.assign({
+      accUpdateEmpFormUi();
+      var status = document.getElementById("acc-emp-status").value;
+      var payload = Object.assign({
           name: document.getElementById("acc-emp-name").value.trim(),
+          salary_category: document.getElementById("acc-emp-category").value,
           department: document.getElementById("acc-emp-dept").value,
           start_date: document.getElementById("acc-emp-start").value,
             salary: document.getElementById("acc-emp-salary").value,
             currency: document.getElementById("acc-emp-currency").value,
-            status: document.getElementById("acc-emp-status").value
-        }, accReadFormRates("acc-emp-rate-usd", "acc-emp-rate-eur")))
+            status: status,
+            bank_salary: document.getElementById("acc-emp-bank").value || 0,
+            crypto_salary: document.getElementById("acc-emp-crypto").value || 0,
+            advance_amount: document.getElementById("acc-emp-advance").value || 0
+        }, accReadFormRates("acc-emp-rate-usd", "acc-emp-rate-eur"));
+      if (status === "left") {
+        payload.end_date = document.getElementById("acc-emp-end").value;
+      }
+      accApi("/api/accounting/employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
       }).then(function (r) {
         if (r && r.ok) {
           document.getElementById("acc-emp-name").value = "";
           document.getElementById("acc-emp-salary").value = "";
+          document.getElementById("acc-emp-bank").value = "0";
+          document.getElementById("acc-emp-crypto").value = "0";
+          document.getElementById("acc-emp-advance").value = "0";
+          document.getElementById("acc-emp-status").value = "active";
+          document.getElementById("acc-emp-end").value = "";
           accClearFormRates("acc-emp-rate-usd", "acc-emp-rate-eur");
-          accLoadEmployees(); accSavedToast("Personel eklendi", r.data.rates);
+          accUpdateEmpFormUi();
+          accLoadEmployees(); accLoadDashboard(); accSavedToast("Personel eklendi", r.data.rates);
         } else if (r) alert(r.data.error || "Hata");
       });
     });
+    ["acc-emp-status", "acc-emp-category"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener("change", accUpdateEmpFormUi);
+    });
+    ["acc-emp-salary", "acc-emp-bank", "acc-emp-crypto", "acc-emp-advance"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener("input", accUpdateOfficeRemaining);
+    });
+    accUpdateEmpFormUi();
     accBindFxPreview("acc-tx-amount", "acc-tx-currency", "acc-tx-fx-preview", "acc-tx-rate-usd", "acc-tx-rate-eur");
     accBindFxPreview("acc-exp-amount", "acc-exp-currency", "acc-exp-fx-preview", "acc-exp-rate-usd", "acc-exp-rate-eur");
     accBindFxPreview("acc-vault-amount", "acc-vault-currency", "acc-vault-fx-preview", "acc-vault-rate-usd", "acc-vault-rate-eur");

@@ -62,6 +62,33 @@
         </p>
       </div>
     </section>
+    <section class="card" id="acc-payroll-daily-card">
+      <div class="card-head">
+        <span>Günlük Personel Yevmiyesi</span>
+        <span class="muted" id="acc-payroll-daily-sub" style="font-size:0.72rem;"></span>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll acc-payroll-scroll" id="acc-payroll-daily-scroll">
+          <table>
+            <thead><tr>
+              <th>Tarih</th>
+              <th>Personel</th>
+              <th>Ofis</th>
+              <th>Türkiye</th>
+              <th>Kripto</th>
+              <th>Günlük Toplam</th>
+            </tr></thead>
+            <tbody id="acc-payroll-daily-table"><tr><td colspan="6" class="empty">Veri yok</td></tr></tbody>
+            <tfoot>
+              <tr class="acc-payroll-total-row">
+                <td colspan="5"><strong>Dönem Hak Ediş Toplamı</strong></td>
+                <td><strong id="acc-payroll-daily-total">—</strong></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
   </div>
 
   <!-- Yatırım / Çekim -->
@@ -260,6 +287,13 @@
       <div class="card-body">
         <form id="acc-emp-form" class="form-row-4">
           <div><label>Personel Adı</label><input id="acc-emp-name" required></div>
+          <div><label>Maaş Kategorisi</label>
+            <select id="acc-emp-category" required>
+              <option value="office">Ofis personeli</option>
+              <option value="turkey" selected>Türkiye çalışanlar</option>
+              <option value="crypto">Kripto maaş alacaklar</option>
+            </select>
+          </div>
           <div><label>Departman</label>
             <select id="acc-emp-dept" required>
               <option value="Risk">Risk</option>
@@ -282,12 +316,22 @@
           <div><label>USD/TL</label><input type="number" id="acc-emp-rate-usd" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
           <div><label>EUR/TL</label><input type="number" id="acc-emp-rate-eur" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
           <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-emp-fx-preview"></p></div>
+          <div id="acc-emp-office-fields" class="acc-office-fields" hidden style="grid-column:1/-1;">
+            <div class="form-row-4" style="margin-top:0.35rem;">
+              <div><label>Bankaya Yatacak</label><input type="number" id="acc-emp-bank" step="0.01" min="0" value="0"></div>
+              <div><label>Kripto Ödenecek</label><input type="number" id="acc-emp-crypto" step="0.01" min="0" value="0"></div>
+              <div><label>Avans</label><input type="number" id="acc-emp-advance" step="0.01" min="0" value="0"></div>
+              <div><label>Kalan</label><input type="text" id="acc-emp-remaining" readonly class="muted" value="0"></div>
+            </div>
+            <p class="muted" style="font-size:0.72rem;margin-top:0.35rem;">Banka + Kripto + Avans toplamı maaşı geçemez.</p>
+          </div>
           <div><label>Durum</label>
             <select id="acc-emp-status">
               <option value="active">Aktif Çalışıyor</option>
               <option value="left">Ayrıldı</option>
             </select>
           </div>
+          <div id="acc-emp-end-wrap" hidden><label>Çıkış Tarihi</label><input type="date" id="acc-emp-end"></div>
           <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
         </form>
       </div>
@@ -296,13 +340,16 @@
           <table>
             <thead><tr>
               <th class="col-sortable" data-acc-sort="acc-emp" data-sort="name">Personel</th>
+              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="salary_category">Kategori</th>
               <th class="col-sortable" data-acc-sort="acc-emp" data-sort="department">Departman</th>
               <th class="col-sortable" data-acc-sort="acc-emp" data-sort="start_date">Başlangıç</th>
+              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="end_date">Çıkış</th>
               <th class="col-sortable" data-acc-sort="acc-emp" data-sort="salary">Maaş</th>
+              <th class="col-sortable" data-acc-sort="acc-emp" data-sort="accrual">Hak Ediş</th>
               <th class="col-sortable" data-acc-sort="acc-emp" data-sort="status">Durum</th>
               <th></th>
             </tr></thead>
-            <tbody id="acc-emp-table"><tr><td colspan="6" class="empty">Personel yok</td></tr></tbody>
+            <tbody id="acc-emp-table"><tr><td colspan="9" class="empty">Personel yok</td></tr></tbody>
           </table>
         </div>
         <div class="table-foot" id="acc-emp-table-foot" style="display:none;">
@@ -311,7 +358,7 @@
         </div>
       </div>
       <div class="acc-payroll-total">
-        <span>Aylık Toplam Personel Masrafı (aktif):</span>
+        <span>Dönem Toplam Personel Hak Edişi:</span>
         <strong id="acc-payroll-total">$0</strong>
       </div>
     </section>

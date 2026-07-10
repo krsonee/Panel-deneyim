@@ -11,6 +11,12 @@ from accounting_fx import (
     fetch_exchange_rates,
     parse_currency,
 )
+from accounting_payroll import (
+    SALARY_CATEGORIES,
+    compute_payroll_daily,
+    enrich_employee_row,
+    validate_office_amounts,
+)
 from database import (
     execute,
     fetchall,
@@ -110,15 +116,100 @@ def create_accounting_blueprint(permission_required):
             "source": rates.get("source"),
         }
 
+    def parse_salary_category(value):
+        cat = (value or "turkey").strip().lower()
+        if cat not in SALARY_CATEGORIES:
+            return None
+        return cat
+
+    def parse_office_amount(value):
+        if value is None or value == "":
+            return 0.0
+        amount = parse_amount(value)
+        if amount is None:
+            return None
+        return amount
+
+    def validate_employee_dates(status, start_date, end_date):
+        if status == "left":
+            if not end_date:
+                return "Ayrılan personel için çıkış tarihi zorunludur."
+            if end_date < start_date:
+                return "Çıkış tarihi işe başlangıçtan önce olamaz."
+        elif end_date:
+            return "Aktif personelde çıkış tarihi girilemez."
+        return None
+
+    def employee_payload(data, existing=None):
+        existing = existing or {}
+        name = (data.get("name") or existing.get("name") or "").strip()
+        department = (data.get("department") or existing.get("department") or "").strip()
+        start_date = parse_date(data.get("start_date")) or existing.get("start_date")
+        status = (data.get("status") or existing.get("status") or "active").strip().lower()
+        if status not in ("active", "left"):
+            status = existing.get("status") or "active"
+        end_date = parse_date(data.get("end_date")) if "end_date" in data else existing.get("end_date")
+        if status == "active":
+            end_date = None
+        salary_category = parse_salary_category(
+            data.get("salary_category") if "salary_category" in data else existing.get("salary_category")
+        )
+        if not salary_category:
+            return None, "Geçerli maaş kategorisi seçin."
+
+        salary = parse_amount(data.get("salary")) if data.get("salary") is not None else existing.get("salary")
+        if salary is None:
+            return None, "Geçerli maaş girin."
+
+        bank = parse_office_amount(data.get("bank_salary")) if "bank_salary" in data else existing.get("bank_salary", 0)
+        crypto = parse_office_amount(data.get("crypto_salary")) if "crypto_salary" in data else existing.get("crypto_salary", 0)
+        advance = parse_office_amount(data.get("advance_amount")) if "advance_amount" in data else existing.get("advance_amount", 0)
+        if bank is None or crypto is None or advance is None:
+            return None, "Ofis personeli ödeme tutarları geçersiz."
+
+        if salary_category != "office":
+            bank = crypto = advance = 0.0
+
+        if not name:
+            return None, "Personel adı zorunludur."
+        if not department:
+            return None, "Departman zorunludur."
+        if not start_date:
+            return None, "Geçerli başlangıç tarihi girin."
+
+        date_err = validate_employee_dates(status, start_date, end_date)
+        if date_err:
+            return None, date_err
+
+        office_err = validate_office_amounts(salary, bank, crypto, advance, salary_category)
+        if office_err:
+            return None, office_err
+
+        return {
+            "name": name,
+            "department": department,
+            "start_date": start_date,
+            "end_date": end_date,
+            "status": status,
+            "salary_category": salary_category,
+            "salary": salary,
+            "bank_salary": bank,
+            "crypto_salary": crypto,
+            "advance_amount": advance,
+            "currency": data.get("currency") or existing.get("currency") or "TRY",
+        }, None
+
     def kpi_for_period(conn, period):
         dep_sql, dep_params = date_clause("tx_date", period)
         wdr_sql, wdr_params = date_clause("tx_date", period)
         exp_sql, exp_params = date_clause("expense_date", period)
+        employees = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employees")]
+        payroll_data = compute_payroll_daily(employees, period)
+        payroll_accrual = payroll_data["period_accrual"]
         result = {}
         for cur in CURRENCIES:
             amt = f"amount_{cur.lower()}"
             comm = f"commission_amount_{cur.lower()}"
-            sal = f"salary_{cur.lower()}"
             deposits = scalar(
                 conn,
                 f"SELECT COALESCE(SUM({amt}), 0) FROM acc_finance_transactions WHERE tx_type = 'deposit'{dep_sql}",
@@ -139,10 +230,7 @@ def create_accounting_blueprint(permission_required):
                 f"SELECT COALESCE(SUM({amt}), 0) FROM acc_expenses WHERE 1=1{exp_sql}",
                 exp_params,
             ) or 0
-            payroll = scalar(
-                conn,
-                f"SELECT COALESCE(SUM({sal}), 0) FROM acc_employees WHERE status = 'active'",
-            ) or 0
+            payroll = payroll_accrual.get(cur, 0)
             deposits = round(float(deposits), 2)
             withdrawals = round(float(withdrawals), 2)
             commission = round(float(commission), 2)
@@ -181,10 +269,14 @@ def create_accounting_blueprint(permission_required):
         period = request.args.get("period", "all")
         with closing(get_db()) as conn:
             kpi = kpi_for_period(conn, period)
+            employees = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employees")]
+        payroll_daily = compute_payroll_daily(employees, period)
         return jsonify({
             "period": period,
             "kpi": kpi,
             "rates": rates_json(fetch_exchange_rates()),
+            "payroll_daily": payroll_daily,
+            "salary_categories": SALARY_CATEGORIES,
         })
 
     # ── Payment methods (komisyon oranları) ──
@@ -586,45 +678,31 @@ def create_accounting_blueprint(permission_required):
     @bp.route("/employees", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def list_employees():
+        period = request.args.get("period", "all")
         with closing(get_db()) as conn:
             rows = fetchall(conn, "SELECT * FROM acc_employees ORDER BY name ASC")
-            payroll = {}
-            for cur in CURRENCIES:
-                col = f"salary_{cur.lower()}"
-                payroll[cur] = round(float(
-                    scalar(conn, f"SELECT COALESCE(SUM({col}), 0) FROM acc_employees WHERE status = 'active'") or 0
-                ), 2)
+            employees = [enrich_employee_row(dict(r), period) for r in rows]
+            payroll_data = compute_payroll_daily([dict(r) for r in rows], period)
         return jsonify({
-            "employees": [dict(r) for r in rows],
-            "monthly_payroll_total": payroll,
+            "employees": employees,
+            "monthly_payroll_total": payroll_data["period_accrual"],
+            "payroll_accrual": payroll_data["period_accrual"],
+            "salary_categories": SALARY_CATEGORIES,
         })
 
     @bp.route("/employees", methods=["POST"])
     @acc_perm(*MODULE_ACCESS)
     def create_employee():
         data = request.get_json(silent=True) or {}
-        name = (data.get("name") or "").strip()
-        department = (data.get("department") or "").strip()
-        start_date = parse_date(data.get("start_date"))
-        salary = parse_amount(data.get("salary"))
-        status = (data.get("status") or "active").strip().lower()
-
-        if not name:
-            return jsonify({"error": "Personel adı zorunludur."}), 400
-        if not department:
-            return jsonify({"error": "Departman zorunludur."}), 400
-        if not start_date:
-            return jsonify({"error": "Geçerli başlangıç tarihi girin."}), 400
-        if salary is None:
-            return jsonify({"error": "Geçerli maaş girin."}), 400
+        payload, err = employee_payload(data)
+        if err:
+            return jsonify({"error": err}), 400
         rates, rate_err = rates_from_request(data)
         if rate_err:
             return jsonify({"error": rate_err}), 400
-        fx, err = build_money(salary, data.get("currency"), rates)
+        fx, err = build_money(payload["salary"], payload["currency"], rates)
         if err:
             return jsonify({"error": err}), 400
-        if status not in ("active", "left"):
-            status = "active"
 
         now = iso(utcnow())
         with closing(get_db()) as conn:
@@ -632,19 +710,27 @@ def create_accounting_blueprint(permission_required):
                 conn,
                 """
                 INSERT INTO acc_employees
-                (name, department, start_date, salary, currency,
-                 salary_try, salary_usd, salary_eur, rate_usd_try, rate_eur_try, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (name, department, start_date, end_date, salary, currency,
+                 salary_try, salary_usd, salary_eur, rate_usd_try, rate_eur_try,
+                 salary_category, bank_salary, crypto_salary, advance_amount,
+                 status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    name, department, start_date, fx["amount"], fx["currency"],
+                    payload["name"], payload["department"], payload["start_date"], payload["end_date"],
+                    fx["amount"], fx["currency"],
                     fx["TRY"], fx["USD"], fx["EUR"],
-                    fx["rate_usd_try"], fx["rate_eur_try"], status, now,
+                    fx["rate_usd_try"], fx["rate_eur_try"],
+                    payload["salary_category"], payload["bank_salary"], payload["crypto_salary"],
+                    payload["advance_amount"], payload["status"], now,
                 ),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_employees WHERE id = ?", (eid,))
-        return jsonify({"employee": dict(row), "rates": used_rates_payload(fx)}), 201
+        return jsonify({
+            "employee": enrich_employee_row(dict(row)),
+            "rates": used_rates_payload(fx),
+        }), 201
 
     @bp.route("/employees/<int:emp_id>", methods=["PUT"])
     @acc_perm(*MODULE_ACCESS)
@@ -655,22 +741,17 @@ def create_accounting_blueprint(permission_required):
             if not row:
                 return jsonify({"error": "Personel bulunamadı."}), 404
 
-            name = (data.get("name") or row["name"]).strip()
-            department = (data.get("department") or row["department"]).strip()
-            start_date = parse_date(data.get("start_date")) or row["start_date"]
-            status = (data.get("status") or row["status"]).strip().lower()
-            if status not in ("active", "left"):
-                status = row["status"]
+            payload, err = employee_payload(data, dict(row))
+            if err:
+                return jsonify({"error": err}), 400
 
-            currency = data.get("currency") or row.get("currency") or "TRY"
-            salary_val = data.get("salary") if data.get("salary") is not None else row["salary"]
             fallback = None
             if row.get("rate_usd_try") and row.get("rate_eur_try"):
                 fallback = {"usd_try": float(row["rate_usd_try"]), "eur_try": float(row["rate_eur_try"])}
             rates, rate_err = rates_from_request(data, fallback=fallback)
             if rate_err:
                 return jsonify({"error": rate_err}), 400
-            fx, err = build_money(salary_val, currency, rates)
+            fx, err = build_money(payload["salary"], payload["currency"], rates)
             if err:
                 return jsonify({"error": err}), 400
 
@@ -678,20 +759,24 @@ def create_accounting_blueprint(permission_required):
                 conn,
                 """
                 UPDATE acc_employees
-                SET name = ?, department = ?, start_date = ?, salary = ?, currency = ?,
+                SET name = ?, department = ?, start_date = ?, end_date = ?, salary = ?, currency = ?,
                     salary_try = ?, salary_usd = ?, salary_eur = ?,
-                    rate_usd_try = ?, rate_eur_try = ?, status = ?
+                    rate_usd_try = ?, rate_eur_try = ?, salary_category = ?,
+                    bank_salary = ?, crypto_salary = ?, advance_amount = ?, status = ?
                 WHERE id = ?
                 """,
                 (
-                    name, department, start_date, fx["amount"], fx["currency"],
+                    payload["name"], payload["department"], payload["start_date"], payload["end_date"],
+                    fx["amount"], fx["currency"],
                     fx["TRY"], fx["USD"], fx["EUR"],
-                    fx["rate_usd_try"], fx["rate_eur_try"], status, emp_id,
+                    fx["rate_usd_try"], fx["rate_eur_try"], payload["salary_category"],
+                    payload["bank_salary"], payload["crypto_salary"], payload["advance_amount"],
+                    payload["status"], emp_id,
                 ),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_employees WHERE id = ?", (emp_id,))
-        return jsonify({"employee": dict(row)})
+        return jsonify({"employee": enrich_employee_row(dict(row))})
 
     @bp.route("/employees/<int:emp_id>", methods=["DELETE"])
     @acc_perm(*MODULE_ACCESS)
