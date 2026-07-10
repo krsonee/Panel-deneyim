@@ -280,6 +280,8 @@ def date_range_from_period(period):
         return today - timedelta(days=6), today + timedelta(days=1)
     if period == "30days":
         return today - timedelta(days=29), today + timedelta(days=1)
+    if period == "6months":
+        return today - timedelta(days=182), today + timedelta(days=1)
     return None, None
 
 

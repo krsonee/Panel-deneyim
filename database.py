@@ -370,6 +370,54 @@ def migrate_smartico(conn):
     conn.commit()
 
 
+def migrate_ref_labels(conn):
+    execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS ref_code_labels (
+            ref_code TEXT PRIMARY KEY,
+            label TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+        """,
+    )
+    conn.commit()
+
+
+def get_ref_code_labels(conn):
+    rows = fetchall(conn, "SELECT ref_code, label FROM ref_code_labels")
+    return {(r["ref_code"] or "").strip().lower(): r["label"] for r in rows if r["label"]}
+
+
+def upsert_ref_code_label(conn, ref_code, label):
+    ref_code = (ref_code or "").strip().lower()
+    label = (label or "").strip()
+    if not ref_code:
+        return
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            INSERT INTO ref_code_labels (ref_code, label, created_at) VALUES (?, ?, ?)
+            ON CONFLICT (ref_code) DO UPDATE SET label = EXCLUDED.label
+            """,
+            (ref_code, label, iso(utcnow())),
+        )
+    else:
+        execute(
+            conn,
+            "INSERT OR REPLACE INTO ref_code_labels (ref_code, label, created_at) VALUES (?, ?, ?)",
+            (ref_code, label, iso(utcnow())),
+        )
+    conn.commit()
+
+
+def delete_ref_code_label(conn, ref_code):
+    ref_code = (ref_code or "").strip().lower()
+    execute(conn, "DELETE FROM ref_code_labels WHERE ref_code = ?", (ref_code,))
+    conn.commit()
+
+
 def get_blink_setting(conn, key, default=None):
     val = scalar(conn, "SELECT value FROM blink_settings WHERE key = ?", (key,))
     return val if val is not None else default
@@ -682,6 +730,14 @@ def migrate_schema(conn):
         except Exception:
             pass
         print(f"⚠️  migrate_blink hata (atlanıyor, panel yine açılır): {exc}")
+    try:
+        migrate_ref_labels(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_ref_labels hata (atlanıyor, panel yine açılır): {exc}")
 
 
 def _table_columns(conn, table_name):

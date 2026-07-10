@@ -41,15 +41,18 @@ from permissions import (
 from database import (
     DB_PATH,
     APP_DIR,
+    delete_ref_code_label,
     execute,
     fetchall,
     fetchone,
     get_db,
+    get_ref_code_labels,
     init_db as db_init_schema,
     insert_returning_id,
     integrity_error_type,
     iso,
     scalar,
+    upsert_ref_code_label,
     utcnow,
     uses_postgres,
 )
@@ -1166,6 +1169,7 @@ def referral_report():
             """,
             (cutoff, *date_params),
         )
+        labels = get_ref_code_labels(conn)
 
     report = []
     for row in rows:
@@ -1173,8 +1177,40 @@ def referral_report():
         ref = item.get("ref_code") or ""
         item["affiliate_url"] = affiliate_url(item["domain"], ref)
         item["total_minutes"] = round((item.get("total_seconds") or 0) / 60, 1)
+        custom_label = labels.get(ref.strip().lower()) if ref else None
+        item["ref_name"] = custom_label
+        if custom_label:
+            item["ref_label"] = custom_label
         report.append(item)
     return jsonify({"report": report, "period": period})
+
+
+@app.route("/api/reports/referral-labels", methods=["POST"])
+@permission_required("tracking.reports")
+def save_referral_label():
+    data = request.get_json(silent=True) or {}
+    ref_code = (data.get("ref_code") or "").strip()
+    label = (data.get("label") or "").strip()
+    if not ref_code:
+        return jsonify({"error": "ref_code gerekli."}), 400
+    with closing(get_db()) as conn:
+        if label:
+            upsert_ref_code_label(conn, ref_code, label)
+        else:
+            delete_ref_code_label(conn, ref_code)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/reports/referral-labels", methods=["DELETE"])
+@permission_required("tracking.reports")
+def delete_referral_label():
+    data = request.get_json(silent=True) or {}
+    ref_code = (data.get("ref_code") or "").strip()
+    if not ref_code:
+        return jsonify({"error": "ref_code gerekli."}), 400
+    with closing(get_db()) as conn:
+        delete_ref_code_label(conn, ref_code)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/sessions/<session_id>/journey", methods=["GET"])

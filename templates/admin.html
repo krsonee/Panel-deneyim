@@ -327,17 +327,17 @@
       padding: 0.65rem 1.15rem; border-top: 1px solid var(--border); background: var(--surface-2);
     }
     .table-foot .table-count { font-size: 0.72rem; color: var(--muted); }
-    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .table-scroll {
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      max-height: 420px;
+      overflow-y: auto;
+      scrollbar-gutter: stable;
+    }
     .scroll-hint {
       display: none; font-size: 0.68rem; color: var(--muted); padding: 0.35rem 0.85rem;
       background: var(--surface-2); border-bottom: 1px solid var(--border);
     }
     .scroll-hint::before { content: "↔ "; opacity: 0.75; }
-    .table-scroll.scrollable {
-      max-height: 420px;
-      overflow-y: auto;
-      scrollbar-gutter: stable;
-    }
     .table-scroll thead th {
       position: sticky;
       top: 0;
@@ -684,7 +684,7 @@
       .card-body { padding: 0.85rem; }
       .table-foot { flex-direction: column; align-items: stretch; gap: 0.45rem; padding: 0.65rem 0.85rem; }
       .scroll-hint { display: block; }
-      .table-scroll.scrollable { max-height: min(420px, 55vh); }
+      .table-scroll { max-height: min(420px, 55vh); }
       .acc-payroll-scroll { max-height: min(320px, 45vh); }
       #acc-emp-table-scroll table { min-width: 1280px; }
       .acc-payroll-total {
@@ -867,8 +867,8 @@
               </table>
             </div>
             <div class="table-foot" id="ref-report-table-foot" style="display:none;">
-              <button type="button" class="btn btn-sm" data-table-toggle="ref-report-table">Tümünü göster</button>
               <span class="table-count" id="ref-report-table-count"></span>
+              <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
             </div>
           </div>
         </section>
@@ -877,6 +877,9 @@
           <div class="card-head">
             <span>Smartico Affiliate Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(ziyaret · kayıt · yatırım · komisyon)</span></span>
             <div class="card-actions">
+              <label class="muted" style="font-size:0.72rem;display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                <input type="checkbox" id="smartico-hide-inactive" checked style="width:auto;margin:0;"> Hareketsizleri gizle (6 ay)
+              </label>
               <span class="muted" id="smartico-updated" style="font-size:0.72rem;"></span>
               <button type="button" class="btn btn-sm" id="btn-smartico-settings">⚙️ Ayarlar</button>
               <button type="button" class="btn btn-sm" id="btn-smartico-refresh">Yenile</button>
@@ -926,17 +929,21 @@
             <div class="table-scroll" id="smartico-table-scroll">
               <table>
                 <thead><tr>
-                  <th>Affiliate / Kanal</th>
-                  <th>Link</th>
-                  <th>Şu An Online</th>
-                  <th>Ziyaret</th>
-                  <th>Kayıt</th>
+                  <th class="col-sortable" data-sort="affiliate_name">Affiliate / Kanal</th>
+                  <th class="col-sortable" data-sort="link_name">Link</th>
+                  <th class="col-sortable" data-sort="online_now">Şu An Online</th>
+                  <th class="col-sortable" data-sort="visit_count">Ziyaret</th>
+                  <th class="col-sortable" data-sort="registration_count">Kayıt</th>
                   <th>İlk Yatırım</th>
-                  <th>Toplam Yatırım</th>
-                  <th>Komisyon</th>
+                  <th class="col-sortable" data-sort="deposit_total">Toplam Yatırım</th>
+                  <th class="col-sortable" data-sort="commissions_total">Komisyon</th>
                 </tr></thead>
                 <tbody id="smartico-table"><tr><td colspan="8" class="empty">Veri yok</td></tr></tbody>
               </table>
+            </div>
+            <div class="table-foot" id="smartico-table-foot" style="display:none;">
+              <span class="table-count" id="smartico-table-count"></span>
+              <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
             </div>
           </div>
         </section>
@@ -976,14 +983,18 @@
             <div class="table-scroll" id="blink-table-scroll">
               <table>
                 <thead><tr>
-                  <th>Kısa Link</th>
-                  <th>Hedef Adres</th>
-                  <th>Ref Kodu</th>
-                  <th>Şu An Online</th>
-                  <th>Tıklama</th>
+                  <th class="col-sortable" data-sort="short_link">Kısa Link</th>
+                  <th class="col-sortable" data-sort="redirect_url">Hedef Adres</th>
+                  <th class="col-sortable" data-sort="ref_code">Ref Kodu</th>
+                  <th class="col-sortable" data-sort="online_now">Şu An Online</th>
+                  <th class="col-sortable" data-sort="click_count">Tıklama</th>
                 </tr></thead>
                 <tbody id="blink-table"><tr><td colspan="5" class="empty">Veri yok</td></tr></tbody>
               </table>
+            </div>
+            <div class="table-foot" id="blink-table-foot" style="display:none;">
+              <span class="table-count" id="blink-table-count"></span>
+              <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
             </div>
           </div>
         </section>
@@ -1015,8 +1026,8 @@
               </table>
             </div>
             <div class="table-foot" id="links-table-foot" style="display:none;">
-              <button type="button" class="btn btn-sm" data-table-toggle="links-table">Tümünü göster</button>
               <span class="table-count" id="links-table-count"></span>
+              <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
             </div>
           </div>
         </section>
@@ -1042,8 +1053,8 @@
               </table>
             </div>
             <div class="table-foot" id="online-table-foot" style="display:none;">
-              <button type="button" class="btn btn-sm" data-table-toggle="online-table">Tümünü göster</button>
               <span class="table-count" id="online-table-count"></span>
+              <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
             </div>
           </div>
         </section>
@@ -1085,8 +1096,8 @@
               </table>
             </div>
             <div class="table-foot" id="sessions-table-foot" style="display:none;">
-              <button type="button" class="btn btn-sm" data-table-toggle="sessions-table">Tümünü göster</button>
               <span class="table-count" id="sessions-table-count"></span>
+              <span class="muted" style="font-size:0.72rem;">↕ kaydırarak tümünü gör</span>
             </div>
           </div>
         </section>
@@ -1287,16 +1298,20 @@
       var cachedRefReport = [];
       var cachedOnline = [];
       var tablePager = {
-        "links-table": { expanded: false, sortKey: "domain", sortDir: "asc" },
-        "ref-report-table": { expanded: false, sortKey: "total_visitors", sortDir: "desc" },
-        "online-table": { expanded: false, sortKey: "time", sortDir: "desc" },
-        "sessions-table": { expanded: false, sortKey: "time", sortDir: "desc" }
+        "links-table": { expanded: true, sortKey: "online_count", sortDir: "desc" },
+        "ref-report-table": { expanded: true, sortKey: "total_visitors", sortDir: "desc" },
+        "online-table": { expanded: true, sortKey: "time", sortDir: "desc" },
+        "sessions-table": { expanded: true, sortKey: "time", sortDir: "desc" },
+        "smartico-table": { expanded: true, sortKey: "online_now", sortDir: "desc" },
+        "blink-table": { expanded: true, sortKey: "online_now", sortDir: "desc" }
       };
       var TABLE_LABELS = {
         "links-table": "domain",
         "ref-report-table": "kayıt",
         "online-table": "oyuncu",
-        "sessions-table": "oyuncu"
+        "sessions-table": "oyuncu",
+        "smartico-table": "kanal",
+        "blink-table": "link"
       };
       var myPermissions = [];
       var myRole = "";
@@ -1310,11 +1325,14 @@
       var smarticoConfigLoaded = false;
       var smarticoRowsById = {};
       var smarticoBindTarget = null;
+      var smarticoActiveKeys = null;
+      var smarticoLastResult = null;
       var blinkConfigured = null;
       var blinkInFlight = false;
       var blinkConfigLoaded = false;
       var blinkRowsById = {};
       var blinkBindTarget = null;
+      var blinkLastResult = null;
 
       function switchModule(name) {
         if (!name) return;
@@ -1566,7 +1584,11 @@
         }
         tbody.innerHTML = rows.map(function(r) {
           var mins = r.total_minutes != null ? r.total_minutes + " dk" : Math.round((r.total_seconds||0)/60) + " dk";
-          return '<tr><td>'+esc(r.domain)+'</td><td><span class="tag">'+esc(r.ref_label)+'</span></td>'+
+          var refCell = '<span class="tag">'+esc(r.ref_label)+'</span>';
+          if (r.ref_code) {
+            refCell += ' <button type="button" class="btn btn-sm ref-rename-btn" data-ref-code="'+esc(r.ref_code)+'" data-ref-name="'+esc(r.ref_name||"")+'" title="İsim ver/düzenle">✏️</button>';
+          }
+          return '<tr><td>'+esc(r.domain)+'</td><td>'+refCell+'</td>'+
             '<td><strong>'+r.total_visitors+'</strong></td>'+
             '<td>'+(r.online_now>0?'<span class="tag online">'+r.online_now+'</span>':'<span class="muted">0</span>')+'</td>'+
             '<td>'+esc(mins)+'</td><td>'+r.unique_ips+'</td>'+
@@ -1575,6 +1597,23 @@
         }).join("");
         tbody.querySelectorAll("[data-copy-url]").forEach(function(btn) {
           btn.onclick = function() { copyText(btn.getAttribute("data-copy-url")); };
+        });
+        tbody.querySelectorAll(".ref-rename-btn").forEach(function(btn) {
+          btn.onclick = function() {
+            var refCode = btn.getAttribute("data-ref-code");
+            var current = btn.getAttribute("data-ref-name") || "";
+            var name = prompt("\"" + refCode + "\" referans kodu için gösterilecek isim (boş bırakırsan kaldırılır):", current);
+            if (name === null) return;
+            fetch(API + "/api/reports/referral-labels", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ref_code: refCode, label: name.trim() })
+            }).then(function(r) { return r.json(); }).then(function() {
+              toast(name.trim() ? "İsim kaydedildi." : "İsim kaldırıldı.");
+              var pq = periodQuery();
+              fetch(API + "/api/reports/referrals" + pq).then(function(r) { return r.json(); })
+                .then(function(d) { renderRefReport(d.report || []); });
+            }).catch(function() { alert("Kaydedilemedi."); });
+          };
         });
         updateTableFoot("ref-report-table", cachedRefReport.length);
         updateSortHeaders("ref-report-table");
@@ -1721,29 +1760,17 @@
       function updateTableFoot(tableId, total) {
         var foot = document.getElementById(tableId + "-foot");
         var countEl = document.getElementById(tableId + "-count");
-        var scroll = document.getElementById(tableId + "-scroll");
         var st = tablePager[tableId];
         var label = TABLE_LABELS[tableId] || "kayıt";
         if (!foot || !st) return;
-        if (!total || total <= TABLE_PAGE_SIZE) {
+        if (!total) {
           foot.style.display = "none";
-          if (scroll) scroll.classList.remove("scrollable");
           return;
         }
         foot.style.display = "flex";
-        var btn = foot.querySelector("[data-table-toggle]");
-        var hidden = total - TABLE_PAGE_SIZE;
-        if (btn) {
-          btn.textContent = st.expanded
-            ? "▲ Daha az göster"
-            : "▼ Tümünü göster (" + hidden + " " + label + " daha)";
-        }
         if (countEl) {
-          countEl.textContent = st.expanded
-            ? total + " " + label + " listeleniyor"
-            : "İlk " + TABLE_PAGE_SIZE + " / " + total + " " + label;
+          countEl.textContent = total + " " + label;
         }
-        if (scroll) scroll.classList.toggle("scrollable", st.expanded);
       }
 
       function updateSortHeaders(tableId) {
@@ -1783,6 +1810,8 @@
         else if (tableId === "ref-report-table") renderRefReportRows();
         else if (tableId === "online-table") renderOnlineRows();
         else if (tableId === "sessions-table") renderSessionsBody();
+        else if (tableId === "smartico-table") { if (smarticoLastResult) renderSmarticoReport(smarticoLastResult); }
+        else if (tableId === "blink-table") { if (blinkLastResult) renderBlinkReport(blinkLastResult); }
       }
 
       var sessionSortGetters = {
@@ -2335,6 +2364,33 @@
         document.getElementById("smartico-table-wrap").style.display = mode === "data" ? "" : "none";
       }
 
+      function applySmarticoInactiveFilter(rows) {
+        var chk = document.getElementById("smartico-hide-inactive");
+        if (!chk || !chk.checked || !smarticoActiveKeys) return rows;
+        return rows.filter(function(r) {
+          var key = String(r.affiliate_id) + "::" + String(r.link_id);
+          return smarticoActiveKeys.has(key) || (r.online_now || 0) > 0;
+        });
+      }
+
+      function loadSmarticoActiveKeys() {
+        if (!hasPerm("tracking.smartico") || smarticoConfigured === false) return;
+        fetch(API + "/api/smartico/report?period=6months").then(function(r) {
+          if (r.status === 401) return null;
+          return r.json();
+        }).then(function(d) {
+          if (!d || !d.rows) return;
+          var set = new Set();
+          d.rows.forEach(function(r) {
+            if ((r.visit_count || 0) > 0 || (r.registration_count || 0) > 0) {
+              set.add(String(r.affiliate_id) + "::" + String(r.link_id));
+            }
+          });
+          smarticoActiveKeys = set;
+          if (smarticoLastResult) renderSmarticoReport(smarticoLastResult);
+        }).catch(function() {});
+      }
+
       function renderSmarticoReport(result) {
         if (!result || result.error === "not_configured") {
           setSmarticoView("empty");
@@ -2344,7 +2400,17 @@
           document.getElementById("smartico-error-text").textContent = "Smartico API hatası: " + result.error;
           if (!result.rows || !result.rows.length) { setSmarticoView("error"); return; }
         }
-        var rows = result.rows || [];
+        smarticoLastResult = result;
+        var rows = applySmarticoInactiveFilter(result.rows || []);
+        rows = sortTableRows("smartico-table", rows, {
+          affiliate_name: function(r) { return r.affiliate_name || ""; },
+          link_name: function(r) { return r.link_name || ""; },
+          online_now: function(r) { return r.online_now || 0; },
+          visit_count: function(r) { return r.visit_count || 0; },
+          registration_count: function(r) { return r.registration_count || 0; },
+          deposit_total: function(r) { return r.deposit_total || 0; },
+          commissions_total: function(r) { return r.commissions_total || 0; }
+        });
         var s = result.summary || {};
         document.getElementById("smartico-kpi-visits").textContent = fmtSmarticoNum(s.visit_count);
         document.getElementById("smartico-kpi-regs").textContent = fmtSmarticoNum(s.registration_count);
@@ -2352,6 +2418,8 @@
         document.getElementById("smartico-kpi-deposit").textContent = fmtSmarticoMoney(s.deposit_total) + (result.currency ? " " + result.currency : "");
         var tbody = document.getElementById("smartico-table");
         smarticoRowsById = {};
+        updateTableFoot("smartico-table", rows.length);
+        updateSortHeaders("smartico-table");
         if (!rows.length) {
           tbody.innerHTML = '<tr><td colspan="8" class="empty">Bu dönem için veri yok</td></tr>';
         } else {
@@ -2404,6 +2472,7 @@
         document.getElementById("smartico-api-key").placeholder = cfg.configured ? ("Kayıtlı: " + cfg.api_key_masked + " — değiştirmek için yeni anahtar yapıştır") : "xxxxxxxx-xxxx-xxxx-xxxx";
         if (cfg.configured) {
           loadSmarticoReport(false);
+          loadSmarticoActiveKeys();
         } else {
           setSmarticoView("empty");
           document.getElementById("smartico-settings-box").style.display = "";
@@ -2437,9 +2506,18 @@
           document.getElementById("blink-error-text").textContent = "bl.ink API hatası: " + result.error;
           if (!result.rows || !result.rows.length) { setBlinkView("error"); return; }
         }
-        var rows = result.rows || [];
+        blinkLastResult = result;
+        var rows = sortTableRows("blink-table", result.rows || [], {
+          short_link: function(r) { return r.short_link || r.alias || ""; },
+          redirect_url: function(r) { return r.redirect_url || ""; },
+          ref_code: function(r) { return r.ref_code || ""; },
+          online_now: function(r) { return r.online_now || 0; },
+          click_count: function(r) { return r.click_count || 0; }
+        });
         var tbody = document.getElementById("blink-table");
         blinkRowsById = {};
+        updateTableFoot("blink-table", rows.length);
+        updateSortHeaders("blink-table");
         if (!rows.length) {
           tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz link yok</td></tr>';
         } else {
@@ -2680,7 +2758,12 @@
 
       bindOptional("btn-smartico-refresh", "click", function() {
         loadSmarticoReport(true);
+        loadSmarticoActiveKeys();
         toast("Smartico verisi yenileniyor…");
+      });
+
+      bindOptional("smartico-hide-inactive", "change", function() {
+        if (smarticoLastResult) renderSmarticoReport(smarticoLastResult);
       });
 
       bindOptional("btn-smartico-clear", "click", function() {
