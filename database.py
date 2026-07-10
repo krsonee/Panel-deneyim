@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+import threading
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +10,9 @@ from permissions import normalize_permissions, ensure_module_parents
 
 APP_DIR = Path(__file__).resolve().parent
 DB_PATH = APP_DIR / "analytics.db"
+
+_pg_pool = None
+_pg_pool_lock = threading.Lock()
 
 
 def get_database_url():
@@ -19,14 +23,77 @@ def uses_postgres():
     return get_database_url().startswith("postgres")
 
 
+def _get_pg_pool():
+    """Her request'te yeni TCP/SSL baglantisi acmak yavas oldugu icin (Render'da
+    bazen 10-80sn'ye kadar cikabiliyor), kucuk bir havuz tutup baglantilari
+    yeniden kullaniyoruz. Ilk baglantilar acilirken bir kerelik gecikme olur,
+    sonrasinda getconn() aninda doner."""
+    global _pg_pool
+    if _pg_pool is None:
+        with _pg_pool_lock:
+            if _pg_pool is None:
+                from psycopg2 import pool as pg_pool
+
+                _pg_pool = pg_pool.ThreadedConnectionPool(
+                    1, 8, get_database_url(), connect_timeout=10
+                )
+    return _pg_pool
+
+
+class _PooledConnection:
+    """psycopg2 baglantisini normal connection gibi kullandirir; close()
+    cagrildiginda baglantiyi kapatmaz, havuza geri birakir."""
+
+    __slots__ = ("_conn", "_pool", "_released")
+
+    def __init__(self, conn, pool):
+        object.__setattr__(self, "_conn", conn)
+        object.__setattr__(self, "_pool", pool)
+        object.__setattr__(self, "_released", False)
+
+    def close(self):
+        if self._released:
+            return
+        object.__setattr__(self, "_released", True)
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+        try:
+            self._pool.putconn(self._conn)
+        except Exception:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 def get_db():
     database_url = get_database_url()
     if uses_postgres():
-        import psycopg2
         from psycopg2.extras import RealDictCursor
 
-        conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
-        return conn
+        pool = _get_pg_pool()
+        try:
+            conn = pool.getconn()
+        except Exception:
+            # Havuz tukendi/bozuldu: dogrudan yeni baglanti dene (fallback).
+            import psycopg2
+
+            return psycopg2.connect(
+                database_url, cursor_factory=RealDictCursor, connect_timeout=10
+            )
+        conn.cursor_factory = RealDictCursor
+        return _PooledConnection(conn, pool)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
