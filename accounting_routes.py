@@ -86,6 +86,40 @@ def create_accounting_blueprint(permission_required):
         enriched = enrich_employee_row(dict(row), period)
         return redact_employee_for_view(enriched, can_view_office_salaries(), category_map)
 
+    def stored_rates(row):
+        if not row:
+            return None
+        try:
+            usd = float(row.get("rate_usd_try") or 0)
+            eur = float(row.get("rate_eur_try") or 0)
+        except (TypeError, ValueError):
+            return None
+        if usd <= 0 or eur <= 0:
+            return None
+        return {"usd_try": usd, "eur_try": eur}
+
+    def rates_from_request(data, stored=None):
+        usd = parse_rate(data.get("rate_usd_try"))
+        eur = parse_rate(data.get("rate_eur_try"))
+        if (usd and not eur) or (eur and not usd):
+            return None, "USD/TL ve EUR/TL birlikte girilmeli veya ikisi de boş bırakılmalı."
+        if usd and eur:
+            return {"usd_try": usd, "eur_try": eur}, None
+        # Yeni kayıt veya formda kur bilerek boş bırakıldı → kayıt anındaki canlı kur
+        if data.get("auto_rate") or stored is None:
+            auto = fetch_exchange_rates(fresh=True)
+            if auto.get("source") == "fallback":
+                return None, "Güncel kur alınamadı. USD/TL ve EUR/TL değerlerini manuel girin."
+            return {"usd_try": auto["usd_try"], "eur_try": auto["eur_try"]}, None
+        # Güncelleme: kur gönderilmediyse kayıtlı kuru koru
+        prev = stored_rates(stored)
+        if prev:
+            return prev, None
+        auto = fetch_exchange_rates(fresh=True)
+        if auto.get("source") == "fallback":
+            return None, "Güncel kur alınamadı. USD/TL ve EUR/TL değerlerini manuel girin."
+        return {"usd_try": auto["usd_try"], "eur_try": auto["eur_try"]}, None
+
     def parse_amount(value):
         try:
             amount = float(value)
@@ -116,18 +150,6 @@ def create_accounting_blueprint(permission_required):
             return None
         return round(rate, 6)
 
-    def rates_from_request(data, fallback=None):
-        usd = parse_rate(data.get("rate_usd_try"))
-        eur = parse_rate(data.get("rate_eur_try"))
-        if (usd and not eur) or (eur and not usd):
-            return None, "USD/TL ve EUR/TL birlikte girilmeli veya ikisi de boş bırakılmalı."
-        if usd and eur:
-            return {"usd_try": usd, "eur_try": eur}, None
-        if fallback:
-            return fallback, None
-        auto = fetch_exchange_rates()
-        return {"usd_try": auto["usd_try"], "eur_try": auto["eur_try"]}, None
-
     def build_money(amount, currency, rates=None):
         currency = parse_currency(currency)
         if not currency:
@@ -143,12 +165,14 @@ def create_accounting_blueprint(permission_required):
         return {"usd_try": fx["rate_usd_try"], "eur_try": fx["rate_eur_try"]}
 
     def rates_json(rates):
+        fetched_at = rates.get("fetched_at")
         return {
             "currencies": list(CURRENCIES),
             "usd_try": rates["usd_try"],
             "eur_try": rates["eur_try"],
             "date": rates.get("date"),
             "source": rates.get("source"),
+            "fetched_at": fetched_at.isoformat() if hasattr(fetched_at, "isoformat") else fetched_at,
         }
 
     def parse_salary_category(value, category_slugs):
@@ -927,16 +951,33 @@ def create_accounting_blueprint(permission_required):
 
             departments, salary_categories = payroll_context(conn)
             dept_names = [d["name"] for d in departments]
+
+            if set(data.keys()) == {"advance_amount"}:
+                advance = parse_office_amount(data.get("advance_amount"))
+                if advance is None:
+                    return jsonify({"error": "Geçerli avans tutarı girin."}), 400
+                adv_err = validate_advance_amount(row["salary"], advance)
+                if adv_err:
+                    return jsonify({"error": adv_err}), 400
+                execute(
+                    conn,
+                    "UPDATE acc_employees SET advance_amount = ? WHERE id = ?",
+                    (advance, emp_id),
+                )
+                conn.commit()
+                row = fetchone(conn, "SELECT * FROM acc_employees WHERE id = ?", (emp_id,))
+                return jsonify({
+                    "employee": prepare_employee_row(row, "all", salary_categories),
+                    **permissions_meta(),
+                })
+
             payload, err = employee_payload(
                 data, dict(row), salary_categories=salary_categories, department_names=dept_names
             )
             if err:
                 return jsonify({"error": err}), 400
 
-            fallback = None
-            if row.get("rate_usd_try") and row.get("rate_eur_try"):
-                fallback = {"usd_try": float(row["rate_usd_try"]), "eur_try": float(row["rate_eur_try"])}
-            rates, rate_err = rates_from_request(data, fallback=fallback)
+            rates, rate_err = rates_from_request(data, stored=dict(row))
             if rate_err:
                 return jsonify({"error": rate_err}), 400
             fx, err = build_money(payload["salary"], payload["currency"], rates)

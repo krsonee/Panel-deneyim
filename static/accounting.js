@@ -13,7 +13,9 @@
   var accEmpFilterDept = "";
   var accDisplayCurrency = localStorage.getItem("acc_display_currency") || "TRY";
   var accEmpCurrencyView = localStorage.getItem("acc_emp_currency_view") || accDisplayCurrency;
-  var accRates = { usd_try: 34, eur_try: 37, date: null, source: "fallback" };
+  var accRates = { usd_try: null, eur_try: null, date: null, source: null, fetched_at: null };
+  var accRatesPollId = null;
+  var ACC_RATES_POLL_MS = 30000;
   var ACC_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
 
   var accCanViewOfficeSalaries = false;
@@ -100,6 +102,8 @@
     if (rateUsd && rateEur) {
       body.rate_usd_try = rateUsd;
       body.rate_eur_try = rateEur;
+    } else {
+      body.auto_rate = true;
     }
     return accApi("/api/accounting/convert", {
       method: "POST",
@@ -143,8 +147,12 @@
     var usdEl = document.getElementById(usdId);
     var eurEl = document.getElementById(eurId);
     var body = {};
-    if (usdEl && usdEl.value.trim()) body.rate_usd_try = usdEl.value.trim();
-    if (eurEl && eurEl.value.trim()) body.rate_eur_try = eurEl.value.trim();
+    if (usdEl && usdEl.value.trim() && eurEl && eurEl.value.trim()) {
+      body.rate_usd_try = usdEl.value.trim();
+      body.rate_eur_try = eurEl.value.trim();
+    } else {
+      body.auto_rate = true;
+    }
     return body;
   }
 
@@ -155,24 +163,63 @@
     if (eurEl) eurEl.value = "";
   }
 
+  function accFormatRate(n) {
+    if (n == null || n === "") return "?";
+    return parseFloat(n).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  }
+
+  function accApplyRates(data) {
+    if (!data || !data.usd_try || !data.eur_try) return;
+    accRates = data;
+    accUpdateRatePlaceholders();
+  }
+
+  function accRateTimeLabel() {
+    if (!accRates.fetched_at) return "";
+    try {
+      return " · " + new Date(accRates.fetched_at).toLocaleTimeString("tr-TR", {
+        hour: "2-digit", minute: "2-digit", second: "2-digit"
+      });
+    } catch (e) {
+      return "";
+    }
+  }
+
   function accUpdateRatePlaceholders() {
+    var usd = accFormatRate(accRates.usd_try);
+    var eur = accFormatRate(accRates.eur_try);
+    var suffix = accRates.source && accRates.source !== "fallback" ? accRateTimeLabel() : " (yükleniyor…)";
     document.querySelectorAll(".acc-form-rate").forEach(function (el) {
-      el.placeholder = "Boş = otomatik (" + (accRates.usd_try || "?") + " / " + (accRates.eur_try || "?") + ")";
+      el.placeholder = "Boş = kayıt anı kuru (" + usd + " / " + eur + ")" + suffix;
     });
+    var badge = document.getElementById("acc-live-rates-badge");
+    if (badge) {
+      badge.textContent = accRates.usd_try && accRates.eur_try
+        ? "Yeni kayıt referans · USD/TL " + accFormatRate(accRates.usd_try) + " · EUR/TL " + accFormatRate(accRates.eur_try) + accRateTimeLabel()
+        : "Kur yükleniyor…";
+    }
   }
 
   function accLoadRates() {
     return accApi("/api/accounting/exchange-rates").then(function (res) {
       if (!res || !res.ok) return;
-      accRates = res.data;
-      accUpdateRatePlaceholders();
+      accApplyRates(res.data);
     });
+  }
+
+  function accStartRatesPolling() {
+    if (accRatesPollId) clearInterval(accRatesPollId);
+    accRatesPollId = setInterval(function () {
+      if (document.hidden) return;
+      accLoadRates();
+    }, ACC_RATES_POLL_MS);
   }
 
   function accRatesSummary(rates) {
     rates = rates || accRates;
-    var usd = parseFloat(rates.usd_try || 0).toFixed(2);
-    var eur = parseFloat(rates.eur_try || 0).toFixed(2);
+    if (!rates.usd_try || !rates.eur_try) return "Kur yükleniyor…";
+    var usd = parseFloat(rates.usd_try).toFixed(2);
+    var eur = parseFloat(rates.eur_try).toFixed(2);
     return "USD/TL: " + usd + " · EUR/TL: " + eur;
   }
 
@@ -670,8 +717,7 @@
       if (res.data.departments) accApplyDepartments(res.data.departments);
       if (res.data.period_label) accUpdatePeriodLabel(res.data.period_label);
       if (res.data.rates) {
-        accRates = res.data.rates;
-        accUpdateRatePlaceholders();
+        accApplyRates(res.data.rates);
       }
       var kpiAll = res.data.kpi || {};
       var k = kpiAll[accDisplayCurrency] || kpiAll.TRY || {};
@@ -1346,14 +1392,17 @@
 
   window.MakroAccounting = {
     init: function () {
-      accLoadRates();
-      accInitForms();
-      accInitUi();
-      accSwitchTab("dashboard");
+      accLoadRates().then(function () {
+        accInitForms();
+        accInitUi();
+        accStartRatesPolling();
+        accSwitchTab("dashboard");
+      });
     },
     refresh: accRefreshAll,
     onShow: function () {
       accLoadRates().then(accRefreshAll);
+      accStartRatesPolling();
     },
     setPermissions: function (perms) {
       var list = perms || [];

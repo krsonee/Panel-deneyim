@@ -3,6 +3,7 @@
 import json
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
@@ -13,12 +14,17 @@ _SETTING_MANUAL = "exchange_manual"
 _SETTING_USD = "exchange_usd_try"
 _SETTING_EUR = "exchange_eur_try"
 
+_HTTP_HEADERS = {"User-Agent": "MakroPanel/1.0"}
+
+# Kısa süreli önbellek yalnızca arka arkaya gelen istekleri azaltır; kayıt anında kullanılmaz.
+_SOFT_CACHE_SECONDS = 15
+
 _rate_cache = {
     "fetched_at": None,
-    "usd_try": 34.25,
-    "eur_try": 37.10,
+    "usd_try": None,
+    "eur_try": None,
     "date": None,
-    "source": "fallback",
+    "source": None,
 }
 
 
@@ -29,39 +35,158 @@ def parse_currency(value):
     return code
 
 
-def fetch_exchange_rates(force=False):
+def _mid_rate(buying, selling):
+    buying = float(buying or 0)
+    selling = float(selling or 0)
+    if buying > 0 and selling > 0:
+        return round((buying + selling) / 2, 6)
+    rate = buying or selling
+    if rate <= 0:
+        raise ValueError("invalid rate")
+    return round(rate, 6)
+
+
+def _fetch_truncgil():
+    req = urllib.request.Request(
+        "https://finans.truncgil.com/v4/today.json",
+        headers=_HTTP_HEADERS,
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+    usd = data.get("USD") or {}
+    eur = data.get("EUR") or {}
+    usd_try = _mid_rate(usd.get("Buying"), usd.get("Selling"))
+    eur_try = _mid_rate(eur.get("Buying"), eur.get("Selling"))
+    return usd_try, eur_try, datetime.now(timezone.utc).isoformat(), "truncgil-live"
+
+
+def _fetch_tcmb():
+    req = urllib.request.Request(
+        "https://www.tcmb.gov.tr/kurlar/today.xml",
+        headers=_HTTP_HEADERS,
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        root = ET.fromstring(resp.read())
+    usd_try = eur_try = None
+    date_label = root.get("Date") or root.get("Tarih")
+    for cur in root.findall("Currency"):
+        kod = cur.get("Kod")
+        if kod == "USD":
+            usd_try = _mid_rate(cur.findtext("ForexBuying"), cur.findtext("ForexSelling"))
+        elif kod == "EUR":
+            eur_try = _mid_rate(cur.findtext("ForexBuying"), cur.findtext("ForexSelling"))
+    if not usd_try or not eur_try:
+        raise ValueError("tcmb missing rates")
+    return usd_try, eur_try, date_label, "tcmb"
+
+
+def _fetch_er_api():
+    req = urllib.request.Request(
+        "https://open.er-api.com/v6/latest/USD",
+        headers=_HTTP_HEADERS,
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+    if data.get("result") != "success":
+        raise ValueError("er-api unsuccessful")
+    usd_try = float(data["rates"]["TRY"])
+    eur_per_usd = float(data["rates"]["EUR"])
+    if usd_try <= 0 or eur_per_usd <= 0:
+        raise ValueError("er-api invalid rates")
+    eur_try = round(usd_try / eur_per_usd, 6)
+    return usd_try, eur_try, data.get("time_last_update_utc"), "er-api"
+
+
+def _fetch_frankfurter():
+    req = urllib.request.Request(
+        "https://api.frankfurter.app/latest?from=USD&to=TRY,EUR",
+        headers=_HTTP_HEADERS,
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+    usd_try = float(data["rates"]["TRY"])
+    eur_per_usd = float(data["rates"]["EUR"])
+    if usd_try <= 0 or eur_per_usd <= 0:
+        raise ValueError("frankfurter invalid rates")
+    eur_try = round(usd_try / eur_per_usd, 6)
+    return usd_try, eur_try, data.get("date"), "frankfurter"
+
+
+def _fetch_exchangerate_host():
+    req = urllib.request.Request(
+        "https://api.exchangerate.host/latest?base=USD&symbols=TRY,EUR",
+        headers=_HTTP_HEADERS,
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+    if not data.get("success", True):
+        raise ValueError("exchangerate.host unsuccessful")
+    usd_try = float(data["rates"]["TRY"])
+    eur_per_usd = float(data["rates"]["EUR"])
+    if usd_try <= 0 or eur_per_usd <= 0:
+        raise ValueError("exchangerate.host invalid rates")
+    eur_try = round(usd_try / eur_per_usd, 6)
+    return usd_try, eur_try, data.get("date"), "exchangerate.host"
+
+
+def _fetch_live_rates():
+    errors = []
+    for fetch in (_fetch_truncgil, _fetch_tcmb, _fetch_er_api, _fetch_frankfurter, _fetch_exchangerate_host):
+        try:
+            return fetch()
+        except (urllib.error.URLError, urllib.error.HTTPError, KeyError, ValueError, TypeError) as exc:
+            errors.append(str(exc))
+            continue
+    raise RuntimeError("; ".join(errors[-3:]) if errors else "no providers")
+
+
+def _cache_result(now, usd_try, eur_try, date, source):
+    global _rate_cache
+    _rate_cache = {
+        "fetched_at": now,
+        "usd_try": usd_try,
+        "eur_try": eur_try,
+        "date": date,
+        "source": source,
+    }
+    return dict(_rate_cache)
+
+
+def fetch_exchange_rates(force=False, fresh=False):
+    """Canlı kurları getirir.
+
+    fresh=True veya force=True: her seferinde API'den anlık kur çeker.
+    Aksi halde en fazla 15 sn kısa önbellek (aynı sayfa yüklemesinde).
+    """
     global _rate_cache
     now = datetime.now(timezone.utc)
+    live = force or fresh
+    has_cached = (
+        _rate_cache.get("usd_try")
+        and _rate_cache.get("eur_try")
+        and _rate_cache.get("source") not in (None, "fallback")
+    )
     if (
-        not force
+        not live
+        and has_cached
         and _rate_cache.get("fetched_at")
-        and now - _rate_cache["fetched_at"] < timedelta(hours=1)
+        and now - _rate_cache["fetched_at"] < timedelta(seconds=_SOFT_CACHE_SECONDS)
     ):
         return dict(_rate_cache)
 
     try:
-        req = urllib.request.Request(
-            "https://api.frankfurter.app/latest?from=USD&to=TRY,EUR",
-            headers={"User-Agent": "MakroPanel/1.0"},
+        usd_try, eur_try, date, source = _fetch_live_rates()
+        return _cache_result(now, usd_try, eur_try, date, source)
+    except RuntimeError:
+        if has_cached:
+            return dict(_rate_cache)
+        return _cache_result(
+            now,
+            _rate_cache.get("usd_try") or 34.25,
+            _rate_cache.get("eur_try") or 37.10,
+            _rate_cache.get("date"),
+            "fallback",
         )
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode())
-        usd_try = float(data["rates"]["TRY"])
-        eur_per_usd = float(data["rates"]["EUR"])
-        eur_try = round(usd_try / eur_per_usd, 6)
-        _rate_cache = {
-            "fetched_at": now,
-            "usd_try": usd_try,
-            "eur_try": eur_try,
-            "date": data.get("date"),
-            "source": "frankfurter",
-        }
-    except (urllib.error.URLError, urllib.error.HTTPError, KeyError, ValueError, TypeError):
-        if not _rate_cache.get("fetched_at"):
-            _rate_cache["fetched_at"] = now
-        _rate_cache["source"] = _rate_cache.get("source") or "fallback"
-
-    return dict(_rate_cache)
 
 
 def _read_settings(conn):
