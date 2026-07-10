@@ -1249,6 +1249,13 @@
         var domains = data.domain_traffic||[];
         var channels = data.affiliate_channels||[];
         var games = data.game_clicks||[];
+        var sig = JSON.stringify({
+          d: domains.map(function(x){ return [x.domain, x.total_players, x.online_now]; }),
+          c: channels.map(function(x){ return [x.channel, x.members]; }),
+          g: games.map(function(x){ return [x.game, x.clicks]; })
+        });
+        if (sig === lastChartsSig && charts.domain) return;
+        lastChartsSig = sig;
         showEmpty("empty-domains", !domains.length);
         showEmpty("empty-affiliate", !channels.length);
         showEmpty("empty-games", !games.length);
@@ -1340,6 +1347,9 @@
         var doms = {}, refs = {};
         sessions.forEach(function(s){ doms[s.domain]=1; refs[s.ref_code||"Direkt giriş"]=1; });
         (links||[]).forEach(function(l){ doms[l.domain]=1; if(l.ref_code) refs[l.ref_code]=1; });
+        var sig = JSON.stringify({ d: Object.keys(doms).sort(), r: Object.keys(refs).sort() });
+        if (sig === lastFilterSig) { dSel.value = cD; rSel.value = cR; return; }
+        lastFilterSig = sig;
         dSel.innerHTML = '<option value="">Tümü</option>';
         rSel.innerHTML = '<option value="">Tümü</option>';
         Object.keys(doms).sort().forEach(function(d){ dSel.innerHTML+='<option value="'+esc(d)+'">'+esc(d)+'</option>'; });
@@ -1424,28 +1434,125 @@
       }
 
       var lastLinks = [];
-      function refreshAll() {
+      var REFRESH_LIVE_MS = 5000;
+      var REFRESH_DASH_MS = 30000;
+      var lastOnlineSig = "";
+      var lastSessionsSig = "";
+      var lastLinksSig = "";
+      var lastRefSig = "";
+      var lastChartsSig = "";
+      var lastFilterSig = "";
+      var liveInFlight = false;
+      var dashInFlight = false;
+
+      function listSig(items, keys) {
+        if (!items || !items.length) return "[]";
+        return JSON.stringify(items.map(function(x) {
+          var o = {};
+          keys.forEach(function(k) { o[k] = x[k]; });
+          return o;
+        }));
+      }
+
+      function resetRefreshSignatures() {
+        lastOnlineSig = "";
+        lastSessionsSig = "";
+        lastLinksSig = "";
+        lastRefSig = "";
+        lastChartsSig = "";
+        lastFilterSig = "";
+      }
+
+      function touchPollStatus() {
+        document.getElementById("poll-status").textContent = "Son güncelleme: "+new Date().toLocaleTimeString("tr-TR");
+      }
+
+      function renderOnlineIfChanged(users) {
+        var sig = listSig(users, ["session_id", "total_seconds", "last_seen_at", "games"]);
+        if (sig === lastOnlineSig) return;
+        lastOnlineSig = sig;
+        renderOnline(users);
+      }
+
+      function renderSessionsIfChanged(sessions) {
+        var sig = listSig(sessions, ["session_id", "total_seconds", "last_seen_at", "is_online", "games"]);
+        allSessions = sessions || [];
+        if (sig === lastSessionsSig) return;
+        lastSessionsSig = sig;
+        renderSessions(sessions);
+      }
+
+      function renderLinksIfChanged(links, trackingSnippet) {
+        var sig = listSig(links, ["id", "online_count", "domain", "ref_code", "label"]);
+        if (sig === lastLinksSig) {
+          if (trackingSnippet) updateTrackingSnippet(trackingSnippet);
+          return;
+        }
+        lastLinksSig = sig;
+        renderLinks(links, trackingSnippet);
+      }
+
+      function renderRefReportIfChanged(rows) {
+        var sig = listSig(rows, ["domain", "ref_code", "total_visitors", "online_now", "total_seconds"]);
+        if (sig === lastRefSig) return;
+        lastRefSig = sig;
+        renderRefReport(rows);
+      }
+
+      function refreshLive() {
+        if (document.hidden || liveInFlight) return;
         var pq = periodQuery();
+        if (!hasPerm("tracking.players")) return;
+        liveInFlight = true;
+        Promise.all([
+          fetch(API+"/api/online").then(function(r){ if(r.status===401){location.href="/admin/login";return null;} return r.json(); }),
+          fetch(API+"/api/sessions"+pq).then(function(r){ return r.json(); })
+        ]).then(function(results) {
+          if (!results[0] || !results[1]) return;
+          renderOnlineIfChanged(results[0].users || []);
+          renderSessionsIfChanged(results[1].sessions || []);
+          updateFilters(allSessions, lastLinks);
+          touchPollStatus();
+        }).catch(function(){}).finally(function(){ liveInFlight = false; });
+      }
+
+      function refreshDashboard() {
+        if (document.hidden || dashInFlight) return;
+        var pq = periodQuery();
+        var jobs = [];
         if (hasPerm("tracking.dashboard")) {
-          fetch(API+"/api/stats"+pq).then(function(r){ if(r.status===401){location.href="/admin/login";return null;} return r.json(); })
-            .then(function(s){ if(!s)return; updateKpi(s.kpi); });
-          fetch(API+"/api/charts"+pq).then(function(r){return r.json();}).then(renderCharts).catch(function(){});
+          jobs.push(
+            fetch(API+"/api/stats"+pq).then(function(r){ if(r.status===401){location.href="/admin/login";return null;} return r.json(); })
+              .then(function(s){ if(s) updateKpi(s.kpi); }),
+            fetch(API+"/api/charts"+pq).then(function(r){return r.json();}).then(renderCharts).catch(function(){})
+          );
         }
         if (hasPerm("tracking.reports")) {
-          fetch(API+"/api/reports/referrals"+pq).then(function(r){return r.json();}).then(function(d){ renderRefReport(d.report||[]); }).catch(function(){});
+          jobs.push(
+            fetch(API+"/api/reports/referrals"+pq).then(function(r){return r.json();})
+              .then(function(d){ renderRefReportIfChanged(d.report||[]); }).catch(function(){})
+          );
         }
         if (hasPerm("tracking.domains")) {
-          fetch(API+"/api/links").then(function(r){return r.json();}).then(function(d){
-            lastLinks=d.links||[]; renderLinks(lastLinks, d.tracking_snippet); updateFilters(allSessions,lastLinks);
-          }).catch(function(){});
+          jobs.push(
+            fetch(API+"/api/links").then(function(r){return r.json();}).then(function(d){
+              lastLinks = d.links || [];
+              renderLinksIfChanged(lastLinks, d.tracking_snippet);
+              updateFilters(allSessions, lastLinks);
+            }).catch(function(){})
+          );
         }
-        if (hasPerm("tracking.players")) {
-          fetch(API+"/api/online").then(function(r){return r.json();}).then(function(d){ renderOnline(d.users||[]); }).catch(function(){});
-          fetch(API+"/api/sessions"+pq).then(function(r){return r.json();}).then(function(d){
-            renderSessions(d.sessions||[]); updateFilters(allSessions,lastLinks);
-          }).catch(function(){});
-        }
-        document.getElementById("poll-status").textContent = "Son güncelleme: "+new Date().toLocaleTimeString("tr-TR");
+        if (!jobs.length) return;
+        dashInFlight = true;
+        Promise.all(jobs).catch(function(){}).finally(function(){
+          dashInFlight = false;
+          touchPollStatus();
+        });
+      }
+
+      function refreshAll() {
+        refreshLive();
+        refreshDashboard();
       }
 
       document.getElementById("btn-links-toggle").onclick = function() {
@@ -1509,6 +1616,7 @@
 
       document.getElementById("filter-period").addEventListener("change", function() {
         currentPeriod = this.value;
+        resetRefreshSignatures();
         refreshAll();
       });
 
@@ -1608,7 +1716,7 @@
       };
       document.getElementById("btn-clear").onclick = function(){
         if(!confirm("Tüm oturum verileri silinecek. Emin misin?")) return;
-        fetch(API+"/api/data/clear-sessions",{method:"POST"}).then(function(){ prevSnapshot={}; refreshAll(); toast("Temizlendi."); });
+        fetch(API+"/api/data/clear-sessions",{method:"POST"}).then(function(){ prevSnapshot={}; resetRefreshSignatures(); refreshAll(); toast("Temizlendi."); });
       };
 
       document.getElementById("modal-close").onclick = function(){ document.getElementById("journey-modal").classList.remove("open"); };
@@ -1627,7 +1735,11 @@
       applyTableColOrder("sessions-table");
       loadMe(function() {
         refreshAll();
-        setInterval(refreshAll, 3000);
+        setInterval(refreshLive, REFRESH_LIVE_MS);
+        setInterval(refreshDashboard, REFRESH_DASH_MS);
+      });
+      document.addEventListener("visibilitychange", function() {
+        if (!document.hidden) refreshAll();
       });
       setInterval(tickTimes, 1000);
     })();

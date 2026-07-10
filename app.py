@@ -545,16 +545,15 @@ def _detect_android_brand(ua, low):
     return "Android"
 
 
-def session_to_dict(row, now=None):
+def session_to_dict(row, now=None, *, light=False):
     now = now or utcnow()
     last_seen = parse_iso(row["last_seen_at"])
     is_online = last_seen and (now - last_seen).total_seconds() <= ONLINE_THRESHOLD_SECONDS
     games = json.loads(row["games"] or "[]")
-    game_log = json.loads(row["game_log"] or "[]")
     sid = row["session_id"] or ""
     ua = row["user_agent"] if "user_agent" in row.keys() else ""
     device = parse_user_agent(ua)
-    return {
+    data = {
         "id": row["id"],
         "session_id": sid,
         "session_short": sid[:8] + "…" if len(sid) > 8 else sid,
@@ -565,7 +564,6 @@ def session_to_dict(row, now=None):
         "last_seen_at": row["last_seen_at"],
         "total_seconds": row["total_seconds"],
         "games": games,
-        "game_log": game_log,
         "is_online": bool(is_online),
         "ip_address": row["ip_address"] if "ip_address" in row.keys() else "",
         "user_agent": ua,
@@ -576,6 +574,9 @@ def session_to_dict(row, now=None):
         "device_brand": device["brand"],
         "device_browser": device["browser"],
     }
+    if not light:
+        data["game_log"] = json.loads(row["game_log"] or "[]")
+    return data
 
 
 def get_server_base_url():
@@ -741,20 +742,24 @@ def demo_page():
 @app.route("/api/links", methods=["GET"])
 @permission_required("tracking.domains")
 def list_links():
-    now = utcnow()
-    cutoff = iso(now - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
+    cutoff = iso(utcnow() - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
     with closing(get_db()) as conn:
         rows = fetchall(conn, "SELECT * FROM tracked_links ORDER BY created_at DESC")
+        online_rows = fetchall(
+            conn,
+            """
+            SELECT tracked_link_id, COUNT(*) AS cnt
+            FROM visitor_sessions
+            WHERE last_seen_at >= ?
+            GROUP BY tracked_link_id
+            """,
+            (cutoff,),
+        )
+    online_map = {row["tracked_link_id"]: row["cnt"] for row in online_rows}
     links = []
     for row in rows:
         item = dict(row)
-        with closing(get_db()) as conn:
-            online_count = scalar(
-                conn,
-                "SELECT COUNT(*) FROM visitor_sessions WHERE tracked_link_id = ? AND last_seen_at >= ?",
-                (item["id"], cutoff),
-            )
-        item["online_count"] = online_count or 0
+        item["online_count"] = online_map.get(item["id"], 0)
         item["affiliate_url"] = affiliate_url(item["domain"], item["ref_code"])
         links.append(item)
     return jsonify({"links": links, "tracking_snippet": build_tracking_snippet()})
@@ -1095,7 +1100,7 @@ def online_users():
             (cutoff,),
         )
 
-    users = [session_to_dict(row, now) for row in rows]
+    users = [session_to_dict(row, now, light=True) for row in rows]
     return jsonify({"count": len(users), "users": users})
 
 
@@ -1117,7 +1122,7 @@ def all_sessions():
             date_params,
         )
 
-    sessions = [session_to_dict(row, now) for row in rows]
+    sessions = [session_to_dict(row, now, light=True) for row in rows]
     return jsonify({"sessions": sessions, "period": period})
 
 
@@ -1500,16 +1505,30 @@ def stats():
         )
         total_links = scalar(conn, "SELECT COUNT(*) FROM tracked_links")
 
-        log_rows = fetchall(
-            conn,
-            f"""
-            SELECT vs.game_log FROM visitor_sessions vs
-            INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
-            WHERE 1=1{date_sql}
-            """,
-            date_params,
-        )
-        total_clicks = sum(len(json.loads(r["game_log"] or "[]")) for r in log_rows)
+        if uses_postgres():
+            total_clicks = scalar(
+                conn,
+                f"""
+                SELECT COALESCE(SUM(
+                    jsonb_array_length(COALESCE(NULLIF(vs.game_log, '')::jsonb, '[]'::jsonb))
+                ), 0)
+                FROM visitor_sessions vs
+                INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
+                WHERE 1=1{date_sql}
+                """,
+                date_params,
+            )
+        else:
+            total_clicks = scalar(
+                conn,
+                f"""
+                SELECT COALESCE(SUM(json_array_length(COALESCE(vs.game_log, '[]'))), 0)
+                FROM visitor_sessions vs
+                INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
+                WHERE 1=1{date_sql}
+                """,
+                date_params,
+            )
 
         top_domain_row = fetchone(
             conn,
