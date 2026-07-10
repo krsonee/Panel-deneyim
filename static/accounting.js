@@ -6,6 +6,9 @@
   var accActiveTab = "dashboard";
   var accPaymentMethods = [];
   var accCategories = [];
+  var accDisplayCurrency = localStorage.getItem("acc_display_currency") || "TRY";
+  var accRates = { usd_try: 34, eur_try: 37, date: null, source: "fallback" };
+  var ACC_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
 
   var accData = {
     "acc-tx": { rows: [], expanded: false, sortKey: "tx_date", sortDir: "desc" },
@@ -28,9 +31,83 @@
     return d.innerHTML;
   }
 
-  function accMoney(n) {
+  function accMoney(n, currency) {
+    currency = currency || accDisplayCurrency;
     n = parseFloat(n) || 0;
-    return "$" + n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    var sym = ACC_SYMBOLS[currency] || currency + " ";
+    return sym + n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function accMoneyIn(row, field) {
+    if (!row) return 0;
+    var cur = accDisplayCurrency;
+    var key = field + "_" + cur.toLowerCase();
+    if (row[key] != null && row[key] !== "") return row[key];
+    if (field === "amount" && row.currency === cur) return row.amount;
+    if (field === "salary" && row.currency === cur) return row.salary;
+    if (field === "commission_amount" && row.currency === cur) return row.commission_amount;
+    return row[field + "_try"] != null ? row[field + "_" + cur.toLowerCase()] : (row[field] || 0);
+  }
+
+  function accMoneyCellHtml(row, field) {
+    var valField = field === "salary" ? "salary" : (field === "commission_amount" ? "commission_amount" : "amount");
+    var cur = row.currency || "USD";
+    var main = accMoney(row[valField] || 0, cur);
+    var tryV, usdV, eurV;
+    if (field === "salary") {
+      tryV = row.salary_try; usdV = row.salary_usd; eurV = row.salary_eur;
+    } else if (field === "commission_amount") {
+      tryV = row.commission_amount_try; usdV = row.commission_amount_usd; eurV = row.commission_amount_eur;
+    } else {
+      tryV = row.amount_try; usdV = row.amount_usd; eurV = row.amount_eur;
+    }
+    if (tryV == null && usdV == null) return "<strong>" + main + "</strong>";
+    return "<strong>" + main + '</strong><br><small class="muted">≈ ' +
+      accMoney(tryV, "TRY") + " · " + accMoney(usdV, "USD") + " · " + accMoney(eurV, "EUR") + "</small>";
+  }
+
+  function accFxPreviewText(amount, currency) {
+    amount = parseFloat(amount);
+    if (!amount || amount <= 0) return "";
+    return accApi("/api/accounting/convert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: amount, currency: currency })
+    }).then(function (res) {
+      if (!res || !res.ok) return "";
+      var c = res.data.converted;
+      return "≈ " + accMoney(c.TRY, "TRY") + " · " + accMoney(c.USD, "USD") + " · " + accMoney(c.EUR, "EUR");
+    });
+  }
+
+  function accBindFxPreview(amountId, currencyId, previewId) {
+    var amountEl = document.getElementById(amountId);
+    var curEl = document.getElementById(currencyId);
+    var previewEl = document.getElementById(previewId);
+    if (!amountEl || !curEl || !previewEl) return;
+    var timer = null;
+    function update() {
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        accFxPreviewText(amountEl.value, curEl.value).then(function (txt) {
+          previewEl.textContent = txt || "";
+        });
+      }, 250);
+    }
+    amountEl.addEventListener("input", update);
+    curEl.addEventListener("change", update);
+  }
+
+  function accLoadRates() {
+    return accApi("/api/accounting/exchange-rates").then(function (res) {
+      if (!res || !res.ok) return;
+      accRates = res.data;
+      var hint = document.getElementById("acc-rates-hint");
+      if (hint) {
+        hint.textContent = "Güncel kur (1 USD = " + accRates.usd_try + " ₺, 1 EUR = " + accRates.eur_try +
+          " ₺) · " + (accRates.date || "") + " · " + (accRates.source || "");
+      }
+    });
   }
 
   function accToast(msg) {
@@ -148,17 +225,27 @@
   function accLoadDashboard() {
     accApi("/api/accounting/dashboard" + accPeriodQuery()).then(function (res) {
       if (!res || !res.ok) return;
-      var k = res.data.kpi || {};
-      document.getElementById("acc-kpi-deposits").textContent = accMoney(k.total_deposits);
-      document.getElementById("acc-kpi-withdrawals").textContent = accMoney(k.total_withdrawals);
-      document.getElementById("acc-kpi-commission").textContent = accMoney(k.total_commission);
-      document.getElementById("acc-kpi-expenses").textContent = accMoney(k.total_expenses);
+      if (res.data.rates) accRates = res.data.rates;
+      var kpiAll = res.data.kpi || {};
+      var k = kpiAll[accDisplayCurrency] || kpiAll.TRY || {};
+      document.getElementById("acc-kpi-deposits").textContent = accMoney(k.total_deposits, accDisplayCurrency);
+      document.getElementById("acc-kpi-withdrawals").textContent = accMoney(k.total_withdrawals, accDisplayCurrency);
+      document.getElementById("acc-kpi-commission").textContent = accMoney(k.total_commission, accDisplayCurrency);
+      document.getElementById("acc-kpi-expenses").textContent = accMoney(k.total_expenses, accDisplayCurrency);
       var netEl = document.getElementById("acc-kpi-net");
-      netEl.textContent = accMoney(k.net_profit);
+      netEl.textContent = accMoney(k.net_profit, accDisplayCurrency);
       netEl.classList.toggle("negative", (k.net_profit || 0) < 0);
       var hint = document.getElementById("acc-kpi-payroll-hint");
       if (hint && k.payroll_monthly) {
-        hint.textContent = "Aktif personel aylık: " + accMoney(k.payroll_monthly);
+        hint.textContent = "Aktif personel aylık: " + accMoney(k.payroll_monthly, accDisplayCurrency);
+      }
+      var sub = document.getElementById("acc-kpi-net-sub");
+      if (sub && kpiAll.TRY) {
+        var others = ["TRY", "USD", "EUR"].filter(function (c) { return c !== accDisplayCurrency; });
+        sub.textContent = others.map(function (c) {
+          var kk = kpiAll[c];
+          return c + ": " + accMoney(kk ? kk.net_profit : 0, c);
+        }).join(" · ");
       }
     });
   }
@@ -233,9 +320,9 @@
       return '<tr><td class="mono">' + accEsc(r.tx_date) + '</td>' +
         '<td>' + accEsc(r.payment_name) + '</td>' +
         '<td><span class="tag ' + (r.tx_type === "deposit" ? "online" : "offline") + '">' + accTxTypeLabel(r.tx_type) + '</span></td>' +
-        '<td><strong>' + accMoney(r.amount) + '</strong></td>' +
+        '<td>' + accMoneyCellHtml(r, "amount") + '</td>' +
         '<td>' + r.commission_rate + '%</td>' +
-        '<td>' + accMoney(r.commission_amount) + '</td>' +
+        '<td>' + accMoneyCellHtml(r, "commission_amount") + '</td>' +
         '<td><button class="btn btn-sm btn-danger" data-del-tx="' + r.id + '">Sil</button></td></tr>';
     }).join("");
     tbody.querySelectorAll("[data-del-tx]").forEach(function (btn) {
@@ -304,7 +391,7 @@
       return '<tr><td class="mono">' + accEsc(r.expense_date) + '</td>' +
         '<td><span class="tag">' + accEsc(r.category_name) + '</span></td>' +
         '<td>' + accEsc(r.description || "—") + '</td>' +
-        '<td><strong>' + accMoney(r.amount) + '</strong></td>' +
+        '<td>' + accMoneyCellHtml(r, "amount") + '</td>' +
         '<td><button class="btn btn-sm btn-danger" data-del-exp="' + r.id + '">Sil</button></td></tr>';
     }).join("");
     tbody.querySelectorAll("[data-del-exp]").forEach(function (btn) {
@@ -345,7 +432,7 @@
         '<td><strong>' + accEsc(r.vault_name) + '</strong></td>' +
         '<td><span class="tag ' + (r.tx_type === "in" ? "online" : "offline") + '">' + accVaultTypeLabel(r.tx_type) + '</span></td>' +
         '<td>' + accEsc(r.description || "—") + '</td>' +
-        '<td><strong>' + accMoney(r.amount) + '</strong></td>' +
+        '<td>' + accMoneyCellHtml(r, "amount") + '</td>' +
         '<td><button class="btn btn-sm btn-danger" data-del-vault="' + r.id + '">Sil</button></td></tr>';
     }).join("");
     tbody.querySelectorAll("[data-del-vault]").forEach(function (btn) {
@@ -363,7 +450,11 @@
     return accApi("/api/accounting/employees").then(function (res) {
       if (!res || !res.ok) return;
       accData["acc-emp"].rows = res.data.employees || [];
-      document.getElementById("acc-payroll-total").textContent = accMoney(res.data.monthly_payroll_total);
+      var payroll = res.data.monthly_payroll_total || {};
+      document.getElementById("acc-payroll-total").textContent = accMoney(
+        payroll[accDisplayCurrency] != null ? payroll[accDisplayCurrency] : payroll.TRY || 0,
+        accDisplayCurrency
+      );
       accRenderEmployees();
     });
   }
@@ -386,7 +477,7 @@
       return '<tr><td><strong>' + accEsc(r.name) + '</strong></td>' +
         '<td>' + accEsc(r.department) + '</td>' +
         '<td class="mono">' + accEsc(r.start_date) + '</td>' +
-        '<td>' + accMoney(r.salary) + '</td>' +
+        '<td>' + accMoneyCellHtml(r, "salary") + '</td>' +
         '<td><span class="tag ' + (r.status === "active" ? "online" : "offline") + '">' + accStatusLabel(r.status) + '</span></td>' +
         '<td><button class="btn btn-sm" data-toggle-emp="' + r.id + '" data-status="' + (r.status === "active" ? "left" : "active") + '">' +
         (r.status === "active" ? "Ayrıldı" : "Aktif") + '</button> ' +
@@ -454,7 +545,8 @@
           tx_date: document.getElementById("acc-tx-date").value,
           payment_method_id: document.getElementById("acc-tx-payment").value,
           tx_type: document.getElementById("acc-tx-type").value,
-          amount: document.getElementById("acc-tx-amount").value
+          amount: document.getElementById("acc-tx-amount").value,
+          currency: document.getElementById("acc-tx-currency").value
         })
       }).then(function (r) {
         if (r && r.ok) {
@@ -509,10 +601,11 @@
       accApi("/api/accounting/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+          body: JSON.stringify({
           expense_date: document.getElementById("acc-exp-date").value,
           category_id: document.getElementById("acc-exp-category").value,
           amount: document.getElementById("acc-exp-amount").value,
+          currency: document.getElementById("acc-exp-currency").value,
           description: document.getElementById("acc-exp-desc").value.trim()
         })
       }).then(function (r) {
@@ -534,6 +627,7 @@
           vault_name: document.getElementById("acc-vault-name").value.trim(),
           tx_type: document.getElementById("acc-vault-type").value,
           amount: document.getElementById("acc-vault-amount").value,
+          currency: document.getElementById("acc-vault-currency").value,
           description: document.getElementById("acc-vault-desc").value.trim()
         })
       }).then(function (r) {
@@ -554,8 +648,9 @@
           name: document.getElementById("acc-emp-name").value.trim(),
           department: document.getElementById("acc-emp-dept").value,
           start_date: document.getElementById("acc-emp-start").value,
-          salary: document.getElementById("acc-emp-salary").value,
-          status: document.getElementById("acc-emp-status").value
+            salary: document.getElementById("acc-emp-salary").value,
+            currency: document.getElementById("acc-emp-currency").value,
+            status: document.getElementById("acc-emp-status").value
         })
       }).then(function (r) {
         if (r && r.ok) {
@@ -565,9 +660,27 @@
         } else if (r) alert(r.data.error || "Hata");
       });
     });
+    accBindFxPreview("acc-tx-amount", "acc-tx-currency", "acc-tx-fx-preview");
+    accBindFxPreview("acc-exp-amount", "acc-exp-currency", "acc-exp-fx-preview");
+    accBindFxPreview("acc-vault-amount", "acc-vault-currency", "acc-vault-fx-preview");
+    accBindFxPreview("acc-emp-salary", "acc-emp-currency", "acc-emp-fx-preview");
   }
 
   function accInitUi() {
+    var dispCur = document.getElementById("acc-display-currency");
+    if (dispCur) {
+      dispCur.value = accDisplayCurrency;
+      dispCur.addEventListener("change", function () {
+        accDisplayCurrency = dispCur.value;
+        localStorage.setItem("acc_display_currency", accDisplayCurrency);
+        accLoadDashboard();
+        accRerenderTable("acc-tx");
+        accRerenderTable("acc-exp");
+        accRerenderTable("acc-vault");
+        accRerenderTable("acc-emp");
+        if (accActiveTab === "payroll") accLoadEmployees();
+      });
+    }
     document.querySelectorAll(".acc-tab").forEach(function (btn) {
       btn.addEventListener("click", function () {
         accSwitchTab(btn.getAttribute("data-acc-tab"));
@@ -593,13 +706,14 @@
 
   window.MakroAccounting = {
     init: function () {
+      accLoadRates();
       accInitForms();
       accInitUi();
       accSwitchTab("dashboard");
     },
     refresh: accRefreshAll,
     onShow: function () {
-      accRefreshAll();
+      accLoadRates().then(accRefreshAll);
     }
   };
 })();

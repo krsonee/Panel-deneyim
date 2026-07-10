@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request
 
+from accounting_fx import CURRENCIES, convert_to_all, fetch_exchange_rates, parse_currency
 from database import (
     execute,
     fetchall,
@@ -58,71 +59,99 @@ def create_accounting_blueprint(permission_required):
             return f" AND {column} >= ?", (start,)
         return "", ()
 
+    def build_money(amount, currency, rates=None):
+        currency = parse_currency(currency)
+        if not currency:
+            return None, "Para birimi seçin: TRY, USD veya EUR."
+        amount = parse_amount(amount)
+        if amount is None:
+            return None, "Geçerli tutar girin."
+        return convert_to_all(amount, currency, rates), None
+
+    def kpi_for_period(conn, period):
+        dep_sql, dep_params = date_clause("tx_date", period)
+        wdr_sql, wdr_params = date_clause("tx_date", period)
+        exp_sql, exp_params = date_clause("expense_date", period)
+        result = {}
+        for cur in CURRENCIES:
+            amt = f"amount_{cur.lower()}"
+            comm = f"commission_amount_{cur.lower()}"
+            sal = f"salary_{cur.lower()}"
+            deposits = scalar(
+                conn,
+                f"SELECT COALESCE(SUM({amt}), 0) FROM acc_finance_transactions WHERE tx_type = 'deposit'{dep_sql}",
+                dep_params,
+            ) or 0
+            withdrawals = scalar(
+                conn,
+                f"SELECT COALESCE(SUM({amt}), 0) FROM acc_finance_transactions WHERE tx_type = 'withdrawal'{wdr_sql}",
+                wdr_params,
+            ) or 0
+            commission = scalar(
+                conn,
+                f"SELECT COALESCE(SUM({comm}), 0) FROM acc_finance_transactions WHERE 1=1{dep_sql}",
+                dep_params,
+            ) or 0
+            expenses = scalar(
+                conn,
+                f"SELECT COALESCE(SUM({amt}), 0) FROM acc_expenses WHERE 1=1{exp_sql}",
+                exp_params,
+            ) or 0
+            payroll = scalar(
+                conn,
+                f"SELECT COALESCE(SUM({sal}), 0) FROM acc_employees WHERE status = 'active'",
+            ) or 0
+            deposits = round(float(deposits), 2)
+            withdrawals = round(float(withdrawals), 2)
+            commission = round(float(commission), 2)
+            expenses = round(float(expenses), 2)
+            payroll = round(float(payroll), 2)
+            result[cur] = {
+                "total_deposits": deposits,
+                "total_withdrawals": withdrawals,
+                "total_commission": commission,
+                "total_expenses": expenses,
+                "payroll_monthly": payroll,
+                "net_profit": round(deposits - withdrawals - commission - expenses, 2),
+            }
+        return result
+
+    @bp.route("/exchange-rates", methods=["GET"])
+    @acc_perm(*MODULE_ACCESS)
+    def exchange_rates():
+        rates = fetch_exchange_rates()
+        return jsonify({
+            "currencies": list(CURRENCIES),
+            "usd_try": rates["usd_try"],
+            "eur_try": rates["eur_try"],
+            "date": rates.get("date"),
+            "source": rates.get("source"),
+        })
+
+    @bp.route("/convert", methods=["POST"])
+    @acc_perm(*MODULE_ACCESS)
+    def convert_money():
+        data = request.get_json(silent=True) or {}
+        fx, err = build_money(data.get("amount"), data.get("currency"))
+        if err:
+            return jsonify({"error": err}), 400
+        return jsonify({"converted": fx})
+
     @bp.route("/dashboard", methods=["GET"])
     @acc_perm(*ACC_READ)
     def dashboard():
         period = request.args.get("period", "all")
+        rates = fetch_exchange_rates()
         with closing(get_db()) as conn:
-            dep_sql, dep_params = date_clause("tx_date", period)
-            wdr_sql, wdr_params = date_clause("tx_date", period)
-            exp_sql, exp_params = date_clause("expense_date", period)
-
-            total_deposits = scalar(
-                conn,
-                f"""
-                SELECT COALESCE(SUM(amount), 0) FROM acc_finance_transactions
-                WHERE tx_type = 'deposit'{dep_sql}
-                """,
-                dep_params,
-            ) or 0
-            total_withdrawals = scalar(
-                conn,
-                f"""
-                SELECT COALESCE(SUM(amount), 0) FROM acc_finance_transactions
-                WHERE tx_type = 'withdrawal'{wdr_sql}
-                """,
-                wdr_params,
-            ) or 0
-            total_commission = scalar(
-                conn,
-                f"""
-                SELECT COALESCE(SUM(commission_amount), 0) FROM acc_finance_transactions
-                WHERE 1=1{dep_sql}
-                """,
-                dep_params,
-            ) or 0
-            total_expenses = scalar(
-                conn,
-                f"""
-                SELECT COALESCE(SUM(amount), 0) FROM acc_expenses
-                WHERE 1=1{exp_sql}
-                """,
-                exp_params,
-            ) or 0
-
-            payroll_monthly = scalar(
-                conn,
-                "SELECT COALESCE(SUM(salary), 0) FROM acc_employees WHERE status = 'active'",
-            ) or 0
-
-        total_deposits = round(float(total_deposits), 2)
-        total_withdrawals = round(float(total_withdrawals), 2)
-        total_commission = round(float(total_commission), 2)
-        total_expenses = round(float(total_expenses), 2)
-        payroll_monthly = round(float(payroll_monthly), 2)
-        net_profit = round(
-            total_deposits - total_withdrawals - total_commission - total_expenses, 2
-        )
-
+            kpi = kpi_for_period(conn, period)
         return jsonify({
             "period": period,
-            "kpi": {
-                "total_deposits": total_deposits,
-                "total_withdrawals": total_withdrawals,
-                "total_commission": total_commission,
-                "total_expenses": total_expenses,
-                "payroll_monthly": payroll_monthly,
-                "net_profit": net_profit,
+            "kpi": kpi,
+            "rates": {
+                "usd_try": rates["usd_try"],
+                "eur_try": rates["eur_try"],
+                "date": rates.get("date"),
+                "source": rates.get("source"),
             },
         })
 
@@ -261,6 +290,9 @@ def create_accounting_blueprint(permission_required):
             return jsonify({"error": "İşlem türü Yatırım veya Çekim olmalı."}), 400
         if amount is None or amount <= 0:
             return jsonify({"error": "Geçerli miktar girin."}), 400
+        fx, err = build_money(amount, data.get("currency"))
+        if err:
+            return jsonify({"error": err}), 400
         try:
             payment_method_id = int(payment_method_id)
         except (TypeError, ValueError):
@@ -274,16 +306,27 @@ def create_accounting_blueprint(permission_required):
                 return jsonify({"error": "Seçilen payment bu işlem türü için tanımlı değil."}), 400
 
             rate = float(pm["commission_rate"] or 0)
-            commission_amount = round(amount * rate / 100, 2)
+            commission_orig = round(fx["amount"] * rate / 100, 2)
+            comm_fx = convert_to_all(commission_orig, fx["currency"], {"usd_try": fx["rate_usd_try"], "eur_try": fx["rate_eur_try"]})
             now = iso(utcnow())
             tid = insert_returning_id(
                 conn,
                 """
                 INSERT INTO acc_finance_transactions
-                (tx_date, payment_method_id, tx_type, amount, commission_rate, commission_amount, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (tx_date, payment_method_id, tx_type, amount, currency,
+                 amount_try, amount_usd, amount_eur,
+                 commission_rate, commission_amount,
+                 commission_amount_try, commission_amount_usd, commission_amount_eur,
+                 rate_usd_try, rate_eur_try, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (tx_date, payment_method_id, tx_type, amount, rate, commission_amount, now),
+                (
+                    tx_date, payment_method_id, tx_type, fx["amount"], fx["currency"],
+                    fx["TRY"], fx["USD"], fx["EUR"],
+                    rate, commission_orig,
+                    comm_fx["TRY"], comm_fx["USD"], comm_fx["EUR"],
+                    fx["rate_usd_try"], fx["rate_eur_try"], now,
+                ),
             )
             conn.commit()
             row = fetchone(
@@ -384,6 +427,9 @@ def create_accounting_blueprint(permission_required):
             return jsonify({"error": "Geçerli tarih girin."}), 400
         if amount is None or amount <= 0:
             return jsonify({"error": "Geçerli tutar girin."}), 400
+        fx, err = build_money(amount, data.get("currency"))
+        if err:
+            return jsonify({"error": err}), 400
 
         with closing(get_db()) as conn:
             cat = fetchone(conn, "SELECT id FROM acc_expense_categories WHERE id = ?", (category_id,))
@@ -393,10 +439,16 @@ def create_accounting_blueprint(permission_required):
             eid = insert_returning_id(
                 conn,
                 """
-                INSERT INTO acc_expenses (expense_date, category_id, description, amount, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO acc_expenses
+                (expense_date, category_id, description, amount, currency,
+                 amount_try, amount_usd, amount_eur, rate_usd_try, rate_eur_try, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (expense_date, category_id, description, amount, now),
+                (
+                    expense_date, category_id, description, fx["amount"], fx["currency"],
+                    fx["TRY"], fx["USD"], fx["EUR"],
+                    fx["rate_usd_try"], fx["rate_eur_try"], now,
+                ),
             )
             conn.commit()
             row = fetchone(
@@ -456,6 +508,9 @@ def create_accounting_blueprint(permission_required):
             return jsonify({"error": "İşlem türü Giriş veya Çıkış olmalı."}), 400
         if amount is None or amount <= 0:
             return jsonify({"error": "Geçerli tutar girin."}), 400
+        fx, err = build_money(amount, data.get("currency"))
+        if err:
+            return jsonify({"error": err}), 400
 
         now = iso(utcnow())
         with closing(get_db()) as conn:
@@ -463,10 +518,15 @@ def create_accounting_blueprint(permission_required):
                 conn,
                 """
                 INSERT INTO acc_vault_transactions
-                (tx_date, vault_name, tx_type, description, amount, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (tx_date, vault_name, tx_type, description, amount, currency,
+                 amount_try, amount_usd, amount_eur, rate_usd_try, rate_eur_try, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (tx_date, vault_name, tx_type, description, amount, now),
+                (
+                    tx_date, vault_name, tx_type, description, fx["amount"], fx["currency"],
+                    fx["TRY"], fx["USD"], fx["EUR"],
+                    fx["rate_usd_try"], fx["rate_eur_try"], now,
+                ),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_vault_transactions WHERE id = ?", (vid,))
@@ -487,13 +547,15 @@ def create_accounting_blueprint(permission_required):
     def list_employees():
         with closing(get_db()) as conn:
             rows = fetchall(conn, "SELECT * FROM acc_employees ORDER BY name ASC")
-            payroll = scalar(
-                conn,
-                "SELECT COALESCE(SUM(salary), 0) FROM acc_employees WHERE status = 'active'",
-            ) or 0
+            payroll = {}
+            for cur in CURRENCIES:
+                col = f"salary_{cur.lower()}"
+                payroll[cur] = round(float(
+                    scalar(conn, f"SELECT COALESCE(SUM({col}), 0) FROM acc_employees WHERE status = 'active'") or 0
+                ), 2)
         return jsonify({
             "employees": [dict(r) for r in rows],
-            "monthly_payroll_total": round(float(payroll), 2),
+            "monthly_payroll_total": payroll,
         })
 
     @bp.route("/employees", methods=["POST"])
@@ -514,6 +576,9 @@ def create_accounting_blueprint(permission_required):
             return jsonify({"error": "Geçerli başlangıç tarihi girin."}), 400
         if salary is None:
             return jsonify({"error": "Geçerli maaş girin."}), 400
+        fx, err = build_money(salary, data.get("currency"))
+        if err:
+            return jsonify({"error": err}), 400
         if status not in ("active", "left"):
             status = "active"
 
@@ -522,10 +587,16 @@ def create_accounting_blueprint(permission_required):
             eid = insert_returning_id(
                 conn,
                 """
-                INSERT INTO acc_employees (name, department, start_date, salary, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO acc_employees
+                (name, department, start_date, salary, currency,
+                 salary_try, salary_usd, salary_eur, rate_usd_try, rate_eur_try, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (name, department, start_date, salary, status, now),
+                (
+                    name, department, start_date, fx["amount"], fx["currency"],
+                    fx["TRY"], fx["USD"], fx["EUR"],
+                    fx["rate_usd_try"], fx["rate_eur_try"], status, now,
+                ),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_employees WHERE id = ?", (eid,))
@@ -543,19 +614,30 @@ def create_accounting_blueprint(permission_required):
             name = (data.get("name") or row["name"]).strip()
             department = (data.get("department") or row["department"]).strip()
             start_date = parse_date(data.get("start_date")) or row["start_date"]
-            salary = parse_amount(data.get("salary")) if data.get("salary") is not None else row["salary"]
             status = (data.get("status") or row["status"]).strip().lower()
             if status not in ("active", "left"):
                 status = row["status"]
+
+            currency = data.get("currency") or row.get("currency") or "TRY"
+            salary_val = data.get("salary") if data.get("salary") is not None else row["salary"]
+            fx, err = build_money(salary_val, currency)
+            if err:
+                return jsonify({"error": err}), 400
 
             execute(
                 conn,
                 """
                 UPDATE acc_employees
-                SET name = ?, department = ?, start_date = ?, salary = ?, status = ?
+                SET name = ?, department = ?, start_date = ?, salary = ?, currency = ?,
+                    salary_try = ?, salary_usd = ?, salary_eur = ?,
+                    rate_usd_try = ?, rate_eur_try = ?, status = ?
                 WHERE id = ?
                 """,
-                (name, department, start_date, salary, status, emp_id),
+                (
+                    name, department, start_date, fx["amount"], fx["currency"],
+                    fx["TRY"], fx["USD"], fx["EUR"],
+                    fx["rate_usd_try"], fx["rate_eur_try"], status, emp_id,
+                ),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_employees WHERE id = ?", (emp_id,))

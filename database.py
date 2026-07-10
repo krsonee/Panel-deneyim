@@ -357,6 +357,138 @@ def migrate_schema(conn):
     migrate_admin_users(conn)
     migrate_tracked_links(conn)
     migrate_accounting_payment_methods(conn)
+    migrate_accounting_currency(conn)
+
+
+def _table_columns(conn, table_name):
+    if uses_postgres():
+        return {
+            r["column_name"]
+            for r in fetchall(
+                conn,
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = ?
+                """,
+                (table_name,),
+            )
+        }
+    exists = scalar(
+        conn,
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    )
+    if not exists:
+        return set()
+    return {r[1] for r in execute(conn, f"PRAGMA table_info({table_name})").fetchall()}
+
+
+def migrate_accounting_currency(conn):
+    from accounting_fx import convert_to_all, fetch_exchange_rates
+
+    rates = fetch_exchange_rates()
+    usd_try = rates["usd_try"]
+    eur_try = rates["eur_try"]
+
+    finance_cols = [
+        ("currency", "TEXT NOT NULL DEFAULT 'USD'"),
+        ("amount_try", "REAL NOT NULL DEFAULT 0"),
+        ("amount_usd", "REAL NOT NULL DEFAULT 0"),
+        ("amount_eur", "REAL NOT NULL DEFAULT 0"),
+        ("commission_amount_try", "REAL NOT NULL DEFAULT 0"),
+        ("commission_amount_usd", "REAL NOT NULL DEFAULT 0"),
+        ("commission_amount_eur", "REAL NOT NULL DEFAULT 0"),
+        ("rate_usd_try", "REAL NOT NULL DEFAULT 0"),
+        ("rate_eur_try", "REAL NOT NULL DEFAULT 0"),
+    ]
+    money_cols = [
+        ("currency", "TEXT NOT NULL DEFAULT 'USD'"),
+        ("amount_try", "REAL NOT NULL DEFAULT 0"),
+        ("amount_usd", "REAL NOT NULL DEFAULT 0"),
+        ("amount_eur", "REAL NOT NULL DEFAULT 0"),
+        ("rate_usd_try", "REAL NOT NULL DEFAULT 0"),
+        ("rate_eur_try", "REAL NOT NULL DEFAULT 0"),
+    ]
+    salary_cols = [
+        ("currency", "TEXT NOT NULL DEFAULT 'TRY'"),
+        ("salary_try", "REAL NOT NULL DEFAULT 0"),
+        ("salary_usd", "REAL NOT NULL DEFAULT 0"),
+        ("salary_eur", "REAL NOT NULL DEFAULT 0"),
+        ("rate_usd_try", "REAL NOT NULL DEFAULT 0"),
+        ("rate_eur_try", "REAL NOT NULL DEFAULT 0"),
+    ]
+
+    tables = [
+        ("acc_finance_transactions", finance_cols),
+        ("acc_expenses", money_cols),
+        ("acc_vault_transactions", money_cols),
+        ("acc_employees", salary_cols),
+    ]
+
+    for table, cols in tables:
+        existing = _table_columns(conn, table)
+        if not existing or "currency" in existing:
+            continue
+        for name, typedef in cols:
+            execute(conn, f"ALTER TABLE {table} ADD COLUMN {name} {typedef}")
+
+    fin_cols = _table_columns(conn, "acc_finance_transactions")
+    if fin_cols and "amount_try" in fin_cols:
+        rows = fetchall(conn, "SELECT id, amount, commission_amount FROM acc_finance_transactions WHERE amount_try = 0 AND amount > 0")
+        for row in rows:
+            fx = convert_to_all(row["amount"], "USD", rates)
+            comm = convert_to_all(row["commission_amount"] or 0, "USD", rates)
+            execute(
+                conn,
+                """
+                UPDATE acc_finance_transactions
+                SET currency = 'USD', amount_try = ?, amount_usd = ?, amount_eur = ?,
+                    commission_amount_try = ?, commission_amount_usd = ?, commission_amount_eur = ?,
+                    rate_usd_try = ?, rate_eur_try = ?
+                WHERE id = ?
+                """,
+                (
+                    fx["TRY"], fx["USD"], fx["EUR"],
+                    comm["TRY"], comm["USD"], comm["EUR"],
+                    fx["rate_usd_try"], fx["rate_eur_try"],
+                    row["id"],
+                ),
+            )
+
+    for table, amount_col in (("acc_expenses", "amount"), ("acc_vault_transactions", "amount")):
+        cols = _table_columns(conn, table)
+        if not cols or "amount_try" not in cols:
+            continue
+        rows = fetchall(conn, f"SELECT id, {amount_col} AS amt FROM {table} WHERE amount_try = 0 AND {amount_col} > 0")
+        for row in rows:
+            fx = convert_to_all(row["amt"], "USD", rates)
+            execute(
+                conn,
+                f"""
+                UPDATE {table}
+                SET currency = 'USD', amount_try = ?, amount_usd = ?, amount_eur = ?,
+                    rate_usd_try = ?, rate_eur_try = ?
+                WHERE id = ?
+                """,
+                (fx["TRY"], fx["USD"], fx["EUR"], fx["rate_usd_try"], fx["rate_eur_try"], row["id"]),
+            )
+
+    emp_cols = _table_columns(conn, "acc_employees")
+    if emp_cols and "salary_try" in emp_cols:
+        rows = fetchall(conn, "SELECT id, salary FROM acc_employees WHERE salary_try = 0 AND salary > 0")
+        for row in rows:
+            fx = convert_to_all(row["salary"], "TRY", rates)
+            execute(
+                conn,
+                """
+                UPDATE acc_employees
+                SET currency = 'TRY', salary_try = ?, salary_usd = ?, salary_eur = ?,
+                    rate_usd_try = ?, rate_eur_try = ?
+                WHERE id = ?
+                """,
+                (fx["TRY"], fx["USD"], fx["EUR"], fx["rate_usd_try"], fx["rate_eur_try"], row["id"]),
+            )
+    conn.commit()
 
 
 def migrate_accounting_payment_methods(conn):

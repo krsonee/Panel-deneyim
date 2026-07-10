@@ -12,8 +12,15 @@
         <option value="30days">Son 30 Gün</option>
         <option value="today">Bugün</option>
       </select>
+      <label for="acc-display-currency" class="muted" style="font-size:0.72rem;">Gösterim:</label>
+      <select id="acc-display-currency">
+        <option value="TRY">₺ TRY</option>
+        <option value="USD">$ USD</option>
+        <option value="EUR">€ EUR</option>
+      </select>
     </div>
   </div>
+  <p class="muted acc-rates-hint" id="acc-rates-hint" style="font-size:0.72rem;margin:-0.5rem 0 1rem;"></p>
 
   <div class="acc-tabs" id="acc-tabs">
     <button type="button" class="acc-tab active" data-acc-tab="dashboard">Dashboard</button>
@@ -50,6 +57,7 @@
       <div class="card-body" style="text-align:center;padding:1.5rem;">
         <div class="muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;">Net Kâr</div>
         <div class="acc-net-profit" id="acc-kpi-net">—</div>
+        <p class="muted" id="acc-kpi-net-sub" style="font-size:0.75rem;margin-top:0.35rem;"></p>
         <p class="muted" style="font-size:0.72rem;margin-top:0.5rem;">
           Yatırım − Çekim − Komisyon − Cari Gider
         </p>
@@ -71,8 +79,16 @@
               <option value="withdrawal">Çekim</option>
             </select>
           </div>
-          <div><label>Miktar ($)</label><input type="number" id="acc-tx-amount" step="0.01" min="0.01" required></div>
-          <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+          <div><label>Para Birimi</label>
+            <select id="acc-tx-currency" class="acc-currency-select" required>
+              <option value="TRY">₺ TRY</option>
+              <option value="USD">$ USD</option>
+              <option value="EUR">€ EUR</option>
+            </select>
+          </div>
+          <div><label>Miktar</label><input type="number" id="acc-tx-amount" step="0.01" min="0.01" required></div>
+          <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-tx-fx-preview"></p></div>
+          <div><button type="submit" class="btn btn-primary">Kaydet</button></div>
         </form>
       </div>
     </section>
@@ -149,9 +165,17 @@
         <form id="acc-exp-form" class="form-row-4">
           <div><label>Tarih</label><input type="date" id="acc-exp-date" required></div>
           <div><label>Kategori</label><select id="acc-exp-category" required></select></div>
-          <div><label>Tutar ($)</label><input type="number" id="acc-exp-amount" step="0.01" min="0.01" required></div>
+          <div><label>Para Birimi</label>
+            <select id="acc-exp-currency" class="acc-currency-select" required>
+              <option value="TRY">₺ TRY</option>
+              <option value="USD">$ USD</option>
+              <option value="EUR">€ EUR</option>
+            </select>
+          </div>
+          <div><label>Tutar</label><input type="number" id="acc-exp-amount" step="0.01" min="0.01" required></div>
           <div><label>Açıklama</label><input id="acc-exp-desc" placeholder="Opsiyonel"></div>
-          <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+          <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-exp-fx-preview"></p></div>
+          <div><button type="submit" class="btn btn-primary">Kaydet</button></div>
         </form>
       </div>
       <div class="table-wrap">
@@ -189,8 +213,16 @@
               <option value="out">Çıkış</option>
             </select>
           </div>
-          <div><label>Tutar ($)</label><input type="number" id="acc-vault-amount" step="0.01" min="0.01" required></div>
+          <div><label>Para Birimi</label>
+            <select id="acc-vault-currency" class="acc-currency-select" required>
+              <option value="TRY">₺ TRY</option>
+              <option value="USD">$ USD</option>
+              <option value="EUR">€ EUR</option>
+            </select>
+          </div>
+          <div><label>Tutar</label><input type="number" id="acc-vault-amount" step="0.01" min="0.01" required></div>
           <div style="grid-column:1/-1"><label>Açıklama</label><input id="acc-vault-desc" placeholder="Tahsilat, transfer…"></div>
+          <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-vault-fx-preview"></p></div>
           <div><button type="submit" class="btn btn-primary">Kaydet</button></div>
         </form>
       </div>
@@ -234,7 +266,15 @@
             </select>
           </div>
           <div><label>İşe Başlangıç</label><input type="date" id="acc-emp-start" required></div>
-          <div><label>Maaş ($)</label><input type="number" id="acc-emp-salary" step="0.01" min="0" required></div>
+          <div><label>Para Birimi</label>
+            <select id="acc-emp-currency" class="acc-currency-select" required>
+              <option value="TRY" selected>₺ TRY</option>
+              <option value="USD">$ USD</option>
+              <option value="EUR">€ EUR</option>
+            </select>
+          </div>
+          <div><label>Maaş</label><input type="number" id="acc-emp-salary" step="0.01" min="0" required></div>
+          <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-emp-fx-preview"></p></div>
           <div><label>Durum</label>
             <select id="acc-emp-status">
               <option value="active">Aktif Çalışıyor</option>
