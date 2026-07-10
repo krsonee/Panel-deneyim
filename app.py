@@ -77,6 +77,13 @@ def init_db():
     migrate_domains()
     ensure_primary_admin()
     seed_admin_users()
+    if os.environ.get("RENDER") and not uses_postgres():
+        print(
+            "\n⚠️  UYARI: Render'da SQLite kullanılıyor — her deploy'da veriler silinir!\n"
+            "    Çözüm: PostgreSQL oluşturup DATABASE_URL ortam değişkenini bağlayın.\n"
+        )
+    elif os.environ.get("RENDER") and uses_postgres():
+        print("\n✅ PostgreSQL bağlı — veriler kalıcı.\n")
 
 
 def ensure_primary_admin():
@@ -640,7 +647,20 @@ def build_journey(session_data):
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "service": "makropanel"})
+    db_type = "postgresql" if uses_postgres() else "sqlite"
+    link_count = 0
+    try:
+        with closing(get_db()) as conn:
+            link_count = scalar(conn, "SELECT COUNT(*) FROM tracked_links") or 0
+    except Exception:
+        pass
+    return jsonify({
+        "ok": True,
+        "service": "makropanel",
+        "database": db_type,
+        "persistent": db_type == "postgresql",
+        "tracked_domains": link_count,
+    })
 
 
 @app.route("/")
@@ -1438,6 +1458,11 @@ def get_settings():
     return jsonify({
         "public_base_url": get_server_base_url(),
         "database": "postgresql" if uses_postgres() else "sqlite",
+        "database_persistent": uses_postgres(),
+        "database_warning": (
+            None if uses_postgres() else
+            "SQLite kullanılıyor — Render'da her deploy verileri siler. PostgreSQL bağlayın."
+        ),
         "telegram_enabled": bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID),
         "current_user": session.get("admin_username"),
         "current_role": session.get("admin_role"),

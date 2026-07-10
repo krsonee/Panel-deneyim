@@ -974,7 +974,8 @@
         fetch(API+"/api/settings").then(function(r){return r.json();}).then(function(s) {
           document.getElementById("settings-info").innerHTML =
             '<div class="info-card"><div class="info-label">Panel URL</div><div class="info-val">'+esc(s.public_base_url)+'</div></div>'+
-            '<div class="info-card"><div class="info-label">Veritabanı</div><div class="info-val '+(s.database==="postgresql"?"ok":"")+'">'+(s.database==="postgresql"?"PostgreSQL":"SQLite (yerel)")+'</div></div>'+
+            '<div class="info-card"><div class="info-label">Veritabanı</div><div class="info-val '+(s.database==="postgresql"?"ok":"")+'">'+(s.database==="postgresql"?"PostgreSQL ✅ Kalıcı":"SQLite ⚠️ Deploy\'da silinir")+'</div></div>'+
+            (s.database_warning ? '<div class="info-card" style="grid-column:1/-1;border-color:rgba(244,63,94,0.35);"><div class="info-label">Uyarı</div><div class="info-val muted-sm" style="color:#f43f5e;">'+esc(s.database_warning)+'</div></div>' : '')+
             '<div class="info-card"><div class="info-label">Telegram</div><div class="info-val '+(s.telegram_enabled?"ok":"")+'">'+(s.telegram_enabled?"Aktif":"Kapalı")+'</div></div>'+
             '<div class="info-card"><div class="info-label">Giriş yapan</div><div class="info-val">'+esc(s.current_user||"—")+' <span class="role-pill">'+esc(s.current_role||"")+'</span></div></div>'+
             '<div class="info-card" style="grid-column:1/-1;"><div class="info-label">Özel domain</div><div class="info-val muted-sm">'+esc(s.custom_domain_hint)+'</div></div>';

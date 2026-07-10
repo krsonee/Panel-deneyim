@@ -9,19 +9,23 @@ from permissions import normalize_permissions
 
 APP_DIR = Path(__file__).resolve().parent
 DB_PATH = APP_DIR / "analytics.db"
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+
+def get_database_url():
+    return os.environ.get("DATABASE_URL", "").strip()
 
 
 def uses_postgres():
-    return DATABASE_URL.startswith("postgres")
+    return get_database_url().startswith("postgres")
 
 
 def get_db():
+    database_url = get_database_url()
     if uses_postgres():
         import psycopg2
         from psycopg2.extras import RealDictCursor
 
-        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
         return conn
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
