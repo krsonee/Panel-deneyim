@@ -1103,7 +1103,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260710b"></script>
+  <script src="/static/accounting.js?v=20260710c"></script>
   <script>
     (function () {
       var API = "";
@@ -2267,7 +2267,7 @@
             if (d.first && d.last) msg += " (" + d.first + " … " + d.last + ")";
             document.getElementById("bulk-result").textContent = msg;
           });
-      };
+      });
 
       bindOptional("btn-bulk-add", "click", function() {
         var text = document.getElementById("bulk-domains").value.trim();
@@ -2286,7 +2286,7 @@
             refreshAll();
             toast("Toplu ekleme tamam!");
           });
-      };
+      });
 
       bindOptional("filter-period", "change", function() {
         currentPeriod = this.value;
@@ -2297,7 +2297,7 @@
       bindOptional("btn-theme", "click", function() {
         var next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
         applyTheme(next);
-      };
+      });
 
       bindOptional("settings-close", "click", function() {
         document.getElementById("settings-modal").classList.remove("open");
@@ -2338,7 +2338,7 @@
             document.getElementById("edit-user-modal").classList.remove("open");
             toast("Yetkiler güncellendi!");
           });
-      };
+      });
 
       bindOptional("add-user-form", "submit", function(e) {
         e.preventDefault();
@@ -2366,7 +2366,7 @@
         if (!hasAnyPerm("admin.users,module.settings")) { toast("Yetkiniz yok"); return; }
         loadSettings();
         document.getElementById("settings-modal").classList.add("open");
-      };
+      });
 
       ["search-input","filter-domain","filter-ref","filter-device","filter-status"].forEach(function(id){
         bindOptional(id, "input", applyFilters);
@@ -2379,7 +2379,7 @@
         document.getElementById("filter-device").value="";
         document.getElementById("filter-status").value="";
         applyFilters();
-      };
+      });
 
       bindOptional("btn-csv", "click", function(){ window.location.href = API+"/api/data/export.csv"; toast("CSV indiriliyor…"); });
       bindOptional("btn-export-json", "click", function(){
@@ -2387,11 +2387,11 @@
           var a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)]));
           a.download="analiz-"+Date.now()+".json"; a.click(); toast("JSON indirildi!");
         });
-      };
+      });
       bindOptional("btn-clear", "click", function(){
         if(!confirm("Tüm oturum verileri silinecek. Emin misin?")) return;
         fetch(API+"/api/data/clear-sessions",{method:"POST"}).then(function(){ prevSnapshot={}; resetRefreshSignatures(); refreshAll(); toast("Temizlendi."); });
-      };
+      });
 
       bindOptional("modal-close", "click", function(){ document.getElementById("journey-modal").classList.remove("open"); });
       bindOptional("journey-modal", "click", function(e){ if(e.target===this) this.classList.remove("open"); });

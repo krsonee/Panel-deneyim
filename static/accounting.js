@@ -1219,7 +1219,7 @@
         '<td class="acc-vault-bal">' + (r.balance_try != null ? accMoney(r.balance_try, "TRY") : "—") + "</td>" +
         '<td class="acc-vault-desc">' + accLinkify(r.description) + "</td>" +
         "<td>" + accEsc(r.vault_name || "—") + "</td>" +
-        '<td><button class="btn btn-sm btn-danger" data-del-vault="' + r.id + '">Sil</button></td></tr>";
+        '<td><button class="btn btn-sm btn-danger" data-del-vault="' + r.id + '">Sil</button></td></tr>';
     }).join("");
     tbody.querySelectorAll("[data-del-vault]").forEach(function (btn) {
       btn.onclick = function () {
