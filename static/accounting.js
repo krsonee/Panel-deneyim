@@ -6,14 +6,11 @@
   var accActiveTab = "dashboard";
   var accPaymentMethods = [];
   var accCategories = [];
+  var accEmployeeDepartments = [];
+  var accSalaryCategories = [];
   var accDisplayCurrency = localStorage.getItem("acc_display_currency") || "TRY";
   var accRates = { usd_try: 34, eur_try: 37, date: null, source: "fallback" };
   var ACC_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
-  var ACC_SALARY_CATEGORIES = {
-    office: "Ofis personeli",
-    turkey: "Türkiye çalışanlar",
-    crypto: "Kripto maaş alacaklar"
-  };
 
   var accCanViewOfficeSalaries = false;
 
@@ -297,7 +294,139 @@
   }
 
   function accCategoryLabel(cat) {
-    return ACC_SALARY_CATEGORIES[cat] || cat || "—";
+    var row = accSalaryCategories.find(function (c) { return c.slug === cat; });
+    return row ? row.name : (cat || "—");
+  }
+
+  function accIsOfficeCategory(slug) {
+    var row = accSalaryCategories.find(function (c) { return c.slug === slug; });
+    return !!(row && row.is_office);
+  }
+
+  function accApplySalaryCategories(categories) {
+    if (categories && categories.length) accSalaryCategories = categories;
+    accRenderSalaryCatChips();
+    accBuildPayrollTableHead();
+    accRefreshEmpSelects();
+  }
+
+  function accApplyDepartments(departments) {
+    if (departments && departments.length) accEmployeeDepartments = departments;
+    accRenderDeptChips();
+    accRefreshEmpSelects();
+  }
+
+  function accRefreshEmpSelects() {
+    var catSel = document.getElementById("acc-emp-category");
+    if (catSel) {
+      var prevCat = catSel.value;
+      catSel.innerHTML = accSalaryCategories.length
+        ? accSalaryCategories.map(function (c) {
+            return '<option value="' + accEsc(c.slug) + '" data-office="' + (c.is_office ? "1" : "0") + '">' +
+              accEsc(c.name) + "</option>";
+          }).join("")
+        : '<option value="">Kategori ekleyin</option>';
+      if (prevCat && accSalaryCategories.some(function (c) { return c.slug === prevCat; })) {
+        catSel.value = prevCat;
+      } else if (accSalaryCategories.length) {
+        var def = accSalaryCategories.find(function (c) { return c.slug === "turkey"; });
+        catSel.value = def ? def.slug : accSalaryCategories[0].slug;
+      }
+    }
+    var deptSel = document.getElementById("acc-emp-dept");
+    if (deptSel) {
+      var prevDept = deptSel.value;
+      deptSel.innerHTML = accEmployeeDepartments.length
+        ? accEmployeeDepartments.map(function (d) {
+            return '<option value="' + accEsc(d.name) + '">' + accEsc(d.name) + "</option>";
+          }).join("")
+        : '<option value="">Departman ekleyin</option>';
+      if (prevDept && accEmployeeDepartments.some(function (d) { return d.name === prevDept; })) {
+        deptSel.value = prevDept;
+      }
+    }
+    accUpdateEmpFormUi();
+  }
+
+  function accRenderDeptChips() {
+    var chips = document.getElementById("acc-dept-chips");
+    if (!chips) return;
+    chips.innerHTML = accEmployeeDepartments.map(function (d) {
+      return '<span class="acc-chip">' + accEsc(d.name) +
+        ' <button type="button" data-del-dept="' + d.id + '" title="Sil">×</button></span>';
+    }).join("") || '<span class="muted">Henüz departman yok</span>';
+    chips.querySelectorAll("[data-del-dept]").forEach(function (btn) {
+      btn.onclick = function () {
+        if (!confirm("Departman silinsin mi?")) return;
+        accApi("/api/accounting/employee-departments/" + btn.getAttribute("data-del-dept"), { method: "DELETE" })
+          .then(function (r) {
+            if (r && r.ok) { accLoadEmpOptions(); accToast("Silindi"); }
+            else if (r) alert(r.data.error || "Hata");
+          });
+      };
+    });
+  }
+
+  function accRenderSalaryCatChips() {
+    var chips = document.getElementById("acc-salary-cat-chips");
+    if (!chips) return;
+    chips.innerHTML = accSalaryCategories.map(function (c) {
+      var tag = c.is_office ? ' <small class="muted">(ofis)</small>' : "";
+      return '<span class="acc-chip">' + accEsc(c.name) + tag +
+        ' <button type="button" data-del-salary-cat="' + c.id + '" title="Sil">×</button></span>';
+    }).join("") || '<span class="muted">Henüz kategori yok</span>';
+    chips.querySelectorAll("[data-del-salary-cat]").forEach(function (btn) {
+      btn.onclick = function () {
+        if (!confirm("Kategori silinsin mi?")) return;
+        accApi("/api/accounting/salary-categories/" + btn.getAttribute("data-del-salary-cat"), { method: "DELETE" })
+          .then(function (r) {
+            if (r && r.ok) { accLoadEmpOptions(); accLoadEmployees(); accLoadDashboard(); accToast("Silindi"); }
+            else if (r) alert(r.data.error || "Hata");
+          });
+      };
+    });
+  }
+
+  function accBuildPayrollTableHead() {
+    var head = document.getElementById("acc-payroll-daily-head");
+    var footLabel = document.getElementById("acc-payroll-daily-foot-label");
+    if (!head) return;
+    var cols = accSalaryCategories.length ? accSalaryCategories : [
+      { slug: "office", name: "Ofis", is_office: true },
+      { slug: "turkey", name: "Türkiye", is_office: false },
+      { slug: "crypto", name: "Kripto", is_office: false }
+    ];
+    var html = "<th>Tarih</th><th>Personel</th>";
+    cols.forEach(function (c) {
+      html += '<th' + (c.is_office ? ' class="acc-col-office"' : "") + ">" + accEsc(c.name) + "</th>";
+    });
+    html += "<th>Günlük Toplam</th>";
+    head.innerHTML = html;
+    if (footLabel) footLabel.colSpan = 2 + cols.length;
+    accSetOfficeSalaryAccess(accCanViewOfficeSalaries);
+  }
+
+  function accPayrollColspan() {
+    return 3 + (accSalaryCategories.length || 3);
+  }
+
+  function accLoadEmpOptions() {
+    return Promise.all([
+      accApi("/api/accounting/employee-departments"),
+      accApi("/api/accounting/salary-categories")
+    ]).then(function (results) {
+      var deptRes = results[0];
+      var catRes = results[1];
+      if (deptRes && deptRes.ok) {
+        accEmployeeDepartments = deptRes.data.departments || [];
+        accRenderDeptChips();
+      }
+      if (catRes && catRes.ok) {
+        accSalaryCategories = catRes.data.salary_categories || [];
+        accRenderSalaryCatChips();
+      }
+      accRefreshEmpSelects();
+    });
   }
 
   function accAccrualValue(row) {
@@ -314,8 +443,16 @@
     if (typeof payrollDaily !== "undefined" && payrollDaily && typeof payrollDaily.office_totals_hidden !== "undefined") {
       accSetOfficeSalaryAccess(!payrollDaily.office_totals_hidden);
     }
+    var cols = accSalaryCategories.length ? accSalaryCategories : [];
+    if (!cols.length && payrollDaily && payrollDaily.category_labels) {
+      cols = Object.keys(payrollDaily.category_labels).map(function (slug) {
+        var known = accSalaryCategories.find(function (c) { return c.slug === slug; });
+        return known || { slug: slug, name: payrollDaily.category_labels[slug], is_office: accIsOfficeCategory(slug) };
+      });
+    }
+    var colspan = accPayrollColspan();
     if (!payrollDaily || !payrollDaily.days || !payrollDaily.days.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">Veri yok</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="' + colspan + '" class="empty">Veri yok</td></tr>';
       if (totalEl) totalEl.textContent = "—";
       if (subEl) subEl.textContent = "";
       return;
@@ -326,16 +463,17 @@
     }
     tbody.innerHTML = payrollDaily.days.slice().reverse().map(function (day) {
       var cur = accDisplayCurrency;
-      var office = (day.by_category && day.by_category.office) ? day.by_category.office[cur] : 0;
-      var turkey = (day.by_category && day.by_category.turkey) ? day.by_category.turkey[cur] : 0;
-      var crypto = (day.by_category && day.by_category.crypto) ? day.by_category.crypto[cur] : 0;
+      var cells = cols.map(function (c) {
+        var amt = (day.by_category && day.by_category[c.slug]) ? day.by_category[c.slug][cur] : 0;
+        if (c.is_office && !accCanViewOfficeSalaries) {
+          return '<td class="acc-col-office">' + accHiddenMoney() + "</td>";
+        }
+        return '<td' + (c.is_office ? ' class="acc-col-office"' : "") + ">" + accMoney(amt, cur) + "</td>";
+      }).join("");
       var total = day.totals ? day.totals[cur] : 0;
       return '<tr><td class="mono">' + accEsc(day.date) + '</td>' +
         '<td>' + (day.active_count || 0) + (day.office_hidden ? ' <small class="muted">(ofis gizli)</small>' : '') + '</td>' +
-        '<td class="acc-col-office"' + (accCanViewOfficeSalaries ? '' : ' hidden') + '>' +
-        (accCanViewOfficeSalaries ? accMoney(office, cur) : accHiddenMoney()) + '</td>' +
-        '<td>' + accMoney(turkey, cur) + '</td>' +
-        '<td>' + accMoney(crypto, cur) + '</td>' +
+        cells +
         '<td><strong>' + accMoney(total, cur) + '</strong></td></tr>';
     }).join("");
     if (totalEl && payrollDaily.period_accrual) {
@@ -361,7 +499,9 @@
       if (left && endEl && !endEl.value) endEl.value = accToday();
     }
     if (officeWrap && catEl) {
-      officeWrap.hidden = catEl.value !== "office";
+      var opt = catEl.options[catEl.selectedIndex];
+      var isOffice = opt && opt.getAttribute("data-office") === "1";
+      officeWrap.hidden = !isOffice;
     }
     accUpdateOfficeRemaining();
   }
@@ -387,6 +527,8 @@
     accApi("/api/accounting/dashboard" + accPeriodQuery()).then(function (res) {
       if (!res || !res.ok) return;
       accApplyPermissionsMeta(res.data);
+      if (res.data.salary_categories) accApplySalaryCategories(res.data.salary_categories);
+      if (res.data.departments) accApplyDepartments(res.data.departments);
       if (res.data.rates) {
         accRates = res.data.rates;
         accUpdateRatePlaceholders();
@@ -616,6 +758,8 @@
     return accApi("/api/accounting/employees" + accPeriodQuery()).then(function (res) {
       if (!res || !res.ok) return;
       accApplyPermissionsMeta(res.data);
+      if (res.data.salary_categories) accApplySalaryCategories(res.data.salary_categories);
+      if (res.data.departments) accApplyDepartments(res.data.departments);
       accData["acc-emp"].rows = res.data.employees || [];
       var payroll = res.data.payroll_accrual || res.data.monthly_payroll_total || {};
       document.getElementById("acc-payroll-total").textContent = accMoney(
@@ -645,11 +789,11 @@
     }
     tbody.innerHTML = rows.map(function (r) {
       var officeInfo = "";
-      if (r.salary_category === "office" && accCanViewOfficeSalaries) {
+      if (accIsOfficeCategory(r.salary_category) && accCanViewOfficeSalaries) {
         officeInfo = '<br><small class="muted">Banka: ' + accMoney(r.bank_salary || 0, r.currency || "TRY") +
           " · Kripto: " + accMoney(r.crypto_salary || 0, r.currency || "TRY") +
           " · Avans: " + accMoney(r.advance_amount || 0, r.currency || "TRY") + "</small>";
-      } else if (r.salary_category === "office" && r.salary_hidden) {
+      } else if (accIsOfficeCategory(r.salary_category) && r.salary_hidden) {
         officeInfo = '<br><small class="muted">Ofis maaş detayı gizli</small>';
       }
       var salaryCell = r.salary_hidden ? accHiddenMoney() : accMoneyCellHtml(r, "salary");
@@ -711,7 +855,7 @@
     else if (tab === "commissions") accLoadPaymentMethods();
     else if (tab === "expenses") { accLoadCategories(); accLoadExpenses(); }
     else if (tab === "vault") accLoadVault();
-    else if (tab === "payroll") accLoadEmployees();
+    else if (tab === "payroll") { accLoadEmpOptions(); accLoadEmployees(); }
   }
 
   function accRefreshAll() {
@@ -720,7 +864,7 @@
     else if (accActiveTab === "commissions") accLoadPaymentMethods();
     else if (accActiveTab === "expenses") { accLoadCategories(); accLoadExpenses(); }
     else if (accActiveTab === "vault") accLoadVault();
-    else if (accActiveTab === "payroll") accLoadEmployees();
+    else if (accActiveTab === "payroll") { accLoadEmpOptions(); accLoadEmployees(); }
   }
 
   function accInitForms() {
@@ -789,6 +933,44 @@
         } else if (r) alert(r.data.error || "Hata");
       });
     });
+
+    var deptForm = document.getElementById("acc-dept-form");
+    if (deptForm) {
+      deptForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        accApi("/api/accounting/employee-departments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: document.getElementById("acc-dept-name").value.trim() })
+        }).then(function (r) {
+          if (r && r.ok) {
+            document.getElementById("acc-dept-name").value = "";
+            accLoadEmpOptions(); accToast("Departman eklendi");
+          } else if (r) alert(r.data.error || "Hata");
+        });
+      });
+    }
+
+    var salaryCatForm = document.getElementById("acc-salary-cat-form");
+    if (salaryCatForm) {
+      salaryCatForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        accApi("/api/accounting/salary-categories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: document.getElementById("acc-salary-cat-name").value.trim(),
+            is_office: document.getElementById("acc-salary-cat-office").checked
+          })
+        }).then(function (r) {
+          if (r && r.ok) {
+            document.getElementById("acc-salary-cat-name").value = "";
+            document.getElementById("acc-salary-cat-office").checked = false;
+            accLoadEmpOptions(); accLoadDashboard(); accToast("Maaş kategorisi eklendi");
+          } else if (r) alert(r.data.error || "Hata");
+        });
+      });
+    }
 
     document.getElementById("acc-exp-form").addEventListener("submit", function (e) {
       e.preventDefault();
@@ -900,7 +1082,7 @@
         accRerenderTable("acc-exp");
         accRerenderTable("acc-vault");
         accRerenderTable("acc-emp");
-        if (accActiveTab === "payroll") accLoadEmployees();
+        if (accActiveTab === "payroll") { accLoadEmpOptions(); accLoadEmployees(); }
       });
     }
     document.querySelectorAll(".acc-tab").forEach(function (btn) {

@@ -346,6 +346,38 @@ def seed_accounting_defaults(conn):
             )
 
 
+def seed_employee_departments(conn, now=None):
+    now = now or iso(utcnow())
+    for name in ("Risk", "Canlı Destek", "Call Center", "Finans", "Pazarlama", "Diğer"):
+        exists = scalar(conn, "SELECT COUNT(*) FROM acc_employee_departments WHERE name = ?", (name,))
+        if not exists:
+            insert_returning_id(
+                conn,
+                "INSERT INTO acc_employee_departments (name, created_at) VALUES (?, ?)",
+                (name, now),
+            )
+
+
+def seed_salary_categories(conn, now=None):
+    now = now or iso(utcnow())
+    defaults = [
+        ("office", "Ofis personeli", 1),
+        ("turkey", "Türkiye çalışanlar", 0),
+        ("crypto", "Kripto maaş alacaklar", 0),
+    ]
+    for slug, name, is_office in defaults:
+        exists = scalar(conn, "SELECT COUNT(*) FROM acc_salary_categories WHERE slug = ?", (slug,))
+        if not exists:
+            insert_returning_id(
+                conn,
+                """
+                INSERT INTO acc_salary_categories (slug, name, is_office, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (slug, name, is_office, now),
+            )
+
+
 def migrate_schema(conn):
     if uses_postgres():
         cols = {
@@ -372,6 +404,7 @@ def migrate_schema(conn):
     migrate_accounting_currency(conn)
     migrate_accounting_settings(conn)
     migrate_accounting_employees_payroll(conn)
+    migrate_accounting_employee_options(conn)
 
 
 def _table_columns(conn, table_name):
@@ -454,6 +487,59 @@ def migrate_accounting_employees_payroll(conn):
     for name, typedef in new_cols:
         if name not in cols:
             execute(conn, f"ALTER TABLE acc_employees ADD COLUMN {name} {typedef}")
+    conn.commit()
+
+
+def migrate_accounting_employee_options(conn):
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_employee_departments (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_salary_categories (
+                id SERIAL PRIMARY KEY,
+                slug TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL UNIQUE,
+                is_office INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_employee_departments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_salary_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL UNIQUE,
+                is_office INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+    now = iso(utcnow())
+    seed_employee_departments(conn, now)
+    seed_salary_categories(conn, now)
     conn.commit()
 
 

@@ -1,5 +1,6 @@
 """Muhasebe modülü API rotaları — Link Takip altyapısından bağımsız."""
 
+import re
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
@@ -12,7 +13,7 @@ from accounting_fx import (
     parse_currency,
 )
 from accounting_payroll import (
-    SALARY_CATEGORIES,
+    category_lookup,
     compute_payroll_daily,
     enrich_employee_row,
     redact_employee_for_view,
@@ -36,6 +37,34 @@ ACC_READ = ("module.accounting", "accounting.dashboard")
 ACC_OFFICE_SALARIES = "accounting.payroll.office_salaries"
 
 
+def slugify_name(value):
+    value = (value or "").strip().lower()
+    tr = str.maketrans("çğıöşü", "cgiosu")
+    value = value.translate(tr)
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    return (value.strip("_")[:48] or "kategori")
+
+
+def fetch_employee_departments(conn):
+    return [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employee_departments ORDER BY name ASC")]
+
+
+def fetch_salary_categories(conn):
+    rows = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_salary_categories ORDER BY name ASC")]
+    for row in rows:
+        row["is_office"] = bool(row.get("is_office"))
+    return rows
+
+
+def unique_salary_slug(conn, base_slug):
+    slug = base_slug
+    n = 2
+    while scalar(conn, "SELECT COUNT(*) FROM acc_salary_categories WHERE slug = ?", (slug,)):
+        slug = f"{base_slug}_{n}"[:48]
+        n += 1
+    return slug
+
+
 def create_accounting_blueprint(permission_required):
     bp = Blueprint("accounting", __name__, url_prefix="/api/accounting")
 
@@ -51,9 +80,9 @@ def create_accounting_blueprint(permission_required):
     def payroll_include_office():
         return can_view_office_salaries()
 
-    def prepare_employee_row(row, period):
+    def prepare_employee_row(row, period, category_map=None):
         enriched = enrich_employee_row(dict(row), period)
-        return redact_employee_for_view(enriched, can_view_office_salaries())
+        return redact_employee_for_view(enriched, can_view_office_salaries(), category_map)
 
     def parse_amount(value):
         try:
@@ -132,11 +161,17 @@ def create_accounting_blueprint(permission_required):
             "source": rates.get("source"),
         }
 
-    def parse_salary_category(value):
+    def parse_salary_category(value, category_slugs):
         cat = (value or "turkey").strip().lower()
-        if cat not in SALARY_CATEGORIES:
+        if cat not in category_slugs:
             return None
         return cat
+
+    def parse_department(value, department_names):
+        dept = (value or "").strip()
+        if dept not in department_names:
+            return None
+        return dept
 
     def parse_office_amount(value):
         if value is None or value == "":
@@ -156,10 +191,15 @@ def create_accounting_blueprint(permission_required):
             return "Aktif personelde çıkış tarihi girilemez."
         return None
 
-    def employee_payload(data, existing=None):
+    def employee_payload(data, existing=None, salary_categories=None, department_names=None):
         existing = existing or {}
+        _, office_slugs, cat_slugs = category_lookup(salary_categories)
+        dept_names = department_names or []
         name = (data.get("name") or existing.get("name") or "").strip()
-        department = (data.get("department") or existing.get("department") or "").strip()
+        department = parse_department(
+            data.get("department") if "department" in data else existing.get("department"),
+            dept_names,
+        )
         start_date = parse_date(data.get("start_date")) or existing.get("start_date")
         status = (data.get("status") or existing.get("status") or "active").strip().lower()
         if status not in ("active", "left"):
@@ -168,10 +208,12 @@ def create_accounting_blueprint(permission_required):
         if status == "active":
             end_date = None
         salary_category = parse_salary_category(
-            data.get("salary_category") if "salary_category" in data else existing.get("salary_category")
+            data.get("salary_category") if "salary_category" in data else existing.get("salary_category"),
+            cat_slugs,
         )
         if not salary_category:
             return None, "Geçerli maaş kategorisi seçin."
+        is_office = salary_category in office_slugs
 
         salary = parse_amount(data.get("salary")) if data.get("salary") is not None else existing.get("salary")
         if salary is None:
@@ -183,13 +225,13 @@ def create_accounting_blueprint(permission_required):
         if bank is None or crypto is None or advance is None:
             return None, "Ofis personeli ödeme tutarları geçersiz."
 
-        if salary_category != "office":
+        if not is_office:
             bank = crypto = advance = 0.0
 
         if not name:
             return None, "Personel adı zorunludur."
         if not department:
-            return None, "Departman zorunludur."
+            return None, "Departman seçin veya yeni departman ekleyin."
         if not start_date:
             return None, "Geçerli başlangıç tarihi girin."
 
@@ -197,7 +239,7 @@ def create_accounting_blueprint(permission_required):
         if date_err:
             return None, date_err
 
-        office_err = validate_office_amounts(salary, bank, crypto, advance, salary_category)
+        office_err = validate_office_amounts(salary, bank, crypto, advance, is_office)
         if office_err:
             return None, office_err
 
@@ -215,12 +257,20 @@ def create_accounting_blueprint(permission_required):
             "currency": data.get("currency") or existing.get("currency") or "TRY",
         }, None
 
+    def payroll_context(conn):
+        departments = fetch_employee_departments(conn)
+        salary_categories = fetch_salary_categories(conn)
+        return departments, salary_categories
+
     def kpi_for_period(conn, period):
         dep_sql, dep_params = date_clause("tx_date", period)
         wdr_sql, wdr_params = date_clause("tx_date", period)
         exp_sql, exp_params = date_clause("expense_date", period)
         employees = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employees")]
-        payroll_data = compute_payroll_daily(employees, period, include_office=payroll_include_office())
+        _, salary_categories = payroll_context(conn)
+        payroll_data = compute_payroll_daily(
+            employees, period, include_office=payroll_include_office(), category_map=salary_categories
+        )
         payroll_accrual = payroll_data["period_accrual"]
         result = {}
         for cur in CURRENCIES:
@@ -286,13 +336,17 @@ def create_accounting_blueprint(permission_required):
         with closing(get_db()) as conn:
             kpi = kpi_for_period(conn, period)
             employees = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employees")]
-        payroll_daily = compute_payroll_daily(employees, period, include_office=payroll_include_office())
+            departments, salary_categories = payroll_context(conn)
+        payroll_daily = compute_payroll_daily(
+            employees, period, include_office=payroll_include_office(), category_map=salary_categories
+        )
         return jsonify({
             "period": period,
             "kpi": kpi,
             "rates": rates_json(fetch_exchange_rates()),
             "payroll_daily": payroll_daily,
-            "salary_categories": SALARY_CATEGORIES,
+            "departments": departments,
+            "salary_categories": salary_categories,
             **permissions_meta(),
         })
 
@@ -690,6 +744,104 @@ def create_accounting_blueprint(permission_required):
             conn.commit()
         return jsonify({"ok": True})
 
+    # ── Personel seçenekleri ──
+
+    @bp.route("/employee-departments", methods=["GET"])
+    @acc_perm(*MODULE_ACCESS)
+    def list_employee_departments():
+        with closing(get_db()) as conn:
+            rows = fetch_employee_departments(conn)
+        return jsonify({"departments": rows})
+
+    @bp.route("/employee-departments", methods=["POST"])
+    @acc_perm(*MODULE_ACCESS)
+    def create_employee_department():
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Departman adı zorunludur."}), 400
+        now = iso(utcnow())
+        try:
+            with closing(get_db()) as conn:
+                did = insert_returning_id(
+                    conn,
+                    "INSERT INTO acc_employee_departments (name, created_at) VALUES (?, ?)",
+                    (name, now),
+                )
+                conn.commit()
+                row = fetchone(conn, "SELECT * FROM acc_employee_departments WHERE id = ?", (did,))
+        except integrity_error_type():
+            return jsonify({"error": "Bu departman zaten var."}), 409
+        return jsonify({"department": dict(row)}), 201
+
+    @bp.route("/employee-departments/<int:dept_id>", methods=["DELETE"])
+    @acc_perm(*MODULE_ACCESS)
+    def delete_employee_department(dept_id):
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM acc_employee_departments WHERE id = ?", (dept_id,))
+            if not row:
+                return jsonify({"error": "Departman bulunamadı."}), 404
+            used = scalar(conn, "SELECT COUNT(*) FROM acc_employees WHERE department = ?", (row["name"],))
+            if used:
+                return jsonify({"error": "Bu departmana bağlı personel var, silinemez."}), 400
+            execute(conn, "DELETE FROM acc_employee_departments WHERE id = ?", (dept_id,))
+            conn.commit()
+        return jsonify({"ok": True})
+
+    @bp.route("/salary-categories", methods=["GET"])
+    @acc_perm(*MODULE_ACCESS)
+    def list_salary_categories():
+        with closing(get_db()) as conn:
+            rows = fetch_salary_categories(conn)
+        return jsonify({"salary_categories": rows})
+
+    @bp.route("/salary-categories", methods=["POST"])
+    @acc_perm(*MODULE_ACCESS)
+    def create_salary_category():
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Kategori adı zorunludur."}), 400
+        is_office = 1 if data.get("is_office") else 0
+        now = iso(utcnow())
+        try:
+            with closing(get_db()) as conn:
+                base_slug = slugify_name(name)
+                slug = unique_salary_slug(conn, base_slug)
+                cid = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO acc_salary_categories (slug, name, is_office, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (slug, name, is_office, now),
+                )
+                conn.commit()
+                row = fetchone(conn, "SELECT * FROM acc_salary_categories WHERE id = ?", (cid,))
+        except integrity_error_type():
+            return jsonify({"error": "Bu kategori adı zaten var."}), 409
+        item = dict(row)
+        item["is_office"] = bool(item.get("is_office"))
+        return jsonify({"salary_category": item}), 201
+
+    @bp.route("/salary-categories/<int:cat_id>", methods=["DELETE"])
+    @acc_perm(*MODULE_ACCESS)
+    def delete_salary_category(cat_id):
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM acc_salary_categories WHERE id = ?", (cat_id,))
+            if not row:
+                return jsonify({"error": "Kategori bulunamadı."}), 404
+            used = scalar(
+                conn,
+                "SELECT COUNT(*) FROM acc_employees WHERE salary_category = ?",
+                (row["slug"],),
+            )
+            if used:
+                return jsonify({"error": "Bu kategoriye bağlı personel var, silinemez."}), 400
+            execute(conn, "DELETE FROM acc_salary_categories WHERE id = ?", (cat_id,))
+            conn.commit()
+        return jsonify({"ok": True})
+
     # ── Personel ──
 
     @bp.route("/employees", methods=["GET"])
@@ -698,15 +850,20 @@ def create_accounting_blueprint(permission_required):
         period = request.args.get("period", "all")
         with closing(get_db()) as conn:
             rows = fetchall(conn, "SELECT * FROM acc_employees ORDER BY name ASC")
-            employees = [prepare_employee_row(r, period) for r in rows]
+            departments, salary_categories = payroll_context(conn)
+            employees = [prepare_employee_row(r, period, salary_categories) for r in rows]
             payroll_data = compute_payroll_daily(
-                [dict(r) for r in rows], period, include_office=payroll_include_office()
+                [dict(r) for r in rows],
+                period,
+                include_office=payroll_include_office(),
+                category_map=salary_categories,
             )
         return jsonify({
             "employees": employees,
             "monthly_payroll_total": payroll_data["period_accrual"],
             "payroll_accrual": payroll_data["period_accrual"],
-            "salary_categories": SALARY_CATEGORIES,
+            "departments": departments,
+            "salary_categories": salary_categories,
             **permissions_meta(),
         })
 
@@ -714,7 +871,10 @@ def create_accounting_blueprint(permission_required):
     @acc_perm(*MODULE_ACCESS)
     def create_employee():
         data = request.get_json(silent=True) or {}
-        payload, err = employee_payload(data)
+        with closing(get_db()) as conn:
+            departments, salary_categories = payroll_context(conn)
+            dept_names = [d["name"] for d in departments]
+            payload, err = employee_payload(data, salary_categories=salary_categories, department_names=dept_names)
         if err:
             return jsonify({"error": err}), 400
         rates, rate_err = rates_from_request(data)
@@ -748,7 +908,7 @@ def create_accounting_blueprint(permission_required):
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_employees WHERE id = ?", (eid,))
         return jsonify({
-            "employee": prepare_employee_row(row, "all"),
+            "employee": prepare_employee_row(row, "all", salary_categories),
             "rates": used_rates_payload(fx),
             **permissions_meta(),
         }), 201
@@ -762,7 +922,11 @@ def create_accounting_blueprint(permission_required):
             if not row:
                 return jsonify({"error": "Personel bulunamadı."}), 404
 
-            payload, err = employee_payload(data, dict(row))
+            departments, salary_categories = payroll_context(conn)
+            dept_names = [d["name"] for d in departments]
+            payload, err = employee_payload(
+                data, dict(row), salary_categories=salary_categories, department_names=dept_names
+            )
             if err:
                 return jsonify({"error": err}), 400
 
@@ -797,7 +961,7 @@ def create_accounting_blueprint(permission_required):
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_employees WHERE id = ?", (emp_id,))
-        return jsonify({"employee": prepare_employee_row(row, "all"), **permissions_meta()})
+        return jsonify({"employee": prepare_employee_row(row, "all", salary_categories), **permissions_meta()})
 
     @bp.route("/employees/<int:emp_id>", methods=["DELETE"])
     @acc_perm(*MODULE_ACCESS)

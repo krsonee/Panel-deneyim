@@ -3,13 +3,42 @@
 import calendar
 from datetime import date, datetime, timedelta, timezone
 
-SALARY_CATEGORIES = {
+DEFAULT_SALARY_CATEGORIES = {
     "office": "Ofis personeli",
     "turkey": "Türkiye çalışanlar",
     "crypto": "Kripto maaş alacaklar",
 }
 
 CURRENCIES = ("TRY", "USD", "EUR")
+
+
+def normalize_category_map(category_map):
+    if not category_map:
+        return [
+            {"slug": slug, "name": name, "is_office": slug == "office"}
+            for slug, name in DEFAULT_SALARY_CATEGORIES.items()
+        ]
+    rows = []
+    for item in category_map:
+        rows.append({
+            "slug": item["slug"],
+            "name": item.get("name") or item["slug"],
+            "is_office": bool(item.get("is_office")),
+        })
+    return rows
+
+
+def category_lookup(category_map):
+    rows = normalize_category_map(category_map)
+    by_slug = {row["slug"]: row for row in rows}
+    office_slugs = {row["slug"] for row in rows if row.get("is_office")}
+    return by_slug, office_slugs, [row["slug"] for row in rows]
+
+
+def category_label(slug, category_map=None):
+    by_slug, _, _ = category_lookup(category_map)
+    row = by_slug.get((slug or "").lower())
+    return row["name"] if row else slug or "—"
 
 
 def parse_employee_date(value):
@@ -65,8 +94,10 @@ def employee_accrual_for_range(emp, start, end, currency="TRY"):
     return round(total, 2)
 
 
-def is_office_employee(emp):
-    return (emp.get("salary_category") or "turkey").lower() == "office"
+def is_office_employee(emp, category_map=None):
+    slug = (emp.get("salary_category") or "turkey").lower()
+    _, office_slugs, _ = category_lookup(category_map)
+    return slug in office_slugs
 
 
 OFFICE_SALARY_FIELDS = (
@@ -75,9 +106,9 @@ OFFICE_SALARY_FIELDS = (
 )
 
 
-def redact_employee_for_view(emp, can_view_office):
+def redact_employee_for_view(emp, can_view_office, category_map=None):
     row = dict(emp)
-    if can_view_office or not is_office_employee(row):
+    if can_view_office or not is_office_employee(row, category_map):
         row["salary_hidden"] = False
         return row
     for field in OFFICE_SALARY_FIELDS:
@@ -87,13 +118,14 @@ def redact_employee_for_view(emp, can_view_office):
     return row
 
 
-def compute_payroll_daily(employees, period="month", reference=None, include_office=True):
+def compute_payroll_daily(employees, period="month", reference=None, include_office=True, category_map=None):
+    by_slug, office_slugs, cat_slugs = category_lookup(category_map)
     start, end = period_date_range(period, reference)
     days = []
     day = start
     while day <= end:
         totals = {cur: 0.0 for cur in CURRENCIES}
-        by_category = {key: {cur: 0.0 for cur in CURRENCIES} for key in SALARY_CATEGORIES}
+        by_category = {slug: {cur: 0.0 for cur in CURRENCIES} for slug in cat_slugs}
         active_count = 0
         office_count = 0
         for emp in employees:
@@ -101,8 +133,9 @@ def compute_payroll_daily(employees, period="month", reference=None, include_off
                 continue
             cat = (emp.get("salary_category") or "turkey").lower()
             if cat not in by_category:
-                cat = "turkey"
-            is_office = cat == "office"
+                by_category[cat] = {cur: 0.0 for cur in CURRENCIES}
+                cat_slugs.append(cat)
+            is_office = cat in office_slugs
             active_count += 1
             if is_office:
                 office_count += 1
@@ -130,9 +163,9 @@ def compute_payroll_daily(employees, period="month", reference=None, include_off
         for cur in CURRENCIES
     }
     by_category_accrual = {}
-    for cat in SALARY_CATEGORIES:
+    for cat in cat_slugs:
         by_category_accrual[cat] = {
-            cur: round(sum(row["by_category"][cat][cur] for row in days), 2)
+            cur: round(sum(row["by_category"].get(cat, {}).get(cur, 0) for row in days), 2)
             for cur in CURRENCIES
         }
 
@@ -144,6 +177,7 @@ def compute_payroll_daily(employees, period="month", reference=None, include_off
         "period_accrual": period_accrual,
         "by_category_accrual": by_category_accrual,
         "office_totals_hidden": not include_office,
+        "category_labels": {slug: by_slug.get(slug, {}).get("name", slug) for slug in cat_slugs},
     }
 
 
@@ -163,8 +197,8 @@ def enrich_employee_row(emp, period="month", reference=None):
     return row
 
 
-def validate_office_amounts(salary, bank, crypto, advance, category):
-    if (category or "").lower() != "office":
+def validate_office_amounts(salary, bank, crypto, advance, is_office):
+    if not is_office:
         return None
     salary = float(salary or 0)
     bank = float(bank or 0)
