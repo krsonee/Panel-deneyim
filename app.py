@@ -1591,15 +1591,29 @@ from accounting_routes import create_accounting_blueprint
 app.register_blueprint(create_accounting_blueprint(permission_required))
 
 
-init_db()
+def _run_startup():
+    init_db()
+
+
+# Werkzeug reloader açıkken parent process'te init atlanır (çift migration / kilit riski)
+if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or os.environ.get("FLASK_RELOAD", "0") not in ("1", "true", "yes"):
+    _run_startup()
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
+    # debug=True iken use_reloader varsayılan açık kalır; dosya kaydı sırasında
+    # yarım kalan kod import hatasıyla sunucuyu düşürür. Reload varsayılan kapalı.
+    debug = os.environ.get("FLASK_DEBUG", "1").strip().lower() in ("1", "true", "yes")
+    use_reloader = os.environ.get("FLASK_RELOAD", "0").strip().lower() in ("1", "true", "yes")
     print("\n  Merkezi Analiz Sunucusu")
     print("  ─────────────────────────")
     print(f"  Admin Panel : http://127.0.0.1:{port}/admin")
     print("  Giriş       : admin / makro123")
     print(f"  Demo Site   : http://127.0.0.1:{port}/demo")
+    if debug and not use_reloader:
+        print("  Mod         : debug açık, otomatik reload kapalı (stabil)")
+    elif use_reloader:
+        print("  Mod         : otomatik reload açık (FLASK_RELOAD=1)")
     print("  Durdurmak için: Ctrl + C\n")
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=debug, use_reloader=use_reloader)
