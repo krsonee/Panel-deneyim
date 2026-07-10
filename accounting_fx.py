@@ -135,7 +135,7 @@ def clear_manual_rates(conn):
 
 
 def convert_to_all(amount, currency, rates=None):
-    rates = rates or get_effective_rates()
+    rates = rates or fetch_exchange_rates()
     amount = round(float(amount), 2)
     currency = parse_currency(currency) or "TRY"
     usd_try = float(rates["usd_try"])
