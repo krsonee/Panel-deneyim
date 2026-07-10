@@ -559,7 +559,10 @@
 
   function accLoadDashboard() {
     accApi("/api/accounting/dashboard" + accPeriodQuery()).then(function (res) {
-      if (!res || !res.ok) return;
+      if (!res || !res.ok) {
+        if (res && res.data && res.data.error) accToast(res.data.error);
+        return;
+      }
       accApplyPermissionsMeta(res.data);
       if (res.data.salary_categories) accApplySalaryCategories(res.data.salary_categories);
       if (res.data.departments) accApplyDepartments(res.data.departments);

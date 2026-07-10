@@ -20,6 +20,7 @@ from accounting_payroll import (
     validate_office_amounts,
 )
 from accounting_period import date_clause, default_accounting_period, period_label
+from permissions import has_permission
 from database import (
     execute,
     fetchall,
