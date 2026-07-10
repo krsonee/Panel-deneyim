@@ -384,11 +384,18 @@
 
   function accRenderDeptChips() {
     var chips = document.getElementById("acc-dept-chips");
+    var countEl = document.getElementById("acc-dept-count");
     if (!chips) return;
-    chips.innerHTML = accEmployeeDepartments.map(function (d) {
-      return '<span class="acc-chip">' + accEsc(d.name) +
-        ' <button type="button" data-del-dept="' + d.id + '" title="Sil">×</button></span>';
-    }).join("") || '<span class="muted">Henüz departman yok</span>';
+    var rows = accEmployeeDepartments.slice().sort(function (a, b) {
+      return String(a.name).localeCompare(String(b.name), "tr");
+    });
+    if (countEl) countEl.textContent = rows.length + " kayıt";
+    chips.innerHTML = rows.length
+      ? rows.map(function (d) {
+          return '<span class="acc-chip">' + accEsc(d.name) +
+            ' <button type="button" data-del-dept="' + d.id + '" title="Sil">×</button></span>';
+        }).join("")
+      : '<span class="acc-chip-empty">Henüz departman yok</span>';
     chips.querySelectorAll("[data-del-dept]").forEach(function (btn) {
       btn.onclick = function () {
         if (!confirm("Departman silinsin mi?")) return;
@@ -403,12 +410,19 @@
 
   function accRenderSalaryCatChips() {
     var chips = document.getElementById("acc-salary-cat-chips");
+    var countEl = document.getElementById("acc-salary-cat-count");
     if (!chips) return;
-    chips.innerHTML = accSalaryCategories.map(function (c) {
-      var tag = c.is_office ? ' <small class="muted">(ofis)</small>' : "";
-      return '<span class="acc-chip">' + accEsc(c.name) + tag +
-        ' <button type="button" data-del-salary-cat="' + c.id + '" title="Sil">×</button></span>';
-    }).join("") || '<span class="muted">Henüz kategori yok</span>';
+    var rows = accSalaryCategories.slice().sort(function (a, b) {
+      return String(a.name).localeCompare(String(b.name), "tr");
+    });
+    if (countEl) countEl.textContent = rows.length + " kayıt";
+    chips.innerHTML = rows.length
+      ? rows.map(function (c) {
+          var tag = c.is_office ? ' <small class="muted">(ofis)</small>' : "";
+          return '<span class="acc-chip">' + accEsc(c.name) + tag +
+            ' <button type="button" data-del-salary-cat="' + c.id + '" title="Sil">×</button></span>';
+        }).join("")
+      : '<span class="acc-chip-empty">Henüz kategori yok</span>';
     chips.querySelectorAll("[data-del-salary-cat]").forEach(function (btn) {
       btn.onclick = function () {
         if (!confirm("Kategori silinsin mi?")) return;

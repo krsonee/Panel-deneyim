@@ -291,27 +291,40 @@
     <section class="card">
       <div class="card-head"><span>Departman & Maaş Kategorileri</span></div>
       <div class="card-body">
-        <div class="form-row" style="grid-template-columns:1fr auto;gap:1rem;margin-bottom:1rem;">
-          <div>
-            <label>Yeni Departman</label>
-            <form id="acc-dept-form" class="form-row" style="grid-template-columns:1fr auto;margin-top:0.35rem;">
-              <div><input id="acc-dept-name" placeholder="Risk, Finans…" required></div>
-              <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
+        <div class="acc-options-grid">
+          <div class="acc-options-col">
+            <div class="acc-options-head">
+              <label>Departmanlar</label>
+              <span class="acc-options-count" id="acc-dept-count">0 kayıt</span>
+            </div>
+            <form id="acc-dept-form" class="acc-options-form">
+              <div class="acc-options-fields">
+                <input id="acc-dept-name" placeholder="Risk, Finans…" required>
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm">Ekle</button>
             </form>
-            <div class="acc-chip-list" id="acc-dept-chips" style="margin-top:0.5rem;"></div>
+            <div class="acc-chip-scroll">
+              <div class="acc-chip-list" id="acc-dept-chips"></div>
+            </div>
           </div>
-          <div>
-            <label>Yeni Maaş Kategorisi</label>
-            <form id="acc-salary-cat-form" class="form-row" style="grid-template-columns:1fr auto;margin-top:0.35rem;">
-              <div>
+          <div class="acc-options-col">
+            <div class="acc-options-head">
+              <label>Maaş Kategorileri</label>
+              <span class="acc-options-count" id="acc-salary-cat-count">0 kayıt</span>
+            </div>
+            <form id="acc-salary-cat-form" class="acc-options-form">
+              <div class="acc-options-fields">
                 <input id="acc-salary-cat-name" placeholder="Ofis, Saha ekibi…" required>
-                <label style="display:flex;align-items:center;gap:0.35rem;margin-top:0.35rem;font-size:0.72rem;font-weight:normal;">
-                  <input type="checkbox" id="acc-salary-cat-office"> Ofis personeli (banka/kripto/avans alanları)
+                <label class="acc-options-check">
+                  <input type="checkbox" id="acc-salary-cat-office">
+                  Ofis personeli (banka/kripto/avans)
                 </label>
               </div>
-              <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
+              <button type="submit" class="btn btn-primary btn-sm">Ekle</button>
             </form>
-            <div class="acc-chip-list" id="acc-salary-cat-chips" style="margin-top:0.5rem;"></div>
+            <div class="acc-chip-scroll">
+              <div class="acc-chip-list" id="acc-salary-cat-chips"></div>
+            </div>
           </div>
         </div>
       </div>
