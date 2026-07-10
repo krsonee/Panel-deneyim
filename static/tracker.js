@@ -107,10 +107,29 @@
     getSeconds: function () { return seconds; }
   };
 
+  function labelForLink(link) {
+    var text = (link.textContent || "").replace(/\s+/g, " ").trim();
+    if (text) return text.slice(0, 80);
+    var img = link.querySelector && link.querySelector("img[alt]");
+    if (img && img.getAttribute("alt")) return img.getAttribute("alt").trim().slice(0, 80);
+    try {
+      var u = new URL(link.href, window.location.href);
+      return (u.pathname.replace(/\/+$/, "") || "/") + (u.search || "");
+    } catch (e) {
+      return link.getAttribute("href") || "";
+    }
+  }
+
   document.addEventListener("click", function (e) {
-    var btn = e.target.closest("[data-track-game]");
-    if (btn) {
-      trackGame(btn.getAttribute("data-track-game"));
+    var tagged = e.target.closest("[data-track-game]");
+    if (tagged) {
+      trackGame(tagged.getAttribute("data-track-game"));
+      return;
+    }
+    var link = e.target.closest("a[href]");
+    if (link) {
+      var label = labelForLink(link);
+      if (label) trackGame(label);
     }
   });
 
