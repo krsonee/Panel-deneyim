@@ -109,16 +109,23 @@
         <p class="muted" style="font-size:0.75rem;margin-bottom:0.75rem;">
           Oran değişince geçmiş işlemler etkilenmez — sadece yeni kayıtlar güncel orandan hesaplanır.
         </p>
-        <form id="acc-pm-form" class="form-row" style="grid-template-columns:1fr 120px auto;">
+        <form id="acc-pm-form" class="form-row-4" style="grid-template-columns:1fr 140px 120px auto;">
           <div><label>Payment Adı</label><input id="acc-pm-name" placeholder="Papara, Havale, Kripto…" required></div>
+          <div><label>İşlem Türü</label>
+            <select id="acc-pm-type" required>
+              <option value="">Seçin…</option>
+              <option value="deposit">Yatırım</option>
+              <option value="withdrawal">Çekim</option>
+            </select>
+          </div>
           <div><label>Komisyon %</label><input type="number" id="acc-pm-rate" step="0.01" min="0" value="0" required></div>
           <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
         </form>
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Payment</th><th>Komisyon %</th><th>Son Güncelleme</th><th></th></tr></thead>
-          <tbody id="acc-pm-table"><tr><td colspan="4" class="empty">Henüz payment tanımı yok</td></tr></tbody>
+          <thead><tr><th>Payment</th><th>İşlem Türü</th><th>Komisyon %</th><th>Son Güncelleme</th><th></th></tr></thead>
+          <tbody id="acc-pm-table"><tr><td colspan="5" class="empty">Henüz payment tanımı yok</td></tr></tbody>
         </table>
       </div>
     </section>

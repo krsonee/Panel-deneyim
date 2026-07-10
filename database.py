@@ -182,10 +182,12 @@ def init_accounting_schema(conn):
             """
             CREATE TABLE IF NOT EXISTS acc_payment_methods (
                 id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                tx_type TEXT NOT NULL DEFAULT 'deposit',
                 commission_rate REAL NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                UNIQUE(name, tx_type)
             )
             """,
             """
@@ -248,10 +250,12 @@ def init_accounting_schema(conn):
             """
             CREATE TABLE IF NOT EXISTS acc_payment_methods (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                tx_type TEXT NOT NULL DEFAULT 'deposit',
                 commission_rate REAL NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                UNIQUE(name, tx_type)
             )
             """,
             """
@@ -352,6 +356,69 @@ def migrate_schema(conn):
     conn.commit()
     migrate_admin_users(conn)
     migrate_tracked_links(conn)
+    migrate_accounting_payment_methods(conn)
+
+
+def migrate_accounting_payment_methods(conn):
+    if uses_postgres():
+        cols = {
+            r["column_name"]
+            for r in fetchall(
+                conn,
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'acc_payment_methods'
+                """,
+            )
+        }
+    else:
+        table_exists = scalar(
+            conn,
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='acc_payment_methods'",
+        )
+        if not table_exists:
+            return
+        cols = {r[1] for r in execute(conn, "PRAGMA table_info(acc_payment_methods)").fetchall()}
+
+    if "tx_type" in cols:
+        return
+
+    if uses_postgres():
+        execute(conn, "ALTER TABLE acc_payment_methods ADD COLUMN tx_type TEXT NOT NULL DEFAULT 'deposit'")
+        execute(conn, "ALTER TABLE acc_payment_methods DROP CONSTRAINT IF EXISTS acc_payment_methods_name_key")
+        execute(
+            conn,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_acc_pm_name_tx_type
+            ON acc_payment_methods(name, tx_type)
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE acc_payment_methods_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                tx_type TEXT NOT NULL DEFAULT 'deposit',
+                commission_rate REAL NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(name, tx_type)
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            INSERT INTO acc_payment_methods_new (id, name, tx_type, commission_rate, created_at, updated_at)
+            SELECT id, name, 'deposit', commission_rate, created_at, updated_at
+            FROM acc_payment_methods
+            """,
+        )
+        execute(conn, "DROP TABLE acc_payment_methods")
+        execute(conn, "ALTER TABLE acc_payment_methods_new RENAME TO acc_payment_methods")
+    conn.commit()
 
 
 def migrate_tracked_links(conn):

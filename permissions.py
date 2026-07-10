@@ -7,8 +7,6 @@ PERMISSION_CATALOG = [
      "desc": "Ana takip modülüne erişim"},
     {"key": "module.accounting", "label": "Muhasebe", "group": "Modüller",
      "desc": "Muhasebe modülüne erişim"},
-    {"key": "module.crm", "label": "CRM", "group": "Modüller",
-     "desc": "CRM modülü (yakında)"},
     {"key": "module.settings", "label": "Ayarlar", "group": "Modüller",
      "desc": "Panel ayarları ekranı"},
     {"key": "tracking.dashboard", "label": "Dashboard & Grafikler", "group": "Link Takip",
@@ -41,7 +39,7 @@ PERMISSION_CATALOG = [
 
 ALL_PERMISSION_KEYS = [p["key"] for p in PERMISSION_CATALOG]
 
-MODULE_KEYS = ("module.tracking", "module.accounting", "module.crm", "module.settings")
+MODULE_KEYS = ("module.tracking", "module.accounting", "module.settings")
 
 ROLE_TEMPLATES = {
     "superadmin": {
@@ -142,14 +140,12 @@ def has_any_module_access(user_permissions):
 def available_modules(user_permissions):
     perms = normalize_permissions(user_permissions)
     if "*" in perms:
-        return ["tracking", "accounting", "crm", "settings"]
+        return ["tracking", "accounting", "settings"]
     mods = []
     if "module.tracking" in perms:
         mods.append("tracking")
     if "module.accounting" in perms:
         mods.append("accounting")
-    if "module.crm" in perms:
-        mods.append("crm")
     if "module.settings" in perms or "admin.users" in perms:
         mods.append("settings")
     return mods

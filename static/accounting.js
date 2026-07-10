@@ -122,6 +122,21 @@
     return t === "deposit" ? "Yatırım" : "Çekim";
   }
 
+  function accRefreshTxPaymentSelect() {
+    var sel = document.getElementById("acc-tx-payment");
+    var typeEl = document.getElementById("acc-tx-type");
+    if (!sel || !typeEl) return;
+    var txType = typeEl.value;
+    var filtered = accPaymentMethods.filter(function (p) {
+      return !p.tx_type || p.tx_type === txType;
+    });
+    sel.innerHTML = filtered.length
+      ? filtered.map(function (p) {
+          return '<option value="' + p.id + '">' + accEsc(p.name) + " (%" + p.commission_rate + ")</option>";
+        }).join("")
+      : '<option value="">Bu tür için payment ekleyin (' + accTxTypeLabel(txType) + ')</option>';
+  }
+
   function accVaultTypeLabel(t) {
     return t === "in" ? "Giriş" : "Çıkış";
   }
@@ -152,22 +167,16 @@
     return accApi("/api/accounting/payment-methods").then(function (res) {
       if (!res || !res.ok) return;
       accPaymentMethods = res.data.payment_methods || [];
-      var sel = document.getElementById("acc-tx-payment");
-      if (sel) {
-        sel.innerHTML = accPaymentMethods.length
-          ? accPaymentMethods.map(function (p) {
-              return '<option value="' + p.id + '">' + accEsc(p.name) + " (%" + p.commission_rate + ")</option>";
-            }).join("")
-          : '<option value="">Önce payment ekleyin</option>';
-      }
+      accRefreshTxPaymentSelect();
       var tbody = document.getElementById("acc-pm-table");
       if (!tbody) return;
       if (!accPaymentMethods.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty">Henüz payment tanımı yok</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz payment tanımı yok</td></tr>';
         return;
       }
       tbody.innerHTML = accPaymentMethods.map(function (p) {
         return '<tr><td><strong>' + accEsc(p.name) + '</strong></td>' +
+          '<td><span class="tag ' + (p.tx_type === "deposit" ? "online" : "offline") + '">' + accTxTypeLabel(p.tx_type) + '</span></td>' +
           '<td><input type="number" class="acc-inline-rate" data-pm-id="' + p.id + '" value="' + p.commission_rate + '" step="0.01" min="0" style="width:80px;padding:0.3rem;"></td>' +
           '<td class="mono muted">' + accEsc((p.updated_at || p.created_at || "").slice(0, 10)) + '</td>' +
           '<td><button class="btn btn-sm btn-danger" data-del-pm="' + p.id + '">Sil</button></td></tr>';
@@ -457,20 +466,29 @@
 
     document.getElementById("acc-pm-form").addEventListener("submit", function (e) {
       e.preventDefault();
+      var txType = document.getElementById("acc-pm-type").value;
+      if (!txType) { alert("İşlem türü seçin: Yatırım veya Çekim."); return; }
       accApi("/api/accounting/payment-methods", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: document.getElementById("acc-pm-name").value.trim(),
+          tx_type: txType,
           commission_rate: document.getElementById("acc-pm-rate").value
         })
       }).then(function (r) {
         if (r && r.ok) {
           document.getElementById("acc-pm-name").value = "";
+          document.getElementById("acc-pm-type").value = "";
           accLoadPaymentMethods(); accToast("Payment eklendi");
         } else if (r) alert(r.data.error || "Hata");
       });
     });
+
+    var txTypeEl = document.getElementById("acc-tx-type");
+    if (txTypeEl) {
+      txTypeEl.addEventListener("change", accRefreshTxPaymentSelect);
+    }
 
     document.getElementById("acc-cat-form").addEventListener("submit", function (e) {
       e.preventDefault();

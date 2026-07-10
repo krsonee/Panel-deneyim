@@ -131,11 +131,19 @@ def create_accounting_blueprint(permission_required):
     @bp.route("/payment-methods", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def list_payment_methods():
+        tx_type = (request.args.get("tx_type") or "").strip().lower()
         with closing(get_db()) as conn:
-            rows = fetchall(
-                conn,
-                "SELECT * FROM acc_payment_methods ORDER BY name ASC",
-            )
+            if tx_type in ("deposit", "withdrawal"):
+                rows = fetchall(
+                    conn,
+                    "SELECT * FROM acc_payment_methods WHERE tx_type = ? ORDER BY name ASC",
+                    (tx_type,),
+                )
+            else:
+                rows = fetchall(
+                    conn,
+                    "SELECT * FROM acc_payment_methods ORDER BY name ASC, tx_type ASC",
+                )
         return jsonify({"payment_methods": [dict(r) for r in rows]})
 
     @bp.route("/payment-methods", methods=["POST"])
@@ -143,8 +151,11 @@ def create_accounting_blueprint(permission_required):
     def create_payment_method():
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
+        tx_type = (data.get("tx_type") or "").strip().lower()
         if not name:
             return jsonify({"error": "Payment adı zorunludur."}), 400
+        if tx_type not in ("deposit", "withdrawal"):
+            return jsonify({"error": "İşlem türü seçin: Yatırım veya Çekim."}), 400
         rate = parse_amount(data.get("commission_rate", 0))
         if rate is None:
             return jsonify({"error": "Geçerli komisyon oranı girin."}), 400
@@ -154,15 +165,16 @@ def create_accounting_blueprint(permission_required):
                 pid = insert_returning_id(
                     conn,
                     """
-                    INSERT INTO acc_payment_methods (name, commission_rate, created_at, updated_at)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO acc_payment_methods (name, tx_type, commission_rate, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
-                    (name, rate, now, now),
+                    (name, tx_type, rate, now, now),
                 )
                 conn.commit()
                 row = fetchone(conn, "SELECT * FROM acc_payment_methods WHERE id = ?", (pid,))
         except integrity_error_type():
-            return jsonify({"error": "Bu payment adı zaten kayıtlı."}), 409
+            label = "Yatırım" if tx_type == "deposit" else "Çekim"
+            return jsonify({"error": f"Bu payment için {label} komisyonu zaten tanımlı."}), 409
         return jsonify({"payment_method": dict(row)}), 201
 
     @bp.route("/payment-methods/<int:method_id>", methods=["PUT"])
@@ -194,7 +206,7 @@ def create_accounting_blueprint(permission_required):
                 )
                 conn.commit()
             except integrity_error_type():
-                return jsonify({"error": "Bu payment adı zaten kayıtlı."}), 409
+                return jsonify({"error": "Bu payment ve işlem türü kombinasyonu zaten kayıtlı."}), 409
             row = fetchone(conn, "SELECT * FROM acc_payment_methods WHERE id = ?", (method_id,))
         return jsonify({"payment_method": dict(row)})
 
@@ -258,9 +270,11 @@ def create_accounting_blueprint(permission_required):
             pm = fetchone(conn, "SELECT * FROM acc_payment_methods WHERE id = ?", (payment_method_id,))
             if not pm:
                 return jsonify({"error": "Payment yöntemi bulunamadı."}), 404
+            if pm.get("tx_type") and pm["tx_type"] != tx_type:
+                return jsonify({"error": "Seçilen payment bu işlem türü için tanımlı değil."}), 400
 
             rate = float(pm["commission_rate"] or 0)
-            commission_amount = round(amount * rate / 100, 2) if tx_type == "deposit" else 0.0
+            commission_amount = round(amount * rate / 100, 2)
             now = iso(utcnow())
             tid = insert_returning_id(
                 conn,
