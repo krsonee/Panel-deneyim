@@ -88,6 +88,16 @@ def fetch_vault_methods(conn):
     ]
 
 
+def fetch_vault_operation_types(conn):
+    return [
+        dict(r)
+        for r in fetchall(
+            conn,
+            "SELECT * FROM acc_vault_operation_types ORDER BY sort_order ASC, name ASC",
+        )
+    ]
+
+
 def vault_lookup_map(vaults):
     return {v["id"]: v for v in vaults}
 
@@ -884,7 +894,98 @@ def create_accounting_blueprint(permission_required):
             presets = fetch_vault_methods(conn)
             txs = fetchall(conn, "SELECT method_name FROM acc_vault_transactions")
         names = collect_method_suggestions([dict(r) for r in txs], [p["name"] for p in presets])
-        return jsonify({"methods": names})
+        return jsonify({"methods": names, "method_options": presets})
+
+    @bp.route("/vault-methods", methods=["POST"])
+    @acc_perm(*MODULE_ACCESS)
+    def create_vault_method():
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Yöntem adı zorunludur."}), 400
+        now = iso(utcnow())
+        try:
+            with closing(get_db()) as conn:
+                count = scalar(conn, "SELECT COUNT(*) FROM acc_vault_methods") or 0
+                mid = insert_returning_id(
+                    conn,
+                    "INSERT INTO acc_vault_methods (name, sort_order, created_at) VALUES (?, ?, ?)",
+                    (name, count, now),
+                )
+                conn.commit()
+                row = fetchone(conn, "SELECT * FROM acc_vault_methods WHERE id = ?", (mid,))
+        except integrity_error_type():
+            return jsonify({"error": "Bu yöntem zaten var."}), 409
+        return jsonify({"method": dict(row)}), 201
+
+    @bp.route("/vault-methods/<int:method_id>", methods=["DELETE"])
+    @acc_perm(*MODULE_ACCESS)
+    def delete_vault_method(method_id):
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM acc_vault_methods WHERE id = ?", (method_id,))
+            if not row:
+                return jsonify({"error": "Yöntem bulunamadı."}), 404
+            used = scalar(
+                conn,
+                "SELECT COUNT(*) FROM acc_vault_transactions WHERE method_name = ?",
+                (row["name"],),
+            )
+            if used:
+                return jsonify({"error": "Bu yönteme bağlı kasa hareketleri var, silinemez."}), 400
+            execute(conn, "DELETE FROM acc_vault_methods WHERE id = ?", (method_id,))
+            conn.commit()
+        return jsonify({"ok": True})
+
+    @bp.route("/vault-operation-types", methods=["GET"])
+    @acc_perm(*MODULE_ACCESS)
+    def list_vault_operation_types():
+        with closing(get_db()) as conn:
+            presets = fetch_vault_operation_types(conn)
+            txs = fetchall(conn, "SELECT operation_type FROM acc_vault_transactions")
+        names = collect_method_suggestions(
+            [dict(r) for r in txs], [p["name"] for p in presets], field="operation_type"
+        )
+        return jsonify({"operation_types": names, "operation_type_options": presets})
+
+    @bp.route("/vault-operation-types", methods=["POST"])
+    @acc_perm(*MODULE_ACCESS)
+    def create_vault_operation_type():
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "İşlem başlığı zorunludur."}), 400
+        now = iso(utcnow())
+        try:
+            with closing(get_db()) as conn:
+                count = scalar(conn, "SELECT COUNT(*) FROM acc_vault_operation_types") or 0
+                oid = insert_returning_id(
+                    conn,
+                    "INSERT INTO acc_vault_operation_types (name, sort_order, created_at) VALUES (?, ?, ?)",
+                    (name, count, now),
+                )
+                conn.commit()
+                row = fetchone(conn, "SELECT * FROM acc_vault_operation_types WHERE id = ?", (oid,))
+        except integrity_error_type():
+            return jsonify({"error": "Bu işlem başlığı zaten var."}), 409
+        return jsonify({"operation_type": dict(row)}), 201
+
+    @bp.route("/vault-operation-types/<int:optype_id>", methods=["DELETE"])
+    @acc_perm(*MODULE_ACCESS)
+    def delete_vault_operation_type(optype_id):
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM acc_vault_operation_types WHERE id = ?", (optype_id,))
+            if not row:
+                return jsonify({"error": "İşlem başlığı bulunamadı."}), 404
+            used = scalar(
+                conn,
+                "SELECT COUNT(*) FROM acc_vault_transactions WHERE operation_type = ?",
+                (row["name"],),
+            )
+            if used:
+                return jsonify({"error": "Bu başlığa bağlı kasa hareketleri var, silinemez."}), 400
+            execute(conn, "DELETE FROM acc_vault_operation_types WHERE id = ?", (optype_id,))
+            conn.commit()
+        return jsonify({"ok": True})
 
     @bp.route("/vault-transactions/suggest-fee", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
@@ -929,6 +1030,7 @@ def create_accounting_blueprint(permission_required):
                 )
             ]
             methods = fetch_vault_methods(conn)
+            optypes = fetch_vault_operation_types(conn)
 
         if vault_id:
             filtered_rows = [r for r in filtered_rows if r.get("vault_id") == vault_id]
@@ -957,6 +1059,9 @@ def create_accounting_blueprint(permission_required):
         active_vaults = [v for v in vaults if v.get("is_active")]
         dashboard = build_vault_dashboard(active_vaults, grouped_full, p_start_s, p_end_s)
         method_names = collect_method_suggestions(all_rows, [m["name"] for m in methods])
+        optype_names = collect_method_suggestions(
+            all_rows, [o["name"] for o in optypes], field="operation_type"
+        )
 
         return jsonify(
             {
@@ -964,6 +1069,9 @@ def create_accounting_blueprint(permission_required):
                 "vaults": dashboard["vaults"],
                 "totals": dashboard["totals"],
                 "methods": method_names,
+                "method_options": methods,
+                "operation_types": optype_names,
+                "operation_type_options": optypes,
                 "vault_transactions": enriched,
             }
         )
@@ -975,6 +1083,7 @@ def create_accounting_blueprint(permission_required):
         tx_date = parse_date(data.get("tx_date"))
         description = (data.get("description") or "").strip()
         method_name = (data.get("method_name") or "").strip()
+        operation_type = (data.get("operation_type") or "").strip()
 
         if not tx_date:
             return jsonify({"error": "Geçerli tarih girin."}), 400
@@ -999,6 +1108,7 @@ def create_accounting_blueprint(permission_required):
                 description,
                 method_name,
                 fee_usdt=data.get("fee_usdt"),
+                operation_type=operation_type,
             )
             if err:
                 return jsonify({"error": err}), 400
@@ -1019,6 +1129,7 @@ def create_accounting_blueprint(permission_required):
             payload = {
                 "tx_type": tx_type,
                 "method_name": method_name,
+                "operation_type": operation_type,
                 "description": description,
                 "usdt_in": fx["USD"] if tx_type == "in" else 0,
                 "usdt_out": fx["USD"] if tx_type == "out" else 0,
@@ -1053,10 +1164,10 @@ def create_accounting_blueprint(permission_required):
                 conn,
                 """
                 INSERT INTO acc_vault_transactions
-                (tx_date, vault_id, vault_name, tx_type, method_name, description,
+                (tx_date, vault_id, vault_name, tx_type, method_name, operation_type, description,
                  amount, currency, usdt_in, usdt_out, fee_usdt,
                  amount_try, amount_usd, amount_eur, rate_usd_try, rate_eur_try, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     tx_date,
@@ -1064,6 +1175,7 @@ def create_accounting_blueprint(permission_required):
                     vault_name,
                     payload["tx_type"],
                     payload.get("method_name", ""),
+                    payload.get("operation_type", ""),
                     payload.get("description", ""),
                     payload["amount"],
                     payload.get("currency", "USD"),

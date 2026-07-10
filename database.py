@@ -551,7 +551,12 @@ def migrate_accounting_employee_options(conn):
 
 
 def migrate_accounting_vaults(conn):
-    from accounting_vault import DEFAULT_VAULT_METHODS, VAULT_ICONS, VAULT_PALETTE
+    from accounting_vault import (
+        DEFAULT_VAULT_METHODS,
+        DEFAULT_VAULT_OPERATION_TYPES,
+        VAULT_ICONS,
+        VAULT_PALETTE,
+    )
 
     if uses_postgres():
         execute(
@@ -575,6 +580,17 @@ def migrate_accounting_vaults(conn):
             conn,
             """
             CREATE TABLE IF NOT EXISTS acc_vault_methods (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_vault_operation_types (
                 id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
                 sort_order INTEGER NOT NULL DEFAULT 0,
@@ -611,12 +627,24 @@ def migrate_accounting_vaults(conn):
             )
             """,
         )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_vault_operation_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
 
     tx_cols = _table_columns(conn, "acc_vault_transactions")
     if tx_cols:
         for name, typedef in (
             ("vault_id", "INTEGER"),
             ("method_name", "TEXT NOT NULL DEFAULT ''"),
+            ("operation_type", "TEXT NOT NULL DEFAULT ''"),
             ("usdt_in", "REAL NOT NULL DEFAULT 0"),
             ("usdt_out", "REAL NOT NULL DEFAULT 0"),
             ("fee_usdt", "REAL NOT NULL DEFAULT 0"),
@@ -645,6 +673,62 @@ def migrate_accounting_vaults(conn):
                 """,
                 (method, idx, now),
             )
+    for idx, optype in enumerate(DEFAULT_VAULT_OPERATION_TYPES):
+        if uses_postgres():
+            execute(
+                conn,
+                """
+                INSERT INTO acc_vault_operation_types (name, sort_order, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT (name) DO NOTHING
+                """,
+                (optype, idx, now),
+            )
+        else:
+            execute(
+                conn,
+                """
+                INSERT OR IGNORE INTO acc_vault_operation_types (name, sort_order, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (optype, idx, now),
+            )
+
+    if tx_cols:
+        # Eski kayıtlarda "Yöntem" alanına yazılmış işlem başlıklarını
+        # (Devir/Masraf/Virman/Kasa Aktarım) yeni operation_type alanına taşı.
+        legacy_rows = fetchall(
+            conn,
+            "SELECT id, method_name FROM acc_vault_transactions WHERE COALESCE(operation_type, '') = ''",
+        )
+        optype_lookup = {o.lower(): o for o in DEFAULT_VAULT_OPERATION_TYPES}
+        for row in legacy_rows:
+            method = (row["method_name"] or "").strip()
+            match = optype_lookup.get(method.lower())
+            if match:
+                execute(
+                    conn,
+                    "UPDATE acc_vault_transactions SET operation_type = ?, method_name = '' WHERE id = ?",
+                    (match, row["id"]),
+                )
+
+    # Önceki sürümlerde acc_vault_methods içine karışmış işlem başlıklarını temizle
+    # (artık acc_vault_operation_types tablosunda ayrı yönetiliyorlar).
+    stale_optype_names = fetchall(
+        conn,
+        "SELECT name FROM acc_vault_methods WHERE LOWER(name) IN ({})".format(
+            ", ".join("?" for _ in DEFAULT_VAULT_OPERATION_TYPES)
+        ),
+        [o.lower() for o in DEFAULT_VAULT_OPERATION_TYPES],
+    )
+    for row in stale_optype_names:
+        still_used = scalar(
+            conn,
+            "SELECT COUNT(*) FROM acc_vault_transactions WHERE method_name = ?",
+            (row["name"],),
+        )
+        if not still_used:
+            execute(conn, "DELETE FROM acc_vault_methods WHERE name = ?", (row["name"],))
 
     vault_count = scalar(conn, "SELECT COUNT(*) FROM acc_vaults") or 0
     if vault_count == 0:

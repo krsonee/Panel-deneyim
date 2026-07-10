@@ -1,10 +1,13 @@
 """Kasa (vault) defter mantığı — USDT/TL bakiye, Excel-style zenginleştirme."""
 
-DEFAULT_VAULT_METHODS = [
+DEFAULT_VAULT_OPERATION_TYPES = [
     "Devir",
     "Masraf",
     "Virman",
     "Kasa Aktarım",
+]
+
+DEFAULT_VAULT_METHODS = [
     "Espaycash kk",
     "Mega cüzdan",
     "Paypa Havale",
@@ -116,11 +119,13 @@ def enrich_vault_transaction(row, vault_lookup=None):
     method = (data.get("method_name") or "").strip()
     if not method and data.get("tx_type"):
         method = "Giriş" if data["tx_type"] == "in" else "Çıkış"
+    operation_type = (data.get("operation_type") or "").strip()
 
     data.update(
         {
             "vault_name": vault_name,
             "method_name": method,
+            "operation_type": operation_type,
             "usdt_in": round(usdt_in, 2),
             "usdt_out": round(usdt_out, 2),
             "usdt_out_display": round(-usdt_out, 2) if usdt_out else 0.0,
@@ -233,7 +238,9 @@ def build_vault_dashboard(vaults, transactions_by_vault, period_start=None, peri
     }
 
 
-def build_vault_tx_payload(usdt_amount, direction, rate_usd_try, description="", method_name="", fee_usdt=0.0):
+def build_vault_tx_payload(
+    usdt_amount, direction, rate_usd_try, description="", method_name="", fee_usdt=0.0, operation_type=""
+):
     """Yeni kasa kaydı için normalize edilmiş alanlar."""
     amount = _f(usdt_amount)
     if amount <= 0:
@@ -262,6 +269,7 @@ def build_vault_tx_payload(usdt_amount, direction, rate_usd_try, description="",
     return {
         "tx_type": tx_type,
         "method_name": (method_name or "").strip(),
+        "operation_type": (operation_type or "").strip(),
         "description": (description or "").strip(),
         "usdt_in": round(usdt_in, 2),
         "usdt_out": round(usdt_out, 2),
@@ -278,8 +286,8 @@ def build_vault_tx_payload(usdt_amount, direction, rate_usd_try, description="",
     }, None
 
 
-def collect_method_suggestions(rows, presets=None):
-    """Form autocomplete — kayıtlı yöntemler + varsayılanlar."""
+def collect_method_suggestions(rows, presets=None, field="method_name"):
+    """Form autocomplete — kayıtlı yöntemler/işlem başlıkları + varsayılanlar."""
     seen = set()
     methods = []
     for name in presets or DEFAULT_VAULT_METHODS:
@@ -288,7 +296,7 @@ def collect_method_suggestions(rows, presets=None):
             seen.add(key)
             methods.append(name)
     for row in rows or []:
-        name = (row.get("method_name") or "").strip()
+        name = (row.get(field) or "").strip()
         key = name.lower()
         if name and key not in seen:
             seen.add(key)

@@ -281,6 +281,45 @@
       </div>
     </section>
 
+    <!-- İşlem başlığı & yöntem yönetimi -->
+    <section class="card">
+      <div class="card-head"><span>İşlem Başlığı & Yöntem Yönetimi</span></div>
+      <div class="card-body">
+        <div class="acc-options-grid">
+          <div class="acc-options-col">
+            <div class="acc-options-head">
+              <label>İşlem Başlıkları</label>
+              <span class="acc-options-count" id="acc-optype-count">0 kayıt</span>
+            </div>
+            <form id="acc-optype-form" class="acc-options-form">
+              <div class="acc-options-row">
+                <input id="acc-optype-name" placeholder="Devir, Masraf, Virman…" required>
+                <button type="submit" class="btn btn-primary btn-sm">Ekle</button>
+              </div>
+            </form>
+            <div class="acc-chip-scroll">
+              <div class="acc-chip-list" id="acc-optype-chips"></div>
+            </div>
+          </div>
+          <div class="acc-options-col">
+            <div class="acc-options-head">
+              <label>Yöntemler (Ödeme Kanalı)</label>
+              <span class="acc-options-count" id="acc-method-count">0 kayıt</span>
+            </div>
+            <form id="acc-method-form" class="acc-options-form">
+              <div class="acc-options-row">
+                <input id="acc-method-name" placeholder="Garanti Fast, Mega cüzdan…" required>
+                <button type="submit" class="btn btn-primary btn-sm">Ekle</button>
+              </div>
+            </form>
+            <div class="acc-chip-scroll">
+              <div class="acc-chip-list" id="acc-method-chips"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- İşlem girişi -->
     <section class="card">
       <div class="card-head">
@@ -291,8 +330,12 @@
         <form id="acc-vault-form" class="form-row-4 acc-vault-form-grid">
           <div><label>Kasa</label><select id="acc-vault-select" required></select></div>
           <div><label>Tarih</label><input type="date" id="acc-vault-date" required></div>
+          <div><label>İşlem Başlığı</label>
+            <input id="acc-vault-optype" list="acc-vault-optype-list" placeholder="Devir, Masraf, Virman…">
+            <datalist id="acc-vault-optype-list"></datalist>
+          </div>
           <div><label>Yöntem</label>
-            <input id="acc-vault-method" list="acc-vault-method-list" placeholder="Masraf, Devir, Garanti Fast…" required>
+            <input id="acc-vault-method" list="acc-vault-method-list" placeholder="Garanti Fast, Mega cüzdan…">
             <datalist id="acc-vault-method-list"></datalist>
           </div>
           <div><label>İşlem Yönü</label>
@@ -339,6 +382,7 @@
           <table class="acc-vault-ledger-table">
             <thead><tr>
               <th class="col-sortable" data-acc-sort="acc-vault" data-sort="tx_date">Tarih</th>
+              <th class="col-sortable" data-acc-sort="acc-vault" data-sort="operation_type">İşlem Başlığı</th>
               <th class="col-sortable" data-acc-sort="acc-vault" data-sort="method_name">Yöntem</th>
               <th class="col-sortable acc-vault-col-out" data-acc-sort="acc-vault" data-sort="usdt_out">Giden USDT</th>
               <th class="col-sortable acc-vault-col-in" data-acc-sort="acc-vault" data-sort="usdt_in">Gelen USDT</th>
@@ -351,7 +395,7 @@
               <th class="col-sortable" data-acc-sort="acc-vault" data-sort="vault_name">Kasa</th>
               <th></th>
             </tr></thead>
-            <tbody id="acc-vault-table"><tr><td colspan="12" class="empty">Kayıt yok</td></tr></tbody>
+            <tbody id="acc-vault-table"><tr><td colspan="13" class="empty">Kayıt yok</td></tr></tbody>
           </table>
         </div>
         <div class="table-foot" id="acc-vault-table-foot" style="display:none;">

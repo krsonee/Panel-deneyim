@@ -21,6 +21,9 @@
   var accCanViewOfficeSalaries = false;
   var accVaults = [];
   var accVaultMethods = [];
+  var accVaultMethodOptions = [];
+  var accVaultOperationTypes = [];
+  var accVaultOperationTypeOptions = [];
   var accVaultFilterId = localStorage.getItem("acc_vault_filter") || "";
 
   var accData = {
@@ -1102,6 +1105,66 @@
     }).join("");
   }
 
+  function accRenderVaultOperationTypes(types) {
+    var list = document.getElementById("acc-vault-optype-list");
+    if (!list) return;
+    list.innerHTML = (types || []).map(function (m) {
+      return "<option value=\"" + accEsc(m) + "\"></option>";
+    }).join("");
+  }
+
+  function accRenderOptypeChips() {
+    var chips = document.getElementById("acc-optype-chips");
+    var countEl = document.getElementById("acc-optype-count");
+    if (!chips) return;
+    var rows = accVaultOperationTypeOptions.slice().sort(function (a, b) {
+      return String(a.name).localeCompare(String(b.name), "tr");
+    });
+    if (countEl) countEl.textContent = rows.length + " kayıt";
+    chips.innerHTML = rows.length
+      ? rows.map(function (o) {
+          return '<span class="acc-chip" title="' + accEsc(o.name) + '"><span class="acc-chip-text">' + accEsc(o.name) +
+            '</span> <button type="button" data-del-optype="' + o.id + '" title="Sil">×</button></span>';
+        }).join("")
+      : '<span class="acc-chip-empty">Henüz işlem başlığı yok</span>';
+    chips.querySelectorAll("[data-del-optype]").forEach(function (btn) {
+      btn.onclick = function () {
+        if (!confirm("İşlem başlığı silinsin mi?")) return;
+        accApi("/api/accounting/vault-operation-types/" + btn.getAttribute("data-del-optype"), { method: "DELETE" })
+          .then(function (r) {
+            if (r && r.ok) { accLoadVault(); accToast("Silindi"); }
+            else if (r) alert(r.data.error || "Hata");
+          });
+      };
+    });
+  }
+
+  function accRenderMethodChips() {
+    var chips = document.getElementById("acc-method-chips");
+    var countEl = document.getElementById("acc-method-count");
+    if (!chips) return;
+    var rows = accVaultMethodOptions.slice().sort(function (a, b) {
+      return String(a.name).localeCompare(String(b.name), "tr");
+    });
+    if (countEl) countEl.textContent = rows.length + " kayıt";
+    chips.innerHTML = rows.length
+      ? rows.map(function (m) {
+          return '<span class="acc-chip" title="' + accEsc(m.name) + '"><span class="acc-chip-text">' + accEsc(m.name) +
+            '</span> <button type="button" data-del-method="' + m.id + '" title="Sil">×</button></span>';
+        }).join("")
+      : '<span class="acc-chip-empty">Henüz yöntem yok</span>';
+    chips.querySelectorAll("[data-del-method]").forEach(function (btn) {
+      btn.onclick = function () {
+        if (!confirm("Yöntem silinsin mi?")) return;
+        accApi("/api/accounting/vault-methods/" + btn.getAttribute("data-del-method"), { method: "DELETE" })
+          .then(function (r) {
+            if (r && r.ok) { accLoadVault(); accToast("Silindi"); }
+            else if (r) alert(r.data.error || "Hata");
+          });
+      };
+    });
+  }
+
   function accSetVaultFilter(vaultId) {
     accVaultFilterId = vaultId ? String(vaultId) : "";
     localStorage.setItem("acc_vault_filter", accVaultFilterId);
@@ -1169,10 +1232,16 @@
       if (res.data.period_label) accUpdatePeriodLabel(res.data.period_label);
       accVaults = res.data.vaults || [];
       accVaultMethods = res.data.methods || [];
+      accVaultMethodOptions = res.data.method_options || [];
+      accVaultOperationTypes = res.data.operation_types || [];
+      accVaultOperationTypeOptions = res.data.operation_type_options || [];
       accData["acc-vault"].rows = res.data.vault_transactions || [];
       accFillVaultSelects(accVaults);
       accRenderVaultChips(accVaults);
       accRenderVaultMethods(accVaultMethods);
+      accRenderVaultOperationTypes(accVaultOperationTypes);
+      accRenderMethodChips();
+      accRenderOptypeChips();
       accRenderVaultDashboard(accVaults, res.data.totals);
       accRenderVault();
       accUpdateVaultFormRateBadge();
@@ -1184,6 +1253,7 @@
     if (!tbody) return;
     var rows = accSortRows("acc-vault", accData["acc-vault"].rows, {
       tx_date: function (r) { return r.tx_date; },
+      operation_type: function (r) { return r.operation_type; },
       method_name: function (r) { return r.method_name; },
       usdt_out: function (r) { return r.usdt_out; },
       usdt_in: function (r) { return r.usdt_in; },
@@ -1196,7 +1266,7 @@
       vault_name: function (r) { return r.vault_name; }
     });
     if (!accData["acc-vault"].rows.length) {
-      tbody.innerHTML = '<tr><td colspan="12" class="empty">Kayıt yok</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13" class="empty">Kayıt yok</td></tr>';
       accUpdateFoot("acc-vault", 0, "kayıt");
       return;
     }
@@ -1209,6 +1279,7 @@
       var kur = r.rate_display > 0 ? parseFloat(r.rate_display).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—";
       return "<tr>" +
         '<td class="mono">' + accFmtVaultDate(r.tx_date) + "</td>" +
+        "<td>" + accEsc(r.operation_type || "—") + "</td>" +
         "<td><strong>" + accEsc(r.method_name || "—") + "</strong></td>" +
         "<td>" + outCell + "</td>" +
         "<td>" + inCell + "</td>" +
@@ -1624,6 +1695,7 @@
       var body = Object.assign({
         tx_date: document.getElementById("acc-vault-date").value,
         vault_id: parseInt(document.getElementById("acc-vault-select").value, 10),
+        operation_type: document.getElementById("acc-vault-optype").value.trim(),
         method_name: document.getElementById("acc-vault-method").value.trim(),
         direction: document.getElementById("acc-vault-direction").value,
         usdt_amount: document.getElementById("acc-vault-usdt").value,
@@ -1640,10 +1712,39 @@
           document.getElementById("acc-vault-fee").value = "0";
           document.getElementById("acc-vault-desc").value = "";
           document.getElementById("acc-vault-method").value = "";
+          document.getElementById("acc-vault-optype").value = "";
           accClearFormRates("acc-vault-rate-usd", null);
           accUpdateVaultTlPreview();
           accLoadVault();
           accSavedToast("Kasa hareketi kaydedildi", r.data.rates);
+        } else if (r) alert(r.data.error || "Hata");
+      });
+    });
+
+    accBindForm("acc-optype-form", function (e) {
+      e.preventDefault();
+      accApi("/api/accounting/vault-operation-types", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: document.getElementById("acc-optype-name").value.trim() })
+      }).then(function (r) {
+        if (r && r.ok) {
+          document.getElementById("acc-optype-name").value = "";
+          accLoadVault(); accToast("İşlem başlığı eklendi");
+        } else if (r) alert(r.data.error || "Hata");
+      });
+    });
+
+    accBindForm("acc-method-form", function (e) {
+      e.preventDefault();
+      accApi("/api/accounting/vault-methods", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: document.getElementById("acc-method-name").value.trim() })
+      }).then(function (r) {
+        if (r && r.ok) {
+          document.getElementById("acc-method-name").value = "";
+          accLoadVault(); accToast("Yöntem eklendi");
         } else if (r) alert(r.data.error || "Hata");
       });
     });
