@@ -63,6 +63,15 @@ def create_smartico_blueprint(permission_required):
             result = smartico_api.fetch_media_report(conn, period=period, force=force)
         return jsonify(result)
 
+    @bp.route("/affiliates", methods=["GET"])
+    @perm(*MODULE_ACCESS)
+    def list_affiliates():
+        with closing(get_db()) as conn:
+            names = smartico_api.fetch_affiliate_names(conn)
+        rows = [{"affiliate_id": aid, "affiliate_name": name} for aid, name in names.items()]
+        rows.sort(key=lambda r: (r["affiliate_name"] or "").lower())
+        return jsonify({"rows": rows})
+
     @bp.route("/bindings", methods=["GET"])
     @perm(*MODULE_ACCESS)
     def list_bindings():

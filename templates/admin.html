@@ -1277,6 +1277,7 @@
           <div style="align-self:end"><button type="button" class="btn btn-primary" id="blink-bind-save">Kaydet</button></div>
           <div style="align-self:end"><button type="button" class="btn btn-danger" id="blink-bind-remove" style="display:none;">Bağlantıyı Kaldır</button></div>
         </div>
+        <div id="blink-bind-suggestions" style="margin-top:0.75rem;"></div>
       </div>
     </div>
   </div>
@@ -1333,6 +1334,80 @@
       var blinkRowsById = {};
       var blinkBindTarget = null;
       var blinkLastResult = null;
+      var smarticoAffiliateList = null;
+      var smarticoAffiliateListLoading = false;
+
+      function normalizeMatchText(s) {
+        return String(s || "")
+          .toLowerCase()
+          .replace(/[çc]/g, "c").replace(/[ğg]/g, "g").replace(/[ıiİI]/g, "i")
+          .replace(/[öo]/g, "o").replace(/[şs]/g, "s").replace(/[üu]/g, "u")
+          .replace(/[^a-z0-9]/g, "");
+      }
+
+      function suggestAffiliateMatches(hintText, limit) {
+        if (!smarticoAffiliateList || !smarticoAffiliateList.length) return [];
+        var hint = normalizeMatchText(hintText);
+        if (!hint) return [];
+        var scored = [];
+        smarticoAffiliateList.forEach(function(a) {
+          var name = normalizeMatchText(a.affiliate_name);
+          if (!name) return;
+          var score = 0;
+          if (name === hint) score = 100;
+          else if (name.indexOf(hint) !== -1 || hint.indexOf(name) !== -1) {
+            score = 60 + Math.min(name.length, hint.length);
+          } else {
+            var shorter = name.length < hint.length ? name : hint;
+            var longer = name.length < hint.length ? hint : name;
+            var i = 0, matches = 0;
+            for (; i < shorter.length - 2; i++) {
+              if (longer.indexOf(shorter.substr(i, 3)) !== -1) matches++;
+            }
+            if (matches > 0) score = matches * 5;
+          }
+          if (score > 0) scored.push({ affiliate_id: a.affiliate_id, affiliate_name: a.affiliate_name, score: score });
+        });
+        scored.sort(function(x, y) { return y.score - x.score; });
+        return scored.slice(0, limit || 4);
+      }
+
+      function loadSmarticoAffiliateList(cb) {
+        if (smarticoAffiliateList) { if (cb) cb(); return; }
+        if (smarticoAffiliateListLoading) { setTimeout(function() { loadSmarticoAffiliateList(cb); }, 300); return; }
+        smarticoAffiliateListLoading = true;
+        fetch(API + "/api/smartico/affiliates").then(function(r) { return r.json(); })
+          .then(function(res) {
+            smarticoAffiliateList = (res && res.rows) || [];
+            smarticoAffiliateListLoading = false;
+            if (cb) cb();
+          }).catch(function() { smarticoAffiliateListLoading = false; smarticoAffiliateList = []; if (cb) cb(); });
+      }
+
+      function renderBlinkBindSuggestions(row) {
+        var box = document.getElementById("blink-bind-suggestions");
+        if (!box) return;
+        box.innerHTML = '<span class="muted" style="font-size:0.75rem;">Öneriler yükleniyor…</span>';
+        loadSmarticoAffiliateList(function() {
+          var hint = (row.alias || row.short_link || "").replace(/^https?:\/\/[^/]+\//, "");
+          var suggestions = suggestAffiliateMatches(hint, 4);
+          if (!suggestions.length) {
+            box.innerHTML = '<span class="muted" style="font-size:0.75rem;">İsme göre otomatik öneri bulunamadı — kesin eşleşme için linke tıklayıp açılan sitenin adres çubuğundaki ?affid= değerini kullan.</span>';
+            return;
+          }
+          box.innerHTML = '<div class="muted" style="font-size:0.75rem;margin-bottom:0.35rem;">Olası eşleşmeler (isme göre tahmin, tıklayınca alana yazılır — kaydetmeden önce kontrol et):</div>' +
+            suggestions.map(function(s) {
+              return '<button type="button" class="btn btn-ghost blink-suggest-chip" data-affid="' + esc(s.affiliate_id) + '" style="margin:0 0.35rem 0.35rem 0;font-size:0.75rem;">' +
+                esc(s.affiliate_name) + ' <span class="muted">(#' + esc(s.affiliate_id) + ')</span></button>';
+            }).join("");
+        });
+      }
+
+      bindOptional("blink-bind-suggestions", "click", function(e) {
+        var chip = e.target.closest ? e.target.closest(".blink-suggest-chip") : null;
+        if (!chip) return;
+        document.getElementById("blink-bind-ref").value = chip.getAttribute("data-affid") || "";
+      });
 
       function switchModule(name) {
         if (!name) return;
@@ -2907,6 +2982,7 @@
         document.getElementById("blink-bind-ref").value = row.bind_ref_code || row.ref_code || "";
         document.getElementById("blink-bind-remove").style.display = row.bind_domain ? "" : "none";
         document.getElementById("blink-bind-modal").classList.add("open");
+        renderBlinkBindSuggestions(row);
       }
 
       bindOptional("blink-table", "click", function(e) {
