@@ -405,7 +405,14 @@ def migrate_schema(conn):
     migrate_accounting_settings(conn)
     migrate_accounting_employees_payroll(conn)
     migrate_accounting_employee_options(conn)
-    migrate_accounting_vaults(conn)
+    try:
+        migrate_accounting_vaults(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_accounting_vaults hata (atlanıyor, panel yine açılır): {exc}")
 
 
 def _table_columns(conn, table_name):
