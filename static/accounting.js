@@ -1572,7 +1572,8 @@
       });
     });
 
-    document.getElementById("acc-vault-form").addEventListener("submit", function (e) {
+    var vaultForm = document.getElementById("acc-vault-form");
+    if (vaultForm) vaultForm.addEventListener("submit", function (e) {
       e.preventDefault();
       var body = Object.assign({
         tx_date: document.getElementById("acc-vault-date").value,

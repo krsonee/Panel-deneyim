@@ -6,6 +6,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
+from http.client import RemoteDisconnected
 
 CURRENCIES = ("TRY", "USD", "EUR")
 CURRENCY_SYMBOLS = {"TRY": "₺", "USD": "$", "EUR": "€"}
@@ -129,12 +130,28 @@ def _fetch_exchangerate_host():
     return usd_try, eur_try, data.get("date"), "exchangerate.host"
 
 
+_FETCH_ERRORS = (
+    urllib.error.URLError,
+    urllib.error.HTTPError,
+    RemoteDisconnected,
+    ConnectionError,
+    TimeoutError,
+    KeyError,
+    ValueError,
+    TypeError,
+    json.JSONDecodeError,
+)
+
+
 def _fetch_live_rates():
     errors = []
     for fetch in (_fetch_truncgil, _fetch_tcmb, _fetch_er_api, _fetch_frankfurter, _fetch_exchangerate_host):
         try:
             return fetch()
-        except (urllib.error.URLError, urllib.error.HTTPError, KeyError, ValueError, TypeError) as exc:
+        except _FETCH_ERRORS as exc:
+            errors.append(str(exc))
+            continue
+        except OSError as exc:
             errors.append(str(exc))
             continue
     raise RuntimeError("; ".join(errors[-3:]) if errors else "no providers")
@@ -177,7 +194,7 @@ def fetch_exchange_rates(force=False, fresh=False):
     try:
         usd_try, eur_try, date, source = _fetch_live_rates()
         return _cache_result(now, usd_try, eur_try, date, source)
-    except RuntimeError:
+    except Exception:
         if has_cached:
             return dict(_rate_cache)
         return _cache_result(
