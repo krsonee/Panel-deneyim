@@ -1838,6 +1838,23 @@ def delete_admin_user(user_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/admin/users/<int:user_id>/unlock", methods=["POST"])
+@permission_required("admin.users")
+def unlock_admin_user(user_id):
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT username FROM admin_users WHERE id = ?", (user_id,))
+        if not row:
+            return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+    target_username = normalize_username(row["username"])
+    prefix = f"{target_username}|"
+    with _login_attempts_lock:
+        matching_keys = [key for key in _login_attempts if key.startswith(prefix)]
+        for key in matching_keys:
+            _login_attempts.pop(key, None)
+    audit("login_unlock", detail=f"target_username={target_username}")
+    return jsonify({"ok": True})
+
+
 @app.route("/api/me/password", methods=["POST"])
 @login_required
 def change_own_password():

@@ -2527,6 +2527,7 @@
               '</div>'+
               '<div class="user-card-actions">'+
                 '<button type="button" class="btn-ghost" data-edit-user="'+u.id+'">Yetki</button>'+
+                '<button type="button" class="btn-ghost" data-unlock-user="'+u.id+'">Kilidi Aç</button>'+
                 (users.length>1?'<button type="button" class="btn-ghost danger" data-del-user="'+u.id+'">Sil</button>':'')+
               '</div></div>';
           }).join("") : '<p class="muted" style="padding:0.5rem 0;">Henüz kullanıcı yok</p>';
@@ -2552,6 +2553,13 @@
               fetch(API+"/api/admin/users/"+btn.getAttribute("data-del-user"),{method:"DELETE"})
                 .then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});})
                 .then(function(res){ if(!res.ok){alert(res.data.error);return;} loadSettings(); toast("Silindi"); });
+            };
+          });
+          box.querySelectorAll("[data-unlock-user]").forEach(function(btn) {
+            btn.onclick = function() {
+              fetch(API+"/api/admin/users/"+btn.getAttribute("data-unlock-user")+"/unlock",{method:"POST"})
+                .then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});})
+                .then(function(res){ if(!res.ok){alert(res.data.error);return;} toast("Kilit kaldırıldı"); });
             };
           });
         });
