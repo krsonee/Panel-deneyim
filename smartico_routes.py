@@ -72,11 +72,38 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
     @bp.route("/affiliates", methods=["GET"])
     @perm(*MODULE_ACCESS)
     def list_affiliates():
+        """?status=approved -> sadece Approved (2). ?status=all -> hepsi.
+        Varsayılan: approved (Suspended/Blocked hariç partner listesi için).
+        """
+        status = (request.args.get("status") or "approved").strip().lower()
+        force = request.args.get("force") == "1"
         with closing(get_db()) as conn:
-            names = smartico_api.fetch_affiliate_names(conn)
-        rows = [{"affiliate_id": aid, "affiliate_name": name} for aid, name in names.items()]
+            if status == "all":
+                rows_raw = smartico_api.fetch_affiliates_raw(conn, status_ids=None, force=force)
+            elif status == "approved":
+                rows_raw = smartico_api.fetch_affiliates_raw(
+                    conn, status_ids=[smartico_api.AFF_STATUS_APPROVED], force=force
+                )
+            else:
+                return jsonify({"error": "status=approved|all"}), 400
+        rows = []
+        for row in rows_raw:
+            aid = row.get("affiliate_id") or row.get("id")
+            if aid is None:
+                continue
+            rows.append({
+                "affiliate_id": str(aid),
+                "affiliate_name": row.get("affiliate_name") or row.get("username") or f"Affiliate #{aid}",
+                "aff_status_id": row.get("aff_status_id"),
+                "email": row.get("email") or row.get("bo_user_email"),
+                "telegram": row.get("contact_telegram") or row.get("telegram") or row.get("skype"),
+                "company": row.get("company"),
+                "web_site_url": row.get("web_site_url"),
+                "manager_id": row.get("manager_id"),
+                "create_date": row.get("create_date") or row.get("created"),
+            })
         rows.sort(key=lambda r: (r["affiliate_name"] or "").lower())
-        return jsonify({"rows": rows})
+        return jsonify({"rows": rows, "count": len(rows), "status_filter": status})
 
     @bp.route("/bindings", methods=["GET"])
     @perm(*MODULE_ACCESS)

@@ -308,6 +308,42 @@ def date_range_from_period(period):
     return None, None
 
 
+# TAP AffiliateStatus: Pending=1 Approved=2 Declined=3 Suspended=4 ViewOnly=5 Blocked=6/7
+AFF_STATUS_APPROVED = 2
+AFF_STATUS_SUSPENDED = 4
+
+
+def fetch_affiliates_raw(conn, status_ids=None, force=False):
+    """Ham affiliate listesi. status_ids örn. [2] = Approved (Suspended hariç için [2] kullan)."""
+    cfg = get_config(conn)
+    if not cfg["api_key"]:
+        return []
+    filt = {"without_money": True}
+    if status_ids:
+        filt["aff_status_id"] = list(status_ids)
+    cache_key = json.dumps(filt, sort_keys=True)
+    now = datetime.now(timezone.utc)
+    cached = _aff_cache.get("raw", {}).get(cache_key)
+    if (
+        not force
+        and cached
+        and now - cached["fetched_at"] < timedelta(seconds=_AFF_CACHE_SECONDS)
+    ):
+        return cached["data"]
+    try:
+        data = _request(
+            cfg["api_host"], "af2_aff_op", cfg["api_key"],
+            {"filter": json.dumps(filt)},
+        )
+    except SmarticoError:
+        return (cached or {}).get("data") or []
+    if not isinstance(data, list):
+        return (cached or {}).get("data") or []
+    rows = [row for row in data if isinstance(row, dict)]
+    _aff_cache.setdefault("raw", {})[cache_key] = {"fetched_at": now, "data": rows}
+    return rows
+
+
 def fetch_affiliate_names(conn, force=False):
     """affiliate_id -> affiliate_name eşlemesi. Performans için önbelleklenir."""
     now = datetime.now(timezone.utc)
@@ -315,25 +351,13 @@ def fetch_affiliate_names(conn, force=False):
         not force
         and _aff_cache["fetched_at"]
         and now - _aff_cache["fetched_at"] < timedelta(seconds=_AFF_CACHE_SECONDS)
+        and _aff_cache.get("data")
     ):
         return _aff_cache["data"]
 
-    cfg = get_config(conn)
-    if not cfg["api_key"]:
-        return {}
-    try:
-        data = _request(
-            cfg["api_host"], "af2_aff_op", cfg["api_key"],
-            {"filter": json.dumps({"without_money": True})},
-        )
-    except SmarticoError:
-        return _aff_cache["data"] or {}
-    if not isinstance(data, list):
-        return _aff_cache["data"] or {}
+    rows = fetch_affiliates_raw(conn, status_ids=None, force=force)
     mapping = {}
-    for row in data:
-        if not isinstance(row, dict):
-            continue
+    for row in rows:
         aid = row.get("affiliate_id") or row.get("id")
         if aid is None:
             continue
@@ -342,7 +366,6 @@ def fetch_affiliate_names(conn, force=False):
     _aff_cache["fetched_at"] = now
     _aff_cache["data"] = mapping
     return mapping
-
 
 def fetch_media_report(conn, period="all", force=False):
     """Link/kanal bazlı ziyaret, kayıt, yatırım, komisyon raporu.
