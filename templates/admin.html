@@ -1590,15 +1590,24 @@
             </div>
           </div>
           <div class="card-body" id="makrolink-settings-box" data-admin-only="1" style="display:none;">
-            <p class="hint">Kısa URL: <code>https://makrovip.com/AbC123</code> → Smartico <code>go.aff.makroaffi.com/…</code> · Test: <code>/r/AbC123</code></p>
+            <p class="hint">Kısa domainler Render custom domain + CNAME. Hepsi aynı kodu açar. GA tek property — Measurement Protocol.</p>
             <form id="makrolink-config-form">
               <div class="form-row-4">
-                <div><label for="makrolink-host">Public host</label><input id="makrolink-host" placeholder="makrovip.com" autocomplete="off"></div>
+                <div><label for="makrolink-host">Varsayılan short host</label><input id="makrolink-host" placeholder="makrovip.com" autocomplete="off"></div>
                 <div><label for="makrolink-aff-base">Smartico aff base</label><input id="makrolink-aff-base" placeholder="https://go.aff.makroaffi.com" autocomplete="off"></div>
                 <div><label for="makrolink-scheme">Scheme</label>
                   <select id="makrolink-scheme"><option value="https">https</option><option value="http">http</option></select>
                 </div>
                 <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+              </div>
+              <div style="margin-top:0.65rem;">
+                <label for="makrolink-hosts">Kısa domain listesi <span class="muted">(satır veya virgül)</span></label>
+                <textarea id="makrolink-hosts" rows="3" placeholder="makrovip.com&#10;sada.com&#10;asdf.com" style="width:100%;"></textarea>
+              </div>
+              <div class="form-row-4" style="margin-top:0.65rem;">
+                <div><label for="makrolink-ga4-id">GA4 Measurement ID</label><input id="makrolink-ga4-id" placeholder="G-XXXXXXXX" autocomplete="off"></div>
+                <div><label for="makrolink-ga4-secret">GA4 API Secret</label><input id="makrolink-ga4-secret" type="password" placeholder="boş = değiştirme" autocomplete="off"></div>
+                <div style="align-self:end;"><span class="muted" id="makrolink-ga4-status" style="font-size:0.72rem;"></span></div>
               </div>
             </form>
           </div>
@@ -3390,6 +3399,12 @@
             document.getElementById("makrolink-scheme").value = d.public_scheme || "https";
             var affEl = document.getElementById("makrolink-aff-base");
             if (affEl) affEl.value = d.aff_base || "https://go.aff.makroaffi.com";
+            var hostsEl = document.getElementById("makrolink-hosts");
+            if (hostsEl) hostsEl.value = (d.short_hosts || []).join("\n");
+            var gaId = document.getElementById("makrolink-ga4-id");
+            if (gaId) gaId.value = d.ga4_measurement_id || "";
+            var st = document.getElementById("makrolink-ga4-status");
+            if (st) st.textContent = d.ga4_configured ? "GA4 hazır" : (d.ga4_api_secret_set ? "Secret var, ID eksik" : "GA4 henüz yok");
           }).catch(function() {});
       }
 
@@ -3705,13 +3720,24 @@
           body: JSON.stringify({
             public_host: document.getElementById("makrolink-host").value.trim(),
             public_scheme: document.getElementById("makrolink-scheme").value,
-            aff_base: (document.getElementById("makrolink-aff-base") || {}).value
+            aff_base: document.getElementById("makrolink-aff-base")
               ? document.getElementById("makrolink-aff-base").value.trim()
-              : "https://go.aff.makroaffi.com"
+              : "https://go.aff.makroaffi.com",
+            short_hosts: document.getElementById("makrolink-hosts")
+              ? document.getElementById("makrolink-hosts").value
+              : "",
+            ga4_measurement_id: document.getElementById("makrolink-ga4-id")
+              ? document.getElementById("makrolink-ga4-id").value.trim()
+              : "",
+            ga4_api_secret: document.getElementById("makrolink-ga4-secret")
+              ? document.getElementById("makrolink-ga4-secret").value.trim()
+              : undefined
           })
         }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
           .then(function(res) {
             if (!res.ok) { alert(res.data.error || "Kaydedilemedi."); return; }
+            var sec = document.getElementById("makrolink-ga4-secret");
+            if (sec) sec.value = "";
             document.getElementById("makrolink-settings-box").style.display = "none";
             toast("MakroLink ayarları kaydedildi");
             loadMakroLinks();

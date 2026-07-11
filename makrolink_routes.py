@@ -39,9 +39,15 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
                 cfg = makrolink_api.save_config(
                     conn,
                     public_host=data.get("public_host"),
+                    short_hosts=data.get("short_hosts"),
                     public_scheme=data.get("public_scheme"),
                     aff_base=data.get("aff_base"),
                     ga4_measurement_id=data.get("ga4_measurement_id"),
+                    ga4_api_secret=(
+                        data.get("ga4_api_secret")
+                        if ("ga4_api_secret" in data and str(data.get("ga4_api_secret") or "").strip())
+                        else None
+                    ),
                 )
             return jsonify(cfg)
         except ValueError as exc:
@@ -107,6 +113,7 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
     # ── Public redirect ────────────────────────────────────────
     @bp.route("/r/<code>")
     def redirect_short(code):
+        host = (request.host or "").split(":")[0]
         with closing(get_db()) as conn:
             dest = makrolink_api.record_click_and_resolve(
                 conn,
@@ -114,6 +121,7 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
                 ip=request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip(),
                 user_agent=request.headers.get("User-Agent", ""),
                 referer=request.headers.get("Referer", ""),
+                short_host=host,
             )
         if not dest:
             return ("Link bulunamadı veya pasif.", 404)

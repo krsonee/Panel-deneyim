@@ -1677,6 +1677,7 @@ def makrolink_host_short_codes():
                 ip=request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip(),
                 user_agent=request.headers.get("User-Agent", ""),
                 referer=request.headers.get("Referer", ""),
+                short_host=host,
             )
     except Exception:
         return None
