@@ -279,34 +279,52 @@
       -webkit-overflow-scrolling: touch;
       border-radius: 0;
     }
+    .acc-emp-scroll-hint {
+      display: none;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.66rem;
+      color: var(--muted);
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+    }
+    @media (max-width: 1400px) {
+      .acc-emp-scroll-hint { display: block; }
+    }
     .acc-emp-table-left,
     .acc-emp-table-right {
-      width: 100%;
-      min-width: 0;
+      width: max-content;
+      min-width: 100%;
       table-layout: auto;
     }
-    .acc-emp-table { border-collapse: separate; border-spacing: 0; }
-    .acc-emp-table .acc-emp-td-name { width: 92px; }
-    .acc-emp-table .acc-emp-td-ref { width: 72px; }
-    .acc-emp-table .acc-emp-td-dept { width: 88px; }
-    .acc-emp-table .acc-emp-td-loc { width: 68px; }
-    .acc-emp-table .acc-emp-td-date { width: 76px; }
-    .acc-emp-table .acc-emp-td-money { width: 72px; }
-    .acc-emp-table .acc-emp-td-wallet { width: 76px; }
-    .acc-emp-table .acc-emp-td-status { width: 68px; }
-    .acc-emp-table .acc-emp-td-action { width: 32px; }
+    .acc-emp-table-left { min-width: 1180px; }
+    .acc-emp-table-right { min-width: 1060px; }
+    .acc-emp-table { border-collapse: separate; border-spacing: 0; font-size: 0.78rem; }
     .acc-emp-table td {
-      overflow: hidden;
-      text-overflow: ellipsis;
       vertical-align: middle;
-      padding: 0.4rem 0.35rem;
+      padding: 0.52rem 0.6rem;
+      white-space: nowrap;
     }
     .acc-emp-table th {
-      padding: 0.45rem 0.35rem;
-      font-size: 0.58rem;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      padding: 0.5rem 0.6rem;
+      font-size: 0.62rem;
+      white-space: nowrap;
     }
+    .acc-emp-td-name { min-width: 96px; }
+    .acc-emp-td-ref { min-width: 72px; max-width: 110px; }
+    .acc-emp-td-dept { min-width: 104px; }
+    .acc-emp-td-loc { min-width: 84px; max-width: 100px; }
+    .acc-emp-td-date { min-width: 108px; }
+    .acc-emp-td-money { min-width: 96px; }
+    .acc-emp-td-money-lg { min-width: 118px; }
+    .acc-emp-td-wallet { min-width: 108px; max-width: 130px; }
+    .acc-emp-td-status { min-width: 84px; }
+    .acc-emp-td-action { width: 40px; padding-left: 0.25rem; padding-right: 0.35rem; }
+    .acc-emp-td-ref,
+    .acc-emp-td-loc,
+    .acc-emp-td-wallet { overflow: hidden; text-overflow: ellipsis; }
+    .acc-emp-td-money,
+    .acc-emp-td-money-lg,
+    .acc-emp-td-date { overflow: visible; }
     .acc-emp-table thead th {
       background: var(--surface-2);
       border-bottom: 1px solid var(--border);
@@ -399,11 +417,15 @@
     .acc-emp-cat-select { margin-top: 0.15rem; }
     .acc-emp-cat-select select { font-size: 0.68rem; padding: 0.22rem 0.35rem; min-height: 0; }
     .acc-emp-salary-cell {
-      display: flex; align-items: center; gap: 0.35rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-width: 88px;
     }
     .acc-emp-salary-cur {
+      flex-shrink: 0;
       font-size: 0.62rem; font-weight: 700; color: var(--muted);
-      padding: 0.1rem 0.35rem; border-radius: 5px;
+      padding: 0.12rem 0.38rem; border-radius: 5px;
       background: var(--surface-2); border: 1px solid var(--border);
     }
     .acc-emp-salary-fx { display: block; margin-top: 0.2rem; font-size: 0.64rem; line-height: 1.35; }
@@ -412,26 +434,34 @@
       background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text);
     }
     .acc-emp-inline {
-      width: 100%; min-width: 0; max-width: 100%; padding: 0.28rem 0.35rem; font-size: 0.72rem;
-      background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--text);
+      width: auto; min-width: 0; max-width: none; padding: 0.34rem 0.45rem; font-size: 0.76rem;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px; color: var(--text);
       transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
     }
-    .acc-emp-inline:hover { border-color: var(--border); background: var(--surface-2); }
+    .acc-emp-inline:hover { border-color: rgba(99,102,241,0.35); background: var(--surface); }
     .acc-emp-inline:focus { outline: none; border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 2px rgba(99,102,241,0.18); }
-    .acc-emp-inline-name { font-weight: 600; }
-    .acc-emp-inline-ref { color: var(--muted); font-size: 0.68rem; }
-    .acc-emp-inline-loc { font-size: 0.68rem; }
-    .acc-emp-inline-dept { font-size: 0.68rem; padding-right: 0.15rem; }
-    .acc-emp-inline-salary { font-variant-numeric: tabular-nums; }
+    .acc-emp-inline-name { min-width: 84px; font-weight: 600; width: 100%; }
+    .acc-emp-inline-ref { min-width: 64px; width: 100%; color: var(--muted); font-size: 0.72rem; }
+    .acc-emp-inline-loc { min-width: 72px; width: 100%; font-size: 0.72rem; }
+    .acc-emp-inline-dept { min-width: 92px; width: 100%; font-size: 0.72rem; }
+    .acc-emp-inline-salary {
+      min-width: 72px; width: 84px; text-align: right;
+      font-variant-numeric: tabular-nums; font-weight: 600;
+    }
     .acc-emp-inline-wallet {
-      font-family: ui-monospace, monospace; font-size: 0.62rem;
-      text-overflow: ellipsis; overflow: hidden;
+      min-width: 96px; width: 100%;
+      font-family: ui-monospace, monospace; font-size: 0.66rem;
     }
     .acc-emp-money-cell {
-      display: block; font-weight: 600; font-size: 0.72rem;
+      display: inline-block; font-weight: 700; font-size: 0.78rem;
       font-variant-numeric: tabular-nums; white-space: nowrap;
-      overflow: hidden; text-overflow: ellipsis;
     }
+    .acc-emp-remain-cell {
+      display: inline-block; font-weight: 700; font-size: 0.78rem;
+      font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--amber);
+    }
+    .acc-emp-status-select { min-width: 78px; width: 100%; font-size: 0.72rem; padding: 0.32rem 0.4rem; }
+    input.acc-emp-inline[type="date"] { min-width: 102px; width: 108px; font-size: 0.72rem; padding: 0.32rem 0.38rem; }
     .acc-wallet-input { font-family: ui-monospace, monospace; font-size: 0.78rem; }
     .acc-emp-payinfo { display: flex; flex-direction: column; gap: 0.28rem; min-width: 200px; }
     .acc-emp-payinfo label { font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -444,7 +474,6 @@
     .acc-emp-period-note strong { color: var(--amber); font-size: 0.92rem; }
     .acc-emp-period-note small { display: block; margin-top: 0.15rem; font-size: 0.68rem; }
     tr.acc-emp-row-left td { color: color-mix(in srgb, var(--text) 82%, var(--muted)); }
-    .acc-emp-remain-cell { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--amber); }
     .acc-emp-del {
       width: 1.65rem; height: 1.65rem; padding: 0; line-height: 1;
       border-radius: 8px; font-size: 1rem; font-weight: 700;
@@ -1587,7 +1616,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260711b"></script>
+  <script src="/static/accounting.js?v=20260711c"></script>
   <script>
     (function () {
       var API = "";

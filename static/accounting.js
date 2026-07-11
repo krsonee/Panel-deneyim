@@ -1645,9 +1645,9 @@
       '<td class="acc-emp-td-date mono">' + startCell + "</td>" +
       '<td class="acc-emp-td-date mono">' + endCell + "</td>" +
       '<td class="acc-emp-td-money">' + salaryCell + "</td>" +
-      '<td class="acc-emp-td-money">' + accrualCell + "</td>" +
-      '<td class="acc-emp-td-money">' + cryptoCell + "</td>" +
-      '<td class="acc-emp-td-money">' + netCell + "</td>" +
+        '<td class="acc-emp-td-money acc-emp-td-money-lg">' + accrualCell + "</td>" +
+        '<td class="acc-emp-td-money">' + cryptoCell + "</td>" +
+        '<td class="acc-emp-td-money acc-emp-td-money-lg">' + netCell + "</td>" +
       '<td class="acc-emp-td-status">' + statusCell + "</td>" +
       '<td class="acc-emp-td-action">' + delCell + "</td></tr>";
   }
