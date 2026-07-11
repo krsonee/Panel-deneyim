@@ -186,49 +186,84 @@
 
   <!-- Cari Gider -->
   <div class="acc-pane" id="acc-pane-expenses" data-acc-pane="expenses" hidden>
-    <section class="card">
-      <div class="card-head"><span>Gider Kategorileri</span></div>
-      <div class="card-body">
-        <form id="acc-cat-form" class="form-row" style="grid-template-columns:1fr auto;">
-          <div><label>Yeni Kategori</label><input id="acc-cat-name" placeholder="Marketing, Maaş…" required></div>
-          <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
-        </form>
-        <div class="acc-chip-list" id="acc-cat-chips"></div>
+    <div class="acc-exp-summary" id="acc-exp-summary">
+      <div class="acc-exp-summary-card">
+        <span class="acc-exp-summary-label">Dönem Toplamı (TRY)</span>
+        <strong id="acc-exp-sum-try">—</strong>
       </div>
-    </section>
-    <section class="card">
-      <div class="card-head"><span>Gider Girişi</span></div>
-      <div class="card-body">
-        <form id="acc-exp-form" class="form-row-4">
-          <div><label>Tarih</label><input type="date" id="acc-exp-date" required></div>
-          <div><label>Kategori</label><select id="acc-exp-category" required></select></div>
-          <div><label>Para Birimi</label>
-            <select id="acc-exp-currency" class="acc-currency-select" required>
-              <option value="TRY">₺ TRY</option>
-              <option value="USD">$ USD</option>
-              <option value="EUR">€ EUR</option>
-            </select>
-          </div>
-          <div><label>Tutar</label><input type="number" id="acc-exp-amount" step="0.01" min="0.01" required></div>
-          <div><label>USD/TL</label><input type="number" id="acc-exp-rate-usd" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
-          <div><label>EUR/TL</label><input type="number" id="acc-exp-rate-eur" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
-          <div><label>Açıklama</label><input id="acc-exp-desc" placeholder="Opsiyonel"></div>
-          <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-exp-fx-preview"></p></div>
-          <div><button type="submit" class="btn btn-primary">Kaydet</button></div>
-        </form>
+      <div class="acc-exp-summary-card">
+        <span class="acc-exp-summary-label">USD Karşılığı</span>
+        <strong id="acc-exp-sum-usd">—</strong>
       </div>
-      <div class="table-wrap">
-        <div class="scroll-hint">Tabloyu yatay kaydırın</div>
-        <div class="table-scroll" id="acc-exp-table-scroll">
-          <table>
+      <div class="acc-exp-summary-card">
+        <span class="acc-exp-summary-label">Kayıt Sayısı</span>
+        <strong id="acc-exp-sum-count">—</strong>
+      </div>
+    </div>
+
+    <div class="acc-exp-grid">
+      <section class="card acc-exp-cats-card">
+        <div class="card-head"><span>Kategoriler</span></div>
+        <div class="card-body">
+          <form id="acc-cat-form" class="acc-exp-cat-form">
+            <input id="acc-cat-name" placeholder="Yeni kategori…" required>
+            <button type="submit" class="btn btn-primary btn-sm">+</button>
+          </form>
+          <div class="acc-chip-list acc-exp-chip-list" id="acc-cat-chips"></div>
+        </div>
+      </section>
+
+      <section class="card acc-exp-form-card" id="acc-exp-form-section">
+        <div class="card-head acc-exp-form-head">
+          <span id="acc-exp-form-title">Yeni Gider</span>
+          <span class="muted acc-exp-form-hint">Satıra tıklayarak veya Düzenle ile güncelleyebilirsiniz</span>
+        </div>
+        <div class="card-body">
+          <form id="acc-exp-form" class="form-row-4 acc-exp-form-grid">
+            <input type="hidden" id="acc-exp-edit-id" value="">
+            <div><label>Tarih</label><input type="date" id="acc-exp-date" required></div>
+            <div><label>Kategori</label><select id="acc-exp-category" required></select></div>
+            <div><label>Para Birimi</label>
+              <select id="acc-exp-currency" class="acc-currency-select" required>
+                <option value="TRY">₺ TRY</option>
+                <option value="USD">$ USD</option>
+                <option value="EUR">€ EUR</option>
+              </select>
+            </div>
+            <div><label>Tutar</label><input type="number" id="acc-exp-amount" step="0.01" min="0.01" required></div>
+            <div><label>USD/TL</label><input type="number" id="acc-exp-rate-usd" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
+            <div><label>EUR/TL</label><input type="number" id="acc-exp-rate-eur" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
+            <div class="acc-exp-desc-field"><label>Açıklama</label><input id="acc-exp-desc" placeholder="Gider detayı, kasa, not…"></div>
+            <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-exp-fx-preview"></p></div>
+            <div class="acc-exp-form-actions">
+              <button type="submit" class="btn btn-primary" id="acc-exp-submit">Kaydet</button>
+              <button type="button" class="btn" id="acc-exp-edit-cancel" hidden>İptal</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <section class="card acc-exp-ledger-card">
+      <div class="card-head acc-exp-ledger-head">
+        <span>Cari Gider Defteri</span>
+        <span class="muted" id="acc-exp-period-label"></span>
+      </div>
+      <div class="acc-exp-cat-cards" id="acc-exp-cat-cards">
+        <div class="acc-exp-cat-card acc-exp-cat-card-empty muted">Kategori özeti yükleniyor…</div>
+      </div>
+      <div class="table-wrap acc-exp-table-wrap">
+        <div class="table-scroll acc-exp-table-scroll" id="acc-exp-table-scroll">
+          <table class="acc-exp-table">
             <thead><tr>
               <th class="col-sortable" data-acc-sort="acc-exp" data-sort="expense_date">Tarih</th>
               <th class="col-sortable" data-acc-sort="acc-exp" data-sort="category_name">Kategori</th>
               <th class="col-sortable" data-acc-sort="acc-exp" data-sort="description">Açıklama</th>
               <th class="col-sortable" data-acc-sort="acc-exp" data-sort="amount">Tutar</th>
-              <th></th>
+              <th class="col-sortable acc-exp-col-kur" data-acc-sort="acc-exp" data-sort="rate_usd_try">Kur</th>
+              <th class="acc-exp-col-actions"></th>
             </tr></thead>
-            <tbody id="acc-exp-table"><tr><td colspan="5" class="empty">Gider yok</td></tr></tbody>
+            <tbody id="acc-exp-table"><tr><td colspan="6" class="empty">Gider yok</td></tr></tbody>
           </table>
         </div>
         <div class="table-foot" id="acc-exp-table-foot" style="display:none;">

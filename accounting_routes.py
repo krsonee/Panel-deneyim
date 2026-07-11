@@ -805,6 +805,72 @@ def create_accounting_blueprint(permission_required):
             )
         return jsonify({"expense": dict(row), "rates": used_rates_payload(fx)}), 201
 
+    @bp.route("/expenses/<int:expense_id>", methods=["PUT"])
+    @acc_perm(*MODULE_ACCESS)
+    def update_expense(expense_id):
+        data = request.get_json(silent=True) or {}
+        with closing(get_db()) as conn:
+            existing = fetchone(conn, "SELECT * FROM acc_expenses WHERE id = ?", (expense_id,))
+            if not existing:
+                return jsonify({"error": "Gider bulunamadı."}), 404
+
+            expense_date = parse_date(data.get("expense_date")) or existing.get("expense_date")
+            description = (
+                (data.get("description") if "description" in data else existing.get("description") or "")
+            ).strip()
+            try:
+                category_id = int(data.get("category_id")) if data.get("category_id") is not None else int(existing["category_id"])
+            except (TypeError, ValueError):
+                return jsonify({"error": "Gider kategorisi seçin."}), 400
+
+            amount = parse_amount(data.get("amount")) if data.get("amount") is not None else existing.get("amount")
+            currency = parse_currency(data.get("currency") or existing.get("currency"))
+
+            if not expense_date:
+                return jsonify({"error": "Geçerli tarih girin."}), 400
+            if amount is None or amount <= 0:
+                return jsonify({"error": "Geçerli tutar girin."}), 400
+            if not currency:
+                return jsonify({"error": "Para birimi seçin: TRY, USD veya EUR."}), 400
+
+            rates, rate_err = rates_from_request(data, stored=dict(existing))
+            if rate_err:
+                return jsonify({"error": rate_err}), 400
+            fx, err = build_money(amount, currency, rates)
+            if err:
+                return jsonify({"error": err}), 400
+
+            cat = fetchone(conn, "SELECT id FROM acc_expense_categories WHERE id = ?", (category_id,))
+            if not cat:
+                return jsonify({"error": "Kategori bulunamadı."}), 404
+
+            execute(
+                conn,
+                """
+                UPDATE acc_expenses
+                SET expense_date = ?, category_id = ?, description = ?, amount = ?, currency = ?,
+                    amount_try = ?, amount_usd = ?, amount_eur = ?, rate_usd_try = ?, rate_eur_try = ?
+                WHERE id = ?
+                """,
+                (
+                    expense_date, category_id, description, fx["amount"], fx["currency"],
+                    fx["TRY"], fx["USD"], fx["EUR"],
+                    fx["rate_usd_try"], fx["rate_eur_try"], expense_id,
+                ),
+            )
+            conn.commit()
+            row = fetchone(
+                conn,
+                """
+                SELECT e.*, c.name AS category_name
+                FROM acc_expenses e
+                INNER JOIN acc_expense_categories c ON c.id = e.category_id
+                WHERE e.id = ?
+                """,
+                (expense_id,),
+            )
+        return jsonify({"expense": dict(row), "rates": used_rates_payload(fx)})
+
     @bp.route("/expenses/<int:expense_id>", methods=["DELETE"])
     @acc_perm(*MODULE_ACCESS)
     def delete_expense(expense_id):
