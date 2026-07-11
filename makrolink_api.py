@@ -1,15 +1,20 @@
-"""MakroLink — kendi kısa link servisi (makrovip.com).
+"""MakroLink — kısa link (çoklu domain) → Smartico go.aff.
 
-Akış: makrovip.com/xxx → https://go.aff.makroaffi.com/46ix1iwv (Smartico)
-804/805 rotasyonunu Smartico go.aff halleder; biz sadece kısaltıp tıklama sayarız.
+Akış: sada.com/xxx | makrovip.com/xxx → go.aff.makroaffi.com/slug
+GA4: tek property, Measurement Protocol (tüm short host'lar).
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import secrets
 import string
+import threading
+import urllib.error
+import urllib.parse
+import urllib.request
 from urllib.parse import urlparse
 
 from database import (
@@ -57,32 +62,95 @@ def upsert_setting(conn, key, value):
     conn.commit()
 
 
-def get_config(conn):
-    host = (get_setting(conn, "public_host", DEFAULT_PUBLIC_HOST) or DEFAULT_PUBLIC_HOST).strip().lower()
+def _clean_host(host):
+    host = (host or "").strip().lower()
     host = host.replace("https://", "").replace("http://", "").strip("/").split("/")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def _parse_host_list(raw, fallback=DEFAULT_PUBLIC_HOST):
+    if not raw:
+        return [fallback]
+    hosts = []
+    seen = set()
+    for part in re.split(r"[\s,;]+", str(raw)):
+        h = _clean_host(part)
+        if not h or "." not in h or h in seen:
+            continue
+        seen.add(h)
+        hosts.append(h)
+    return hosts or [fallback]
+
+
+def get_config(conn, include_secrets=False):
+    default_host = _clean_host(get_setting(conn, "public_host", DEFAULT_PUBLIC_HOST) or DEFAULT_PUBLIC_HOST)
+    hosts = _parse_host_list(get_setting(conn, "short_hosts", ""), default_host or DEFAULT_PUBLIC_HOST)
+    if default_host and default_host not in hosts:
+        hosts.insert(0, default_host)
+    if not default_host:
+        default_host = hosts[0]
+
     scheme = (get_setting(conn, "public_scheme", "https") or "https").strip().lower()
     if scheme not in ("https", "http"):
         scheme = "https"
-    aff_base = (get_setting(conn, "aff_base", DEFAULT_AFF_BASE) or DEFAULT_AFF_BASE).strip()
-    aff_base = aff_base.rstrip("/")
+    aff_base = (get_setting(conn, "aff_base", DEFAULT_AFF_BASE) or DEFAULT_AFF_BASE).strip().rstrip("/")
     if not aff_base.startswith("http"):
         aff_base = "https://" + aff_base
-    return {
-        "public_host": host or DEFAULT_PUBLIC_HOST,
+
+    mid = (get_setting(conn, "ga4_measurement_id", "") or "").strip()
+    secret = (get_setting(conn, "ga4_api_secret", "") or "").strip()
+
+    cfg = {
+        "public_host": default_host,
+        "short_hosts": hosts,
         "public_scheme": scheme,
         "aff_base": aff_base or DEFAULT_AFF_BASE,
-        "ga4_measurement_id": (get_setting(conn, "ga4_measurement_id", "") or "").strip(),
+        "ga4_measurement_id": mid,
+        "ga4_configured": bool(mid and secret),
     }
+    if include_secrets:
+        cfg["ga4_api_secret"] = secret
+    else:
+        cfg["ga4_api_secret_set"] = bool(secret)
+    return cfg
 
 
-def save_config(conn, public_host=None, public_scheme=None, aff_base=None, ga4_measurement_id=None):
+def save_config(
+    conn,
+    public_host=None,
+    short_hosts=None,
+    public_scheme=None,
+    aff_base=None,
+    ga4_measurement_id=None,
+    ga4_api_secret=None,
+):
+    if short_hosts is not None:
+        if isinstance(short_hosts, list):
+            raw = "\n".join(str(x) for x in short_hosts)
+        else:
+            raw = str(short_hosts)
+        hosts = _parse_host_list(raw, DEFAULT_PUBLIC_HOST)
+        upsert_setting(conn, "short_hosts", "\n".join(hosts))
+        # public_host listede yoksa ilkini varsayılan yap
+        current_default = _clean_host(get_setting(conn, "public_host", "") or "")
+        if not current_default or current_default not in hosts:
+            upsert_setting(conn, "public_host", hosts[0])
+
     if public_host is not None:
-        host = (public_host or "").strip().lower()
-        host = host.replace("https://", "").replace("http://", "").strip("/").split("/")[0]
-        upsert_setting(conn, "public_host", host or DEFAULT_PUBLIC_HOST)
+        host = _clean_host(public_host) or DEFAULT_PUBLIC_HOST
+        upsert_setting(conn, "public_host", host)
+        # Varsayılanı listeye ekle
+        hosts = _parse_host_list(get_setting(conn, "short_hosts", ""), host)
+        if host not in hosts:
+            hosts.insert(0, host)
+            upsert_setting(conn, "short_hosts", "\n".join(hosts))
+
     if public_scheme is not None:
         scheme = (public_scheme or "https").strip().lower()
         upsert_setting(conn, "public_scheme", scheme if scheme in ("https", "http") else "https")
+
     if aff_base is not None:
         base = (aff_base or "").strip().rstrip("/")
         if base and not base.startswith("http"):
@@ -90,9 +158,22 @@ def save_config(conn, public_host=None, public_scheme=None, aff_base=None, ga4_m
         if not base or not _valid_url(base + "/x"):
             raise ValueError("Geçerli Smartico aff base gerekli (örn. https://go.aff.makroaffi.com).")
         upsert_setting(conn, "aff_base", base)
+
     if ga4_measurement_id is not None:
-        upsert_setting(conn, "ga4_measurement_id", (ga4_measurement_id or "").strip())
-    return get_config(conn)
+        mid = (ga4_measurement_id or "").strip().upper()
+        if mid and not re.fullmatch(r"G-[A-Z0-9]+", mid):
+            raise ValueError("GA4 Measurement ID G-XXXXXXXX formatında olmalı.")
+        upsert_setting(conn, "ga4_measurement_id", mid)
+
+    if ga4_api_secret is not None:
+        # Boş string = silme; dolu = kaydet. None = dokunma — caller boş bırakırsa silmesin
+        secret = (ga4_api_secret or "").strip()
+        if secret:
+            upsert_setting(conn, "ga4_api_secret", secret)
+        elif ga4_api_secret == "":
+            upsert_setting(conn, "ga4_api_secret", "")
+
+    return get_config(conn, include_secrets=False)
 
 
 def _gen_code(n=CODE_LEN):
@@ -115,13 +196,11 @@ def _valid_url(url):
 
 
 def normalize_smartico_aff_url(conn, raw):
-    """Tam go.aff URL veya sadece slug (46ix1iwv) → https://go.aff.makroaffi.com/46ix1iwv"""
     raw = (raw or "").strip()
     if not raw:
         raise ValueError("Smartico go.aff linki gerekli.")
     base = get_config(conn)["aff_base"].rstrip("/")
 
-    # Sadece slug: 46ix1iwv
     if re.fullmatch(r"[A-Za-z0-9_-]{4,64}", raw) and "://" not in raw and "/" not in raw:
         return f"{base}/{raw}"
 
@@ -132,11 +211,9 @@ def normalize_smartico_aff_url(conn, raw):
     if not p.netloc:
         raise ValueError("Geçerli Smartico go.aff URL gerekli.")
 
-    # Path'ten slug al; host ne olursa olsun aff_base'e oturt (yanlış host yapıştırılırsa)
     slug = (p.path or "").strip("/")
     if not slug:
         raise ValueError("go.aff linkinde path/slug yok (örn. …/46ix1iwv).")
-    # query/fragment Smartico'da nadir; koru
     out = f"{base}/{slug.split('/')[0]}"
     if p.query:
         out += "?" + p.query
@@ -145,9 +222,12 @@ def normalize_smartico_aff_url(conn, raw):
     return out
 
 
-def short_url(conn, code):
+def short_url(conn, code, host=None):
     cfg = get_config(conn)
-    return f"{cfg['public_scheme']}://{cfg['public_host']}/{code}"
+    h = _clean_host(host) if host else cfg["public_host"]
+    if h not in cfg["short_hosts"]:
+        h = cfg["public_host"]
+    return f"{cfg['public_scheme']}://{h}/{code}"
 
 
 def _row_to_dict(conn, row):
@@ -209,10 +289,7 @@ def create_link(
     ref_code="",
     created_by="",
 ):
-    try:
-        destination_url = normalize_smartico_aff_url(conn, destination_url)
-    except ValueError:
-        raise
+    destination_url = normalize_smartico_aff_url(conn, destination_url)
     if not _valid_url(destination_url):
         raise ValueError("Geçerli Smartico go.aff URL gerekli.")
 
@@ -223,7 +300,6 @@ def create_link(
     created_by = (created_by or "").strip()[:64]
     now = iso(utcnow())
 
-    # Slug'ı smartico_link_id olarak sakla (boşsa)
     slug = urlparse(destination_url).path.strip("/").split("/")[0]
     if not smartico_link_id and slug:
         smartico_link_id = slug[:64]
@@ -317,12 +393,57 @@ def _hash_ip(ip):
     return hashlib.sha256(ip.encode("utf-8")).hexdigest()[:32]
 
 
-def record_click_and_resolve(conn, code, ip="", user_agent="", referer=""):
-    """302 hedefi: saklanan go.aff URL — UTM ekleme (Smartico kırılmasın)."""
+def send_ga4_click(cfg, *, link_code, aff_slug, short_host, destination_url, client_id):
+    """Measurement Protocol — redirect'i bloklamaz (thread)."""
+    mid = (cfg.get("ga4_measurement_id") or "").strip()
+    secret = (cfg.get("ga4_api_secret") or "").strip()
+    if not mid or not secret:
+        return
+
+    payload = {
+        "client_id": client_id or secrets.token_hex(8),
+        "events": [
+            {
+                "name": "makrolink_click",
+                "params": {
+                    "link_code": (link_code or "")[:100],
+                    "aff_slug": (aff_slug or "")[:100],
+                    "short_host": (short_host or "")[:100],
+                    "destination": (destination_url or "")[:300],
+                    "engagement_time_msec": 1,
+                },
+            }
+        ],
+    }
+    url = (
+        "https://www.google-analytics.com/mp/collect"
+        f"?measurement_id={urllib.parse.quote(mid)}"
+        f"&api_secret={urllib.parse.quote(secret)}"
+    )
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json", "User-Agent": "MakroLink/1.0"},
+        method="POST",
+    )
+
+    def _run():
+        try:
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                resp.read()
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def record_click_and_resolve(conn, code, ip="", user_agent="", referer="", short_host=""):
     link = get_link_by_code(conn, code, active_only=True)
     if not link:
         return None
     now = iso(utcnow())
+    ip_hash = _hash_ip(ip)
     execute(
         conn,
         """
@@ -334,7 +455,7 @@ def record_click_and_resolve(conn, code, ip="", user_agent="", referer=""):
             link["id"],
             link["code"],
             now,
-            _hash_ip(ip),
+            ip_hash,
             (user_agent or "")[:500],
             (referer or "")[:500],
         ),
@@ -345,15 +466,32 @@ def record_click_and_resolve(conn, code, ip="", user_agent="", referer=""):
         (now, link["id"]),
     )
     conn.commit()
+
+    cfg = get_config(conn, include_secrets=True)
+    host = _clean_host(short_host) or cfg["public_host"]
+    slug = link.get("smartico_link_id") or urlparse(link["destination_url"]).path.strip("/").split("/")[0]
+    client_id = ip_hash or secrets.token_hex(8)
+    # UUID-ish for GA: insert dashes into hex
+    if len(client_id) >= 16:
+        cid = f"{client_id[:8]}-{client_id[8:12]}-{client_id[12:16]}-{client_id[16:20] if len(client_id) > 16 else '0000'}-{client_id[20:32] if len(client_id) >= 32 else client_id[:12].ljust(12, '0')}"
+    else:
+        cid = client_id
+    send_ga4_click(
+        cfg,
+        link_code=link["code"],
+        aff_slug=slug,
+        short_host=host,
+        destination_url=link["destination_url"],
+        client_id=cid,
+    )
     return link["destination_url"]
 
 
 def is_makrolink_host(host, conn=None):
-    host = (host or "").split(":")[0].strip().lower()
+    host = _clean_host((host or "").split(":")[0])
     if not host:
         return False
-    if conn is not None:
-        cfg_host = get_config(conn)["public_host"]
-    else:
-        cfg_host = DEFAULT_PUBLIC_HOST
-    return host == cfg_host or host == f"www.{cfg_host}"
+    if conn is None:
+        return host == DEFAULT_PUBLIC_HOST
+    cfg = get_config(conn)
+    return host in cfg["short_hosts"] or host == cfg["public_host"]
