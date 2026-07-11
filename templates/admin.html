@@ -829,11 +829,33 @@
     th.col-sortable.sorted-desc::after { content: " ↓"; font-size: 0.7rem; opacity: 0.9; }
 
     label { display: block; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.28rem; }
-    input, select {
+    input, select, textarea {
       width: 100%; padding: 0.55rem 0.75rem; background: var(--surface-2); border: 1px solid var(--border);
       border-radius: 9px; color: var(--text); font-size: 0.85rem;
     }
-    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 96px; line-height: 1.45; font-family: inherit; }
+
+    .mail-tpl-form { display: flex; flex-direction: column; gap: 0.85rem; }
+    .mail-tpl-meta { display: grid; grid-template-columns: 1fr 2fr; gap: 0.75rem; }
+    @media (max-width: 720px) { .mail-tpl-meta { grid-template-columns: 1fr; } }
+    .mail-tpl-mode-tabs { display: flex; gap: 0.35rem; }
+    .mail-tpl-hint code { font-size: 0.72rem; background: var(--code-bg); padding: 0.1rem 0.35rem; border-radius: 4px; }
+    .mail-tpl-toolbar { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    .mail-tpl-link-input { flex: 1; min-width: 180px; max-width: 360px; }
+    .mail-tpl-textarea {
+      min-height: 280px; width: 100%; font-size: 0.9rem; line-height: 1.55;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }
+    .mail-tpl-htmlcode { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; min-height: 320px; }
+    .mail-tpl-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; align-items: stretch; }
+    @media (max-width: 900px) { .mail-tpl-split { grid-template-columns: 1fr; } }
+    .mail-tpl-preview {
+      width: 100%; min-height: 320px; height: 100%; border: 1px solid var(--border);
+      border-radius: 9px; background: #fff;
+    }
+    .mail-tpl-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    .mail-tpl-test-email { width: auto; min-width: 200px; max-width: 260px; }
 
     .filter-bar { display: grid; grid-template-columns: 1fr 120px 120px 110px 110px auto; gap: 0.5rem; padding: 0.85rem 1.15rem; background: var(--surface-2); border-bottom: 1px solid var(--border); }
     @media (max-width: 900px) { .filter-bar { grid-template-columns: 1fr 1fr; } }
@@ -1568,14 +1590,14 @@
             </div>
           </div>
           <div class="card-body" id="makrolink-settings-box" data-admin-only="1" style="display:none;">
-            <p class="hint">Public domain: <strong>makrovip.com</strong> → bu panele CNAME/A. Kısa URL: <code>https://makrovip.com/AbC123</code> · Panel test: <code>/r/AbC123</code></p>
+            <p class="hint">Kısa URL: <code>https://makrovip.com/AbC123</code> → Smartico <code>go.aff.makroaffi.com/…</code> · Test: <code>/r/AbC123</code></p>
             <form id="makrolink-config-form">
               <div class="form-row-4">
                 <div><label for="makrolink-host">Public host</label><input id="makrolink-host" placeholder="makrovip.com" autocomplete="off"></div>
+                <div><label for="makrolink-aff-base">Smartico aff base</label><input id="makrolink-aff-base" placeholder="https://go.aff.makroaffi.com" autocomplete="off"></div>
                 <div><label for="makrolink-scheme">Scheme</label>
                   <select id="makrolink-scheme"><option value="https">https</option><option value="http">http</option></select>
                 </div>
-                <div><label for="makrolink-ga4">GA4 Measurement ID (ops.)</label><input id="makrolink-ga4" placeholder="G-XXXXXXXX" autocomplete="off"></div>
                 <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
               </div>
             </form>
@@ -1583,15 +1605,15 @@
           <div class="card-body">
             <form id="makrolink-create-form">
               <div class="form-row-4">
-                <div style="grid-column: span 2;"><label for="makrolink-dest">Hedef URL (Smartico / site)</label>
-                  <input id="makrolink-dest" placeholder="https://… Smartico tracking veya makrobet804…" required autocomplete="off">
+                <div style="grid-column: span 2;"><label for="makrolink-dest">Smartico go.aff linki</label>
+                  <input id="makrolink-dest" placeholder="https://go.aff.makroaffi.com/46ix1iwv  veya  46ix1iwv" required autocomplete="off">
                 </div>
                 <div><label for="makrolink-label">Etiket</label><input id="makrolink-label" placeholder="örn. slotbuse FTD" autocomplete="off"></div>
                 <div><label for="makrolink-code">Özel kod (ops.)</label><input id="makrolink-code" placeholder="boş = otomatik" autocomplete="off"></div>
               </div>
               <div class="form-row-4" style="margin-top:0.5rem;">
-                <div><label for="makrolink-affid">Affiliate ID</label><input id="makrolink-affid" placeholder="Smartico affid" autocomplete="off"></div>
-                <div><label for="makrolink-ref">Ref kodu</label><input id="makrolink-ref" placeholder="?ref= / tracker" autocomplete="off"></div>
+                <div><label for="makrolink-affid">Affiliate ID (not)</label><input id="makrolink-affid" placeholder="opsiyonel not" autocomplete="off"></div>
+                <div><label for="makrolink-ref">Ref notu</label><input id="makrolink-ref" placeholder="opsiyonel" autocomplete="off"></div>
                 <div style="align-self:end"><button type="submit" class="btn btn-primary" id="btn-makrolink-create">Kısalt &amp; kopyala</button></div>
               </div>
             </form>
@@ -1603,7 +1625,7 @@
                 <span class="muted" style="font-size:0.72rem;">DNS yokken test: <code id="makrolink-created-test"></code></span>
               </div>
             </div>
-            <p class="hint" style="margin-top:0.5rem;">Mevcut bl.ink / eski linklere dokunulmaz — sadece yeni kısaltmalar. Hedefe <code>utm_source=makrolink</code> eklenir (yoksa).</p>
+            <p class="hint" style="margin-top:0.5rem;">Akış: <code>makrovip.com/xxx</code> → <code>go.aff.makroaffi.com/…</code> → site (804/805 Smartico’da). Eski bl.ink linklerine dokunulmaz.</p>
           </div>
           <div class="table-wrap">
             <div class="scroll-hint">Tabloyu yatay kaydırın</div>
@@ -1862,7 +1884,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="/static/accounting.js?v=20260711i"></script>
-  <script src="/static/mailing.js?v=20260711a"></script>
+  <script src="/static/mailing.js?v=20260711b"></script>
   <script>
     (function () {
       var API = "";
@@ -3366,7 +3388,8 @@
             if (!d) return;
             document.getElementById("makrolink-host").value = d.public_host || "makrovip.com";
             document.getElementById("makrolink-scheme").value = d.public_scheme || "https";
-            document.getElementById("makrolink-ga4").value = d.ga4_measurement_id || "";
+            var affEl = document.getElementById("makrolink-aff-base");
+            if (affEl) affEl.value = d.aff_base || "https://go.aff.makroaffi.com";
           }).catch(function() {});
       }
 
@@ -3682,7 +3705,9 @@
           body: JSON.stringify({
             public_host: document.getElementById("makrolink-host").value.trim(),
             public_scheme: document.getElementById("makrolink-scheme").value,
-            ga4_measurement_id: document.getElementById("makrolink-ga4").value.trim()
+            aff_base: (document.getElementById("makrolink-aff-base") || {}).value
+              ? document.getElementById("makrolink-aff-base").value.trim()
+              : "https://go.aff.makroaffi.com"
           })
         }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
           .then(function(res) {

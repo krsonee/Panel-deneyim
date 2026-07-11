@@ -34,14 +34,18 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
     @admin_only
     def save_config():
         data = request.get_json(silent=True) or {}
-        with closing(get_db()) as conn:
-            cfg = makrolink_api.save_config(
-                conn,
-                public_host=data.get("public_host"),
-                public_scheme=data.get("public_scheme"),
-                ga4_measurement_id=data.get("ga4_measurement_id"),
-            )
-        return jsonify(cfg)
+        try:
+            with closing(get_db()) as conn:
+                cfg = makrolink_api.save_config(
+                    conn,
+                    public_host=data.get("public_host"),
+                    public_scheme=data.get("public_scheme"),
+                    aff_base=data.get("aff_base"),
+                    ga4_measurement_id=data.get("ga4_measurement_id"),
+                )
+            return jsonify(cfg)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @api.route("/links", methods=["GET"])
     @perm(*MODULE_ACCESS)

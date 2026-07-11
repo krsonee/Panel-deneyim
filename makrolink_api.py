@@ -1,7 +1,7 @@
 """MakroLink — kendi kısa link servisi (makrovip.com).
 
-Smartico / hedef URL'leri kısaltır, tıklamayı first-party loglar, 302 ile
-Smartico attribution URL'sine yönlendirir. bl.ink'ten bağımsız.
+Akış: makrovip.com/xxx → https://go.aff.makroaffi.com/46ix1iwv (Smartico)
+804/805 rotasyonunu Smartico go.aff halleder; biz sadece kısaltıp tıklama sayarız.
 """
 
 from __future__ import annotations
@@ -10,8 +10,7 @@ import hashlib
 import re
 import secrets
 import string
-from datetime import datetime, timezone
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import urlparse
 
 from database import (
     execute,
@@ -23,8 +22,8 @@ from database import (
     utcnow,
 )
 
-# Settings helpers live on makrolink_settings (own table)
 DEFAULT_PUBLIC_HOST = "makrovip.com"
+DEFAULT_AFF_BASE = "https://go.aff.makroaffi.com"
 CODE_ALPHABET = string.ascii_letters + string.digits
 CODE_LEN = 7
 
@@ -64,14 +63,19 @@ def get_config(conn):
     scheme = (get_setting(conn, "public_scheme", "https") or "https").strip().lower()
     if scheme not in ("https", "http"):
         scheme = "https"
+    aff_base = (get_setting(conn, "aff_base", DEFAULT_AFF_BASE) or DEFAULT_AFF_BASE).strip()
+    aff_base = aff_base.rstrip("/")
+    if not aff_base.startswith("http"):
+        aff_base = "https://" + aff_base
     return {
         "public_host": host or DEFAULT_PUBLIC_HOST,
         "public_scheme": scheme,
+        "aff_base": aff_base or DEFAULT_AFF_BASE,
         "ga4_measurement_id": (get_setting(conn, "ga4_measurement_id", "") or "").strip(),
     }
 
 
-def save_config(conn, public_host=None, public_scheme=None, ga4_measurement_id=None):
+def save_config(conn, public_host=None, public_scheme=None, aff_base=None, ga4_measurement_id=None):
     if public_host is not None:
         host = (public_host or "").strip().lower()
         host = host.replace("https://", "").replace("http://", "").strip("/").split("/")[0]
@@ -79,6 +83,13 @@ def save_config(conn, public_host=None, public_scheme=None, ga4_measurement_id=N
     if public_scheme is not None:
         scheme = (public_scheme or "https").strip().lower()
         upsert_setting(conn, "public_scheme", scheme if scheme in ("https", "http") else "https")
+    if aff_base is not None:
+        base = (aff_base or "").strip().rstrip("/")
+        if base and not base.startswith("http"):
+            base = "https://" + base
+        if not base or not _valid_url(base + "/x"):
+            raise ValueError("Geçerli Smartico aff base gerekli (örn. https://go.aff.makroaffi.com).")
+        upsert_setting(conn, "aff_base", base)
     if ga4_measurement_id is not None:
         upsert_setting(conn, "ga4_measurement_id", (ga4_measurement_id or "").strip())
     return get_config(conn)
@@ -101,6 +112,37 @@ def _valid_url(url):
     url = (url or "").strip()
     p = urlparse(url)
     return p.scheme in ("http", "https") and bool(p.netloc)
+
+
+def normalize_smartico_aff_url(conn, raw):
+    """Tam go.aff URL veya sadece slug (46ix1iwv) → https://go.aff.makroaffi.com/46ix1iwv"""
+    raw = (raw or "").strip()
+    if not raw:
+        raise ValueError("Smartico go.aff linki gerekli.")
+    base = get_config(conn)["aff_base"].rstrip("/")
+
+    # Sadece slug: 46ix1iwv
+    if re.fullmatch(r"[A-Za-z0-9_-]{4,64}", raw) and "://" not in raw and "/" not in raw:
+        return f"{base}/{raw}"
+
+    if not raw.startswith("http"):
+        raw = "https://" + raw.lstrip("/")
+
+    p = urlparse(raw)
+    if not p.netloc:
+        raise ValueError("Geçerli Smartico go.aff URL gerekli.")
+
+    # Path'ten slug al; host ne olursa olsun aff_base'e oturt (yanlış host yapıştırılırsa)
+    slug = (p.path or "").strip("/")
+    if not slug:
+        raise ValueError("go.aff linkinde path/slug yok (örn. …/46ix1iwv).")
+    # query/fragment Smartico'da nadir; koru
+    out = f"{base}/{slug.split('/')[0]}"
+    if p.query:
+        out += "?" + p.query
+    if p.fragment:
+        out += "#" + p.fragment
+    return out
 
 
 def short_url(conn, code):
@@ -167,9 +209,12 @@ def create_link(
     ref_code="",
     created_by="",
 ):
-    destination_url = (destination_url or "").strip()
+    try:
+        destination_url = normalize_smartico_aff_url(conn, destination_url)
+    except ValueError:
+        raise
     if not _valid_url(destination_url):
-        raise ValueError("Geçerli bir http(s) hedef URL gerekli.")
+        raise ValueError("Geçerli Smartico go.aff URL gerekli.")
 
     label = (label or "").strip()[:200]
     affiliate_id = (affiliate_id or "").strip()[:64]
@@ -177,6 +222,11 @@ def create_link(
     ref_code = (ref_code or "").strip()[:128]
     created_by = (created_by or "").strip()[:64]
     now = iso(utcnow())
+
+    # Slug'ı smartico_link_id olarak sakla (boşsa)
+    slug = urlparse(destination_url).path.strip("/").split("/")[0]
+    if not smartico_link_id and slug:
+        smartico_link_id = slug[:64]
 
     if code:
         code = code.strip()
@@ -238,8 +288,10 @@ def update_link(conn, link_id, destination_url=None, label=None, ref_code=None):
     row = fetchone(conn, "SELECT * FROM makrolink_links WHERE id = ?", (int(link_id),))
     if not row:
         raise ValueError("Link bulunamadı.")
-    dest = destination_url if destination_url is not None else row["destination_url"]
-    dest = (dest or "").strip()
+    if destination_url is not None:
+        dest = normalize_smartico_aff_url(conn, destination_url)
+    else:
+        dest = row["destination_url"]
     if not _valid_url(dest):
         raise ValueError("Geçerli hedef URL gerekli.")
     lab = label if label is not None else row["label"]
@@ -265,17 +317,8 @@ def _hash_ip(ip):
     return hashlib.sha256(ip.encode("utf-8")).hexdigest()[:32]
 
 
-def enrich_destination(url, code):
-    """UTM ekle (yoksa) — Smartico query'yi bozmadan."""
-    p = urlparse(url)
-    q = dict(parse_qsl(p.query, keep_blank_values=True))
-    q.setdefault("utm_source", "makrolink")
-    q.setdefault("utm_medium", "short")
-    q.setdefault("utm_campaign", code)
-    return urlunparse((p.scheme, p.netloc, p.path, p.params, urlencode(q), p.fragment))
-
-
 def record_click_and_resolve(conn, code, ip="", user_agent="", referer=""):
+    """302 hedefi: saklanan go.aff URL — UTM ekleme (Smartico kırılmasın)."""
     link = get_link_by_code(conn, code, active_only=True)
     if not link:
         return None
@@ -302,17 +345,7 @@ def record_click_and_resolve(conn, code, ip="", user_agent="", referer=""):
         (now, link["id"]),
     )
     conn.commit()
-    return enrich_destination(link["destination_url"], link["code"])
-
-
-def click_stats(conn, link_id, days=30):
-    # basit toplam; günlük breakdown sonra
-    total = scalar(
-        conn,
-        "SELECT COUNT(*) FROM makrolink_clicks WHERE link_id = ?",
-        (int(link_id),),
-    ) or 0
-    return {"total": int(total), "days": int(days)}
+    return link["destination_url"]
 
 
 def is_makrolink_host(host, conn=None):

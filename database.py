@@ -1797,6 +1797,21 @@ def init_mailing_schema(conn):
             "CREATE INDEX IF NOT EXISTS idx_mail_sends_created ON mail_sends(created_at)",
             "CREATE INDEX IF NOT EXISTS idx_mail_sends_status ON mail_sends(status)",
             "CREATE INDEX IF NOT EXISTS idx_mail_ivr_events_created ON mail_ivr_events(created_at)",
+            """
+            CREATE TABLE IF NOT EXISTS mail_click_links (
+                id SERIAL PRIMARY KEY,
+                token TEXT NOT NULL UNIQUE,
+                send_id INTEGER REFERENCES mail_sends(id),
+                contact_id INTEGER REFERENCES mail_contacts(id),
+                campaign_id INTEGER REFERENCES mail_campaigns(id),
+                dest_url TEXT NOT NULL,
+                click_count INTEGER NOT NULL DEFAULT 0,
+                first_clicked_at TEXT,
+                last_clicked_at TEXT,
+                created_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_mail_click_token ON mail_click_links(token)",
         ]
     else:
         statements = [
@@ -1939,6 +1954,24 @@ def init_mailing_schema(conn):
             "CREATE INDEX IF NOT EXISTS idx_mail_sends_created ON mail_sends(created_at)",
             "CREATE INDEX IF NOT EXISTS idx_mail_sends_status ON mail_sends(status)",
             "CREATE INDEX IF NOT EXISTS idx_mail_ivr_events_created ON mail_ivr_events(created_at)",
+            """
+            CREATE TABLE IF NOT EXISTS mail_click_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token TEXT NOT NULL UNIQUE,
+                send_id INTEGER,
+                contact_id INTEGER,
+                campaign_id INTEGER,
+                dest_url TEXT NOT NULL,
+                click_count INTEGER NOT NULL DEFAULT 0,
+                first_clicked_at TEXT,
+                last_clicked_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (send_id) REFERENCES mail_sends(id),
+                FOREIGN KEY (contact_id) REFERENCES mail_contacts(id),
+                FOREIGN KEY (campaign_id) REFERENCES mail_campaigns(id)
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_mail_click_token ON mail_click_links(token)",
         ]
     for sql in statements:
         execute(conn, sql)
@@ -1946,7 +1979,60 @@ def init_mailing_schema(conn):
     conn.commit()
 
 
+def ensure_mail_click_links_table(conn):
+    """Mevcut DB'lerde click tracking tablosu yoksa ekle."""
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mail_click_links (
+                id SERIAL PRIMARY KEY,
+                token TEXT NOT NULL UNIQUE,
+                send_id INTEGER REFERENCES mail_sends(id),
+                contact_id INTEGER REFERENCES mail_contacts(id),
+                campaign_id INTEGER REFERENCES mail_campaigns(id),
+                dest_url TEXT NOT NULL,
+                click_count INTEGER NOT NULL DEFAULT 0,
+                first_clicked_at TEXT,
+                last_clicked_at TEXT,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mail_click_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token TEXT NOT NULL UNIQUE,
+                send_id INTEGER,
+                contact_id INTEGER,
+                campaign_id INTEGER,
+                dest_url TEXT NOT NULL,
+                click_count INTEGER NOT NULL DEFAULT 0,
+                first_clicked_at TEXT,
+                last_clicked_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (send_id) REFERENCES mail_sends(id),
+                FOREIGN KEY (contact_id) REFERENCES mail_contacts(id),
+                FOREIGN KEY (campaign_id) REFERENCES mail_campaigns(id)
+            )
+            """,
+        )
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_click_token ON mail_click_links(token)")
+    conn.commit()
+
+
 def init_db():
     with closing(get_db()) as conn:
         init_schema(conn)
         migrate_schema(conn)
+        try:
+            ensure_mail_click_links_table(conn)
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            print(f"⚠️  ensure_mail_click_links_table hata: {exc}")
