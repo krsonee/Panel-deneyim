@@ -384,6 +384,47 @@ def migrate_ref_labels(conn):
     conn.commit()
 
 
+# Postgres'in "real" (float4) tipi ~7 anlamli basamaktan sonra kusur veriyor.
+# Milyonlarca TL'lik tutarlarda kurus hanesi sessizce siliniyordu (ör. 14.557.838,34 -> 14.557.838,00).
+# SQLite icin bu sorun yok (REAL orada zaten 8 byte double), migration sadece Postgres'te calisir.
+FLOAT_PRECISION_COLUMNS = {
+    "acc_payment_methods": ["commission_rate"],
+    "acc_finance_transactions": [
+        "amount", "commission_rate", "commission_amount",
+        "amount_try", "amount_usd", "amount_eur",
+        "commission_amount_try", "commission_amount_usd", "commission_amount_eur",
+        "rate_usd_try", "rate_eur_try",
+    ],
+    "acc_expenses": ["amount", "amount_try", "amount_usd", "amount_eur", "rate_usd_try", "rate_eur_try"],
+    "acc_vault_transactions": [
+        "amount", "usdt_in", "usdt_out", "fee_usdt",
+        "amount_try", "amount_usd", "amount_eur", "rate_usd_try", "rate_eur_try",
+    ],
+    "acc_employees": [
+        "salary", "bank_salary", "crypto_salary", "advance_amount", "bonus_amount",
+        "salary_try", "salary_usd", "salary_eur", "rate_usd_try", "rate_eur_try",
+    ],
+    "acc_vaults": ["opening_usdt", "opening_try"],
+}
+
+
+def migrate_float_precision(conn):
+    if not uses_postgres():
+        return
+    for table, columns in FLOAT_PRECISION_COLUMNS.items():
+        existing = _table_columns(conn, table)
+        if not existing:
+            continue
+        for col in columns:
+            if col not in existing:
+                continue
+            try:
+                execute(conn, f"ALTER TABLE {table} ALTER COLUMN {col} TYPE DOUBLE PRECISION")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+
 def get_ref_code_labels(conn):
     rows = fetchall(conn, "SELECT ref_code, label FROM ref_code_labels")
     return {(r["ref_code"] or "").strip().lower(): r["label"] for r in rows if r["label"]}
@@ -485,7 +526,7 @@ def init_accounting_schema(conn):
                 id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 tx_type TEXT NOT NULL DEFAULT 'deposit',
-                commission_rate REAL NOT NULL DEFAULT 0,
+                commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 UNIQUE(name, tx_type)
@@ -497,9 +538,9 @@ def init_accounting_schema(conn):
                 tx_date TEXT NOT NULL,
                 payment_method_id INTEGER NOT NULL REFERENCES acc_payment_methods(id),
                 tx_type TEXT NOT NULL,
-                amount REAL NOT NULL,
-                commission_rate REAL NOT NULL DEFAULT 0,
-                commission_amount REAL NOT NULL DEFAULT 0,
+                amount DOUBLE PRECISION NOT NULL,
+                commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                commission_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             )
             """,
@@ -516,7 +557,7 @@ def init_accounting_schema(conn):
                 expense_date TEXT NOT NULL,
                 category_id INTEGER NOT NULL REFERENCES acc_expense_categories(id),
                 description TEXT NOT NULL DEFAULT '',
-                amount REAL NOT NULL,
+                amount DOUBLE PRECISION NOT NULL,
                 created_at TEXT NOT NULL
             )
             """,
@@ -527,7 +568,7 @@ def init_accounting_schema(conn):
                 vault_name TEXT NOT NULL,
                 tx_type TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
-                amount REAL NOT NULL,
+                amount DOUBLE PRECISION NOT NULL,
                 created_at TEXT NOT NULL
             )
             """,
@@ -537,7 +578,7 @@ def init_accounting_schema(conn):
                 name TEXT NOT NULL,
                 department TEXT NOT NULL,
                 start_date TEXT NOT NULL,
-                salary REAL NOT NULL,
+                salary DOUBLE PRECISION NOT NULL,
                 status TEXT NOT NULL DEFAULT 'active',
                 created_at TEXT NOT NULL
             )
@@ -559,7 +600,7 @@ def init_accounting_schema(conn):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 tx_type TEXT NOT NULL DEFAULT 'deposit',
-                commission_rate REAL NOT NULL DEFAULT 0,
+                commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 UNIQUE(name, tx_type)
@@ -571,9 +612,9 @@ def init_accounting_schema(conn):
                 tx_date TEXT NOT NULL,
                 payment_method_id INTEGER NOT NULL,
                 tx_type TEXT NOT NULL,
-                amount REAL NOT NULL,
-                commission_rate REAL NOT NULL DEFAULT 0,
-                commission_amount REAL NOT NULL DEFAULT 0,
+                amount DOUBLE PRECISION NOT NULL,
+                commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                commission_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (payment_method_id) REFERENCES acc_payment_methods(id)
             )
@@ -591,7 +632,7 @@ def init_accounting_schema(conn):
                 expense_date TEXT NOT NULL,
                 category_id INTEGER NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
-                amount REAL NOT NULL,
+                amount DOUBLE PRECISION NOT NULL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (category_id) REFERENCES acc_expense_categories(id)
             )
@@ -603,7 +644,7 @@ def init_accounting_schema(conn):
                 vault_name TEXT NOT NULL,
                 tx_type TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
-                amount REAL NOT NULL,
+                amount DOUBLE PRECISION NOT NULL,
                 created_at TEXT NOT NULL
             )
             """,
@@ -613,7 +654,7 @@ def init_accounting_schema(conn):
                 name TEXT NOT NULL,
                 department TEXT NOT NULL,
                 start_date TEXT NOT NULL,
-                salary REAL NOT NULL,
+                salary DOUBLE PRECISION NOT NULL,
                 status TEXT NOT NULL DEFAULT 'active',
                 created_at TEXT NOT NULL
             )
@@ -738,6 +779,14 @@ def migrate_schema(conn):
         except Exception:
             pass
         print(f"⚠️  migrate_ref_labels hata (atlanıyor, panel yine açılır): {exc}")
+    try:
+        migrate_float_precision(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_float_precision hata (atlanıyor, panel yine açılır): {exc}")
 
 
 def _table_columns(conn, table_name):
@@ -813,10 +862,10 @@ def migrate_accounting_employees_payroll(conn):
     new_cols = [
         ("salary_category", "TEXT NOT NULL DEFAULT 'turkey'"),
         ("end_date", "TEXT"),
-        ("bank_salary", "REAL NOT NULL DEFAULT 0"),
-        ("crypto_salary", "REAL NOT NULL DEFAULT 0"),
-        ("advance_amount", "REAL NOT NULL DEFAULT 0"),
-        ("bonus_amount", "REAL NOT NULL DEFAULT 0"),
+        ("bank_salary", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("crypto_salary", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("advance_amount", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("bonus_amount", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
         ("crypto_wallet", "TEXT NOT NULL DEFAULT ''"),
         ("bank_iban", "TEXT NOT NULL DEFAULT ''"),
         ("bank_account_name", "TEXT NOT NULL DEFAULT ''"),
@@ -900,8 +949,8 @@ def migrate_accounting_vaults(conn):
                 description TEXT NOT NULL DEFAULT '',
                 color TEXT NOT NULL DEFAULT '#6366f1',
                 icon TEXT NOT NULL DEFAULT '💰',
-                opening_usdt REAL NOT NULL DEFAULT 0,
-                opening_try REAL NOT NULL DEFAULT 0,
+                opening_usdt DOUBLE PRECISION NOT NULL DEFAULT 0,
+                opening_try DOUBLE PRECISION NOT NULL DEFAULT 0,
                 sort_order INTEGER NOT NULL DEFAULT 0,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL
@@ -940,8 +989,8 @@ def migrate_accounting_vaults(conn):
                 description TEXT NOT NULL DEFAULT '',
                 color TEXT NOT NULL DEFAULT '#6366f1',
                 icon TEXT NOT NULL DEFAULT '💰',
-                opening_usdt REAL NOT NULL DEFAULT 0,
-                opening_try REAL NOT NULL DEFAULT 0,
+                opening_usdt DOUBLE PRECISION NOT NULL DEFAULT 0,
+                opening_try DOUBLE PRECISION NOT NULL DEFAULT 0,
                 sort_order INTEGER NOT NULL DEFAULT 0,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL
@@ -977,9 +1026,9 @@ def migrate_accounting_vaults(conn):
             ("vault_id", "INTEGER"),
             ("method_name", "TEXT NOT NULL DEFAULT ''"),
             ("operation_type", "TEXT NOT NULL DEFAULT ''"),
-            ("usdt_in", "REAL NOT NULL DEFAULT 0"),
-            ("usdt_out", "REAL NOT NULL DEFAULT 0"),
-            ("fee_usdt", "REAL NOT NULL DEFAULT 0"),
+            ("usdt_in", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+            ("usdt_out", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+            ("fee_usdt", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
         ):
             if name not in tx_cols:
                 execute(conn, f"ALTER TABLE acc_vault_transactions ADD COLUMN {name} {typedef}")
@@ -1151,30 +1200,30 @@ def migrate_accounting_currency(conn):
 
     finance_cols = [
         ("currency", "TEXT NOT NULL DEFAULT 'USD'"),
-        ("amount_try", "REAL NOT NULL DEFAULT 0"),
-        ("amount_usd", "REAL NOT NULL DEFAULT 0"),
-        ("amount_eur", "REAL NOT NULL DEFAULT 0"),
-        ("commission_amount_try", "REAL NOT NULL DEFAULT 0"),
-        ("commission_amount_usd", "REAL NOT NULL DEFAULT 0"),
-        ("commission_amount_eur", "REAL NOT NULL DEFAULT 0"),
-        ("rate_usd_try", "REAL NOT NULL DEFAULT 0"),
-        ("rate_eur_try", "REAL NOT NULL DEFAULT 0"),
+        ("amount_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("amount_usd", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("amount_eur", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("commission_amount_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("commission_amount_usd", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("commission_amount_eur", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("rate_usd_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("rate_eur_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
     ]
     money_cols = [
         ("currency", "TEXT NOT NULL DEFAULT 'USD'"),
-        ("amount_try", "REAL NOT NULL DEFAULT 0"),
-        ("amount_usd", "REAL NOT NULL DEFAULT 0"),
-        ("amount_eur", "REAL NOT NULL DEFAULT 0"),
-        ("rate_usd_try", "REAL NOT NULL DEFAULT 0"),
-        ("rate_eur_try", "REAL NOT NULL DEFAULT 0"),
+        ("amount_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("amount_usd", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("amount_eur", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("rate_usd_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("rate_eur_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
     ]
     salary_cols = [
         ("currency", "TEXT NOT NULL DEFAULT 'TRY'"),
-        ("salary_try", "REAL NOT NULL DEFAULT 0"),
-        ("salary_usd", "REAL NOT NULL DEFAULT 0"),
-        ("salary_eur", "REAL NOT NULL DEFAULT 0"),
-        ("rate_usd_try", "REAL NOT NULL DEFAULT 0"),
-        ("rate_eur_try", "REAL NOT NULL DEFAULT 0"),
+        ("salary_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("salary_usd", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("salary_eur", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("rate_usd_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("rate_eur_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
     ]
 
     tables = [
@@ -1292,7 +1341,7 @@ def migrate_accounting_payment_methods(conn):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 tx_type TEXT NOT NULL DEFAULT 'deposit',
-                commission_rate REAL NOT NULL DEFAULT 0,
+                commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 UNIQUE(name, tx_type)
