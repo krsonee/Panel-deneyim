@@ -187,7 +187,12 @@
       <div class="card-body">
         <p class="muted" style="font-size:0.75rem;margin-bottom:0.75rem;">
           Komisyon oranları <strong>ay bazında</strong> tanımlanır. Seçili ay için oran girildiğinde sadece o ayın yeni işlemleri bu orandan hesaplanır; geçmiş kayıtlar değişmez.
+          <strong>Aktif</strong> = seçili ayda işlem var; <strong>Pasif</strong> = o ayda kullanılmamış.
         </p>
+        <div class="acc-pm-toolbar" style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap;">
+          <button type="button" class="btn btn-sm" id="acc-pm-hide-passive">Pasif yöntemleri gizle</button>
+          <span class="muted" id="acc-pm-hide-passive-hint" style="font-size:0.72rem;"></span>
+        </div>
         <form id="acc-pm-form" class="form-row-4" style="grid-template-columns:1fr 140px 120px auto;">
           <div><label>Payment Adı</label><input id="acc-pm-name" placeholder="Papara, Havale, Kripto…" required></div>
           <div><label>İşlem Türü</label>
@@ -206,8 +211,8 @@
       <div class="card-head"><span>Yatırım Yöntemleri</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Payment</th><th>Komisyon %</th><th>Varsayılan %</th><th>Son Güncelleme</th><th></th></tr></thead>
-          <tbody id="acc-pm-table-deposit"><tr><td colspan="5" class="empty">Henüz yatırım yöntemi yok</td></tr></tbody>
+          <thead><tr><th>Durum</th><th>Payment</th><th>Komisyon %</th><th>Varsayılan %</th><th>Son Güncelleme</th><th></th></tr></thead>
+          <tbody id="acc-pm-table-deposit"><tr><td colspan="6" class="empty">Henüz yatırım yöntemi yok</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -215,8 +220,8 @@
       <div class="card-head"><span>Çekim Yöntemleri</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Payment</th><th>Komisyon %</th><th>Varsayılan %</th><th>Son Güncelleme</th><th></th></tr></thead>
-          <tbody id="acc-pm-table-withdrawal"><tr><td colspan="5" class="empty">Henüz çekim yöntemi yok</td></tr></tbody>
+          <thead><tr><th>Durum</th><th>Payment</th><th>Komisyon %</th><th>Varsayılan %</th><th>Son Güncelleme</th><th></th></tr></thead>
+          <tbody id="acc-pm-table-withdrawal"><tr><td colspan="6" class="empty">Henüz çekim yöntemi yok</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -715,21 +720,189 @@
     </section>
   </div>
 
-  <!-- Fatura placeholder -->
+  <!-- Fatura / Pronet Proforma -->
   <div class="acc-pane" id="acc-pane-invoices" data-acc-pane="invoices" hidden>
-    <section class="card acc-placeholder">
-      <div class="card-body" style="padding:2rem;text-align:center;">
-        <div style="font-size:2.5rem;margin-bottom:0.75rem;">🧾</div>
-        <h3 style="margin-bottom:0.5rem;">Fatura Hesaplama</h3>
-        <p class="muted" style="max-width:480px;margin:0 auto 1.25rem;font-size:0.85rem;line-height:1.5;">
-          Bu alan ileride fatura şablonları için hazırlanmıştır. Şimdilik sağlayıcı ve komisyon tanımlarını buradan yönetebilirsiniz.
-        </p>
-        <div class="acc-invoice-box">
-          <h4>Sağlayıcı ve Komisyon Tanımlama Alanı</h4>
-          <p class="muted">Payment komisyon oranları <strong>Komisyon</strong> sekmesinden tanımlanır. Fatura formülleri eklendiğinde bu ekran otomatik güncellenecek.</p>
-          <button type="button" class="btn btn-primary" id="acc-goto-commissions">Komisyon Yönetimine Git</button>
+    <section class="acc-exp-summary acc-pm-inv-summary">
+      <div class="acc-exp-summary-card">
+        <span class="acc-exp-summary-label">Yatırım Hacmi</span>
+        <strong id="acc-pm-inv-dep">—</strong>
+      </div>
+      <div class="acc-exp-summary-card">
+        <span class="acc-exp-summary-label">Çekim Hacmi</span>
+        <strong id="acc-pm-inv-wdr">—</strong>
+      </div>
+      <div class="acc-exp-summary-card">
+        <span class="acc-exp-summary-label">Toplam Komisyon</span>
+        <strong id="acc-pm-inv-comm">—</strong>
+      </div>
+      <div class="acc-exp-summary-card">
+        <span class="acc-exp-summary-label">Sağlayıcı / İşlem</span>
+        <strong id="acc-pm-inv-meta">—</strong>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <span>Ödeme Sağlayıcı Komisyon Özeti</span>
+        <span class="muted" id="acc-pm-inv-period-label" style="font-size:0.72rem;"></span>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll acc-inv-scroll">
+          <table class="acc-inv-table">
+            <thead>
+              <tr>
+                <th>Sağlayıcı</th>
+                <th>Yatırım (TRY)</th>
+                <th>Çekim (TRY)</th>
+                <th>Yat. Oran %</th>
+                <th>Çek. Oran %</th>
+                <th>Komisyon (TRY)</th>
+                <th>İşlem</th>
+              </tr>
+            </thead>
+            <tbody id="acc-pm-inv-body"><tr><td colspan="7" class="empty">Yükleniyor…</td></tr></tbody>
+            <tfoot>
+              <tr class="acc-payroll-total-row">
+                <td><strong>Toplam</strong></td>
+                <td><strong id="acc-pm-inv-foot-dep">—</strong></td>
+                <td><strong id="acc-pm-inv-foot-wdr">—</strong></td>
+                <td colspan="2"></td>
+                <td><strong id="acc-pm-inv-foot-comm">—</strong></td>
+                <td><strong id="acc-pm-inv-foot-count">—</strong></td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
     </section>
+
+    <section class="card" style="margin-top:1rem;">
+      <div class="card-head"><span>Pronet Proforma Fatura</span></div>
+    </section>
+
+    <section class="kpi-grid acc-kpi-grid acc-inv-kpi">
+      <div class="kpi green">
+        <div class="val" id="acc-inv-gross">—</div>
+        <div class="lbl">Toplam Site Brüt Geliri</div>
+      </div>
+      <div class="kpi amber">
+        <div class="val" id="acc-inv-total-try">—</div>
+        <div class="lbl">Pronet Proforma Fatura</div>
+      </div>
+      <div class="kpi">
+        <div class="val" id="acc-inv-total-eur">—</div>
+        <div class="lbl">Proforma Fatura (EUR)</div>
+      </div>
+      <div class="kpi rose">
+        <div class="val" id="acc-inv-fixed">—</div>
+        <div class="lbl">Sabit Ücretler + SMS</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <span>Dönem Ayarları</span>
+        <button type="button" class="btn btn-sm btn-primary" id="acc-inv-save-meta">Kaydet</button>
+      </div>
+      <div class="card-body acc-inv-meta-grid">
+        <label>Brüt Gelir (TRY)
+          <input type="number" step="0.01" id="acc-inv-gross-input" placeholder="0">
+        </label>
+        <label>EUR/TRY Kuru
+          <input type="number" step="0.0001" id="acc-inv-eur-rate" placeholder="45.436">
+        </label>
+        <label>SMS / Dönemsel Ücret (TRY)
+          <input type="number" step="0.01" id="acc-inv-sms-fee" placeholder="0">
+        </label>
+        <label>Not
+          <input type="text" id="acc-inv-notes" placeholder="Örn. Nisan-Haziran SMS">
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <span>Spor Bahisleri</span>
+        <strong id="acc-inv-sport-total">—</strong>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table class="acc-inv-table">
+            <thead>
+              <tr>
+                <th>Sağlayıcı</th>
+                <th>Hacim (TRY)</th>
+                <th>Jackpot (TRY)</th>
+                <th>Oran %</th>
+                <th>Komisyon (TRY)</th>
+              </tr>
+            </thead>
+            <tbody id="acc-inv-sport-body"><tr><td colspan="5" class="empty">Yükleniyor…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <span>Casino Bahisleri</span>
+        <span class="muted" id="acc-inv-casino-sub" style="font-size:0.72rem;"></span>
+        <strong id="acc-inv-casino-total">—</strong>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll acc-inv-scroll">
+          <table class="acc-inv-table">
+            <thead>
+              <tr>
+                <th>Sağlayıcı</th>
+                <th>Kar / Hacim (TRY)</th>
+                <th>J.P Cnt. (TRY)</th>
+                <th>Oran %</th>
+                <th>Komisyon (TRY)</th>
+              </tr>
+            </thead>
+            <tbody id="acc-inv-casino-body"><tr><td colspan="5" class="empty">Yükleniyor…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="acc-inv-special-card" hidden>
+      <div class="card-head">
+        <span>Özel Kalemler</span>
+        <strong id="acc-inv-special-total">—</strong>
+      </div>
+      <div class="table-wrap">
+        <table class="acc-inv-table">
+          <thead>
+            <tr><th>Kalem</th><th>Hacim</th><th>Oran %</th><th>Komisyon</th></tr>
+          </thead>
+          <tbody id="acc-inv-special-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <span>Sabit Ücretler (EUR → TRY)</span>
+        <strong id="acc-inv-fixed-total">—</strong>
+      </div>
+      <div class="table-wrap">
+        <table class="acc-inv-table">
+          <thead>
+            <tr>
+              <th>Hizmet</th>
+              <th>EUR</th>
+              <th>TRY (kur ile)</th>
+            </tr>
+          </thead>
+          <tbody id="acc-inv-fixed-body"><tr><td colspan="3" class="empty">Yükleniyor…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin:0.75rem 0 1.5rem;">
+      <button type="button" class="btn btn-primary" id="acc-inv-save-lines">Satırları Kaydet</button>
+    </div>
   </div>
 </div>

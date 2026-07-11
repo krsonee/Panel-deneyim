@@ -944,6 +944,165 @@ def migrate_schema(conn):
         except Exception:
             pass
         print(f"⚠️  migrate_float_precision hata (atlanıyor, panel yine açılır): {exc}")
+    try:
+        migrate_accounting_pronet(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_accounting_pronet hata (atlanıyor, panel yine açılır): {exc}")
+
+
+def migrate_accounting_pronet(conn):
+    from accounting_pronet import seed_pronet_templates
+
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_pronet_providers (
+                id SERIAL PRIMARY KEY,
+                section TEXT NOT NULL DEFAULT 'casino',
+                name TEXT NOT NULL UNIQUE,
+                commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_pronet_fixed_fees (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                amount_eur DOUBLE PRECISION NOT NULL DEFAULT 0,
+                billing_cycle TEXT NOT NULL DEFAULT 'monthly',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_pronet_period_meta (
+                period TEXT PRIMARY KEY,
+                gross_revenue_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                eur_try_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                sms_fee_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                notes TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_pronet_period_lines (
+                id SERIAL PRIMARY KEY,
+                period TEXT NOT NULL,
+                line_kind TEXT NOT NULL DEFAULT 'provider',
+                provider_id INTEGER REFERENCES acc_pronet_providers(id),
+                fixed_fee_id INTEGER REFERENCES acc_pronet_fixed_fees(id),
+                custom_label TEXT,
+                volume_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                jackpot_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                tips_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                commission_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                manual_commission DOUBLE PRECISION,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_pronet_providers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                section TEXT NOT NULL DEFAULT 'casino',
+                name TEXT NOT NULL UNIQUE,
+                commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_pronet_fixed_fees (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                amount_eur DOUBLE PRECISION NOT NULL DEFAULT 0,
+                billing_cycle TEXT NOT NULL DEFAULT 'monthly',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_pronet_period_meta (
+                period TEXT PRIMARY KEY,
+                gross_revenue_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                eur_try_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                sms_fee_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                notes TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_pronet_period_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                period TEXT NOT NULL,
+                line_kind TEXT NOT NULL DEFAULT 'provider',
+                provider_id INTEGER,
+                fixed_fee_id INTEGER,
+                custom_label TEXT,
+                volume_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                jackpot_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                tips_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                commission_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                manual_commission DOUBLE PRECISION,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (provider_id) REFERENCES acc_pronet_providers(id),
+                FOREIGN KEY (fixed_fee_id) REFERENCES acc_pronet_fixed_fees(id)
+            )
+            """,
+        )
+    execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS idx_acc_pronet_lines_period ON acc_pronet_period_lines(period)",
+    )
+    seed_pronet_templates(conn)
+    exists = scalar(conn, "SELECT COUNT(*) FROM acc_pronet_providers WHERE name = ?", ("Klas Poker",))
+    if not exists:
+        now = iso(utcnow())
+        insert_returning_id(
+            conn,
+            """
+            INSERT INTO acc_pronet_providers
+            (section, name, commission_rate, sort_order, active, created_at)
+            VALUES ('casino', 'Klas Poker', 25, 125, 1, ?)
+            """,
+            (now,),
+        )
+    conn.commit()
 
 
 def _table_columns(conn, table_name):

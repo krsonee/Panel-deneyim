@@ -34,6 +34,8 @@ from accounting_period import (
     period_date_range,
     period_label,
 )
+from accounting_invoices import build_payment_invoices
+from accounting_pronet import build_invoice_payload, calc_commission
 from accounting_vault import (
     VAULT_ICONS,
     VAULT_PALETTE,
@@ -125,7 +127,54 @@ def upsert_period_commission_rate(conn, payment_method_id, period, rate):
     return True
 
 
-def enrich_payment_method(conn, row, period=None):
+def payment_method_period_usage(conn, period):
+    """Dönemde işlem sayısı: {payment_method_id: tx_count}."""
+    month = valid_month_period(period)
+    if not month:
+        return {}
+    date_sql, date_params = date_clause("tx_date", month)
+    rows = fetchall(
+        conn,
+        f"""
+        SELECT payment_method_id, COUNT(*) AS cnt
+        FROM acc_finance_transactions
+        WHERE 1=1{date_sql}
+        GROUP BY payment_method_id
+        """,
+        date_params,
+    )
+    return {int(r["payment_method_id"]): int(r["cnt"] or 0) for r in rows}
+
+
+def payment_method_tx_count(conn, payment_method_id, period=None, period_usage=None):
+    if period_usage is not None:
+        return period_usage.get(int(payment_method_id), 0)
+    month = valid_month_period(period)
+    if month:
+        date_sql, date_params = date_clause("tx_date", month)
+        params = (payment_method_id,) + date_params
+        return int(
+            scalar(
+                conn,
+                f"""
+                SELECT COUNT(*) FROM acc_finance_transactions
+                WHERE payment_method_id = ?{date_sql}
+                """,
+                params,
+            )
+            or 0
+        )
+    return int(
+        scalar(
+            conn,
+            "SELECT COUNT(*) FROM acc_finance_transactions WHERE payment_method_id = ?",
+            (payment_method_id,),
+        )
+        or 0
+    )
+
+
+def enrich_payment_method(conn, row, period=None, period_usage=None):
     data = dict(row)
     data["global_commission_rate"] = float(data.get("commission_rate") or 0)
     month = valid_month_period(period)
@@ -143,6 +192,9 @@ def enrich_payment_method(conn, row, period=None):
         if pr is not None:
             data["commission_rate"] = float(pr["commission_rate"] or 0)
             data["period_rate_override"] = True
+    cnt = payment_method_tx_count(conn, data["id"], period, period_usage)
+    data["period_tx_count"] = cnt
+    data["period_active"] = cnt > 0
     return data
 
 
@@ -658,7 +710,8 @@ def create_accounting_blueprint(permission_required):
                     conn,
                     "SELECT * FROM acc_payment_methods ORDER BY name ASC, tx_type ASC",
                 )
-            methods = [enrich_payment_method(conn, r, period) for r in rows]
+            usage = payment_method_period_usage(conn, period) if period else None
+            methods = [enrich_payment_method(conn, r, period, usage) for r in rows]
         payload = {"payment_methods": methods}
         if period:
             payload.update({"period": period, "period_label": period_label(period)})
@@ -1960,5 +2013,175 @@ def create_accounting_blueprint(permission_required):
             execute(conn, "DELETE FROM acc_employees WHERE id = ?", (emp_id,))
             conn.commit()
         return jsonify({"ok": True})
+
+    @bp.route("/invoices", methods=["GET"])
+    @acc_perm("accounting.invoices", *ACC_READ)
+    def list_payment_invoices():
+        period = valid_month_period(request.args.get("period") or "")
+        if not period:
+            period = valid_month_period(period_from_request()) or default_accounting_period()
+        with closing(get_db()) as conn:
+            payload = build_payment_invoices(conn, period, resolve_commission_rate)
+        return jsonify({**period_meta(period), **payload})
+
+    @bp.route("/pronet-invoice", methods=["GET"])
+    @acc_perm(*ACC_READ)
+    def get_pronet_invoice():
+        period = valid_month_period(request.args.get("period")) or period_from_request()
+        if not period or period == "all":
+            period = default_accounting_period()
+        with closing(get_db()) as conn:
+            payload = build_invoice_payload(conn, period)
+        payload["period_label"] = period_label(period)
+        return jsonify(payload)
+
+    @bp.route("/pronet-invoice/meta", methods=["PUT"])
+    @acc_perm("accounting.invoices", *MODULE_ACCESS)
+    def update_pronet_invoice_meta():
+        data = request.get_json(silent=True) or {}
+        period = valid_month_period(data.get("period")) or period_from_request()
+        if not period or period == "all":
+            return jsonify({"error": "Geçerli ay seçin (YYYY-MM)."}), 400
+        now = iso(utcnow())
+        gross = parse_amount(data.get("gross_revenue_try"))
+        eur_rate = parse_amount(data.get("eur_try_rate"))
+        sms = parse_amount(data.get("sms_fee_try"))
+        notes = (data.get("notes") or "").strip()
+        with closing(get_db()) as conn:
+            exists = scalar(conn, "SELECT COUNT(*) FROM acc_pronet_period_meta WHERE period = ?", (period,))
+            if exists:
+                execute(
+                    conn,
+                    """
+                    UPDATE acc_pronet_period_meta
+                    SET gross_revenue_try = COALESCE(?, gross_revenue_try),
+                        eur_try_rate = COALESCE(?, eur_try_rate),
+                        sms_fee_try = COALESCE(?, sms_fee_try),
+                        notes = ?, updated_at = ?
+                    WHERE period = ?
+                    """,
+                    (gross, eur_rate, sms, notes, now, period),
+                )
+            else:
+                execute(
+                    conn,
+                    """
+                    INSERT INTO acc_pronet_period_meta
+                    (period, gross_revenue_try, eur_try_rate, sms_fee_try, notes, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (period, gross or 0, eur_rate or 45.436, sms or 0, notes, now),
+                )
+            if eur_rate:
+                fixed_lines = fetchall(
+                    conn,
+                    """
+                    SELECT l.id, f.amount_eur
+                    FROM acc_pronet_period_lines l
+                    JOIN acc_pronet_fixed_fees f ON f.id = l.fixed_fee_id
+                    WHERE l.period = ? AND l.line_kind = 'fixed'
+                    """,
+                    (period,),
+                )
+                for row in fixed_lines:
+                    amount_try = round(float(row["amount_eur"]) * float(eur_rate), 2)
+                    execute(
+                        conn,
+                        """
+                        UPDATE acc_pronet_period_lines
+                        SET volume_try = ?, commission_try = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (float(row["amount_eur"]), amount_try, now, row["id"]),
+                    )
+            conn.commit()
+            payload = build_invoice_payload(conn, period)
+        payload["period_label"] = period_label(period)
+        return jsonify(payload)
+
+    @bp.route("/pronet-invoice/lines", methods=["PUT"])
+    @acc_perm("accounting.invoices", *MODULE_ACCESS)
+    def update_pronet_invoice_lines():
+        data = request.get_json(silent=True) or {}
+        period = valid_month_period(data.get("period")) or period_from_request()
+        if not period or period == "all":
+            return jsonify({"error": "Geçerli ay seçin (YYYY-MM)."}), 400
+        items = data.get("lines") or []
+        now = iso(utcnow())
+        with closing(get_db()) as conn:
+            for item in items:
+                line_id = item.get("id")
+                if not line_id:
+                    continue
+                row = fetchone(
+                    conn,
+                    "SELECT * FROM acc_pronet_period_lines WHERE id = ? AND period = ?",
+                    (line_id, period),
+                )
+                if not row:
+                    continue
+                volume = parse_amount(item.get("volume_try"))
+                jackpot = parse_amount(item.get("jackpot_try"))
+                rate = parse_amount(item.get("commission_rate"))
+                manual = item.get("manual_commission")
+                manual_val = parse_amount(manual) if manual is not None and manual != "" else None
+                if row["line_kind"] == "fixed":
+                    continue
+                vol = volume if volume is not None else float(row["volume_try"] or 0)
+                jp = jackpot if jackpot is not None else float(row["jackpot_try"] or 0)
+                rt = rate if rate is not None else float(row["commission_rate"] or 0)
+                comm = calc_commission(vol, jp, rt, manual_val)
+                execute(
+                    conn,
+                    """
+                    UPDATE acc_pronet_period_lines
+                    SET volume_try = ?, jackpot_try = ?, commission_rate = ?,
+                        commission_try = ?, manual_commission = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (vol, jp, rt, comm, manual_val, now, line_id),
+                )
+            conn.commit()
+            payload = build_invoice_payload(conn, period)
+        payload["period_label"] = period_label(period)
+        return jsonify(payload)
+
+    @bp.route("/pronet-providers/<int:provider_id>", methods=["PUT"])
+    @acc_perm("accounting.invoices", *MODULE_ACCESS)
+    def update_pronet_provider(provider_id):
+        data = request.get_json(silent=True) or {}
+        rate = parse_amount(data.get("commission_rate"))
+        if rate is None:
+            return jsonify({"error": "Geçerli komisyon oranı girin."}), 400
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT id FROM acc_pronet_providers WHERE id = ?", (provider_id,))
+            if not row:
+                return jsonify({"error": "Sağlayıcı bulunamadı."}), 404
+            execute(
+                conn,
+                "UPDATE acc_pronet_providers SET commission_rate = ? WHERE id = ?",
+                (rate, provider_id),
+            )
+            conn.commit()
+        return jsonify({"ok": True, "commission_rate": rate})
+
+    @bp.route("/pronet-fixed-fees/<int:fee_id>", methods=["PUT"])
+    @acc_perm("accounting.invoices", *MODULE_ACCESS)
+    def update_pronet_fixed_fee(fee_id):
+        data = request.get_json(silent=True) or {}
+        amount_eur = parse_amount(data.get("amount_eur"))
+        if amount_eur is None:
+            return jsonify({"error": "Geçerli EUR tutarı girin."}), 400
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT id FROM acc_pronet_fixed_fees WHERE id = ?", (fee_id,))
+            if not row:
+                return jsonify({"error": "Sabit ücret bulunamadı."}), 404
+            execute(
+                conn,
+                "UPDATE acc_pronet_fixed_fees SET amount_eur = ? WHERE id = ?",
+                (amount_eur, fee_id),
+            )
+            conn.commit()
+        return jsonify({"ok": True, "amount_eur": amount_eur})
 
     return bp

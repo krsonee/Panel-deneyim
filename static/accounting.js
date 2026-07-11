@@ -18,6 +18,7 @@
   var ACC_RATES_POLL_MS = 30000;
   var ACC_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
 
+  var accHidePassivePm = localStorage.getItem("acc_hide_passive_pm") === "1";
   var accCanViewOfficeSalaries = false;
   var accVaults = [];
   var accVaultMethods = [];
@@ -960,13 +961,40 @@
     });
   }
 
+  function accPmStatusBadge(active, txCount) {
+    if (active) {
+      var hint = txCount ? " (" + txCount + " işlem)" : "";
+      return '<span class="tag online" title="Seçili dönemde kullanılıyor' + hint + '">Aktif</span>';
+    }
+    return '<span class="tag offline" title="Seçili dönemde işlem yok">Pasif</span>';
+  }
+
+  function accUpdateHidePassivePmUi() {
+    var btn = document.getElementById("acc-pm-hide-passive");
+    var hint = document.getElementById("acc-pm-hide-passive-hint");
+    if (btn) {
+      btn.classList.toggle("btn-primary", accHidePassivePm);
+      btn.textContent = accHidePassivePm ? "Pasif yöntemleri göster" : "Pasif yöntemleri gizle";
+    }
+    if (hint) {
+      hint.textContent = accHidePassivePm
+        ? "Pasif yöntemler gizleniyor."
+        : "Tüm yöntemler listeleniyor.";
+    }
+  }
+
   function accBindPaymentMethodTable(tbodyId, methods, txType) {
     var tbody = document.getElementById(tbodyId);
     if (!tbody) return;
     var filtered = (methods || []).filter(function (p) { return p.tx_type === txType; });
+    if (accHidePassivePm) {
+      filtered = filtered.filter(function (p) { return p.period_active; });
+    }
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz ' +
-        (txType === "deposit" ? "yatırım" : "çekim") + ' yöntemi yok</td></tr>';
+      var emptyMsg = accHidePassivePm
+        ? "Gösterilecek aktif " + (txType === "deposit" ? "yatırım" : "çekim") + " yöntemi yok"
+        : "Henüz " + (txType === "deposit" ? "yatırım" : "çekim") + " yöntemi yok";
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">' + emptyMsg + '</td></tr>';
       return;
     }
     var month = accSelectedMonthPeriod();
@@ -975,7 +1003,9 @@
       var overrideHint = p.period_rate_override
         ? '<span class="tag online" style="font-size:0.62rem;margin-left:0.25rem;">aylık</span>'
         : "";
-      return '<tr><td><strong>' + accEsc(p.name) + '</strong>' + overrideHint + '</td>' +
+      var rowClass = p.period_active ? "" : ' class="acc-pm-row-passive"';
+      return '<tr' + rowClass + '><td>' + accPmStatusBadge(p.period_active, p.period_tx_count) + '</td>' +
+        '<td><strong>' + accEsc(p.name) + '</strong>' + overrideHint + '</td>' +
         '<td><input type="number" class="acc-inline-rate" data-pm-id="' + p.id + '" value="' + p.commission_rate + '" step="0.01" min="0" style="width:80px;padding:0.3rem;"></td>' +
         '<td class="mono muted">' + globalRate + '%</td>' +
         '<td class="mono muted">' + accEsc((p.updated_at || p.created_at || "").slice(0, 10)) + '</td>' +
@@ -1014,6 +1044,7 @@
       if (!res || !res.ok) return;
       accPaymentMethods = res.data.payment_methods || [];
       if (res.data.period_label) accUpdateCommPeriodLabel(res.data.period_label);
+      accUpdateHidePassivePmUi();
       accRefreshTxPaymentSelect();
       accBindPaymentMethodTable("acc-pm-table-deposit", accPaymentMethods, "deposit");
       accBindPaymentMethodTable("acc-pm-table-withdrawal", accPaymentMethods, "withdrawal");
@@ -2248,6 +2279,196 @@
     accUpdateEmpPayrollTotals(filtered);
   }
 
+  var accInvoiceData = null;
+
+  function accInvFmt(n) {
+    return accMoney(n, "TRY");
+  }
+
+  function accRenderInvRows(tbodyId, lines, editable) {
+    var tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    if (!lines || !lines.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">Kayıt yok</td></tr>';
+      return;
+    }
+    tbody.innerHTML = lines.map(function (line) {
+      var vol = parseFloat(line.volume_try) || 0;
+      var cls = vol < 0 ? " acc-inv-neg" : (vol === 0 && !(line.jackpot_try > 0) ? " acc-inv-zero" : "");
+      var volCell = editable
+        ? '<input type="number" step="0.01" data-inv-field="volume_try" data-inv-id="' + line.id + '" value="' + vol + '">'
+        : accInvFmt(vol);
+      var jp = parseFloat(line.jackpot_try) || 0;
+      var jpCell = editable
+        ? '<input type="number" step="0.01" data-inv-field="jackpot_try" data-inv-id="' + line.id + '" value="' + jp + '">'
+        : (jp ? accInvFmt(jp) : "—");
+      var rate = parseFloat(line.commission_rate) || 0;
+      var rateCell = editable
+        ? '<input type="number" step="0.01" data-inv-field="commission_rate" data-inv-id="' + line.id + '" value="' + rate + '">'
+        : (rate ? rate.toFixed(2) + "%" : "—");
+      return '<tr class="' + cls.trim() + '" data-inv-line="' + line.id + '">' +
+        '<td class="acc-inv-name">' + accEsc(line.label || "—") + '</td>' +
+        '<td>' + volCell + '</td>' +
+        '<td>' + jpCell + '</td>' +
+        '<td>' + rateCell + '</td>' +
+        '<td class="acc-inv-comm">' + accInvFmt(line.commission_try) + '</td>' +
+        '</tr>';
+    }).join("");
+  }
+
+  function accRenderInvFixed(lines, eurRate) {
+    var tbody = document.getElementById("acc-inv-fixed-body");
+    if (!tbody) return;
+    if (!lines || !lines.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty">Kayıt yok</td></tr>';
+      return;
+    }
+    tbody.innerHTML = lines.map(function (line) {
+      var eur = parseFloat(line.amount_eur || line.volume_try) || 0;
+      return '<tr><td class="acc-inv-name">' + accEsc(line.label) + '</td>' +
+        '<td>€' + eur.toLocaleString("tr-TR", { minimumFractionDigits: 0 }) + '</td>' +
+        '<td class="acc-inv-comm">' + accInvFmt(line.commission_try) + '</td></tr>';
+    }).join("");
+  }
+
+  function accRenderInvoice(data) {
+    if (!data) return;
+    accInvoiceData = data;
+    var t = data.totals || {};
+    var m = data.meta || {};
+    accSetText("acc-inv-gross", accInvFmt(m.gross_revenue_try));
+    accSetText("acc-inv-total-try", accInvFmt(t.grand_total_try));
+    accSetText("acc-inv-total-eur", "€" + (t.grand_total_eur || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    accSetText("acc-inv-fixed", accInvFmt((t.fixed_fees_try || 0) + (t.sms_fee_try || 0)));
+    accSetText("acc-inv-sport-total", accInvFmt(t.sport_commission_try));
+    var casinoComm = (t.casino_commission_total_try != null ? t.casino_commission_total_try : (t.casino_commission_try || 0) + (t.special_commission_try || 0));
+    accSetText("acc-inv-casino-total", accInvFmt(casinoComm));
+    accSetText("acc-inv-casino-sub", "Casino karları: " + accInvFmt(t.casino_volume_try));
+    accSetText("acc-inv-fixed-total", accInvFmt(t.fixed_fees_try));
+    var grossIn = document.getElementById("acc-inv-gross-input");
+    var eurIn = document.getElementById("acc-inv-eur-rate");
+    var smsIn = document.getElementById("acc-inv-sms-fee");
+    var notesIn = document.getElementById("acc-inv-notes");
+    if (grossIn) grossIn.value = m.gross_revenue_try || "";
+    if (eurIn) eurIn.value = m.eur_try_rate || "";
+    if (smsIn) smsIn.value = m.sms_fee_try || "";
+    if (notesIn) notesIn.value = m.notes || "";
+    var sections = data.sections || {};
+    accRenderInvRows("acc-inv-sport-body", sections.sport, true);
+    accRenderInvRows("acc-inv-casino-body", sections.casino, true);
+    var special = sections.special || [];
+    var specialCard = document.getElementById("acc-inv-special-card");
+    if (specialCard) specialCard.hidden = !special.length;
+    accRenderInvRows("acc-inv-special-body", special, true);
+    accSetText("acc-inv-special-total", accInvFmt(t.special_commission_try));
+    accRenderInvFixed(sections.fixed, m.eur_try_rate);
+  }
+
+  function accRenderPaymentInvoices(data) {
+    if (!data) return;
+    var totals = data.totals || {};
+    var providers = data.providers || [];
+    accSetText("acc-pm-inv-dep", accInvFmt(totals.deposit_volume_try));
+    accSetText("acc-pm-inv-wdr", accInvFmt(totals.withdrawal_volume_try));
+    accSetText("acc-pm-inv-comm", accInvFmt(totals.commission_try));
+    accSetText("acc-pm-inv-meta", (totals.provider_count || 0) + " / " + (totals.tx_count || 0));
+    accSetText("acc-pm-inv-period-label", data.period_label || data.period || "");
+    accSetText("acc-pm-inv-foot-dep", accInvFmt(totals.deposit_volume_try));
+    accSetText("acc-pm-inv-foot-wdr", accInvFmt(totals.withdrawal_volume_try));
+    accSetText("acc-pm-inv-foot-comm", accInvFmt(totals.commission_try));
+    accSetText("acc-pm-inv-foot-count", String(totals.tx_count || 0));
+    var tbody = document.getElementById("acc-pm-inv-body");
+    if (!tbody) return;
+    if (!providers.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">Bu dönemde işlem yok</td></tr>';
+      return;
+    }
+    tbody.innerHTML = providers.map(function (p) {
+      var depRate = p.deposit_rate != null ? p.deposit_rate.toFixed(2) + "%" : "—";
+      var wdrRate = p.withdrawal_rate != null ? p.withdrawal_rate.toFixed(2) + "%" : "—";
+      return '<tr>' +
+        '<td class="acc-inv-name">' + accEsc(p.provider_name) + '</td>' +
+        '<td>' + (p.deposit_volume_try ? accInvFmt(p.deposit_volume_try) : "—") + '</td>' +
+        '<td>' + (p.withdrawal_volume_try ? accInvFmt(p.withdrawal_volume_try) : "—") + '</td>' +
+        '<td>' + depRate + '</td>' +
+        '<td>' + wdrRate + '</td>' +
+        '<td class="acc-inv-comm">' + accInvFmt(p.total_commission_try) + '</td>' +
+        '<td>' + (p.tx_count || 0) + '</td>' +
+        '</tr>';
+    }).join("");
+  }
+
+  function accLoadInvoice() {
+    var period = accSelectedMonthPeriod() || accResolvePeriod();
+    if (!period || period === "all") period = accCurrentMonth();
+    var pmReq = accApi("/api/accounting/invoices?period=" + encodeURIComponent(period)).then(function (r) {
+      if (r && r.ok) accRenderPaymentInvoices(r.data);
+      else if (r && r.status === 403) {
+        var tbody = document.getElementById("acc-pm-inv-body");
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty">Fatura görüntüleme yetkisi yok</td></tr>';
+      }
+    });
+    var pronetReq = accApi("/api/accounting/pronet-invoice?period=" + encodeURIComponent(period)).then(function (r) {
+      if (r && r.ok) accRenderInvoice(r.data);
+      else if (r) console.error("accLoadInvoice pronet", r.data);
+    });
+    return Promise.all([pmReq, pronetReq]);
+  }
+
+  function accCollectInvoiceLines() {
+    var map = {};
+    document.querySelectorAll("[data-inv-id]").forEach(function (el) {
+      var id = el.getAttribute("data-inv-id");
+      var field = el.getAttribute("data-inv-field");
+      if (!id || !field) return;
+      if (!map[id]) map[id] = { id: parseInt(id, 10) };
+      map[id][field] = el.value;
+    });
+    return Object.keys(map).map(function (k) { return map[k]; });
+  }
+
+  function accSaveInvoiceMeta() {
+    var period = accSelectedMonthPeriod() || accResolvePeriod();
+    if (!period || period === "all") period = accCurrentMonth();
+    var payload = {
+      period: period,
+      gross_revenue_try: document.getElementById("acc-inv-gross-input").value,
+      eur_try_rate: document.getElementById("acc-inv-eur-rate").value,
+      sms_fee_try: document.getElementById("acc-inv-sms-fee").value,
+      notes: document.getElementById("acc-inv-notes").value
+    };
+    accApi("/api/accounting/pronet-invoice/meta", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }).then(function (r) {
+      if (r && r.ok) {
+        accRenderInvoice(r.data);
+        accSavedToast("Fatura ayarları kaydedildi");
+      } else if (r) alert(r.data.error || "Hata");
+    });
+  }
+
+  function accSaveInvoiceLines() {
+    var period = accSelectedMonthPeriod() || accResolvePeriod();
+    if (!period || period === "all") period = accCurrentMonth();
+    accApi("/api/accounting/pronet-invoice/lines", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ period: period, lines: accCollectInvoiceLines() })
+    }).then(function (r) {
+      if (r && r.ok) {
+        accRenderInvoice(r.data);
+        accSavedToast("Fatura satırları kaydedildi");
+      } else if (r) alert(r.data.error || "Hata");
+    });
+  }
+
+  function accSetText(id, text) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+
   function accSwitchTab(tab) {
     accActiveTab = tab;
     document.querySelectorAll(".acc-tab").forEach(function (el) {
@@ -2264,6 +2485,7 @@
     else if (tab === "expenses") { accLoadCategories(); accLoadExpenses(); }
     else if (tab === "vault") accLoadVault();
     else if (tab === "payroll") { accLoadEmpOptions(); accLoadEmployees(); }
+    else if (tab === "invoices") accLoadInvoice();
   }
 
   function accRefreshAll() {
@@ -2274,6 +2496,7 @@
     else if (accActiveTab === "expenses") { accLoadCategories(); accLoadExpenses(); }
     else if (accActiveTab === "vault") accLoadVault();
     else if (accActiveTab === "payroll") { accLoadEmpOptions(); accLoadEmployees(); }
+    else if (accActiveTab === "invoices") accLoadInvoice();
   }
 
   function accBindForm(formId, handler) {
@@ -2684,8 +2907,21 @@
         accToggleSort(th.getAttribute("data-acc-sort"), th.getAttribute("data-sort"));
       });
     });
-    var goto = document.getElementById("acc-goto-commissions");
-    if (goto) goto.addEventListener("click", function () { accSwitchTab("commissions"); });
+    var saveMeta = document.getElementById("acc-inv-save-meta");
+    if (saveMeta) saveMeta.addEventListener("click", accSaveInvoiceMeta);
+    var saveLines = document.getElementById("acc-inv-save-lines");
+    if (saveLines) saveLines.addEventListener("click", accSaveInvoiceLines);
+    var hidePassiveBtn = document.getElementById("acc-pm-hide-passive");
+    if (hidePassiveBtn) {
+      accUpdateHidePassivePmUi();
+      hidePassiveBtn.addEventListener("click", function () {
+        accHidePassivePm = !accHidePassivePm;
+        localStorage.setItem("acc_hide_passive_pm", accHidePassivePm ? "1" : "0");
+        accUpdateHidePassivePmUi();
+        accBindPaymentMethodTable("acc-pm-table-deposit", accPaymentMethods, "deposit");
+        accBindPaymentMethodTable("acc-pm-table-withdrawal", accPaymentMethods, "withdrawal");
+      });
+    }
 
     var empFilterCat = document.getElementById("acc-emp-filter-cat");
     var empFilterDept = document.getElementById("acc-emp-filter-dept");

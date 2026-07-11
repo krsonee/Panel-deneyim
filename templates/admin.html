@@ -493,6 +493,24 @@
       border: 1px dashed var(--border); background: var(--surface-2); text-align: left;
     }
     .acc-invoice-box h4 { font-size: 0.88rem; margin-bottom: 0.45rem; }
+    .acc-inv-kpi { margin-bottom: 0.75rem; }
+    .acc-inv-meta-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.65rem; padding: 0.75rem 1rem 1rem;
+    }
+    .acc-inv-meta-grid label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.72rem; color: var(--muted); }
+    .acc-inv-meta-grid input { font-size: 0.82rem; }
+    .acc-inv-table { width: 100%; font-size: 0.78rem; }
+    .acc-inv-table th, .acc-inv-table td { padding: 0.35rem 0.5rem; white-space: nowrap; }
+    .acc-inv-table input[type="number"] {
+      width: 100%; min-width: 88px; max-width: 140px; font-size: 0.76rem; padding: 0.2rem 0.35rem;
+    }
+    .acc-inv-table .acc-inv-name { max-width: 220px; white-space: normal; font-weight: 500; }
+    .acc-inv-table tr.acc-inv-neg td { color: var(--rose); }
+    .acc-inv-table tr.acc-inv-zero { opacity: 0.45; }
+    .acc-inv-scroll { max-height: 420px; overflow: auto; }
+    .acc-inv-comm { font-weight: 600; color: var(--amber); }
+    .acc-pm-row-passive { opacity: 0.55; }
     .acc-fx-preview { font-size: 0.72rem; color: var(--muted); min-height: 1.1rem; margin: 0.15rem 0 0.35rem; }
     .acc-form-rate::placeholder { font-size: 0.68rem; }
     .acc-office-fields {
@@ -1892,7 +1910,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260711i"></script>
+  <script src="/static/accounting.js?v=20260712a"></script>
   <script src="/static/mailing.js?v=20260711b"></script>
   <script>
     (function () {
