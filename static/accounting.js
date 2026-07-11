@@ -1404,13 +1404,25 @@
 
   function accOrderEmployees(rows) {
     return (rows || []).slice().sort(function (a, b) {
-      var sa = a.status === "active" ? 0 : 1;
-      var sb = b.status === "active" ? 0 : 1;
-      if (sa !== sb) return sa - sb;
       var dc = String(a.department || "").localeCompare(String(b.department || ""), "tr", { sensitivity: "base" });
       if (dc !== 0) return dc;
       return String(a.name || "").localeCompare(String(b.name || ""), "tr", { sensitivity: "base" });
     });
+  }
+
+  function accIsOfficeEmployee(r) {
+    return accIsOfficeCategory(r && r.salary_category);
+  }
+
+  function accEmpSectionHtml(cols, type, icon, label, count, sub) {
+    return '<tr class="acc-emp-section acc-emp-section-' + type + '">' +
+      '<td colspan="' + cols + '">' +
+      '<div class="acc-emp-section-inner">' +
+      '<span class="acc-emp-section-icon" aria-hidden="true">' + icon + "</span>" +
+      '<span class="acc-emp-section-label">' + accEsc(label) + "</span>" +
+      '<span class="acc-emp-section-count">' + count + " kişi</span>" +
+      (sub ? '<span class="acc-emp-section-sub">' + accEsc(sub) + "</span>" : "") +
+      "</div></td></tr>";
   }
 
   function accEmpSelectHtml(field, value, empId, options, extraCls) {
@@ -1461,7 +1473,9 @@
 
   function accEmpRowHtml(r) {
     var cur = r.currency || "TRY";
-    var rowCls = r.status === "left" ? "acc-emp-row-left" : "";
+    var isOffice = accIsOfficeEmployee(r);
+    var rowCls = "acc-emp-row " + (isOffice ? "acc-emp-row-office" : "acc-emp-row-ops");
+    if (r.status === "left") rowCls += " acc-emp-row-left";
     var deptOpts = accEmployeeDepartments.map(function (d) {
       return { value: d.name, label: d.name };
     });
@@ -1487,10 +1501,10 @@
       : '<span class="muted">—</span>';
     var salaryCell = hidden
       ? accHiddenMoney()
-      : ('<div style="display:flex;align-items:center;gap:0.25rem;">' +
+      : ('<div class="acc-emp-salary-cell">' +
         accEmpInputHtml("salary", r.salary, r.id, "acc-emp-inline-salary", "number", "0.01") +
-        '<small class="muted">' + accEsc(cur) + "</small></div>" +
-        '<small class="muted">' + accMoney(r.salary_try, "TRY") + " · " + accMoney(r.salary_usd, "USD") + " · " + accMoney(r.salary_eur, "EUR") + "</small>");
+        '<span class="acc-emp-salary-cur">' + accEsc(cur) + "</span></div>" +
+        '<small class="acc-emp-salary-fx muted">' + accMoney(r.salary_try, "TRY") + " · " + accMoney(r.salary_usd, "USD") + " · " + accMoney(r.salary_eur, "EUR") + "</small>");
     var bankCell = hidden
       ? accHiddenMoney()
       : accEmpInputHtml("bank_salary", r.bank_salary || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
@@ -1513,25 +1527,29 @@
       { value: "active", label: "Aktif Çalışıyor" },
       { value: "left", label: "Ayrıldı" }
     ], "acc-emp-status-select " + statusCls);
+    var catBadge = hidden
+      ? accHiddenMoney()
+      : ('<span class="acc-emp-cat-badge acc-emp-cat-' + accEsc(r.salary_category || "other") + '">' +
+        accEsc(accCategoryLabel(r.salary_category)) + "</span>");
     return '<tr class="' + rowCls + '">' +
-      "<td>" + nameCell + "</td>" +
-      "<td>" + refCell + "</td>" +
-      "<td>" + catCell + "</td>" +
-      "<td>" + deptCell + "</td>" +
-      "<td>" + locCell + "</td>" +
-      '<td class="mono">' + startCell + "</td>" +
-      '<td class="mono">' + endCell + "</td>" +
-      "<td>" + salaryCell + "</td>" +
-      "<td>" + bankCell + "</td>" +
-      "<td>" + cryptoCell + "</td>" +
-      "<td>" + advanceCell + "</td>" +
-      "<td>" + bonusCell + "</td>" +
-      "<td>" + remainCell + "</td>" +
-      "<td>" + payInfoCell + "</td>" +
-      "<td>" + accrualCell + "</td>" +
-      "<td>" + netCell + "</td>" +
-      "<td>" + statusCell + "</td>" +
-      '<td><button class="btn btn-sm btn-danger" data-del-emp="' + r.id + '">Sil</button></td></tr>';
+      '<td class="acc-emp-col-sticky acc-emp-col-identity">' + nameCell + "</td>" +
+      '<td class="acc-emp-col-identity">' + refCell + "</td>" +
+      '<td class="acc-emp-col-identity">' + catBadge + (hidden ? "" : ('<div class="acc-emp-cat-select">' + catCell + "</div>")) + "</td>" +
+      '<td class="acc-emp-col-identity">' + deptCell + "</td>" +
+      '<td class="acc-emp-col-identity">' + locCell + "</td>" +
+      '<td class="acc-emp-col-identity mono">' + startCell + "</td>" +
+      '<td class="acc-emp-col-identity mono">' + endCell + "</td>" +
+      '<td class="acc-emp-col-money">' + salaryCell + "</td>" +
+      '<td class="acc-emp-col-money">' + bankCell + "</td>" +
+      '<td class="acc-emp-col-money">' + cryptoCell + "</td>" +
+      '<td class="acc-emp-col-money">' + advanceCell + "</td>" +
+      '<td class="acc-emp-col-money">' + bonusCell + "</td>" +
+      '<td class="acc-emp-col-money">' + remainCell + "</td>" +
+      '<td class="acc-emp-col-money">' + payInfoCell + "</td>" +
+      '<td class="acc-emp-col-accrual">' + accrualCell + "</td>" +
+      '<td class="acc-emp-col-accrual">' + netCell + "</td>" +
+      '<td class="acc-emp-col-action">' + statusCell + "</td>" +
+      '<td class="acc-emp-col-action"><button class="btn btn-sm btn-danger acc-emp-del" data-del-emp="' + r.id + '" title="Sil">×</button></td></tr>';
   }
 
   function accBindEmployeeInlineEditors(tbody) {
@@ -1578,12 +1596,40 @@
     var tbody = document.getElementById("acc-emp-table");
     var filtered = accFilteredEmployees();
     var ordered = accOrderEmployees(filtered);
-    var activeRows = ordered.filter(function (r) { return r.status === "active"; });
-    var leftRows = ordered.filter(function (r) { return r.status === "left"; });
     var cols = 18;
+    var groups = [
+      {
+        type: "office-active",
+        icon: "🏢",
+        label: "Ofis Personeli",
+        sub: "Aktif — banka / kripto / avans dağılımı",
+        rows: ordered.filter(function (r) { return r.status === "active" && accIsOfficeEmployee(r); })
+      },
+      {
+        type: "ops-active",
+        icon: "⚡",
+        label: "Operasyon Personeli",
+        sub: "Aktif — Türkiye & kripto ekipleri",
+        rows: ordered.filter(function (r) { return r.status === "active" && !accIsOfficeEmployee(r); })
+      },
+      {
+        type: "office-left",
+        icon: "🏢",
+        label: "Ofis — İşten Ayrılanlar",
+        sub: "",
+        rows: ordered.filter(function (r) { return r.status === "left" && accIsOfficeEmployee(r); })
+      },
+      {
+        type: "ops-left",
+        icon: "⚡",
+        label: "Operasyon — İşten Ayrılanlar",
+        sub: "",
+        rows: ordered.filter(function (r) { return r.status === "left" && !accIsOfficeEmployee(r); })
+      }
+    ];
 
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="' + cols + '" class="empty">' +
+      tbody.innerHTML = '<tr><td colspan="' + cols + '" class="empty acc-emp-empty">' +
         (accData["acc-emp"].rows.length ? "Bu dönemde personel yok" : "Personel yok") + "</td></tr>";
       accUpdateFoot("acc-emp", 0, "personel");
       accUpdateEmpPayrollTotals([]);
@@ -1591,14 +1637,11 @@
     }
 
     var html = "";
-    if (activeRows.length) {
-      html += '<tr class="acc-emp-section acc-emp-section-active"><td colspan="' + cols + '">● Aktif Çalışanlar (' + activeRows.length + ")</td></tr>";
-      html += activeRows.map(accEmpRowHtml).join("");
-    }
-    if (leftRows.length) {
-      html += '<tr class="acc-emp-section acc-emp-section-left"><td colspan="' + cols + '">● İşten Ayrılanlar (' + leftRows.length + ")</td></tr>";
-      html += leftRows.map(accEmpRowHtml).join("");
-    }
+    groups.forEach(function (g) {
+      if (!g.rows.length) return;
+      html += accEmpSectionHtml(cols, g.type, g.icon, g.label, g.rows.length, g.sub);
+      html += g.rows.map(accEmpRowHtml).join("");
+    });
     tbody.innerHTML = html;
 
     accBindEmployeeInlineEditors(tbody);
