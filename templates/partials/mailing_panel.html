@@ -1,0 +1,273 @@
+<div id="module-mailing-panel" class="module-panel" hidden>
+  <div class="topbar">
+    <div>
+      <h2>Mailing <span class="role-badge" id="mail-role-badge"></span></h2>
+      <p>CRM · şablon · kampanya · IVR tetikleme · raporlar</p>
+    </div>
+    <div class="live-pill" id="mail-provider-pill" style="background:var(--amber);border-color:rgba(245,158,11,0.35);color:var(--amber);">Stub mod</div>
+  </div>
+
+  <div class="acc-tabs" id="mail-tabs">
+    <button type="button" class="acc-tab active" data-mail-tab="dashboard" data-perm-any="mailing.dashboard,module.mailing">Özet</button>
+    <button type="button" class="acc-tab" data-mail-tab="crm" data-perm-any="mailing.crm,module.mailing">CRM</button>
+    <button type="button" class="acc-tab" data-mail-tab="templates" data-perm-any="mailing.templates,module.mailing">Şablonlar</button>
+    <button type="button" class="acc-tab" data-mail-tab="campaigns" data-perm-any="mailing.campaigns,module.mailing">Kampanyalar</button>
+    <button type="button" class="acc-tab" data-mail-tab="ivr" data-perm-any="mailing.ivr,module.mailing">IVR</button>
+    <button type="button" class="acc-tab" data-mail-tab="reports" data-perm-any="mailing.reports,module.mailing">Raporlar</button>
+    <button type="button" class="acc-tab" data-mail-tab="settings" data-perm-any="mailing.settings,module.mailing">Ayarlar</button>
+  </div>
+
+  <!-- Özet -->
+  <div class="acc-pane active" id="mail-pane-dashboard" data-mail-pane="dashboard">
+    <section class="kpi-grid acc-kpi-grid">
+      <div class="kpi"><div class="val" id="mail-kpi-contacts">—</div><div class="lbl">Kontak</div><div class="sub muted" id="mail-kpi-contacts-sub"></div></div>
+      <div class="kpi cyan"><div class="val" id="mail-kpi-campaigns">—</div><div class="lbl">Kampanya</div></div>
+      <div class="kpi green"><div class="val" id="mail-kpi-sent">—</div><div class="lbl">İletilen / Simüle</div><div class="sub muted" id="mail-kpi-sent-sub"></div></div>
+      <div class="kpi amber"><div class="val" id="mail-kpi-ivr">—</div><div class="lbl">IVR Olayı</div></div>
+    </section>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Domain durumu</span><span class="muted" style="font-size:0.72rem;">DNS / DirectMail doğrulama sonra</span></div>
+      <div class="card-body">
+        <div class="acc-chip-list" id="mail-domain-chips"><span class="muted">Yükleniyor…</span></div>
+        <p class="hint" style="margin-top:0.75rem;" id="mail-dash-note"></p>
+      </div>
+    </section>
+  </div>
+
+  <!-- CRM -->
+  <div class="acc-pane" id="mail-pane-crm" data-mail-pane="crm" hidden>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Yeni kontak</span></div>
+      <div class="card-body">
+        <form id="mail-contact-form" class="form-row-4">
+          <div><label>E-posta</label><input type="email" id="mail-c-email" required placeholder="ornek@mail.com"></div>
+          <div><label>Ad</label><input type="text" id="mail-c-name" placeholder="Ad Soyad"></div>
+          <div><label>Telefon</label><input type="text" id="mail-c-phone" placeholder="+90…"></div>
+          <div><label>Etiketler</label><input type="text" id="mail-c-tags" placeholder="vip, ivr"></div>
+          <div style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button type="submit" class="btn btn-primary">Ekle</button>
+            <button type="button" class="btn" id="mail-btn-import-csv">CSV İçe Aktar</button>
+          </div>
+        </form>
+        <div id="mail-csv-box" hidden style="margin-top:0.85rem;">
+          <label>CSV (email, name, phone, tags)</label>
+          <textarea id="mail-csv-input" rows="5" placeholder="email,name,phone,tags&#10;a@b.com,Ali,+90555,vip"></textarea>
+          <div style="margin-top:0.5rem;display:flex;gap:0.5rem;">
+            <input type="text" id="mail-csv-tag" placeholder="Varsayılan etiket (opsiyonel)" style="max-width:220px;">
+            <button type="button" class="btn btn-primary" id="mail-csv-submit">İçe aktar</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <span>Kontaklar</span>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+          <input type="search" id="mail-contact-q" placeholder="Ara…" style="width:160px;">
+          <select id="mail-contact-tag-filter" style="width:auto;min-width:120px;"><option value="">Tüm etiketler</option></select>
+          <button type="button" class="btn btn-sm" id="mail-contacts-refresh">Yenile</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>E-posta</th><th>Ad</th><th>Telefon</th><th>Etiket</th><th>Kaynak</th><th></th></tr></thead>
+            <tbody id="mail-contacts-table"><tr><td colspan="6" class="empty">Veri yok</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Şablonlar -->
+  <div class="acc-pane" id="mail-pane-templates" data-mail-pane="templates" hidden>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span id="mail-tpl-form-title">Yeni şablon</span></div>
+      <div class="card-body">
+        <input type="hidden" id="mail-tpl-id" value="">
+        <form id="mail-tpl-form">
+          <div class="form-row-4" style="margin-bottom:0.75rem;">
+            <div><label>Ad</label><input type="text" id="mail-tpl-name" required placeholder="Hoş geldin"></div>
+            <div style="grid-column:span 3;"><label>Konu</label><input type="text" id="mail-tpl-subject" placeholder="Merhaba {{name}}"></div>
+          </div>
+          <div style="margin-bottom:0.75rem;">
+            <label>HTML gövde <span class="muted">({{name}}, {{email}}, {{phone}})</span></label>
+            <textarea id="mail-tpl-html" rows="6" placeholder="<p>Merhaba {{name}},</p>"></textarea>
+          </div>
+          <div style="margin-bottom:0.75rem;">
+            <label>Metin gövde</label>
+            <textarea id="mail-tpl-text" rows="3" placeholder="Merhaba {{name}},"></textarea>
+          </div>
+          <div style="display:flex;gap:0.5rem;">
+            <button type="submit" class="btn btn-primary">Kaydet</button>
+            <button type="button" class="btn" id="mail-tpl-reset">Temizle</button>
+          </div>
+        </form>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><span>Kayıtlı şablonlar</span><button type="button" class="btn btn-sm" id="mail-tpl-refresh">Yenile</button></div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Ad</th><th>Konu</th><th>Güncelleme</th><th></th></tr></thead>
+            <tbody id="mail-tpl-table"><tr><td colspan="4" class="empty">Veri yok</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Kampanyalar -->
+  <div class="acc-pane" id="mail-pane-campaigns" data-mail-pane="campaigns" hidden>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Yeni toplu kampanya</span></div>
+      <div class="card-body">
+        <form id="mail-camp-form" class="form-row-4">
+          <div><label>Kampanya adı</label><input type="text" id="mail-camp-name" required placeholder="Mart VIP"></div>
+          <div><label>Şablon</label><select id="mail-camp-tpl" required></select></div>
+          <div><label>Domain</label><select id="mail-camp-domain" required></select></div>
+          <div><label>Etiket filtresi</label><input type="text" id="mail-camp-tag" placeholder="boş = tüm aktif"></div>
+          <div style="grid-column:1/-1;"><label>Not</label><input type="text" id="mail-camp-notes" placeholder="opsiyonel"></div>
+          <div style="grid-column:1/-1;"><button type="submit" class="btn btn-primary">Oluştur (taslak)</button></div>
+        </form>
+        <p class="hint" style="margin-top:0.5rem;">Oluşturunca alıcılar CRM’den eklenir. “Kuyruğa al” ile stub gönderim kayıtları üretilir.</p>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><span>Kampanyalar</span><button type="button" class="btn btn-sm" id="mail-camp-refresh">Yenile</button></div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Ad</th><th>Durum</th><th>Alıcı</th><th>Oluşturma</th><th></th></tr></thead>
+            <tbody id="mail-camp-table"><tr><td colspan="5" class="empty">Veri yok</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- IVR -->
+  <div class="acc-pane" id="mail-pane-ivr" data-mail-pane="ivr" hidden>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>IVR kuralı — telefonu açana mail</span></div>
+      <div class="card-body">
+        <input type="hidden" id="mail-ivr-rule-id" value="">
+        <form id="mail-ivr-form" class="form-row-4">
+          <div><label>Kural adı</label><input type="text" id="mail-ivr-name"></div>
+          <div><label>Şablon</label><select id="mail-ivr-tpl"></select></div>
+          <div><label>Domain</label><select id="mail-ivr-domain"></select></div>
+          <div><label>Gecikme (sn)</label><input type="number" id="mail-ivr-delay" min="0" value="0"></div>
+          <div style="display:flex;align-items:flex-end;gap:0.75rem;">
+            <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
+              <input type="checkbox" id="mail-ivr-active"> Aktif
+            </label>
+            <button type="submit" class="btn btn-primary">Kaydet</button>
+          </div>
+        </form>
+        <p class="hint" style="margin-top:0.75rem;">
+          Webhook: <code id="mail-ivr-webhook-url">POST /api/mailing/webhooks/ivr</code>
+          · Header: <code>X-Mailing-Webhook-Secret</code>
+          · Body: <code>{"phone":"+90…","email":"…"}</code>
+        </p>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><span>IVR olayları</span><button type="button" class="btn btn-sm" id="mail-ivr-refresh">Yenile</button></div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Zaman</th><th>Telefon</th><th>E-posta</th><th>Durum</th><th>Hata</th></tr></thead>
+            <tbody id="mail-ivr-table"><tr><td colspan="5" class="empty">Veri yok</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Raporlar -->
+  <div class="acc-pane" id="mail-pane-reports" data-mail-pane="reports" hidden>
+    <section class="kpi-grid acc-kpi-grid" style="margin-bottom:1rem;">
+      <div class="kpi green"><div class="val" id="mail-rep-delivered">—</div><div class="lbl">İletilen / Simüle</div></div>
+      <div class="kpi amber"><div class="val" id="mail-rep-queued">—</div><div class="lbl">Kuyruk</div></div>
+      <div class="kpi rose"><div class="val" id="mail-rep-failed">—</div><div class="lbl">Başarısız</div></div>
+      <div class="kpi cyan"><div class="val" id="mail-rep-opened">—</div><div class="lbl">Açılma (stub)</div></div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <span>Gönderim logları</span>
+        <div style="display:flex;gap:0.5rem;">
+          <select id="mail-rep-channel" style="width:auto;">
+            <option value="">Tüm kanallar</option>
+            <option value="bulk">Kampanya</option>
+            <option value="ivr">IVR</option>
+          </select>
+          <select id="mail-rep-status" style="width:auto;">
+            <option value="">Tüm durumlar</option>
+            <option value="simulated">simulated</option>
+            <option value="queued">queued</option>
+            <option value="sent">sent</option>
+            <option value="failed">failed</option>
+          </select>
+          <button type="button" class="btn btn-sm" id="mail-rep-refresh">Yenile</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Zaman</th><th>Kanal</th><th>Alıcı</th><th>Konu</th><th>Durum</th><th>Msg ID</th></tr></thead>
+            <tbody id="mail-rep-table"><tr><td colspan="6" class="empty">Veri yok</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Ayarlar -->
+  <div class="acc-pane" id="mail-pane-settings" data-mail-pane="settings" hidden>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Gönderim sağlayıcı (Alibaba DirectMail)</span></div>
+      <div class="card-body">
+        <form id="mail-settings-form" class="form-row-4">
+          <div>
+            <label>Mod</label>
+            <select id="mail-set-mode">
+              <option value="stub">Stub (simülasyon)</option>
+              <option value="smtp">SMTP (DirectMail)</option>
+            </select>
+          </div>
+          <div><label>SMTP Host</label><input type="text" id="mail-set-host" placeholder="smtpdm.aliyun.com"></div>
+          <div><label>Port</label><input type="text" id="mail-set-port" placeholder="465"></div>
+          <div><label>SMTP User</label><input type="text" id="mail-set-user" placeholder="noreply@domain.com"></div>
+          <div><label>SMTP Password</label><input type="password" id="mail-set-pass" placeholder="boş bırak = değiştirme" autocomplete="new-password"></div>
+          <div><label>Varsayılan domain ID</label><input type="text" id="mail-set-default-domain" placeholder="1"></div>
+          <div style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+            <button type="submit" class="btn btn-primary">Ayarları kaydet</button>
+            <span class="muted" id="mail-set-pass-hint" style="font-size:0.72rem;"></span>
+          </div>
+        </form>
+      </div>
+    </section>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Webhook secret (IVR)</span></div>
+      <div class="card-body">
+        <p class="muted" style="font-size:0.8rem;margin-bottom:0.5rem;">Masked: <code id="mail-set-webhook-masked">—</code></p>
+        <button type="button" class="btn" id="mail-btn-rotate-secret">Secret yenile</button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><span>Gönderim domainleri</span></div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Domain</th><th>From</th><th>Durum</th><th>DNS</th><th>Not</th><th></th></tr></thead>
+            <tbody id="mail-domains-table"><tr><td colspan="6" class="empty">Veri yok</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="hint">vipozelileti.com · vippozelileti.com · vipppozelileti.com — NS henüz yönlendirilmedi. Alibaba onayı + DNS sonrası SPF/DKIM eklenecek.</p>
+      </div>
+    </section>
+  </div>
+</div>

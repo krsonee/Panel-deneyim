@@ -1646,12 +1646,14 @@ from accounting_routes import create_accounting_blueprint
 from smartico_routes import create_smartico_blueprint
 from blink_routes import create_blink_blueprint
 from makrolink_routes import create_makrolink_blueprint
+from mailing_routes import create_mailing_blueprint
 import makrolink_api
 
 app.register_blueprint(create_accounting_blueprint(permission_required))
 app.register_blueprint(create_smartico_blueprint(permission_required, admin_only_required))
 app.register_blueprint(create_blink_blueprint(permission_required, admin_only_required))
 app.register_blueprint(create_makrolink_blueprint(permission_required, admin_only_required))
+app.register_blueprint(create_mailing_blueprint(permission_required))
 
 
 @app.before_request
