@@ -411,7 +411,7 @@ def fetch_media_report(conn, period="all", force=False):
                 "deposit_count": 0,
                 "deposit_total": 0.0,
                 "commissions_total": 0.0,
-                "adjustments_total": 0.0,
+                "bonus_total": 0.0,
                 "balance": 0.0,
             }
         m = merged[key]
@@ -422,14 +422,14 @@ def fetch_media_report(conn, period="all", force=False):
         m["deposit_count"] += _num(r.get("deposit_count"))
         m["deposit_total"] += _num(r.get("deposit_total"))
         m["commissions_total"] += _num(r.get("commissions_total"))
-        m["adjustments_total"] += (
-            _num(r.get("adjustments")) + _num(r.get("adjustment_affiliate")) + _num(r.get("adjustment_registration"))
-        )
+        # bonus_amount = oyunculara/uyelere verilen bonus tutari (adjustments alani
+        # affiliate komisyon duzeltmesidir, bonusla ilgisi yok - onceki hatali versiyon onu kullaniyordu)
+        m["bonus_total"] += _num(r.get("bonus_amount"))
         m["balance"] += _num(r.get("balance"))
 
     rows = sorted(merged.values(), key=lambda x: x["visit_count"], reverse=True)
     for row in rows:
-        for f in ("ftd_total", "deposit_total", "commissions_total", "adjustments_total", "balance"):
+        for f in ("ftd_total", "deposit_total", "commissions_total", "bonus_total", "balance"):
             row[f] = round(row[f], 2)
 
     summary = _empty_summary()
@@ -440,10 +440,10 @@ def fetch_media_report(conn, period="all", force=False):
         summary["deposit_count"] += row["deposit_count"]
         summary["deposit_total"] += row["deposit_total"]
         summary["commissions_total"] += row["commissions_total"]
-        summary["adjustments_total"] += row["adjustments_total"]
+        summary["bonus_total"] += row["bonus_total"]
     summary["deposit_total"] = round(summary["deposit_total"], 2)
     summary["commissions_total"] = round(summary["commissions_total"], 2)
-    summary["adjustments_total"] = round(summary["adjustments_total"], 2)
+    summary["bonus_total"] = round(summary["bonus_total"], 2)
 
     meta = (data or {}).get("meta") or {}
     payload = {
@@ -472,5 +472,5 @@ def _empty_summary():
         "deposit_count": 0,
         "deposit_total": 0.0,
         "commissions_total": 0.0,
-        "adjustments_total": 0.0,
+        "bonus_total": 0.0,
     }

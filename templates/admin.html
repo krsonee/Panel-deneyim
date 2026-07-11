@@ -969,7 +969,7 @@
             </div>
             <div class="kpi">
               <div class="val" id="smartico-kpi-bonus">0</div>
-              <div class="lbl">Bonus / Düzeltme</div>
+              <div class="lbl">Üyelere Verilen Bonus</div>
             </div>
           </section>
           <div class="table-wrap" id="smartico-table-wrap" style="display:none;">
@@ -989,7 +989,7 @@
                   <th>İlk Yatırım</th>
                   <th class="col-sortable" data-sort="deposit_total">Toplam Yatırım</th>
                   <th class="col-sortable" data-sort="commissions_total">Komisyon</th>
-                  <th class="col-sortable" data-sort="adjustments_total">Bonus/Düzeltme</th>
+                  <th class="col-sortable" data-sort="bonus_total">Üyelere Verilen Bonus</th>
                 </tr></thead>
                 <tbody id="smartico-table"><tr><td colspan="9" class="empty">Veri yok</td></tr></tbody>
               </table>
@@ -2577,7 +2577,7 @@
           registration_count: function(r) { return r.registration_count || 0; },
           deposit_total: function(r) { return r.deposit_total || 0; },
           commissions_total: function(r) { return r.commissions_total || 0; },
-          adjustments_total: function(r) { return r.adjustments_total || 0; }
+          bonus_total: function(r) { return r.bonus_total || 0; }
         });
         var s = result.summary || {};
         document.getElementById("smartico-kpi-visits").textContent = fmtSmarticoNum(s.visit_count);
@@ -2585,7 +2585,7 @@
         document.getElementById("smartico-kpi-ftd").textContent = fmtSmarticoNum(s.ftd_count);
         document.getElementById("smartico-kpi-deposit").textContent = fmtSmarticoMoney(s.deposit_total) + (result.currency ? " " + result.currency : "");
         var bonusEl = document.getElementById("smartico-kpi-bonus");
-        if (bonusEl) bonusEl.textContent = fmtSmarticoMoney(s.adjustments_total) + (result.currency ? " " + result.currency : "");
+        if (bonusEl) bonusEl.textContent = fmtSmarticoMoney(s.bonus_total) + (result.currency ? " " + result.currency : "");
         var tbody = document.getElementById("smartico-table");
         smarticoRowsById = {};
         updateTableFoot("smartico-table", rows.length);
@@ -2614,7 +2614,7 @@
               '<td>' + fmtSmarticoNum(r.ftd_count) + '</td>' +
               '<td>' + fmtSmarticoMoney(r.deposit_total) + '</td>' +
               '<td>' + fmtSmarticoMoney(r.commissions_total) + '</td>' +
-              '<td>' + (r.adjustments_total ? fmtSmarticoMoney(r.adjustments_total) : '<span class="muted">0</span>') + '</td></tr>';
+              '<td>' + (r.bonus_total ? fmtSmarticoMoney(r.bonus_total) : '<span class="muted">0</span>') + '</td></tr>';
           }).join("");
         }
         setSmarticoView("data");
