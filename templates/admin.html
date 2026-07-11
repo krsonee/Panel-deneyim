@@ -62,7 +62,8 @@
 
     .main { margin-left: var(--sidebar-w); flex: 1; min-width: 0; }
     .main-inner { padding: 1.25rem 1.5rem 2rem; max-width: 1200px; }
-    .main-inner:has(#module-accounting-panel:not([hidden])) { max-width: none; padding-left: 1rem; padding-right: 1rem; }
+    .main-inner:has(#module-accounting-panel:not([hidden])),
+    .main-inner:has(#module-mailing-panel:not([hidden])) { max-width: none; padding-left: 1rem; padding-right: 1rem; }
 
     .topbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.25rem; }
     .topbar h2 { font-size: 1.25rem; font-weight: 700; }
@@ -1214,6 +1215,7 @@
         <div class="nav-label">Modüller</div>
         <button type="button" class="nav-item active" data-module="tracking" data-perm="module.tracking"><span class="icon">📊</span> Link Takip & Analiz</button>
         <button type="button" class="nav-item" data-module="accounting" data-perm="module.accounting"><span class="icon">💰</span> Muhasebe</button>
+        <button type="button" class="nav-item" data-module="mailing" data-perm="module.mailing"><span class="icon">✉️</span> Mailing</button>
         <button type="button" class="nav-item" id="btn-open-settings" data-perm-any="admin.users,module.settings" style="width:100%;border:none;background:none;cursor:pointer;font:inherit;text-align:left;">
           <span class="icon">⚙️</span> Ayarlar
         </button>
@@ -1555,6 +1557,75 @@
           </div>
         </section>
 
+        <section class="card" data-perm="tracking.makrolink">
+          <div class="card-head">
+            <span>MakroLink <span class="muted" style="font-weight:400;font-size:0.72rem;">(makrovip.com · kısa link · tıklama)</span></span>
+            <div class="card-actions">
+              <input id="makrolink-search" placeholder="🔎 Link ara…" style="width:150px;" autocomplete="off">
+              <span class="muted" id="makrolink-updated" style="font-size:0.72rem;"></span>
+              <button type="button" class="btn btn-sm" id="btn-makrolink-settings" data-admin-only="1">⚙️ Ayarlar</button>
+              <button type="button" class="btn btn-sm" id="btn-makrolink-refresh">Yenile</button>
+            </div>
+          </div>
+          <div class="card-body" id="makrolink-settings-box" data-admin-only="1" style="display:none;">
+            <p class="hint">Public domain: <strong>makrovip.com</strong> → bu panele CNAME/A. Kısa URL: <code>https://makrovip.com/AbC123</code> · Panel test: <code>/r/AbC123</code></p>
+            <form id="makrolink-config-form">
+              <div class="form-row-4">
+                <div><label for="makrolink-host">Public host</label><input id="makrolink-host" placeholder="makrovip.com" autocomplete="off"></div>
+                <div><label for="makrolink-scheme">Scheme</label>
+                  <select id="makrolink-scheme"><option value="https">https</option><option value="http">http</option></select>
+                </div>
+                <div><label for="makrolink-ga4">GA4 Measurement ID (ops.)</label><input id="makrolink-ga4" placeholder="G-XXXXXXXX" autocomplete="off"></div>
+                <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+              </div>
+            </form>
+          </div>
+          <div class="card-body">
+            <form id="makrolink-create-form">
+              <div class="form-row-4">
+                <div style="grid-column: span 2;"><label for="makrolink-dest">Hedef URL (Smartico / site)</label>
+                  <input id="makrolink-dest" placeholder="https://… Smartico tracking veya makrobet804…" required autocomplete="off">
+                </div>
+                <div><label for="makrolink-label">Etiket</label><input id="makrolink-label" placeholder="örn. slotbuse FTD" autocomplete="off"></div>
+                <div><label for="makrolink-code">Özel kod (ops.)</label><input id="makrolink-code" placeholder="boş = otomatik" autocomplete="off"></div>
+              </div>
+              <div class="form-row-4" style="margin-top:0.5rem;">
+                <div><label for="makrolink-affid">Affiliate ID</label><input id="makrolink-affid" placeholder="Smartico affid" autocomplete="off"></div>
+                <div><label for="makrolink-ref">Ref kodu</label><input id="makrolink-ref" placeholder="?ref= / tracker" autocomplete="off"></div>
+                <div style="align-self:end"><button type="submit" class="btn btn-primary" id="btn-makrolink-create">Kısalt &amp; kopyala</button></div>
+              </div>
+            </form>
+            <div id="makrolink-created-box" style="display:none;margin-top:0.75rem;padding:0.65rem 0.75rem;border:1px solid var(--border, #333);border-radius:8px;">
+              <div class="muted" style="font-size:0.72rem;margin-bottom:0.25rem;">Son oluşturulan kısa link</div>
+              <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                <a id="makrolink-created-url" href="#" target="_blank" rel="noopener" style="font-weight:600;word-break:break-all;"></a>
+                <button type="button" class="btn btn-sm" id="btn-makrolink-created-copy">Kopyala</button>
+                <span class="muted" style="font-size:0.72rem;">DNS yokken test: <code id="makrolink-created-test"></code></span>
+              </div>
+            </div>
+            <p class="hint" style="margin-top:0.5rem;">Mevcut bl.ink / eski linklere dokunulmaz — sadece yeni kısaltmalar. Hedefe <code>utm_source=makrolink</code> eklenir (yoksa).</p>
+          </div>
+          <div class="table-wrap">
+            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
+            <div class="table-scroll" id="makrolink-table-scroll">
+              <table>
+                <thead><tr>
+                  <th>Kısa Link</th>
+                  <th>Etiket</th>
+                  <th>Hedef</th>
+                  <th>Aff / Ref</th>
+                  <th>Tıklama</th>
+                  <th></th>
+                </tr></thead>
+                <tbody id="makrolink-table"><tr><td colspan="6" class="empty">Henüz link yok</td></tr></tbody>
+              </table>
+            </div>
+            <div class="table-foot">
+              <span class="table-count" id="makrolink-table-count"></span>
+            </div>
+          </div>
+        </section>
+
         <section class="card" data-perm="tracking.blink">
           <div class="card-head">
             <span>bl.ink Link Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(kısa linkler · tıklama · şu an online)</span></span>
@@ -1609,6 +1680,7 @@
         </div><!-- /module-tracking-panel -->
 
         {% include 'partials/accounting_panel.html' %}
+        {% include 'partials/mailing_panel.html' %}
       </div>
     </div>
   </div>
@@ -1790,6 +1862,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="/static/accounting.js?v=20260711i"></script>
+  <script src="/static/mailing.js?v=20260711a"></script>
   <script>
     (function () {
       var API = "";
@@ -1943,19 +2016,26 @@
         localStorage.setItem("makropanel_module", name);
         var trackPanel = document.getElementById("module-tracking-panel");
         var accPanel = document.getElementById("module-accounting-panel");
+        var mailPanel = document.getElementById("module-mailing-panel");
         if (trackPanel) trackPanel.hidden = name !== "tracking";
         if (accPanel) accPanel.hidden = name !== "accounting";
+        if (mailPanel) mailPanel.hidden = name !== "mailing";
         document.querySelectorAll(".nav-item[data-module]").forEach(function(el) {
           el.classList.toggle("active", el.getAttribute("data-module") === name);
         });
         var mobileTitle = document.getElementById("mobile-module-title");
         if (mobileTitle) {
-          mobileTitle.textContent = name === "accounting" ? "Muhasebe" : "Link Takip & Analiz";
+          mobileTitle.textContent = name === "accounting" ? "Muhasebe"
+            : name === "mailing" ? "Mailing"
+            : "Link Takip & Analiz";
         }
         if (typeof window.closeMobileSidebar === "function") window.closeMobileSidebar();
         trackingPollEnabled = name === "tracking";
         if (name === "accounting" && window.MakroAccounting) {
           window.MakroAccounting.onShow();
+        }
+        if (name === "mailing" && window.MakroMailing) {
+          window.MakroMailing.onShow();
         }
       }
 
@@ -2121,11 +2201,20 @@
           if (window.MakroAccounting && window.MakroAccounting.setPermissions) {
             window.MakroAccounting.setPermissions(myPermissions);
           }
+          if (window.MakroMailing && window.MakroMailing.setPermissions) {
+            window.MakroMailing.setPermissions(myPermissions);
+          }
           var badge = document.getElementById("acc-role-badge");
           if (badge) {
             var label = (roleTemplates[myRole] && roleTemplates[myRole].label) || myRole || "";
             badge.textContent = label;
             badge.style.display = label ? "inline-block" : "none";
+          }
+          var mailBadge = document.getElementById("mail-role-badge");
+          if (mailBadge) {
+            var mailLabel = (roleTemplates[myRole] && roleTemplates[myRole].label) || myRole || "";
+            mailBadge.textContent = mailLabel;
+            mailBadge.style.display = mailLabel ? "inline-block" : "none";
           }
           fillRoleSelect("new-user-role", "operator");
           fillRoleSelect("edit-user-role", "operator");
@@ -3225,6 +3314,62 @@
         }).catch(function() {});
       }
 
+      var makrolinkLast = null;
+      var makrolinkInFlight = false;
+
+      function renderMakroLinkTable(links) {
+        makrolinkLast = links || [];
+        var q = (document.getElementById("makrolink-search").value || "").trim().toLowerCase();
+        var rows = makrolinkLast.filter(function(l) {
+          if (!q) return true;
+          return [l.code, l.label, l.destination_url, l.affiliate_id, l.ref_code, l.short_url]
+            .join(" ").toLowerCase().indexOf(q) >= 0;
+        });
+        var tb = document.getElementById("makrolink-table");
+        if (!rows.length) {
+          tb.innerHTML = '<tr><td colspan="6" class="empty">Henüz link yok</td></tr>';
+        } else {
+          tb.innerHTML = rows.map(function(l) {
+            var dest = l.destination_url || "";
+            var destShort = dest.length > 48 ? dest.slice(0, 46) + "…" : dest;
+            var aff = [l.affiliate_id, l.ref_code].filter(Boolean).join(" / ") || "—";
+            return '<tr data-ml-id="' + l.id + '">' +
+              '<td><a href="' + esc(l.short_url) + '" target="_blank" rel="noopener">' + esc(l.short_url) + '</a>' +
+              ' <button type="button" class="btn btn-ghost btn-sm makrolink-copy" data-url="' + esc(l.short_url) + '" title="Kopyala">📋</button></td>' +
+              '<td>' + esc(l.label || "—") + '</td>' +
+              '<td title="' + esc(dest) + '"><code style="font-size:0.72rem;">' + esc(destShort) + '</code></td>' +
+              '<td>' + esc(aff) + '</td>' +
+              '<td><strong>' + (l.clicks || l.click_count || 0) + '</strong></td>' +
+              '<td><button type="button" class="btn btn-danger btn-sm makrolink-del" data-id="' + l.id + '">Sil</button></td></tr>';
+          }).join("");
+        }
+        document.getElementById("makrolink-table-count").textContent = rows.length + " link";
+        document.getElementById("makrolink-updated").textContent = "Son: " + new Date().toLocaleTimeString("tr-TR");
+      }
+
+      function loadMakroLinks() {
+        if (!hasPerm("tracking.makrolink") || makrolinkInFlight) return;
+        makrolinkInFlight = true;
+        fetch(API + "/api/makrolink/links").then(function(r) {
+          if (r.status === 401) { location.href = "/admin/login"; return null; }
+          return r.json();
+        }).then(function(d) {
+          if (!d) return;
+          renderMakroLinkTable(d.links || []);
+        }).catch(function() {}).finally(function() { makrolinkInFlight = false; });
+      }
+
+      function loadMakroLinkConfig() {
+        if (!hasPerm("tracking.makrolink")) return;
+        fetch(API + "/api/makrolink/config").then(function(r) { return r.status === 401 ? null : r.json(); })
+          .then(function(d) {
+            if (!d) return;
+            document.getElementById("makrolink-host").value = d.public_host || "makrovip.com";
+            document.getElementById("makrolink-scheme").value = d.public_scheme || "https";
+            document.getElementById("makrolink-ga4").value = d.ga4_measurement_id || "";
+          }).catch(function() {});
+      }
+
       function refreshLive() {
         if (!trackingPollEnabled || document.hidden || liveInFlight) return;
         var pq = periodQuery();
@@ -3274,6 +3419,9 @@
         if (hasPerm("tracking.blink") && blinkConfigured !== false) {
           jobs.push(Promise.resolve().then(function(){ loadBlinkReport(false); }));
         }
+        if (hasPerm("tracking.makrolink")) {
+          jobs.push(Promise.resolve().then(function(){ loadMakroLinks(); }));
+        }
         if (!jobs.length) return;
         dashInFlight = true;
         Promise.all(jobs).catch(function(){}).finally(function(){
@@ -3317,11 +3465,18 @@
         } catch (err) {
           console.error("MakroAccounting.init", err);
         }
+        try {
+          if (window.MakroMailing) window.MakroMailing.init();
+        } catch (err) {
+          console.error("MakroMailing.init", err);
+        }
         loadMe(function() {
           trackingPollEnabled = currentModule === "tracking";
           if (trackingPollEnabled) refreshAll();
           if (!smarticoConfigLoaded) loadSmarticoConfig();
           if (!blinkConfigLoaded) loadBlinkConfig();
+          loadMakroLinkConfig();
+          if (hasPerm("tracking.makrolink")) loadMakroLinks();
           setInterval(refreshLive, REFRESH_LIVE_MS);
           setInterval(refreshDashboard, REFRESH_DASH_MS);
         });
@@ -3504,6 +3659,115 @@
       bindOptional("btn-blink-settings", "click", function() {
         var box = document.getElementById("blink-settings-box");
         box.style.display = box.style.display === "none" ? "" : "none";
+      });
+
+      bindOptional("btn-makrolink-settings", "click", function() {
+        var box = document.getElementById("makrolink-settings-box");
+        box.style.display = box.style.display === "none" ? "" : "none";
+      });
+
+      bindOptional("btn-makrolink-refresh", "click", function() {
+        loadMakroLinks();
+        toast("MakroLink yenileniyor…");
+      });
+
+      bindOptional("makrolink-search", "input", function() {
+        if (makrolinkLast) renderMakroLinkTable(makrolinkLast);
+      });
+
+      bindOptional("makrolink-config-form", "submit", function(e) {
+        e.preventDefault();
+        fetch(API + "/api/makrolink/config", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            public_host: document.getElementById("makrolink-host").value.trim(),
+            public_scheme: document.getElementById("makrolink-scheme").value,
+            ga4_measurement_id: document.getElementById("makrolink-ga4").value.trim()
+          })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (!res.ok) { alert(res.data.error || "Kaydedilemedi."); return; }
+            document.getElementById("makrolink-settings-box").style.display = "none";
+            toast("MakroLink ayarları kaydedildi");
+            loadMakroLinks();
+          });
+      });
+
+      bindOptional("makrolink-create-form", "submit", function(e) {
+        e.preventDefault();
+        var dest = document.getElementById("makrolink-dest").value.trim();
+        if (!dest) { alert("Hedef URL gir."); return; }
+        var btn = document.getElementById("btn-makrolink-create");
+        if (btn) { btn.disabled = true; btn.textContent = "Oluşturuluyor…"; }
+        fetch(API + "/api/makrolink/links", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            destination_url: dest,
+            label: document.getElementById("makrolink-label").value.trim(),
+            code: document.getElementById("makrolink-code").value.trim() || null,
+            affiliate_id: document.getElementById("makrolink-affid").value.trim(),
+            ref_code: document.getElementById("makrolink-ref").value.trim()
+          })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (btn) { btn.disabled = false; btn.textContent = "Kısalt & kopyala"; }
+            if (!res.ok) { alert(res.data.error || "Oluşturulamadı."); return; }
+            document.getElementById("makrolink-dest").value = "";
+            document.getElementById("makrolink-label").value = "";
+            document.getElementById("makrolink-code").value = "";
+            document.getElementById("makrolink-affid").value = "";
+            document.getElementById("makrolink-ref").value = "";
+            var link = res.data.link || {};
+            var shortUrl = link.short_url || "";
+            var box = document.getElementById("makrolink-created-box");
+            var a = document.getElementById("makrolink-created-url");
+            a.href = shortUrl;
+            a.textContent = shortUrl;
+            document.getElementById("makrolink-created-test").textContent = "/r/" + (link.code || "");
+            box.style.display = "";
+            if (shortUrl && navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(shortUrl).then(function() {
+                toast("Kısa link kopyalandı");
+              }).catch(function() { toast("Link oluşturuldu"); });
+            } else {
+              toast("Link oluşturuldu");
+            }
+            loadMakroLinks();
+          })
+          .catch(function() {
+            if (btn) { btn.disabled = false; btn.textContent = "Kısalt & kopyala"; }
+            alert("İstek başarısız.");
+          });
+      });
+
+      bindOptional("btn-makrolink-created-copy", "click", function() {
+        var url = (document.getElementById("makrolink-created-url").textContent || "").trim();
+        if (!url) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(url).then(function() { toast("Kopyalandı"); });
+        } else {
+          prompt("Kopyala:", url);
+        }
+      });
+
+      bindOptional("makrolink-table", "click", function(e) {
+        var copyBtn = e.target.closest ? e.target.closest(".makrolink-copy") : null;
+        if (copyBtn) {
+          var url = copyBtn.getAttribute("data-url") || "";
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(function() { toast("Kopyalandı"); });
+          } else {
+            prompt("Kopyala:", url);
+          }
+          return;
+        }
+        var delBtn = e.target.closest ? e.target.closest(".makrolink-del") : null;
+        if (delBtn) {
+          if (!confirm("Bu kısa link pasife alınacak. Devam?")) return;
+          fetch(API + "/api/makrolink/links/" + delBtn.getAttribute("data-id"), { method: "DELETE" })
+            .then(function(r) { return r.json(); })
+            .then(function() { toast("Pasife alındı"); loadMakroLinks(); });
+        }
       });
 
       bindOptional("btn-blink-refresh", "click", function() {

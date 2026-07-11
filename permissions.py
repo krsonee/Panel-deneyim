@@ -7,6 +7,8 @@ PERMISSION_CATALOG = [
      "desc": "Ana takip modülüne erişim"},
     {"key": "module.accounting", "label": "Muhasebe", "group": "Modüller",
      "desc": "Muhasebe modülüne erişim"},
+    {"key": "module.mailing", "label": "Mailing", "group": "Modüller",
+     "desc": "Kampanya, CRM, şablon ve IVR mailing modülü"},
     {"key": "module.settings", "label": "Ayarlar", "group": "Modüller",
      "desc": "Panel ayarları ekranı"},
     {"key": "tracking.dashboard", "label": "Dashboard & Grafikler", "group": "Link Takip",
@@ -23,6 +25,8 @@ PERMISSION_CATALOG = [
      "desc": "Smartico API entegrasyonu, ayarları ve rapor görüntüleme"},
     {"key": "tracking.blink", "label": "bl.ink Link Raporu", "group": "Link Takip",
      "desc": "bl.ink API entegrasyonu, ayarları ve link/online rapor görüntüleme"},
+    {"key": "tracking.makrolink", "label": "MakroLink (makrovip.com)", "group": "Link Takip",
+     "desc": "Kendi kısa link oluşturma, tıklama raporu ve Smartico URL kısaltma"},
     {"key": "accounting.dashboard", "label": "Muhasebe Özet", "group": "Muhasebe",
      "desc": "Muhasebe dashboard KPI kartları"},
     {"key": "accounting.transactions", "label": "Yatırım / Çekim", "group": "Muhasebe",
@@ -39,13 +43,38 @@ PERMISSION_CATALOG = [
      "desc": "Ofis personeli maaş tutarları, dağılım ve toplamları"},
     {"key": "accounting.invoices", "label": "Fatura Hesaplama", "group": "Muhasebe",
      "desc": "Fatura şablonu alanı (yakında)"},
+    {"key": "mailing.dashboard", "label": "Mailing Özet", "group": "Mailing",
+     "desc": "Mailing dashboard KPI kartları"},
+    {"key": "mailing.crm", "label": "CRM Kontaklar", "group": "Mailing",
+     "desc": "Kontak listesi, etiket ve CSV import"},
+    {"key": "mailing.templates", "label": "Mail Şablonları", "group": "Mailing",
+     "desc": "Konu ve gövde şablonları"},
+    {"key": "mailing.campaigns", "label": "Kampanyalar", "group": "Mailing",
+     "desc": "Toplu kampanya oluşturma ve kuyruğa alma"},
+    {"key": "mailing.ivr", "label": "IVR Tetikleme", "group": "Mailing",
+     "desc": "IVR cevap sonrası mail kuralları ve olaylar"},
+    {"key": "mailing.reports", "label": "Mailing Raporları", "group": "Mailing",
+     "desc": "Gönderim logları ve özet raporlar"},
+    {"key": "mailing.settings", "label": "Mailing Ayarları", "group": "Mailing",
+     "desc": "Domain, SMTP/DirectMail ve webhook ayarları"},
     {"key": "admin.users", "label": "Kullanıcı Yönetimi", "group": "Yönetim",
      "desc": "Admin ekleme, silme ve yetki düzenleme"},
 ]
 
 ALL_PERMISSION_KEYS = [p["key"] for p in PERMISSION_CATALOG]
 
-MODULE_KEYS = ("module.tracking", "module.accounting", "module.settings")
+MODULE_KEYS = ("module.tracking", "module.accounting", "module.mailing", "module.settings")
+
+MAILING_PERMS = (
+    "module.mailing",
+    "mailing.dashboard",
+    "mailing.crm",
+    "mailing.templates",
+    "mailing.campaigns",
+    "mailing.ivr",
+    "mailing.reports",
+    "mailing.settings",
+)
 
 ROLE_TEMPLATES = {
     "superadmin": {
@@ -59,7 +88,7 @@ ROLE_TEMPLATES = {
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.domains",
             "tracking.players", "tracking.reports", "tracking.export", "tracking.smartico",
-            "tracking.blink",
+            "tracking.blink", "tracking.makrolink",
         ],
     },
     "accountant": {
@@ -71,12 +100,18 @@ ROLE_TEMPLATES = {
             "accounting.payroll", "accounting.payroll.office_salaries", "accounting.invoices",
         ],
     },
+    "mailer": {
+        "label": "Mailing Operatörü",
+        "desc": "Mailing modülünde tam yetki",
+        "permissions": list(MAILING_PERMS),
+    },
     "viewer": {
         "label": "İzleyici",
         "desc": "Sadece görüntüleme, düzenleme yok",
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.players", "tracking.reports", "tracking.smartico",
-            "tracking.blink",
+            "tracking.blink", "tracking.makrolink",
+            "module.mailing", "mailing.dashboard", "mailing.reports",
         ],
     },
     "affiliate_manager": {
@@ -84,7 +119,7 @@ ROLE_TEMPLATES = {
         "desc": "Raporlar ve dashboard",
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.reports", "tracking.smartico",
-            "tracking.blink",
+            "tracking.blink", "tracking.makrolink",
         ],
     },
     "custom": {
@@ -128,6 +163,8 @@ def ensure_module_parents(permissions):
         perms.append("module.tracking")
     if any(p.startswith("accounting.") for p in perms) and "module.accounting" not in perms:
         perms.append("module.accounting")
+    if any(p.startswith("mailing.") for p in perms) and "module.mailing" not in perms:
+        perms.append("module.mailing")
     if "admin.users" in perms and "module.settings" not in perms:
         perms.append("module.settings")
     return perms
@@ -163,6 +200,8 @@ def has_any_module_access(user_permissions):
         return True
     if any(p.startswith("accounting.") for p in perms):
         return True
+    if any(p.startswith("mailing.") for p in perms):
+        return True
     if "admin.users" in perms:
         return True
     return False
@@ -171,12 +210,14 @@ def has_any_module_access(user_permissions):
 def available_modules(user_permissions):
     perms = normalize_permissions(user_permissions)
     if "*" in perms:
-        return ["tracking", "accounting", "settings"]
+        return ["tracking", "accounting", "mailing", "settings"]
     mods = []
     if "module.tracking" in perms or any(p.startswith("tracking.") for p in perms):
         mods.append("tracking")
     if "module.accounting" in perms or any(p.startswith("accounting.") for p in perms):
         mods.append("accounting")
+    if "module.mailing" in perms or any(p.startswith("mailing.") for p in perms):
+        mods.append("mailing")
     if "module.settings" in perms or "admin.users" in perms:
         mods.append("settings")
     return mods
@@ -188,4 +229,6 @@ def default_module_for_user(user_permissions):
         return "tracking"
     if "accounting" in mods:
         return "accounting"
+    if "mailing" in mods:
+        return "mailing"
     return mods[0] if mods else None

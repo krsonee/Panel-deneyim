@@ -1645,10 +1645,41 @@ def static_files(filename):
 from accounting_routes import create_accounting_blueprint
 from smartico_routes import create_smartico_blueprint
 from blink_routes import create_blink_blueprint
+from makrolink_routes import create_makrolink_blueprint
+import makrolink_api
 
 app.register_blueprint(create_accounting_blueprint(permission_required))
 app.register_blueprint(create_smartico_blueprint(permission_required, admin_only_required))
 app.register_blueprint(create_blink_blueprint(permission_required, admin_only_required))
+app.register_blueprint(create_makrolink_blueprint(permission_required, admin_only_required))
+
+
+@app.before_request
+def makrolink_host_short_codes():
+    """makrovip.com/AbC123 → redirect (panel host'taki /admin vs. dokunulmaz)."""
+    host = (request.host or "").split(":")[0].strip().lower()
+    path = (request.path or "/").strip("/")
+    if not path or "/" in path:
+        return None
+    if path.lower() in makrolink_api.RESERVED_PATHS:
+        return None
+    # Only short-code paths on the configured public host (or www)
+    try:
+        with closing(get_db()) as conn:
+            if not makrolink_api.is_makrolink_host(host, conn):
+                return None
+            dest = makrolink_api.record_click_and_resolve(
+                conn,
+                path,
+                ip=request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip(),
+                user_agent=request.headers.get("User-Agent", ""),
+                referer=request.headers.get("Referer", ""),
+            )
+    except Exception:
+        return None
+    if not dest:
+        return ("Link bulunamadı veya pasif.", 404)
+    return redirect(dest, code=302)
 
 
 def _run_startup():

@@ -304,6 +304,7 @@ def init_schema(conn):
     for sql in statements:
         execute(conn, sql)
     init_accounting_schema(conn)
+    init_mailing_schema(conn)
     conn.commit()
 
 
@@ -513,6 +514,119 @@ def migrate_blink(conn):
                 ref_code TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
             )
+            """,
+        )
+    conn.commit()
+
+
+def migrate_makrolink(conn):
+    execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS makrolink_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        )
+        """,
+    )
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS makrolink_links (
+                id SERIAL PRIMARY KEY,
+                code TEXT NOT NULL UNIQUE,
+                destination_url TEXT NOT NULL,
+                label TEXT NOT NULL DEFAULT '',
+                affiliate_id TEXT NOT NULL DEFAULT '',
+                smartico_link_id TEXT NOT NULL DEFAULT '',
+                ref_code TEXT NOT NULL DEFAULT '',
+                click_count INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS makrolink_clicks (
+                id SERIAL PRIMARY KEY,
+                link_id INTEGER NOT NULL REFERENCES makrolink_links(id),
+                code TEXT NOT NULL,
+                clicked_at TEXT NOT NULL,
+                ip_hash TEXT NOT NULL DEFAULT '',
+                user_agent TEXT NOT NULL DEFAULT '',
+                referer TEXT NOT NULL DEFAULT ''
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS makrolink_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL UNIQUE,
+                destination_url TEXT NOT NULL,
+                label TEXT NOT NULL DEFAULT '',
+                affiliate_id TEXT NOT NULL DEFAULT '',
+                smartico_link_id TEXT NOT NULL DEFAULT '',
+                ref_code TEXT NOT NULL DEFAULT '',
+                click_count INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS makrolink_clicks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                link_id INTEGER NOT NULL,
+                code TEXT NOT NULL,
+                clicked_at TEXT NOT NULL,
+                ip_hash TEXT NOT NULL DEFAULT '',
+                user_agent TEXT NOT NULL DEFAULT '',
+                referer TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (link_id) REFERENCES makrolink_links(id)
+            )
+            """,
+        )
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_makrolink_clicks_link ON makrolink_clicks(link_id)")
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_makrolink_clicks_at ON makrolink_clicks(clicked_at)")
+    # Default public host
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            INSERT INTO makrolink_settings (key, value) VALUES ('public_host', 'makrovip.com')
+            ON CONFLICT (key) DO NOTHING
+            """,
+        )
+        execute(
+            conn,
+            """
+            INSERT INTO makrolink_settings (key, value) VALUES ('public_scheme', 'https')
+            ON CONFLICT (key) DO NOTHING
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('public_host', 'makrovip.com')
+            """,
+        )
+        execute(
+            conn,
+            """
+            INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('public_scheme', 'https')
             """,
         )
     conn.commit()
@@ -773,6 +887,14 @@ def migrate_schema(conn):
             pass
         print(f"⚠️  migrate_blink hata (atlanıyor, panel yine açılır): {exc}")
     try:
+        migrate_makrolink(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_makrolink hata (atlanıyor, panel yine açılır): {exc}")
+    try:
         migrate_ref_labels(conn)
     except Exception as exc:
         try:
@@ -780,6 +902,14 @@ def migrate_schema(conn):
         except Exception:
             pass
         print(f"⚠️  migrate_ref_labels hata (atlanıyor, panel yine açılır): {exc}")
+    try:
+        init_mailing_schema(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  init_mailing_schema hata (atlanıyor, panel yine açılır): {exc}")
     try:
         migrate_float_precision(conn)
     except Exception as exc:
@@ -1465,6 +1595,354 @@ def migrate_admin_users(conn):
                 "UPDATE admin_users SET permissions = ? WHERE id = ?",
                 (json.dumps(perms), row["id"]),
             )
+    conn.commit()
+
+
+MAILING_SEED_DOMAINS = (
+    "vipozelileti.com",
+    "vippozelileti.com",
+    "vipppozelileti.com",
+)
+
+
+def get_mail_setting(conn, key, default=None):
+    val = scalar(conn, "SELECT value FROM mail_settings WHERE key = ?", (key,))
+    return val if val is not None else default
+
+
+def upsert_mail_setting(conn, key, value):
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            INSERT INTO mail_settings (key, value) VALUES (?, ?)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            """,
+            (key, str(value)),
+        )
+    else:
+        execute(conn, "INSERT OR REPLACE INTO mail_settings (key, value) VALUES (?, ?)", (key, str(value)))
+
+
+def seed_mailing_defaults(conn):
+    import secrets
+
+    now = iso(utcnow())
+    for domain in MAILING_SEED_DOMAINS:
+        exists = scalar(conn, "SELECT COUNT(*) FROM mail_domains WHERE domain = ?", (domain,))
+        if not exists:
+            insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_domains (domain, status, from_name, from_local, dns_status, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (domain, "pending", "VIP Özel İleti", "noreply", "unconfigured", "NS henüz yönlendirilmedi", now),
+            )
+    if not get_mail_setting(conn, "webhook_secret"):
+        upsert_mail_setting(conn, "webhook_secret", secrets.token_hex(24))
+    if get_mail_setting(conn, "provider_mode") is None:
+        upsert_mail_setting(conn, "provider_mode", "stub")
+    if get_mail_setting(conn, "smtp_host") is None:
+        upsert_mail_setting(conn, "smtp_host", "")
+    if get_mail_setting(conn, "smtp_port") is None:
+        upsert_mail_setting(conn, "smtp_port", "465")
+    if get_mail_setting(conn, "smtp_user") is None:
+        upsert_mail_setting(conn, "smtp_user", "")
+    if get_mail_setting(conn, "smtp_password") is None:
+        upsert_mail_setting(conn, "smtp_password", "")
+    if get_mail_setting(conn, "default_domain_id") is None:
+        first = fetchone(conn, "SELECT id FROM mail_domains ORDER BY id ASC LIMIT 1")
+        upsert_mail_setting(conn, "default_domain_id", str(first["id"]) if first else "")
+    # Default IVR rule if none
+    rule_count = scalar(conn, "SELECT COUNT(*) FROM mail_ivr_rules") or 0
+    if not rule_count:
+        insert_returning_id(
+            conn,
+            """
+            INSERT INTO mail_ivr_rules (name, active, template_id, domain_id, delay_seconds, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ("IVR cevap sonrası mail", 0, None, None, 0, now),
+        )
+
+
+def init_mailing_schema(conn):
+    if uses_postgres():
+        statements = [
+            """
+            CREATE TABLE IF NOT EXISTS mail_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT ''
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_domains (
+                id SERIAL PRIMARY KEY,
+                domain TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                from_name TEXT NOT NULL DEFAULT '',
+                from_local TEXT NOT NULL DEFAULT 'noreply',
+                dns_status TEXT NOT NULL DEFAULT 'unconfigured',
+                notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_contact_tags (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_contacts (
+                id SERIAL PRIMARY KEY,
+                email TEXT NOT NULL,
+                phone TEXT NOT NULL DEFAULT '',
+                name TEXT NOT NULL DEFAULT '',
+                tags TEXT NOT NULL DEFAULT '[]',
+                source TEXT NOT NULL DEFAULT 'manual',
+                unsubscribed INTEGER NOT NULL DEFAULT 0,
+                notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_templates (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                subject TEXT NOT NULL DEFAULT '',
+                html_body TEXT NOT NULL DEFAULT '',
+                text_body TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_campaigns (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                campaign_type TEXT NOT NULL DEFAULT 'bulk',
+                template_id INTEGER REFERENCES mail_templates(id),
+                domain_id INTEGER REFERENCES mail_domains(id),
+                status TEXT NOT NULL DEFAULT 'draft',
+                tag_filter TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                queued_at TEXT,
+                finished_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_campaign_recipients (
+                id SERIAL PRIMARY KEY,
+                campaign_id INTEGER NOT NULL REFERENCES mail_campaigns(id),
+                contact_id INTEGER NOT NULL REFERENCES mail_contacts(id),
+                status TEXT NOT NULL DEFAULT 'pending',
+                send_id INTEGER,
+                created_at TEXT NOT NULL,
+                UNIQUE(campaign_id, contact_id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_sends (
+                id SERIAL PRIMARY KEY,
+                channel TEXT NOT NULL DEFAULT 'bulk',
+                campaign_id INTEGER REFERENCES mail_campaigns(id),
+                contact_id INTEGER REFERENCES mail_contacts(id),
+                template_id INTEGER REFERENCES mail_templates(id),
+                domain_id INTEGER REFERENCES mail_domains(id),
+                to_email TEXT NOT NULL,
+                to_phone TEXT NOT NULL DEFAULT '',
+                subject TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'queued',
+                provider_msg_id TEXT NOT NULL DEFAULT '',
+                error TEXT NOT NULL DEFAULT '',
+                opened_at TEXT,
+                clicked_at TEXT,
+                sent_at TEXT,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_ivr_rules (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL DEFAULT 'IVR kuralı',
+                active INTEGER NOT NULL DEFAULT 0,
+                template_id INTEGER REFERENCES mail_templates(id),
+                domain_id INTEGER REFERENCES mail_domains(id),
+                delay_seconds INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_ivr_events (
+                id SERIAL PRIMARY KEY,
+                phone TEXT NOT NULL DEFAULT '',
+                email TEXT NOT NULL DEFAULT '',
+                answered_at TEXT,
+                contact_id INTEGER REFERENCES mail_contacts(id),
+                send_id INTEGER REFERENCES mail_sends(id),
+                status TEXT NOT NULL DEFAULT 'received',
+                payload TEXT NOT NULL DEFAULT '{}',
+                error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_mail_contacts_email ON mail_contacts(email)",
+            "CREATE INDEX IF NOT EXISTS idx_mail_contacts_phone ON mail_contacts(phone)",
+            "CREATE INDEX IF NOT EXISTS idx_mail_sends_created ON mail_sends(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_mail_sends_status ON mail_sends(status)",
+            "CREATE INDEX IF NOT EXISTS idx_mail_ivr_events_created ON mail_ivr_events(created_at)",
+        ]
+    else:
+        statements = [
+            """
+            CREATE TABLE IF NOT EXISTS mail_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT ''
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_domains (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                domain TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                from_name TEXT NOT NULL DEFAULT '',
+                from_local TEXT NOT NULL DEFAULT 'noreply',
+                dns_status TEXT NOT NULL DEFAULT 'unconfigured',
+                notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_contact_tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_contacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                phone TEXT NOT NULL DEFAULT '',
+                name TEXT NOT NULL DEFAULT '',
+                tags TEXT NOT NULL DEFAULT '[]',
+                source TEXT NOT NULL DEFAULT 'manual',
+                unsubscribed INTEGER NOT NULL DEFAULT 0,
+                notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                subject TEXT NOT NULL DEFAULT '',
+                html_body TEXT NOT NULL DEFAULT '',
+                text_body TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_campaigns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                campaign_type TEXT NOT NULL DEFAULT 'bulk',
+                template_id INTEGER,
+                domain_id INTEGER,
+                status TEXT NOT NULL DEFAULT 'draft',
+                tag_filter TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                queued_at TEXT,
+                finished_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (template_id) REFERENCES mail_templates(id),
+                FOREIGN KEY (domain_id) REFERENCES mail_domains(id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_campaign_recipients (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                campaign_id INTEGER NOT NULL,
+                contact_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                send_id INTEGER,
+                created_at TEXT NOT NULL,
+                UNIQUE(campaign_id, contact_id),
+                FOREIGN KEY (campaign_id) REFERENCES mail_campaigns(id),
+                FOREIGN KEY (contact_id) REFERENCES mail_contacts(id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_sends (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel TEXT NOT NULL DEFAULT 'bulk',
+                campaign_id INTEGER,
+                contact_id INTEGER,
+                template_id INTEGER,
+                domain_id INTEGER,
+                to_email TEXT NOT NULL,
+                to_phone TEXT NOT NULL DEFAULT '',
+                subject TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'queued',
+                provider_msg_id TEXT NOT NULL DEFAULT '',
+                error TEXT NOT NULL DEFAULT '',
+                opened_at TEXT,
+                clicked_at TEXT,
+                sent_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (campaign_id) REFERENCES mail_campaigns(id),
+                FOREIGN KEY (contact_id) REFERENCES mail_contacts(id),
+                FOREIGN KEY (template_id) REFERENCES mail_templates(id),
+                FOREIGN KEY (domain_id) REFERENCES mail_domains(id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_ivr_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL DEFAULT 'IVR kuralı',
+                active INTEGER NOT NULL DEFAULT 0,
+                template_id INTEGER,
+                domain_id INTEGER,
+                delay_seconds INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (template_id) REFERENCES mail_templates(id),
+                FOREIGN KEY (domain_id) REFERENCES mail_domains(id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS mail_ivr_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                phone TEXT NOT NULL DEFAULT '',
+                email TEXT NOT NULL DEFAULT '',
+                answered_at TEXT,
+                contact_id INTEGER,
+                send_id INTEGER,
+                status TEXT NOT NULL DEFAULT 'received',
+                payload TEXT NOT NULL DEFAULT '{}',
+                error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (contact_id) REFERENCES mail_contacts(id),
+                FOREIGN KEY (send_id) REFERENCES mail_sends(id)
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_mail_contacts_email ON mail_contacts(email)",
+            "CREATE INDEX IF NOT EXISTS idx_mail_contacts_phone ON mail_contacts(phone)",
+            "CREATE INDEX IF NOT EXISTS idx_mail_sends_created ON mail_sends(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_mail_sends_status ON mail_sends(status)",
+            "CREATE INDEX IF NOT EXISTS idx_mail_ivr_events_created ON mail_ivr_events(created_at)",
+        ]
+    for sql in statements:
+        execute(conn, sql)
+    seed_mailing_defaults(conn)
     conn.commit()
 
 
