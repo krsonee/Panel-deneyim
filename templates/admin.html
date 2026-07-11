@@ -1859,14 +1859,15 @@
       <div class="modal-body">
         <div class="settings-section edit-user-form" style="border:none;padding-top:1rem;">
           <input type="hidden" id="edit-user-id">
-          <div class="role-field">
+          <p class="muted-sm" id="edit-user-primary-note" style="display:none;color:#818cf8;margin-bottom:0.85rem;">Sahip hesabın rolü/yetkileri ve şifresi bu panelden değiştirilemez. Şifre sadece sunucudaki ADMIN_PASSWORD ortam değişkeninden güncellenebilir.</p>
+          <div class="role-field" id="edit-user-role-field">
             <label class="field-label" for="edit-user-role">Rol şablonu</label>
             <div class="role-select-wrap">
               <select id="edit-user-role"></select>
             </div>
             <div class="role-desc" id="edit-user-role-desc"></div>
           </div>
-          <div style="margin-bottom:0.85rem;">
+          <div style="margin-bottom:0.85rem;" id="edit-user-pass-field">
             <label class="field-label" for="edit-user-pass">Yeni şifre (opsiyonel)</label>
             <input class="field-input" id="edit-user-pass" type="password" placeholder="Değiştirmek için yaz">
             <p class="muted-sm" style="margin-top:0.35rem;">Şifre girilirse kullanıcı bir dahaki girişte değiştirmeye zorlanır.</p>
@@ -1875,7 +1876,7 @@
             <input type="checkbox" id="edit-user-2fa" style="width:auto;">
             <label class="field-label" for="edit-user-2fa" style="margin:0;">Google Authenticator zorunlu</label>
           </div>
-          <div class="perm-panel">
+          <div class="perm-panel" id="edit-user-perm-panel">
             <div class="perm-panel-head">
               <span>Yetkiler</span>
               <span class="perm-hint">Özel rol seçince düzenlenebilir</span>
@@ -2524,6 +2525,7 @@
                 '<div class="user-avatar">'+esc(initial)+'</div>'+
                 '<div><div class="user-card-name">'+esc(u.display_name||u.username)+'</div>'+
                 '<div class="user-card-meta"><span class="role-pill">'+esc(u.role_label||u.role)+'</span>'+
+                (u.is_primary_admin ? ' <span class="role-pill" style="background:rgba(99,102,241,0.18);color:#818cf8;">Sahip Hesap</span>' : '')+
                 (u.two_factor_required ? ' <span class="role-pill" style="background:rgba(34,197,94,0.15);color:#22c55e;">2FA '+(u.two_factor_enabled?"kurulu":"bekliyor")+'</span>' : '')+
                 '</div></div>'+
               '</div>'+
@@ -2531,7 +2533,7 @@
                 '<button type="button" class="btn-ghost" data-edit-user="'+u.id+'">Yetki</button>'+
                 '<button type="button" class="btn-ghost" data-unlock-user="'+u.id+'">Kilidi Aç</button>'+
                 (u.two_factor_required?'<button type="button" class="btn-ghost" data-reset-2fa-user="'+u.id+'">2FA Sıfırla</button>':'')+
-                (users.length>1?'<button type="button" class="btn-ghost danger" data-del-user="'+u.id+'">Sil</button>':'')+
+                (!u.is_primary_admin && users.length>1?'<button type="button" class="btn-ghost danger" data-del-user="'+u.id+'">Sil</button>':'')+
               '</div></div>';
           }).join("") : '<p class="muted" style="padding:0.5rem 0;">Henüz kullanıcı yok</p>';
           box.querySelectorAll("[data-edit-user]").forEach(function(btn) {
@@ -2547,6 +2549,14 @@
               updateRoleDesc("edit-user-role", "edit-user-role-desc");
               renderPermissionGrid("edit-user-perms", user.permissions || []);
               applyRoleToPermGrid(user.role, "edit-user-perms");
+              var isPrimary = !!user.is_primary_admin;
+              document.getElementById("edit-user-primary-note").style.display = isPrimary ? "block" : "none";
+              document.getElementById("edit-user-role").disabled = isPrimary;
+              document.getElementById("edit-user-role-field").style.opacity = isPrimary ? "0.55" : "1";
+              document.getElementById("edit-user-perm-panel").style.opacity = isPrimary ? "0.55" : "1";
+              document.querySelectorAll("#edit-user-perms .perm-cb").forEach(function(cb) { cb.disabled = isPrimary; });
+              document.getElementById("edit-user-pass-field").style.display = isPrimary ? "none" : "";
+              document.getElementById("edit-user-pass").disabled = isPrimary;
               document.getElementById("edit-user-modal").classList.add("open");
             };
           });

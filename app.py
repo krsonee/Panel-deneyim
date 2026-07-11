@@ -173,6 +173,7 @@ def admin_user_to_dict(row):
         "two_factor_required": bool(int(row["two_factor_required"] or 0)) if "two_factor_required" in keys else False,
         "two_factor_enabled": bool(int(row["two_factor_enabled"] or 0)) if "two_factor_enabled" in keys else False,
         "must_change_password": bool(int(row["must_change_password"] or 0)) if "must_change_password" in keys else False,
+        "is_primary_admin": is_primary_admin(username),
     }
 
 
@@ -192,6 +193,11 @@ def current_display_name():
 
 def normalize_username(value):
     return (value or "").strip().lower()
+
+
+def is_primary_admin(username):
+    """Ortam değişkenindeki ana admin hesabı mı? (case-insensitive)"""
+    return normalize_username(username) == normalize_username(ADMIN_USERNAME)
 
 
 def get_admin_user(username, password):
@@ -1835,8 +1841,21 @@ def update_admin_user(user_id):
         if not row:
             return jsonify({"error": "Kullanıcı bulunamadı."}), 404
 
-        set_clauses = ["role = ?", "permissions = ?"]
-        params = [role, json.dumps(permissions)]
+        target_is_primary = is_primary_admin(row["username"])
+
+        if target_is_primary and password:
+            audit("primary_admin_update_restricted", detail=f"attempted_by={session.get('admin_username')}")
+            return jsonify({
+                "error": "Ana admin hesabının şifresi panelden değiştirilemez. Sadece sunucudaki ADMIN_PASSWORD ortam değişkeninden güncellenebilir.",
+            }), 403
+
+        set_clauses = []
+        params = []
+        if not target_is_primary:
+            # Ana admin hesabı için rol/yetki her zaman zorla superadmin/["*"] olduğundan
+            # bu alanlar sessizce değiştirilmeden bırakılır (read-time zaten override ediyor).
+            set_clauses.extend(["role = ?", "permissions = ?"])
+            params.extend([role, json.dumps(permissions)])
 
         if "display_name" in data:
             set_clauses.append("display_name = ?")
@@ -1859,9 +1878,10 @@ def update_admin_user(user_id):
             # Admin başka birinin şifresini atadığında, o kullanıcı bir dahaki girişte değiştirmeye zorlanır.
             set_clauses.append("must_change_password = 1")
 
-        params.append(user_id)
-        execute(conn, f"UPDATE admin_users SET {', '.join(set_clauses)} WHERE id = ?", tuple(params))
-        conn.commit()
+        if set_clauses:
+            params.append(user_id)
+            execute(conn, f"UPDATE admin_users SET {', '.join(set_clauses)} WHERE id = ?", tuple(params))
+            conn.commit()
         updated = fetchone(conn, "SELECT * FROM admin_users WHERE id = ?", (user_id,))
     item = admin_user_to_dict(updated)
     if session.get("admin_username") == item["username"]:
@@ -1879,6 +1899,8 @@ def delete_admin_user(user_id):
         row = fetchone(conn, "SELECT username FROM admin_users WHERE id = ?", (user_id,))
         if not row:
             return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+        if is_primary_admin(row["username"]):
+            return jsonify({"error": "Ana admin hesabı silinemez."}), 403
         if row["username"] == current:
             return jsonify({"error": "Kendi hesabını silemezsin."}), 400
         total = scalar(conn, "SELECT COUNT(*) FROM admin_users")
@@ -1933,6 +1955,10 @@ def change_own_password():
     current_password = (data.get("current_password") or "").strip()
     new_password = (data.get("new_password") or "").strip()
     username = session.get("admin_username")
+    if is_primary_admin(username):
+        return jsonify({
+            "error": "Ana admin hesabının şifresi panelden değiştirilemez. Sadece sunucudaki ADMIN_PASSWORD ortam değişkeninden güncellenebilir.",
+        }), 403
     if not current_password or not new_password:
         return jsonify({"error": "Mevcut ve yeni şifre gerekli."}), 400
     if len(new_password) < 6:
