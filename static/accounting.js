@@ -717,6 +717,63 @@
         " · Avans: " + accMoney(advance, cur) +
         " · Net: " + accMoney(net, cur);
     }
+    accUpdateEmpPanelTotals(rows);
+  }
+
+  function accSumPanelPayroll(rows, panel) {
+    var panelRows = (rows || []).filter(function (r) { return accEmpPanelSide(r) === panel; });
+    var cur = accEmpCurrencyView;
+    var gross = 0;
+    var net = 0;
+    var advance = 0;
+    var hiddenCount = 0;
+    panelRows.forEach(function (r) {
+      if (r.salary_hidden) {
+        hiddenCount++;
+        return;
+      }
+      gross += accAccrualValue(r);
+      net += accNetAccrualValue(r);
+      advance += accAdvanceDisplay(r);
+    });
+    return {
+      rows: panelRows,
+      count: panelRows.length,
+      active: panelRows.filter(function (r) { return r.status === "active"; }).length,
+      gross: gross,
+      net: net,
+      advance: advance,
+      cur: cur,
+      allHidden: panelRows.length > 0 && hiddenCount === panelRows.length
+    };
+  }
+
+  function accUpdateEmpPanelTotals(rows) {
+    var office = accSumPanelPayroll(rows, "left");
+    var tr = accSumPanelPayroll(rows, "right");
+
+    var officeTotal = document.getElementById("acc-emp-office-total");
+    var officeSub = document.getElementById("acc-emp-office-sub");
+    var officeMeta = document.getElementById("acc-emp-office-meta");
+    var trTotal = document.getElementById("acc-emp-tr-total");
+    var trSub = document.getElementById("acc-emp-tr-sub");
+    var trMeta = document.getElementById("acc-emp-tr-meta");
+
+    if (officeMeta) officeMeta.textContent = office.count + " kişi · " + office.active + " aktif";
+    if (trMeta) trMeta.textContent = tr.count + " kişi · " + tr.active + " aktif";
+
+    if (officeTotal) {
+      officeTotal.textContent = office.allHidden ? "Gizli" : accMoney(office.net, office.cur);
+    }
+    if (officeSub) {
+      officeSub.textContent = office.allHidden
+        ? "Ofis maaşları yetkiniz dışında"
+        : ("Hak ediş " + accMoney(office.gross, office.cur) + " · Avans " + accMoney(office.advance, office.cur));
+    }
+    if (trTotal) trTotal.textContent = accMoney(tr.net, tr.cur);
+    if (trSub) {
+      trSub.textContent = "Hak ediş " + accMoney(tr.gross, tr.cur) + " · Avans " + accMoney(tr.advance, tr.cur);
+    }
   }
 
   function accRenderPayrollDaily(payrollDaily) {

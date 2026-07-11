@@ -175,31 +175,86 @@
     .acc-emp-toolbar {
       background: linear-gradient(180deg, var(--surface-2) 0%, transparent 100%);
     }
+    .acc-emp-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.85rem;
+      padding: 0.85rem 1rem 0.25rem;
+      border-top: 1px solid var(--border);
+    }
+    @media (max-width: 720px) { .acc-emp-kpi-grid { grid-template-columns: 1fr; } }
+    .acc-emp-kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1rem 1.1rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .acc-emp-kpi::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      opacity: 0.85;
+    }
+    .acc-emp-kpi-office::before { background: var(--amber); }
+    .acc-emp-kpi-tr::before { background: #3b82f6; }
+    .acc-emp-kpi-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+      margin-bottom: 0.65rem;
+    }
+    .acc-emp-kpi-icon { font-size: 1.35rem; line-height: 1; }
+    .acc-emp-kpi-lbl {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: var(--text);
+    }
+    .acc-emp-kpi-meta {
+      display: block;
+      margin-top: 0.15rem;
+      font-size: 0.66rem;
+      color: var(--muted);
+    }
+    .acc-emp-kpi-val {
+      font-size: 1.65rem;
+      font-weight: 800;
+      line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+    }
+    .acc-emp-kpi-office .acc-emp-kpi-val { color: var(--amber); }
+    .acc-emp-kpi-tr .acc-emp-kpi-val { color: #60a5fa; }
+    .acc-emp-kpi-sub {
+      margin-top: 0.35rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
     .acc-emp-table-wrap {
       border-top: 1px solid var(--border);
       background: var(--surface);
       overflow: hidden;
     }
     .acc-emp-split {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: 0;
-      min-height: 420px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
       width: 100%;
+      padding: 0.85rem 1rem 1rem;
     }
     .acc-emp-split-col {
       min-width: 0;
       max-width: 100%;
       display: flex;
       flex-direction: column;
-      border-right: 1px solid var(--border);
+      border: 1px solid var(--border);
+      border-radius: 14px;
       overflow: hidden;
       isolation: isolate;
-    }
-    @media (max-width: 1280px) {
-      .acc-emp-split { grid-template-columns: 1fr; }
-      .acc-emp-split-col { border-right: none; border-bottom: 1px solid var(--border); }
-      .acc-emp-split-col:last-child { border-bottom: none; }
+      background: var(--surface);
     }
     .acc-emp-split-head {
       display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
@@ -219,7 +274,7 @@
     .acc-emp-split-col .acc-emp-table-scroll {
       flex: 1;
       width: 100%;
-      max-height: min(560px, 62vh);
+      max-height: min(480px, 50vh);
       overflow: auto;
       -webkit-overflow-scrolling: touch;
       border-radius: 0;
@@ -227,8 +282,8 @@
     .acc-emp-table-left,
     .acc-emp-table-right {
       width: 100%;
-      min-width: 580px;
-      table-layout: fixed;
+      min-width: 0;
+      table-layout: auto;
     }
     .acc-emp-table { border-collapse: separate; border-spacing: 0; }
     .acc-emp-table .acc-emp-td-name { width: 92px; }
@@ -907,9 +962,6 @@
       .scroll-hint { display: block; }
       .table-scroll { max-height: min(420px, 55vh); }
       .acc-payroll-scroll { max-height: min(320px, 45vh); }
-      .acc-emp-split { grid-template-columns: 1fr; }
-      .acc-emp-split-col { border-right: none; border-bottom: 1px solid var(--border); }
-      .acc-emp-split-col:last-child { border-bottom: none; }
       .acc-emp-table-left,
       .acc-emp-table-right { min-width: 520px; }
       .acc-payroll-total {
@@ -1535,7 +1587,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260711a"></script>
+  <script src="/static/accounting.js?v=20260711b"></script>
   <script>
     (function () {
       var API = "";
