@@ -510,6 +510,20 @@
     .acc-inv-table tr.acc-inv-zero { opacity: 0.45; }
     .acc-inv-scroll { max-height: 420px; overflow: auto; }
     .acc-inv-comm { font-weight: 600; color: var(--amber); }
+    .acc-inv-lock-badge {
+      font-size: 0.72rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.12);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      white-space: nowrap;
+    }
+    .acc-inv-meta-grid input:disabled,
+    .acc-inv-table input:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      background: rgba(148, 163, 184, 0.08);
+    }
     .acc-pm-row-passive { opacity: 0.55; }
     .acc-fx-preview { font-size: 0.72rem; color: var(--muted); min-height: 1.1rem; margin: 0.15rem 0 0.35rem; }
     .acc-form-rate::placeholder { font-size: 0.68rem; }
@@ -1910,7 +1924,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260712a"></script>
+  <script src="/static/accounting.js?v=20260712b"></script>
   <script src="/static/mailing.js?v=20260711b"></script>
   <script>
     (function () {

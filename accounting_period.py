@@ -108,3 +108,13 @@ def month_period_end_iso(period, reference=None):
 
 def default_accounting_period(reference=None):
     return current_month_period(reference)
+
+
+def is_period_locked(period, reference=None, explicitly_locked=False):
+    """Geçmiş takvim ayları ve isteğe bağlı açık kilit işareti düzenlenemez."""
+    raw = (period or "").strip()
+    if not MONTH_PERIOD_RE.match(raw):
+        return False
+    if raw < current_month_period(reference):
+        return True
+    return bool(explicitly_locked)

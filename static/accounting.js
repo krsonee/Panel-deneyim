@@ -2281,6 +2281,30 @@
 
   var accInvoiceData = null;
 
+  function accIsPeriodLocked(period) {
+    if (!period || period === "all") return false;
+    return period < accCurrentMonth();
+  }
+
+  function accApplyInvoiceLock(locked) {
+    var badge = document.getElementById("acc-inv-lock-badge");
+    if (badge) badge.hidden = !locked;
+    ["acc-inv-gross-input", "acc-inv-eur-rate", "acc-inv-sms-fee", "acc-inv-notes"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.disabled = locked;
+    });
+    document.querySelectorAll("[data-inv-field]").forEach(function (el) {
+      el.disabled = locked;
+    });
+    ["acc-inv-save-meta", "acc-inv-save-lines"].forEach(function (id) {
+      var btn = document.getElementById(id);
+      if (btn) {
+        btn.disabled = locked;
+        btn.hidden = locked;
+      }
+    });
+  }
+
   function accInvFmt(n) {
     return accMoney(n, "TRY");
   }
@@ -2334,6 +2358,7 @@
   function accRenderInvoice(data) {
     if (!data) return;
     accInvoiceData = data;
+    var locked = data.locked === true || accIsPeriodLocked(data.period);
     var t = data.totals || {};
     var m = data.meta || {};
     accSetText("acc-inv-gross", accInvFmt(m.gross_revenue_try));
@@ -2354,65 +2379,25 @@
     if (smsIn) smsIn.value = m.sms_fee_try || "";
     if (notesIn) notesIn.value = m.notes || "";
     var sections = data.sections || {};
-    accRenderInvRows("acc-inv-sport-body", sections.sport, true);
-    accRenderInvRows("acc-inv-casino-body", sections.casino, true);
+    var editable = !locked;
+    accRenderInvRows("acc-inv-sport-body", sections.sport, editable);
+    accRenderInvRows("acc-inv-casino-body", sections.casino, editable);
     var special = sections.special || [];
     var specialCard = document.getElementById("acc-inv-special-card");
     if (specialCard) specialCard.hidden = !special.length;
-    accRenderInvRows("acc-inv-special-body", special, true);
+    accRenderInvRows("acc-inv-special-body", special, editable);
     accSetText("acc-inv-special-total", accInvFmt(t.special_commission_try));
     accRenderInvFixed(sections.fixed, m.eur_try_rate);
-  }
-
-  function accRenderPaymentInvoices(data) {
-    if (!data) return;
-    var totals = data.totals || {};
-    var providers = data.providers || [];
-    accSetText("acc-pm-inv-dep", accInvFmt(totals.deposit_volume_try));
-    accSetText("acc-pm-inv-wdr", accInvFmt(totals.withdrawal_volume_try));
-    accSetText("acc-pm-inv-comm", accInvFmt(totals.commission_try));
-    accSetText("acc-pm-inv-meta", (totals.provider_count || 0) + " / " + (totals.tx_count || 0));
-    accSetText("acc-pm-inv-period-label", data.period_label || data.period || "");
-    accSetText("acc-pm-inv-foot-dep", accInvFmt(totals.deposit_volume_try));
-    accSetText("acc-pm-inv-foot-wdr", accInvFmt(totals.withdrawal_volume_try));
-    accSetText("acc-pm-inv-foot-comm", accInvFmt(totals.commission_try));
-    accSetText("acc-pm-inv-foot-count", String(totals.tx_count || 0));
-    var tbody = document.getElementById("acc-pm-inv-body");
-    if (!tbody) return;
-    if (!providers.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty">Bu dönemde işlem yok</td></tr>';
-      return;
-    }
-    tbody.innerHTML = providers.map(function (p) {
-      var depRate = p.deposit_rate != null ? p.deposit_rate.toFixed(2) + "%" : "—";
-      var wdrRate = p.withdrawal_rate != null ? p.withdrawal_rate.toFixed(2) + "%" : "—";
-      return '<tr>' +
-        '<td class="acc-inv-name">' + accEsc(p.provider_name) + '</td>' +
-        '<td>' + (p.deposit_volume_try ? accInvFmt(p.deposit_volume_try) : "—") + '</td>' +
-        '<td>' + (p.withdrawal_volume_try ? accInvFmt(p.withdrawal_volume_try) : "—") + '</td>' +
-        '<td>' + depRate + '</td>' +
-        '<td>' + wdrRate + '</td>' +
-        '<td class="acc-inv-comm">' + accInvFmt(p.total_commission_try) + '</td>' +
-        '<td>' + (p.tx_count || 0) + '</td>' +
-        '</tr>';
-    }).join("");
+    accApplyInvoiceLock(locked);
   }
 
   function accLoadInvoice() {
     var period = accSelectedMonthPeriod() || accResolvePeriod();
     if (!period || period === "all") period = accCurrentMonth();
-    var pmReq = accApi("/api/accounting/invoices?period=" + encodeURIComponent(period)).then(function (r) {
-      if (r && r.ok) accRenderPaymentInvoices(r.data);
-      else if (r && r.status === 403) {
-        var tbody = document.getElementById("acc-pm-inv-body");
-        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty">Fatura görüntüleme yetkisi yok</td></tr>';
-      }
-    });
-    var pronetReq = accApi("/api/accounting/pronet-invoice?period=" + encodeURIComponent(period)).then(function (r) {
+    return accApi("/api/accounting/pronet-invoice?period=" + encodeURIComponent(period)).then(function (r) {
       if (r && r.ok) accRenderInvoice(r.data);
       else if (r) console.error("accLoadInvoice pronet", r.data);
     });
-    return Promise.all([pmReq, pronetReq]);
   }
 
   function accCollectInvoiceLines() {
@@ -2430,6 +2415,10 @@
   function accSaveInvoiceMeta() {
     var period = accSelectedMonthPeriod() || accResolvePeriod();
     if (!period || period === "all") period = accCurrentMonth();
+    if (accIsPeriodLocked(period)) {
+      alert("Kilitli dönem — düzenlenemez.");
+      return;
+    }
     var payload = {
       period: period,
       gross_revenue_try: document.getElementById("acc-inv-gross-input").value,
@@ -2452,6 +2441,10 @@
   function accSaveInvoiceLines() {
     var period = accSelectedMonthPeriod() || accResolvePeriod();
     if (!period || period === "all") period = accCurrentMonth();
+    if (accIsPeriodLocked(period)) {
+      alert("Kilitli dönem — düzenlenemez.");
+      return;
+    }
     accApi("/api/accounting/pronet-invoice/lines", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },

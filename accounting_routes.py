@@ -28,6 +28,7 @@ from accounting_period import (
     MONTH_PERIOD_RE,
     date_clause,
     default_accounting_period,
+    is_period_locked,
     month_period_end_iso,
     month_period_from_date,
     parse_period,
@@ -2042,6 +2043,8 @@ def create_accounting_blueprint(permission_required):
         period = valid_month_period(data.get("period")) or period_from_request()
         if not period or period == "all":
             return jsonify({"error": "Geçerli ay seçin (YYYY-MM)."}), 400
+        if is_period_locked(period):
+            return jsonify({"error": "Kilitli dönem — düzenlenemez."}), 403
         now = iso(utcnow())
         gross = parse_amount(data.get("gross_revenue_try"))
         eur_rate = parse_amount(data.get("eur_try_rate"))
@@ -2106,6 +2109,8 @@ def create_accounting_blueprint(permission_required):
         period = valid_month_period(data.get("period")) or period_from_request()
         if not period or period == "all":
             return jsonify({"error": "Geçerli ay seçin (YYYY-MM)."}), 400
+        if is_period_locked(period):
+            return jsonify({"error": "Kilitli dönem — düzenlenemez."}), 403
         items = data.get("lines") or []
         now = iso(utcnow())
         with closing(get_db()) as conn:

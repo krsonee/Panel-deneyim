@@ -1,5 +1,6 @@
 """Pronet proforma fatura — sağlayıcı komisyonları ve sabit ücretler."""
 
+from accounting_period import is_period_locked
 from database import execute, fetchall, fetchone, insert_returning_id, iso, scalar, utcnow
 
 SECTION_SPORT = "sport"
@@ -500,8 +501,10 @@ def build_invoice_payload(conn, period):
     gross = float(meta["gross_revenue_try"] or 0) if meta else 0
     eur_total = grand_total / eur_rate if eur_rate else 0
 
+    locked = is_period_locked(period)
     return {
         "period": period,
+        "locked": locked,
         "meta": {
             "gross_revenue_try": gross,
             "eur_try_rate": eur_rate,
