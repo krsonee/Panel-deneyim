@@ -842,10 +842,21 @@ def admin_page():
 @login_required
 def api_me():
     perms = get_session_permissions()
+    with closing(get_db()) as conn:
+        row = fetchone(
+            conn,
+            "SELECT two_factor_required, two_factor_enabled, display_name FROM admin_users WHERE LOWER(username) = ?",
+            (normalize_username(session.get("admin_username")),),
+        )
+    two_factor_required = bool(int(row["two_factor_required"] or 0)) if row else False
+    two_factor_enabled = bool(int(row["two_factor_enabled"] or 0)) if row else False
     return jsonify({
         "username": session.get("admin_username"),
+        "display_name": (row["display_name"] if row else "") or session.get("admin_username"),
         "role": session.get("admin_role"),
         "permissions": perms,
+        "two_factor_required": two_factor_required,
+        "two_factor_enabled": two_factor_enabled,
         "role_templates": ROLE_TEMPLATES,
         "permission_catalog": PERMISSION_CATALOG,
         "available_modules": available_modules(perms),

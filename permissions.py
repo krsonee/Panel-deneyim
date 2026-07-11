@@ -59,6 +59,8 @@ PERMISSION_CATALOG = [
      "desc": "Domain, SMTP/DirectMail ve webhook ayarları"},
     {"key": "admin.users", "label": "Kullanıcı Yönetimi", "group": "Yönetim",
      "desc": "Admin ekleme, silme ve yetki düzenleme"},
+    {"key": "admin.audit", "label": "Aktivite Günlüğü", "group": "Yönetim",
+     "desc": "Kim, ne zaman, ne işlem yaptı — tüm panel hareketleri"},
 ]
 
 ALL_PERMISSION_KEYS = [p["key"] for p in PERMISSION_CATALOG]
@@ -167,6 +169,8 @@ def ensure_module_parents(permissions):
         perms.append("module.mailing")
     if "admin.users" in perms and "module.settings" not in perms:
         perms.append("module.settings")
+    if "admin.audit" in perms and "module.settings" not in perms:
+        perms.append("module.settings")
     return perms
 
 
@@ -202,7 +206,7 @@ def has_any_module_access(user_permissions):
         return True
     if any(p.startswith("mailing.") for p in perms):
         return True
-    if "admin.users" in perms:
+    if "admin.users" in perms or "admin.audit" in perms:
         return True
     return False
 
@@ -218,7 +222,7 @@ def available_modules(user_permissions):
         mods.append("accounting")
     if "module.mailing" in perms or any(p.startswith("mailing.") for p in perms):
         mods.append("mailing")
-    if "module.settings" in perms or "admin.users" in perms:
+    if "module.settings" in perms or "admin.users" in perms or "admin.audit" in perms:
         mods.append("settings")
     return mods
 
