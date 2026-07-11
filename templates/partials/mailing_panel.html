@@ -81,27 +81,60 @@
 
   <!-- Şablonlar -->
   <div class="acc-pane" id="mail-pane-templates" data-mail-pane="templates" hidden>
-    <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head"><span id="mail-tpl-form-title">Yeni şablon</span></div>
+    <section class="card mail-tpl-editor-card" style="margin-bottom:1rem;">
+      <div class="card-head">
+        <span id="mail-tpl-form-title">Yeni şablon</span>
+        <div class="mail-tpl-mode-tabs" role="tablist">
+          <button type="button" class="acc-tab active" id="mail-tpl-mode-simple" data-tpl-mode="simple">Basit yazı</button>
+          <button type="button" class="acc-tab" id="mail-tpl-mode-html" data-tpl-mode="html">HTML</button>
+        </div>
+      </div>
       <div class="card-body">
         <input type="hidden" id="mail-tpl-id" value="">
-        <form id="mail-tpl-form">
-          <div class="form-row-4" style="margin-bottom:0.75rem;">
-            <div><label>Ad</label><input type="text" id="mail-tpl-name" required placeholder="Hoş geldin"></div>
-            <div style="grid-column:span 3;"><label>Konu</label><input type="text" id="mail-tpl-subject" placeholder="Merhaba {{name}}"></div>
+        <form id="mail-tpl-form" class="mail-tpl-form">
+          <div class="mail-tpl-meta">
+            <div><label>Şablon adı</label><input type="text" id="mail-tpl-name" required placeholder="Hoş geldin / VIP kampanya"></div>
+            <div><label>Konu satırı</label><input type="text" id="mail-tpl-subject" placeholder="Merhaba {{name}}, özel fırsatın hazır"></div>
           </div>
-          <div style="margin-bottom:0.75rem;">
-            <label>HTML gövde <span class="muted">({{name}}, {{email}}, {{phone}})</span></label>
-            <textarea id="mail-tpl-html" rows="6" placeholder="<p>Merhaba {{name}},</p>"></textarea>
+
+          <p class="hint mail-tpl-hint">
+            Değişkenler: <code>{{name}}</code> <code>{{email}}</code> <code>{{phone}}</code>
+            · Takip linki: <code>{{link:https://site.com}}</code> (tıklayan kişi CRM’e <code>mail_tiklayan</code> etiketiyle düşer)
+          </p>
+
+          <div class="mail-tpl-toolbar">
+            <button type="button" class="btn btn-sm" id="mail-tpl-insert-name">{{name}}</button>
+            <button type="button" class="btn btn-sm" id="mail-tpl-insert-email">{{email}}</button>
+            <button type="button" class="btn btn-sm" id="mail-tpl-insert-link">Takip linki ekle</button>
+            <input type="url" id="mail-tpl-link-url" placeholder="https://hedef-site.com/…" class="mail-tpl-link-input">
           </div>
-          <div style="margin-bottom:0.75rem;">
-            <label>Metin gövde</label>
-            <textarea id="mail-tpl-text" rows="3" placeholder="Merhaba {{name}},"></textarea>
+
+          <div id="mail-tpl-pane-simple" class="mail-tpl-editor-pane">
+            <label>Mail metni</label>
+            <textarea id="mail-tpl-text" class="mail-tpl-textarea" rows="14" placeholder="Merhaba {{name}},&#10;&#10;Sana özel bir fırsatımız var.&#10;&#10;Hemen bak: {{link:https://ornek.com}}"></textarea>
+            <p class="hint">Kaydedince HTML otomatik üretilir. Satır sonları paragrafa çevrilir.</p>
           </div>
-          <div style="display:flex;gap:0.5rem;">
-            <button type="submit" class="btn btn-primary">Kaydet</button>
-            <button type="button" class="btn" id="mail-tpl-reset">Temizle</button>
+
+          <div id="mail-tpl-pane-html" class="mail-tpl-editor-pane" hidden>
+            <div class="mail-tpl-split">
+              <div>
+                <label>HTML kod</label>
+                <textarea id="mail-tpl-html" class="mail-tpl-textarea mail-tpl-htmlcode" rows="16" placeholder="<p>Merhaba {{name}},</p>&#10;<p><a href=&quot;{{link:https://ornek.com}}&quot;>Tıkla</a></p>"></textarea>
+              </div>
+              <div>
+                <label>Canlı önizleme</label>
+                <iframe id="mail-tpl-preview" class="mail-tpl-preview" title="Önizleme" sandbox=""></iframe>
+              </div>
+            </div>
           </div>
+
+          <div class="mail-tpl-actions">
+            <button type="submit" class="btn btn-primary">Şablonu kaydet</button>
+            <button type="button" class="btn" id="mail-tpl-reset">Yeni / Temizle</button>
+            <button type="button" class="btn btn-success" id="mail-tpl-test-send">Test mail gönder</button>
+            <input type="email" id="mail-tpl-test-email" class="mail-tpl-test-email" placeholder="test@mail.com">
+          </div>
+          <p class="hint" id="mail-tpl-send-hint">Gönderim: şablonu kaydet → Kampanyalar’dan kitle seçip “Kuyruğa al”. Test mail stub modunda kayıt üretir; Alibaba bağlanınca gerçek iletir.</p>
         </form>
       </div>
     </section>

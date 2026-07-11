@@ -616,6 +616,13 @@ def migrate_makrolink(conn):
             ON CONFLICT (key) DO NOTHING
             """,
         )
+        execute(
+            conn,
+            """
+            INSERT INTO makrolink_settings (key, value) VALUES ('aff_base', 'https://go.aff.makroaffi.com')
+            ON CONFLICT (key) DO NOTHING
+            """,
+        )
     else:
         execute(
             conn,
@@ -627,6 +634,12 @@ def migrate_makrolink(conn):
             conn,
             """
             INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('public_scheme', 'https')
+            """,
+        )
+        execute(
+            conn,
+            """
+            INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('aff_base', 'https://go.aff.makroaffi.com')
             """,
         )
     conn.commit()

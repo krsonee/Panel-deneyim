@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import csv
+import html as html_lib
 import io
 import json
+import os
 import re
 import secrets
 from contextlib import closing
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, redirect, request
 
 from database import (
     execute,
@@ -34,6 +36,8 @@ MAIL_REP = ("mailing.reports", "module.mailing")
 MAIL_SET = ("mailing.settings", "module.mailing")
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+LINK_TOKEN_RE = re.compile(r"\{\{\s*link\s*:\s*([^}]+)\s*\}\}", re.I)
+HREF_RE = re.compile(r'(<a\b[^>]*\bhref\s*=\s*["\'])(https?://[^"\']+)(["\'])', re.I)
 
 
 def _row(r):
@@ -70,7 +74,7 @@ def _tags_json(tags):
 
 
 def _contact_out(row):
-    d = _row(row)
+    d = _row(row) if not isinstance(row, dict) else dict(row)
     if not d:
         return None
     d["tags"] = _parse_tags(d.get("tags"))
@@ -90,9 +94,122 @@ def _render_template(text, contact):
     return text
 
 
+def _plain_to_html(text):
+    """Basit yazıyı basit HTML'e çevir — satır sonları + {{link:}} korunur."""
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return ""
+    holders = {}
+
+    def hold(m):
+        key = f"__MAILINK{len(holders)}__"
+        holders[key] = m.group(0)
+        return key
+
+    protected = LINK_TOKEN_RE.sub(hold, text)
+    parts = []
+    for block in protected.split("\n\n"):
+        esc = html_lib.escape(block).replace("\n", "<br>\n")
+        for key, raw in holders.items():
+            esc = esc.replace(html_lib.escape(key), raw).replace(key, raw)
+        parts.append(f"<p>{esc}</p>")
+    return "\n".join(parts)
+
+
+def _public_base():
+    base = (os.environ.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    if base:
+        return base
+    try:
+        return (request.url_root or "").rstrip("/")
+    except RuntimeError:
+        return ""
+
+
+def _make_click_token(conn, *, dest_url, send_id=None, contact_id=None, campaign_id=None):
+    token = secrets.token_urlsafe(10)
+    now = iso(utcnow())
+    insert_returning_id(
+        conn,
+        """
+        INSERT INTO mail_click_links
+        (token, send_id, contact_id, campaign_id, dest_url, click_count, created_at)
+        VALUES (?, ?, ?, ?, ?, 0, ?)
+        """,
+        (token, send_id, contact_id, campaign_id, dest_url, now),
+    )
+    return token
+
+
+def _track_url(token):
+    return f"{_public_base()}/m/c/{token}"
+
+
+def _inject_tracking(conn, body, *, send_id, contact_id=None, campaign_id=None, as_html=True):
+    """{{link:url}} ve <a href> adreslerini kişiye özel takip URL'sine çevir."""
+    body = body or ""
+    if not body:
+        return body
+
+    def token_for(dest):
+        dest = (dest or "").strip()
+        if not dest or dest.startswith("/m/c/") or "/m/c/" in dest:
+            return dest
+        tok = _make_click_token(
+            conn,
+            dest_url=dest,
+            send_id=send_id,
+            contact_id=contact_id,
+            campaign_id=campaign_id,
+        )
+        return _track_url(tok)
+
+    def repl_token(m):
+        tracked = token_for(m.group(1))
+        if as_html:
+            safe_dest = html_lib.escape(m.group(1).strip(), quote=True)
+            return f'<a href="{tracked}" target="_blank" rel="noopener">{safe_dest}</a>'
+        return tracked
+
+    body = LINK_TOKEN_RE.sub(repl_token, body)
+
+    if as_html:
+        def repl_href(m):
+            tracked = token_for(m.group(2))
+            return f"{m.group(1)}{tracked}{m.group(3)}"
+
+        body = HREF_RE.sub(repl_href, body)
+    return body
+
+
+def _tag_contact(conn, contact_id, tag, now=None):
+    if not contact_id or not tag:
+        return
+    now = now or iso(utcnow())
+    row = fetchone(conn, "SELECT tags FROM mail_contacts WHERE id = ?", (contact_id,))
+    if not row:
+        return
+    tags = _parse_tags(row["tags"])
+    if tag not in tags:
+        tags.append(tag)
+        execute(
+            conn,
+            "UPDATE mail_contacts SET tags = ?, updated_at = ? WHERE id = ?",
+            (_tags_json(tags), now, contact_id),
+        )
+    exists = scalar(conn, "SELECT COUNT(*) FROM mail_contact_tags WHERE name = ?", (tag,))
+    if not exists:
+        insert_returning_id(
+            conn,
+            "INSERT INTO mail_contact_tags (name, created_at) VALUES (?, ?)",
+            (tag, now),
+        )
+
+
 def _stub_send(conn, *, channel, to_email, subject, contact=None, campaign_id=None,
-               contact_id=None, template_id=None, domain_id=None, to_phone=""):
-    """Alibaba bağlanana kadar simüle gönderim kaydı oluşturur."""
+               contact_id=None, template_id=None, domain_id=None, to_phone="",
+               html_body="", text_body=""):
+    """Alibaba bağlanana kadar simüle gönderim kaydı + takip linkleri oluşturur."""
     now = iso(utcnow())
     mode = (get_mail_setting(conn, "provider_mode", "stub") or "stub").strip().lower()
     status = "simulated" if mode == "stub" else "queued"
@@ -124,7 +241,60 @@ def _stub_send(conn, *, channel, to_email, subject, contact=None, campaign_id=No
             now,
         ),
     )
+    # Inject tracking — HTML öncelikli (çift token üretmesin)
+    if html_body:
+        _inject_tracking(
+            conn, html_body, send_id=send_id, contact_id=contact_id,
+            campaign_id=campaign_id, as_html=True,
+        )
+    elif text_body:
+        _inject_tracking(
+            conn, text_body, send_id=send_id, contact_id=contact_id,
+            campaign_id=campaign_id, as_html=False,
+        )
     return send_id, status
+
+
+def create_mailing_click_blueprint():
+    """Public click redirect — auth yok."""
+    bp = Blueprint("mailing_click", __name__)
+
+    @bp.route("/m/c/<token>", methods=["GET"])
+    def mail_click(token):
+        token = (token or "").strip()
+        now = iso(utcnow())
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM mail_click_links WHERE token = ?", (token,))
+            if not row:
+                return ("Link bulunamadı.", 404)
+            dest = row["dest_url"]
+            first = row["first_clicked_at"] or now
+            execute(
+                conn,
+                """
+                UPDATE mail_click_links SET
+                    click_count = COALESCE(click_count, 0) + 1,
+                    first_clicked_at = ?,
+                    last_clicked_at = ?
+                WHERE id = ?
+                """,
+                (first, now, row["id"]),
+            )
+            if row["send_id"]:
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_sends SET clicked_at = COALESCE(clicked_at, ?)
+                    WHERE id = ?
+                    """,
+                    (now, row["send_id"]),
+                )
+            if row["contact_id"]:
+                _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
+            conn.commit()
+        return redirect(dest, code=302)
+
+    return bp
 
 
 def create_mailing_blueprint(permission_required):
@@ -396,6 +566,10 @@ def create_mailing_blueprint(permission_required):
         if not name:
             return jsonify({"error": "Şablon adı gerekli."}), 400
         now = iso(utcnow())
+        text_body = data.get("text_body") or ""
+        html_body = data.get("html_body") or ""
+        if not html_body.strip() and text_body.strip():
+            html_body = _plain_to_html(text_body)
         with closing(get_db()) as conn:
             tid = insert_returning_id(
                 conn,
@@ -406,8 +580,8 @@ def create_mailing_blueprint(permission_required):
                 (
                     name,
                     (data.get("subject") or "").strip(),
-                    data.get("html_body") or "",
-                    data.get("text_body") or "",
+                    html_body,
+                    text_body,
                     now,
                     now,
                 ),
@@ -425,6 +599,11 @@ def create_mailing_blueprint(permission_required):
             row = fetchone(conn, "SELECT * FROM mail_templates WHERE id = ?", (template_id,))
             if not row:
                 return jsonify({"error": "Şablon bulunamadı."}), 404
+            text_body = data.get("text_body") if "text_body" in data else row["text_body"] or ""
+            html_body = data.get("html_body") if "html_body" in data else row["html_body"] or ""
+            # Basit yazı kaydı: html boşsa veya sync_html istenirse üret
+            if data.get("sync_html_from_text") or (not (html_body or "").strip() and (text_body or "").strip()):
+                html_body = _plain_to_html(text_body)
             execute(
                 conn,
                 """
@@ -434,8 +613,8 @@ def create_mailing_blueprint(permission_required):
                 (
                     (data.get("name") if "name" in data else row["name"]).strip(),
                     (data.get("subject") if "subject" in data else row["subject"] or "").strip(),
-                    data.get("html_body") if "html_body" in data else row["html_body"] or "",
-                    data.get("text_body") if "text_body" in data else row["text_body"] or "",
+                    html_body,
+                    text_body,
                     now,
                     template_id,
                 ),
@@ -443,6 +622,75 @@ def create_mailing_blueprint(permission_required):
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_templates WHERE id = ?", (template_id,))
         return jsonify({"template": _row(row)})
+
+    @bp.route("/templates/<int:template_id>/test-send", methods=["POST"])
+    @mail_perm(*MAIL_TPL)
+    def test_send_template(template_id):
+        data = request.get_json(silent=True) or {}
+        email = (data.get("email") or "").strip().lower()
+        if not email or not EMAIL_RE.match(email):
+            return jsonify({"error": "Geçerli test e-postası girin."}), 400
+        domain_id = data.get("domain_id")
+        with closing(get_db()) as conn:
+            tpl = fetchone(conn, "SELECT * FROM mail_templates WHERE id = ?", (template_id,))
+            if not tpl:
+                return jsonify({"error": "Şablon bulunamadı."}), 404
+            if not domain_id:
+                raw = get_mail_setting(conn, "default_domain_id", "") or ""
+                try:
+                    domain_id = int(raw) if raw else None
+                except ValueError:
+                    domain_id = None
+            if not domain_id:
+                first = fetchone(conn, "SELECT id FROM mail_domains ORDER BY id ASC LIMIT 1")
+                domain_id = first["id"] if first else None
+            contact = {"name": data.get("name") or "Test", "email": email, "phone": ""}
+            # Upsert test contact lightly
+            existing = fetchone(conn, "SELECT id FROM mail_contacts WHERE LOWER(email) = ?", (email,))
+            now = iso(utcnow())
+            if existing:
+                contact_id = existing["id"]
+            else:
+                contact_id = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_contacts
+                    (email, phone, name, tags, source, unsubscribed, notes, created_at, updated_at)
+                    VALUES (?, '', ?, ?, 'test', 0, '', ?, ?)
+                    """,
+                    (email, contact["name"], _tags_json(["test"]), now, now),
+                )
+            subject = _render_template(tpl["subject"], contact)
+            html_body = _render_template(tpl["html_body"] or _plain_to_html(tpl["text_body"] or ""), contact)
+            text_body = _render_template(tpl["text_body"] or "", contact)
+            send_id, status = _stub_send(
+                conn,
+                channel="test",
+                to_email=email,
+                subject=subject,
+                contact=contact,
+                contact_id=contact_id,
+                template_id=template_id,
+                domain_id=domain_id,
+                html_body=html_body,
+                text_body=text_body,
+            )
+            links = _rows(fetchall(
+                conn,
+                "SELECT token, dest_url FROM mail_click_links WHERE send_id = ?",
+                (send_id,),
+            ))
+            for L in links:
+                L["track_url"] = _track_url(L["token"])
+            conn.commit()
+        return jsonify({
+            "ok": True,
+            "send_id": send_id,
+            "status": status,
+            "mode": "stub",
+            "tracked_links": links,
+            "message": "Test gönderim kaydı oluşturuldu (stub). Takip linkleri hazır; Alibaba bağlanınca gerçek mail gider.",
+        })
 
     @bp.route("/templates/<int:template_id>", methods=["DELETE"])
     @mail_perm(*MAIL_TPL)
@@ -600,6 +848,10 @@ def create_mailing_blueprint(permission_required):
                     "phone": rec.get("phone") or "",
                 }
                 subject = _render_template(tpl["subject"], contact)
+                html_body = _render_template(
+                    tpl["html_body"] or _plain_to_html(tpl["text_body"] or ""), contact
+                )
+                text_body = _render_template(tpl["text_body"] or "", contact)
                 send_id, status = _stub_send(
                     conn,
                     channel="bulk",
@@ -611,6 +863,8 @@ def create_mailing_blueprint(permission_required):
                     template_id=camp["template_id"],
                     domain_id=camp["domain_id"],
                     to_phone=rec.get("phone") or "",
+                    html_body=html_body,
+                    text_body=text_body,
                 )
                 execute(
                     conn,

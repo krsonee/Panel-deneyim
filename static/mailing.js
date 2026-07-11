@@ -7,6 +7,7 @@
   var mailDomains = [];
   var mailTags = [];
   var mailLoaded = false;
+  var mailTplMode = "simple";
 
   function mailHas(key) {
     if (!mailPerms || !mailPerms.length) return true;
@@ -203,6 +204,69 @@
           "</td></tr>";
       }).join("");
     });
+  }
+
+  function setTplMode(mode) {
+    mailTplMode = mode === "html" ? "html" : "simple";
+    var simplePane = document.getElementById("mail-tpl-pane-simple");
+    var htmlPane = document.getElementById("mail-tpl-pane-html");
+    var btnS = document.getElementById("mail-tpl-mode-simple");
+    var btnH = document.getElementById("mail-tpl-mode-html");
+    if (simplePane) simplePane.hidden = mailTplMode !== "simple";
+    if (htmlPane) htmlPane.hidden = mailTplMode !== "html";
+    if (btnS) btnS.classList.toggle("active", mailTplMode === "simple");
+    if (btnH) btnH.classList.toggle("active", mailTplMode === "html");
+    if (mailTplMode === "html") refreshTplPreview();
+  }
+
+  function previewHtmlFromEditors() {
+    var html = (document.getElementById("mail-tpl-html") || {}).value || "";
+    var text = (document.getElementById("mail-tpl-text") || {}).value || "";
+    if (!html.trim() && text.trim()) {
+      html = text
+        .replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
+        .split(/\n\n+/).map(function (block) {
+          return "<p>" + block.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>\n") + "</p>";
+        }).join("\n");
+      // restore link tokens that got escaped
+      html = html.replace(/\{\{link:([^}]+)\}\}/g, function (_m, url) {
+        return "{{link:" + url.replace(/&amp;/g, "&") + "}}";
+      });
+    }
+    return (html || "<p class='muted'>Önizleme boş</p>")
+      .replace(/\{\{name\}\}/g, "Ali")
+      .replace(/\{\{email\}\}/g, "ali@ornek.com")
+      .replace(/\{\{phone\}\}/g, "+90555…")
+      .replace(/\{\{\s*link\s*:\s*([^}]+)\s*\}\}/gi, function (_m, url) {
+        var u = url.trim();
+        return '<a href="' + u + '" style="color:#2563eb;">' + u + "</a>";
+      });
+  }
+
+  function refreshTplPreview() {
+    var frame = document.getElementById("mail-tpl-preview");
+    if (!frame) return;
+    var doc = "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
+      "<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:16px;color:#111;line-height:1.5;font-size:15px}a{color:#2563eb}</style>" +
+      "</head><body>" + previewHtmlFromEditors() + "</body></html>";
+    frame.srcdoc = doc;
+  }
+
+  function insertAtCursor(textarea, snippet) {
+    if (!textarea) return;
+    var start = textarea.selectionStart || 0;
+    var end = textarea.selectionEnd || 0;
+    var val = textarea.value || "";
+    textarea.value = val.slice(0, start) + snippet + val.slice(end);
+    var pos = start + snippet.length;
+    textarea.focus();
+    try { textarea.setSelectionRange(pos, pos); } catch (e) {}
+  }
+
+  function activeTplEditor() {
+    return mailTplMode === "html"
+      ? document.getElementById("mail-tpl-html")
+      : document.getElementById("mail-tpl-text");
   }
 
   function fillSelect(sel, items, valueKey, labelFn, placeholder) {
@@ -462,6 +526,10 @@
         document.getElementById("mail-tpl-html").value = t.html_body || "";
         document.getElementById("mail-tpl-text").value = t.text_body || "";
         setText("mail-tpl-form-title", "Şablon düzenle #" + t.id);
+        // HTML doluysa HTML moduna geç
+        setTplMode((t.html_body || "").trim() && !(t.text_body || "").trim() ? "html" : "simple");
+        if ((t.html_body || "").trim() && (t.text_body || "").trim()) setTplMode("html");
+        refreshTplPreview();
         return;
       }
       var delT = e.target.closest(".mail-del-tpl");
@@ -504,6 +572,25 @@
       }
     });
 
+    bindClick("mail-tpl-mode-simple", function () { setTplMode("simple"); });
+    bindClick("mail-tpl-mode-html", function () { setTplMode("html"); });
+    bindClick("mail-tpl-insert-name", function () { insertAtCursor(activeTplEditor(), "{{name}}"); refreshTplPreview(); });
+    bindClick("mail-tpl-insert-email", function () { insertAtCursor(activeTplEditor(), "{{email}}"); refreshTplPreview(); });
+    bindClick("mail-tpl-insert-link", function () {
+      var url = (document.getElementById("mail-tpl-link-url").value || "").trim();
+      if (!url) { mailToast("Önce hedef URL yaz"); return; }
+      if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+      insertAtCursor(activeTplEditor(), "{{link:" + url + "}}");
+      refreshTplPreview();
+    });
+
+    var htmlEl = document.getElementById("mail-tpl-html");
+    if (htmlEl) htmlEl.addEventListener("input", debounce(refreshTplPreview, 250));
+    var textEl = document.getElementById("mail-tpl-text");
+    if (textEl) textEl.addEventListener("input", debounce(function () {
+      if (mailTplMode === "html") refreshTplPreview();
+    }, 250));
+
     var tplForm = document.getElementById("mail-tpl-form");
     if (tplForm) {
       tplForm.addEventListener("submit", function (e) {
@@ -513,8 +600,13 @@
           name: document.getElementById("mail-tpl-name").value.trim(),
           subject: document.getElementById("mail-tpl-subject").value.trim(),
           html_body: document.getElementById("mail-tpl-html").value,
-          text_body: document.getElementById("mail-tpl-text").value
+          text_body: document.getElementById("mail-tpl-text").value,
+          sync_html_from_text: mailTplMode === "simple"
         };
+        if (mailTplMode === "simple") {
+          // HTML'i sunucu üretsin
+          body.html_body = body.html_body || "";
+        }
         var req = id
           ? mailApi("/api/mailing/templates/" + id, { method: "PATCH", body: body })
           : mailApi("/api/mailing/templates", { method: "POST", body: body });
@@ -524,8 +616,14 @@
             return;
           }
           mailToast("Şablon kaydedildi");
-          document.getElementById("mail-tpl-reset").click();
+          if (res.data.template) {
+            document.getElementById("mail-tpl-id").value = res.data.template.id;
+            document.getElementById("mail-tpl-html").value = res.data.template.html_body || "";
+            document.getElementById("mail-tpl-text").value = res.data.template.text_body || "";
+            setText("mail-tpl-form-title", "Şablon düzenle #" + res.data.template.id);
+          }
           mailLoadTemplates();
+          refreshTplPreview();
         });
       });
     }
@@ -533,8 +631,33 @@
       document.getElementById("mail-tpl-id").value = "";
       document.getElementById("mail-tpl-form").reset();
       setText("mail-tpl-form-title", "Yeni şablon");
+      setTplMode("simple");
+      refreshTplPreview();
     });
     bindClick("mail-tpl-refresh", mailLoadTemplates);
+    bindClick("mail-tpl-test-send", function () {
+      var id = document.getElementById("mail-tpl-id").value;
+      var email = (document.getElementById("mail-tpl-test-email").value || "").trim();
+      if (!id) {
+        mailToast("Önce şablonu kaydet");
+        return;
+      }
+      if (!email) {
+        mailToast("Test e-postası yaz");
+        return;
+      }
+      mailApi("/api/mailing/templates/" + id + "/test-send", {
+        method: "POST",
+        body: { email: email }
+      }).then(function (res) {
+        if (!res || !res.ok) {
+          mailToast((res && res.data && res.data.error) || "Test gönderilemedi");
+          return;
+        }
+        var n = (res.data.tracked_links || []).length;
+        mailToast((res.data.message || "OK") + (n ? " · " + n + " takip linki" : ""));
+      });
+    });
 
     var campForm = document.getElementById("mail-camp-form");
     if (campForm) {
@@ -649,6 +772,7 @@
       if (mailLoaded) return;
       mailLoaded = true;
       bindEvents();
+      setTplMode("simple");
     },
     onShow: function () {
       if (!mailLoaded) this.init();
