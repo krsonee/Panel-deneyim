@@ -304,22 +304,43 @@ def create_link(
     if not smartico_link_id and slug:
         smartico_link_id = slug[:64]
 
+    revive_id = None
     if code:
         code = code.strip()
         if not _valid_code(code):
             raise ValueError("Kod geçersiz (harf/rakam/_/- , reserved değil).")
-        exists = fetchone(conn, "SELECT id FROM makrolink_links WHERE code = ?", (code,))
-        if exists:
-            raise ValueError("Bu kısa kod zaten kullanılıyor.")
+        existing = fetchone(conn, "SELECT id, is_active FROM makrolink_links WHERE code = ?", (code,))
+        if existing:
+            if int(existing["is_active"] or 0) == 1:
+                raise ValueError("Bu kısa kod zaten kullanılıyor.")
+            # Pasif (silinmiş) linkin kodu — yeniden canlandır, yeni verilerle güncelle.
+            revive_id = existing["id"]
     else:
         for _ in range(12):
             code = _gen_code()
-            if not fetchone(conn, "SELECT id FROM makrolink_links WHERE code = ?", (code,)):
+            row = fetchone(conn, "SELECT id, is_active FROM makrolink_links WHERE code = ?", (code,))
+            if not row:
+                break
+            if int(row["is_active"] or 0) == 0:
+                revive_id = row["id"]
                 break
         else:
             raise ValueError("Kısa kod üretilemedi, tekrar dene.")
 
-    if uses_postgres():
+    if revive_id is not None:
+        execute(
+            conn,
+            """
+            UPDATE makrolink_links
+            SET destination_url = ?, label = ?, affiliate_id = ?, smartico_link_id = ?,
+                ref_code = ?, click_count = 0, is_active = 1, created_by = ?,
+                created_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (destination_url, label, affiliate_id, smartico_link_id, ref_code, created_by, now, now, revive_id),
+        )
+        link_id = revive_id
+    elif uses_postgres():
         cur = execute(
             conn,
             """
