@@ -321,13 +321,14 @@
     </section>
 
     <!-- İşlem girişi -->
-    <section class="card">
+    <section class="card" id="acc-vault-form-section">
       <div class="card-head">
-        <span>Yeni Kasa Hareketi</span>
+        <span id="acc-vault-form-title">Yeni Kasa Hareketi</span>
         <span class="muted" id="acc-vault-form-rate-badge" style="font-size:0.72rem;"></span>
       </div>
       <div class="card-body">
         <form id="acc-vault-form" class="form-row-4 acc-vault-form-grid">
+          <input type="hidden" id="acc-vault-edit-id" value="">
           <div><label>Kasa</label><select id="acc-vault-select" required></select></div>
           <div><label>Tarih</label><input type="date" id="acc-vault-date" required></div>
           <div><label>İşlem Başlığı</label>
@@ -361,7 +362,10 @@
           <div><label>TL Karşılığı (fee dahil)</label><input type="text" id="acc-vault-tl-preview" readonly class="muted"></div>
           <div style="grid-column:1/-1"><label>Kasadan net düşüş / artış</label><input type="text" id="acc-vault-net-preview" readonly class="muted"></div>
           <div style="grid-column:1/-1"><label>Açıklama</label><input id="acc-vault-desc" placeholder="Sunucu ödemesi, personel maaşı, tronscan linki…"></div>
-          <div><button type="submit" class="btn btn-primary">Kaydet</button></div>
+          <div class="acc-vault-form-actions">
+            <button type="submit" class="btn btn-primary" id="acc-vault-submit">Kaydet</button>
+            <button type="button" class="btn btn-sm" id="acc-vault-edit-cancel" hidden>İptal</button>
+          </div>
         </form>
       </div>
     </section>
@@ -393,7 +397,7 @@
               <th class="col-sortable" data-acc-sort="acc-vault" data-sort="balance_try">Kalan TL</th>
               <th class="col-sortable" data-acc-sort="acc-vault" data-sort="description">Açıklama</th>
               <th class="col-sortable" data-acc-sort="acc-vault" data-sort="vault_name">Kasa</th>
-              <th></th>
+              <th class="acc-vault-col-actions">İşlem</th>
             </tr></thead>
             <tbody id="acc-vault-table"><tr><td colspan="13" class="empty">Kayıt yok</td></tr></tbody>
           </table>

@@ -1226,6 +1226,70 @@
     else badge.textContent = "";
   }
 
+  function accSetVaultFormMode(editing) {
+    var title = document.getElementById("acc-vault-form-title");
+    var submit = document.getElementById("acc-vault-submit");
+    var cancel = document.getElementById("acc-vault-edit-cancel");
+    var section = document.getElementById("acc-vault-form-section");
+    if (title) title.textContent = editing ? "Kasa Hareketini Düzenle" : "Yeni Kasa Hareketi";
+    if (submit) submit.textContent = editing ? "Güncelle" : "Kaydet";
+    if (cancel) cancel.hidden = !editing;
+    if (section) section.classList.toggle("acc-vault-form-editing", !!editing);
+  }
+
+  function accResetVaultForm() {
+    var editId = document.getElementById("acc-vault-edit-id");
+    if (editId) editId.value = "";
+    var usdt = document.getElementById("acc-vault-usdt");
+    var fee = document.getElementById("acc-vault-fee");
+    var desc = document.getElementById("acc-vault-desc");
+    var method = document.getElementById("acc-vault-method");
+    var optype = document.getElementById("acc-vault-optype");
+    if (usdt) usdt.value = "";
+    if (fee) fee.value = "0";
+    if (desc) desc.value = "";
+    if (method) method.value = "";
+    if (optype) optype.value = "";
+    accClearFormRates("acc-vault-rate-usd", null);
+    accUpdateVaultTlPreview();
+    accSetVaultFormMode(false);
+  }
+
+  function accStartVaultEdit(row) {
+    if (!row) return;
+    var editId = document.getElementById("acc-vault-edit-id");
+    var vaultSel = document.getElementById("acc-vault-select");
+    var dateEl = document.getElementById("acc-vault-date");
+    var dirEl = document.getElementById("acc-vault-direction");
+    var usdtEl = document.getElementById("acc-vault-usdt");
+    var feeEl = document.getElementById("acc-vault-fee");
+    var rateEl = document.getElementById("acc-vault-rate-usd");
+    var optypeEl = document.getElementById("acc-vault-optype");
+    var methodEl = document.getElementById("acc-vault-method");
+    var descEl = document.getElementById("acc-vault-desc");
+    if (editId) editId.value = String(row.id);
+    if (vaultSel && row.vault_id) vaultSel.value = String(row.vault_id);
+    if (dateEl) dateEl.value = row.tx_date || "";
+    if (dirEl) dirEl.value = row.tx_type || (row.usdt_in > 0 ? "in" : "out");
+    if (usdtEl) usdtEl.value = row.usdt_in > 0 ? row.usdt_in : row.usdt_out;
+    if (feeEl) feeEl.value = row.fee_usdt != null ? row.fee_usdt : 0;
+    if (rateEl) rateEl.value = row.rate_display > 0 ? row.rate_display : "";
+    if (optypeEl) optypeEl.value = row.operation_type || "";
+    if (methodEl) {
+      var mn = row.method_name || "";
+      methodEl.value = (mn === "Giriş" || mn === "Çıkış") ? "" : mn;
+    }
+    if (descEl) descEl.value = row.description || "";
+    accSetVaultFormMode(true);
+    accUpdateVaultTlPreview();
+    var section = document.getElementById("acc-vault-form-section");
+    if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function accCancelVaultEdit() {
+    accResetVaultForm();
+  }
+
   function accLoadVault() {
     return accApi("/api/accounting/vault-transactions" + accVaultQuery()).then(function (res) {
       if (!res || !res.ok) return;
@@ -1290,13 +1354,31 @@
         '<td class="acc-vault-bal">' + (r.balance_try != null ? accMoney(r.balance_try, "TRY") : "—") + "</td>" +
         '<td class="acc-vault-desc">' + accLinkify(r.description) + "</td>" +
         "<td>" + accEsc(r.vault_name || "—") + "</td>" +
-        '<td><button class="btn btn-sm btn-danger" data-del-vault="' + r.id + '">Sil</button></td></tr>';
+        '<td class="acc-vault-row-actions">' +
+          '<button type="button" class="btn btn-sm" data-edit-vault="' + r.id + '" title="Düzenle">Düzenle</button> ' +
+          '<button type="button" class="btn btn-sm btn-danger" data-del-vault="' + r.id + '">Sil</button>' +
+        "</td></tr>";
     }).join("");
+    tbody.querySelectorAll("[data-edit-vault]").forEach(function (btn) {
+      btn.onclick = function () {
+        var id = parseInt(btn.getAttribute("data-edit-vault"), 10);
+        var row = (accData["acc-vault"].rows || []).find(function (r) { return r.id === id; });
+        if (row) accStartVaultEdit(row);
+      };
+    });
     tbody.querySelectorAll("[data-del-vault]").forEach(function (btn) {
       btn.onclick = function () {
         if (!confirm("Silinsin mi?")) return;
-        accApi("/api/accounting/vault-transactions/" + btn.getAttribute("data-del-vault"), { method: "DELETE" })
-          .then(function (r) { if (r && r.ok) { accLoadVault(); accToast("Silindi"); } });
+        var delId = btn.getAttribute("data-del-vault");
+        accApi("/api/accounting/vault-transactions/" + delId, { method: "DELETE" })
+          .then(function (r) {
+            if (r && r.ok) {
+              var editId = document.getElementById("acc-vault-edit-id");
+              if (editId && editId.value === delId) accResetVaultForm();
+              accLoadVault();
+              accToast("Silindi");
+            }
+          });
       };
     });
     accUpdateFoot("acc-vault", accData["acc-vault"].rows.length, "kayıt");
@@ -1692,6 +1774,8 @@
 
     accBindForm("acc-vault-form", function (e) {
       e.preventDefault();
+      var editIdEl = document.getElementById("acc-vault-edit-id");
+      var editId = editIdEl && editIdEl.value ? editIdEl.value.trim() : "";
       var body = Object.assign({
         tx_date: document.getElementById("acc-vault-date").value,
         vault_id: parseInt(document.getElementById("acc-vault-select").value, 10),
@@ -1702,21 +1786,18 @@
         fee_usdt: document.getElementById("acc-vault-fee").value || 0,
         description: document.getElementById("acc-vault-desc").value.trim()
       }, accReadFormRates("acc-vault-rate-usd", null));
-      accApi("/api/accounting/vault-transactions", {
-        method: "POST",
+      var url = editId
+        ? "/api/accounting/vault-transactions/" + editId
+        : "/api/accounting/vault-transactions";
+      accApi(url, {
+        method: editId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
       }).then(function (r) {
         if (r && r.ok) {
-          document.getElementById("acc-vault-usdt").value = "";
-          document.getElementById("acc-vault-fee").value = "0";
-          document.getElementById("acc-vault-desc").value = "";
-          document.getElementById("acc-vault-method").value = "";
-          document.getElementById("acc-vault-optype").value = "";
-          accClearFormRates("acc-vault-rate-usd", null);
-          accUpdateVaultTlPreview();
+          accResetVaultForm();
           accLoadVault();
-          accSavedToast("Kasa hareketi kaydedildi", r.data.rates);
+          accSavedToast(editId ? "Kasa hareketi güncellendi" : "Kasa hareketi kaydedildi", r.data.rates);
         } else if (r) alert(r.data.error || "Hata");
       });
     });
@@ -1752,6 +1833,10 @@
     var vaultAddToggle = document.getElementById("acc-vault-add-toggle");
     var vaultCreateForm = document.getElementById("acc-vault-create-form");
     var vaultAddCancel = document.getElementById("acc-vault-add-cancel");
+    var vaultEditCancel = document.getElementById("acc-vault-edit-cancel");
+    if (vaultEditCancel) {
+      vaultEditCancel.onclick = accCancelVaultEdit;
+    }
     if (vaultAddToggle && vaultCreateForm) {
       vaultAddToggle.onclick = function () { vaultCreateForm.hidden = !vaultCreateForm.hidden; };
     }

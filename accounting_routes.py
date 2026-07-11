@@ -1076,17 +1076,15 @@ def create_accounting_blueprint(permission_required):
             }
         )
 
-    @bp.route("/vault-transactions", methods=["POST"])
-    @acc_perm(*MODULE_ACCESS)
-    def create_vault_transaction():
-        data = request.get_json(silent=True) or {}
+    def prepare_vault_tx_request(data):
+        """POST/PUT için ortak doğrulama — (tx_date, vault_id, vault_name, payload) veya hata."""
         tx_date = parse_date(data.get("tx_date"))
         description = (data.get("description") or "").strip()
         method_name = (data.get("method_name") or "").strip()
         operation_type = (data.get("operation_type") or "").strip()
 
         if not tx_date:
-            return jsonify({"error": "Geçerli tarih girin."}), 400
+            return None, (jsonify({"error": "Geçerli tarih girin."}), 400)
 
         direction = (data.get("direction") or data.get("tx_type") or "").strip().lower()
         usdt_amount = data.get("usdt_amount")
@@ -1099,7 +1097,7 @@ def create_accounting_blueprint(permission_required):
             if not rate_usd:
                 rates, rate_err = rates_from_request(data)
                 if rate_err:
-                    return jsonify({"error": rate_err}), 400
+                    return None, (jsonify({"error": rate_err}), 400)
                 rate_usd = rates["usd_try"]
             payload, err = build_vault_tx_payload(
                 usdt_amount,
@@ -1111,21 +1109,20 @@ def create_accounting_blueprint(permission_required):
                 operation_type=operation_type,
             )
             if err:
-                return jsonify({"error": err}), 400
+                return None, (jsonify({"error": err}), 400)
         else:
-            vault_name_legacy = (data.get("vault_name") or "").strip()
             tx_type = direction
             amount = parse_amount(data.get("amount"))
             if tx_type not in ("in", "out"):
-                return jsonify({"error": "İşlem yönü Gelen veya Giden olmalı."}), 400
+                return None, (jsonify({"error": "İşlem yönü Gelen veya Giden olmalı."}), 400)
             if amount is None or amount <= 0:
-                return jsonify({"error": "Geçerli tutar girin."}), 400
+                return None, (jsonify({"error": "Geçerli tutar girin."}), 400)
             rates, rate_err = rates_from_request(data)
             if rate_err:
-                return jsonify({"error": rate_err}), 400
+                return None, (jsonify({"error": rate_err}), 400)
             fx, fx_err = build_money(amount, data.get("currency"), rates)
             if fx_err:
-                return jsonify({"error": fx_err}), 400
+                return None, (jsonify({"error": fx_err}), 400)
             payload = {
                 "tx_type": tx_type,
                 "method_name": method_name,
@@ -1148,17 +1145,50 @@ def create_accounting_blueprint(permission_required):
             if vault_id:
                 vault = fetchone(conn, "SELECT * FROM acc_vaults WHERE id = ?", (int(vault_id),))
                 if not vault:
-                    return jsonify({"error": "Kasa bulunamadı."}), 404
+                    return None, (jsonify({"error": "Kasa bulunamadı."}), 404)
                 vault_id = vault["id"]
                 vault_name = vault["name"]
             elif vault_name:
                 vault = fetchone(conn, "SELECT * FROM acc_vaults WHERE name = ?", (vault_name,))
                 if not vault:
-                    return jsonify({"error": "Kasa bulunamadı."}), 404
+                    return None, (jsonify({"error": "Kasa bulunamadı."}), 404)
                 vault_id = vault["id"]
             else:
-                return jsonify({"error": "Kasa seçin."}), 400
+                return None, (jsonify({"error": "Kasa seçin."}), 400)
 
+        return (tx_date, vault_id, vault_name, payload), None
+
+    def vault_tx_row_values(tx_date, vault_id, vault_name, payload):
+        return (
+            tx_date,
+            vault_id,
+            vault_name,
+            payload["tx_type"],
+            payload.get("method_name", ""),
+            payload.get("operation_type", ""),
+            payload.get("description", ""),
+            payload["amount"],
+            payload.get("currency", "USD"),
+            payload.get("usdt_in", 0),
+            payload.get("usdt_out", 0),
+            payload.get("fee_usdt", 0),
+            payload.get("amount_try", 0),
+            payload.get("amount_usd", 0),
+            payload.get("amount_eur", 0),
+            payload.get("rate_usd_try", 0),
+            payload.get("rate_eur_try", 0),
+        )
+
+    @bp.route("/vault-transactions", methods=["POST"])
+    @acc_perm(*MODULE_ACCESS)
+    def create_vault_transaction():
+        data = request.get_json(silent=True) or {}
+        prepared, err = prepare_vault_tx_request(data)
+        if err:
+            return err
+        tx_date, vault_id, vault_name, payload = prepared
+
+        with closing(get_db()) as conn:
             now = iso(utcnow())
             vid = insert_returning_id(
                 conn,
@@ -1169,26 +1199,7 @@ def create_accounting_blueprint(permission_required):
                  amount_try, amount_usd, amount_eur, rate_usd_try, rate_eur_try, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    tx_date,
-                    vault_id,
-                    vault_name,
-                    payload["tx_type"],
-                    payload.get("method_name", ""),
-                    payload.get("operation_type", ""),
-                    payload.get("description", ""),
-                    payload["amount"],
-                    payload.get("currency", "USD"),
-                    payload.get("usdt_in", 0),
-                    payload.get("usdt_out", 0),
-                    payload.get("fee_usdt", 0),
-                    payload.get("amount_try", 0),
-                    payload.get("amount_usd", 0),
-                    payload.get("amount_eur", 0),
-                    payload.get("rate_usd_try", 0),
-                    payload.get("rate_eur_try", 0),
-                    now,
-                ),
+                vault_tx_row_values(tx_date, vault_id, vault_name, payload) + (now,),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_vault_transactions WHERE id = ?", (vid,))
@@ -1200,6 +1211,43 @@ def create_accounting_blueprint(permission_required):
                 "rates": {"usd_try": enriched.get("rate_display"), "eur_try": enriched.get("rate_eur_try")},
             }
         ), 201
+
+    @bp.route("/vault-transactions/<int:tx_id>", methods=["PUT"])
+    @acc_perm(*MODULE_ACCESS)
+    def update_vault_transaction(tx_id):
+        data = request.get_json(silent=True) or {}
+        prepared, err = prepare_vault_tx_request(data)
+        if err:
+            return err
+        tx_date, vault_id, vault_name, payload = prepared
+
+        with closing(get_db()) as conn:
+            existing = fetchone(conn, "SELECT id FROM acc_vault_transactions WHERE id = ?", (tx_id,))
+            if not existing:
+                return jsonify({"error": "Kayıt bulunamadı."}), 404
+            execute(
+                conn,
+                """
+                UPDATE acc_vault_transactions
+                SET tx_date = ?, vault_id = ?, vault_name = ?, tx_type = ?, method_name = ?,
+                    operation_type = ?, description = ?, amount = ?, currency = ?,
+                    usdt_in = ?, usdt_out = ?, fee_usdt = ?,
+                    amount_try = ?, amount_usd = ?, amount_eur = ?,
+                    rate_usd_try = ?, rate_eur_try = ?
+                WHERE id = ?
+                """,
+                vault_tx_row_values(tx_date, vault_id, vault_name, payload) + (tx_id,),
+            )
+            conn.commit()
+            row = fetchone(conn, "SELECT * FROM acc_vault_transactions WHERE id = ?", (tx_id,))
+
+        enriched = enrich_vault_transaction(dict(row))
+        return jsonify(
+            {
+                "vault_transaction": enriched,
+                "rates": {"usd_try": enriched.get("rate_display"), "eur_try": enriched.get("rate_eur_try")},
+            }
+        )
 
     @bp.route("/vault-transactions/<int:tx_id>", methods=["DELETE"])
     @acc_perm(*MODULE_ACCESS)
