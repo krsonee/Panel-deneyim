@@ -1782,6 +1782,8 @@ def migrate_admin_users(conn):
         execute(conn, "ALTER TABLE admin_users ADD COLUMN two_factor_enabled INTEGER NOT NULL DEFAULT 0")
     if "display_name" not in cols:
         execute(conn, "ALTER TABLE admin_users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
+    if "must_change_password" not in cols:
+        execute(conn, "ALTER TABLE admin_users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
     conn.commit()
 
     rows = fetchall(conn, "SELECT id, username, role, permissions FROM admin_users")

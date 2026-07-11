@@ -1802,6 +1802,7 @@
               <div>
                 <label class="field-label" for="new-user-pass">Şifre</label>
                 <input class="field-input" id="new-user-pass" type="password" placeholder="En az 6 karakter" required>
+                <p class="muted-sm" style="margin-top:0.35rem;">Kullanıcı ilk girişte bu şifreyi değiştirmeye zorlanacak.</p>
               </div>
             </div>
             <div class="form-grid-2">
@@ -1810,7 +1811,7 @@
                 <input class="field-input" id="new-user-display" placeholder="Örn: Tolga">
               </div>
               <div style="display:flex;align-items:flex-end;gap:0.6rem;padding-bottom:0.55rem;">
-                <input type="checkbox" id="new-user-2fa" style="width:auto;">
+                <input type="checkbox" id="new-user-2fa" style="width:auto;" checked>
                 <label class="field-label" for="new-user-2fa" style="margin:0;">Google Authenticator zorunlu</label>
               </div>
             </div>
@@ -1868,6 +1869,7 @@
           <div style="margin-bottom:0.85rem;">
             <label class="field-label" for="edit-user-pass">Yeni şifre (opsiyonel)</label>
             <input class="field-input" id="edit-user-pass" type="password" placeholder="Değiştirmek için yaz">
+            <p class="muted-sm" style="margin-top:0.35rem;">Şifre girilirse kullanıcı bir dahaki girişte değiştirmeye zorlanır.</p>
           </div>
           <div style="margin-bottom:0.85rem;display:flex;align-items:center;gap:0.6rem;">
             <input type="checkbox" id="edit-user-2fa" style="width:auto;">
@@ -2528,6 +2530,7 @@
               '<div class="user-card-actions">'+
                 '<button type="button" class="btn-ghost" data-edit-user="'+u.id+'">Yetki</button>'+
                 '<button type="button" class="btn-ghost" data-unlock-user="'+u.id+'">Kilidi Aç</button>'+
+                (u.two_factor_required?'<button type="button" class="btn-ghost" data-reset-2fa-user="'+u.id+'">2FA Sıfırla</button>':'')+
                 (users.length>1?'<button type="button" class="btn-ghost danger" data-del-user="'+u.id+'">Sil</button>':'')+
               '</div></div>';
           }).join("") : '<p class="muted" style="padding:0.5rem 0;">Henüz kullanıcı yok</p>';
@@ -2560,6 +2563,14 @@
               fetch(API+"/api/admin/users/"+btn.getAttribute("data-unlock-user")+"/unlock",{method:"POST"})
                 .then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});})
                 .then(function(res){ if(!res.ok){alert(res.data.error);return;} toast("Kilit kaldırıldı"); });
+            };
+          });
+          box.querySelectorAll("[data-reset-2fa-user]").forEach(function(btn) {
+            btn.onclick = function() {
+              if (!confirm("Bu kullanıcının 2FA'sı sıfırlansın mı? Bir dahaki girişte yeniden kurulum isteyecek.")) return;
+              fetch(API+"/api/admin/users/"+btn.getAttribute("data-reset-2fa-user")+"/2fa/reset",{method:"POST"})
+                .then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});})
+                .then(function(res){ if(!res.ok){alert(res.data.error);return;} toast("2FA sıfırlandı, kullanıcı tekrar kurmalı"); loadSettings(); });
             };
           });
         });
@@ -4128,7 +4139,7 @@
             document.getElementById("new-user-name").value = "";
             document.getElementById("new-user-pass").value = "";
             document.getElementById("new-user-display").value = "";
-            document.getElementById("new-user-2fa").checked = false;
+            document.getElementById("new-user-2fa").checked = true;
             loadSettings();
             toast("Admin eklendi!");
           });

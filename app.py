@@ -172,6 +172,7 @@ def admin_user_to_dict(row):
         "created_at": row["created_at"],
         "two_factor_required": bool(int(row["two_factor_required"] or 0)) if "two_factor_required" in keys else False,
         "two_factor_enabled": bool(int(row["two_factor_enabled"] or 0)) if "two_factor_enabled" in keys else False,
+        "must_change_password": bool(int(row["must_change_password"] or 0)) if "must_change_password" in keys else False,
     }
 
 
@@ -885,6 +886,24 @@ def index():
     return redirect(url_for("admin_page"))
 
 
+def _proceed_after_password_ok(user):
+    """Şifre (varsa zorunlu şifre değişikliği dahil) onaylandıktan sonraki adım:
+    2FA gerekiyorsa doğrulamaya yönlendir, yoksa oturumu tamamen aç.
+    Hem /admin/login hem /admin/force-password-change buradan devam eder."""
+    if user.get("two_factor_required"):
+        session["pending_2fa_username"] = user["username"]
+        session["pending_2fa_display_name"] = user.get("display_name") or ""
+        audit("login_password_ok_pending_2fa", detail=f"username={user['username']}")
+        return redirect(url_for("verify_2fa_page"))
+    login_admin_user(user)
+    session.permanent = True
+    if not has_any_module_access(get_session_permissions()):
+        session.clear()
+        return redirect(url_for("login_page", error="Hesabınızda panel erişim yetkisi yok. Yöneticinize başvurun."))
+    audit("login_success")
+    return redirect(url_for("admin_page"))
+
+
 @app.route("/admin/login", methods=["GET", "POST"])
 def login_page():
     if session.get("admin_logged_in"):
@@ -904,19 +923,11 @@ def login_page():
             user = get_admin_user(username, password)
             if user:
                 record_login_success(username, client_ip)
-                if user.get("two_factor_required"):
-                    session["pending_2fa_username"] = user["username"]
-                    session["pending_2fa_display_name"] = user.get("display_name") or ""
-                    audit("login_password_ok_pending_2fa", detail=f"username={user['username']}")
-                    return redirect(url_for("verify_2fa_page"))
-                login_admin_user(user)
-                session.permanent = True
-                if not has_any_module_access(get_session_permissions()):
-                    session.clear()
-                    error = "Hesabınızda panel erişim yetkisi yok. Yöneticinize başvurun."
-                else:
-                    audit("login_success")
-                    return redirect(url_for("admin_page"))
+                if user.get("must_change_password"):
+                    session["pending_pwchange_username"] = user["username"]
+                    audit("login_password_ok_pending_pwchange", detail=f"username={user['username']}")
+                    return redirect(url_for("force_password_change_page"))
+                return _proceed_after_password_ok(user)
             else:
                 just_locked = record_login_failure(username, client_ip)
                 audit("login_failed", detail=f"username={username}", status=401)
@@ -983,6 +994,45 @@ def verify_2fa_page():
         secret=secret if is_setup else "",
         qr_svg=qr_svg,
     )
+
+
+@app.route("/admin/force-password-change", methods=["GET", "POST"])
+def force_password_change_page():
+    """Admin tarafından atanan ilk/geçici şifre değiştirilmeden panele girilemez.
+    /admin/verify-2fa gibi pre-login bir adım — @login_required kullanmaz, kendi pending session anahtarını kontrol eder."""
+    username = normalize_username(session.get("pending_pwchange_username") or "")
+    if not username:
+        return redirect(url_for("login_page"))
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT * FROM admin_users WHERE LOWER(username) = ?", (username,))
+    if not row:
+        session.pop("pending_pwchange_username", None)
+        return redirect(url_for("login_page"))
+
+    error = None
+    if request.method == "POST":
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
+        if not new_password or not confirm_password:
+            error = "Yeni şifre ve tekrarı gerekli."
+        elif new_password != confirm_password:
+            error = "Şifreler eşleşmiyor."
+        elif len(new_password) < 6:
+            error = "Şifre en az 6 karakter olmalı."
+        else:
+            with closing(get_db()) as conn:
+                execute(
+                    conn,
+                    "UPDATE admin_users SET password_hash = ?, must_change_password = 0 WHERE LOWER(username) = ?",
+                    (generate_password_hash(new_password, method="pbkdf2:sha256"), username),
+                )
+                conn.commit()
+                updated = fetchone(conn, "SELECT * FROM admin_users WHERE LOWER(username) = ?", (username,))
+            session.pop("pending_pwchange_username", None)
+            audit("forced_password_change", detail=f"username={username}")
+            return _proceed_after_password_ok(admin_user_to_dict(updated))
+
+    return render_template("force_password.html", error=error)
 
 
 @app.route("/admin/logout")
@@ -1751,8 +1801,8 @@ def create_admin_user():
                 conn,
                 """
                 INSERT INTO admin_users
-                  (username, password_hash, role, permissions, created_at, display_name, two_factor_required)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                  (username, password_hash, role, permissions, created_at, display_name, two_factor_required, must_change_password)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1)
                 """,
                 (
                     username,
@@ -1806,6 +1856,8 @@ def update_admin_user(user_id):
                 return jsonify({"error": "Şifre en az 6 karakter olmalı."}), 400
             set_clauses.append("password_hash = ?")
             params.append(generate_password_hash(password, method="pbkdf2:sha256"))
+            # Admin başka birinin şifresini atadığında, o kullanıcı bir dahaki girişte değiştirmeye zorlanır.
+            set_clauses.append("must_change_password = 1")
 
         params.append(user_id)
         execute(conn, f"UPDATE admin_users SET {', '.join(set_clauses)} WHERE id = ?", tuple(params))
@@ -1852,6 +1904,25 @@ def unlock_admin_user(user_id):
         for key in matching_keys:
             _login_attempts.pop(key, None)
     audit("login_unlock", detail=f"target_username={target_username}")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users/<int:user_id>/2fa/reset", methods=["POST"])
+@permission_required("admin.users")
+def admin_reset_user_2fa(user_id):
+    """Süper admin, başka bir kullanıcının 2FA'sını sıfırlar (telefon değişti/kayboldu vb.) — hedefin şifresi istenmez."""
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT username FROM admin_users WHERE id = ?", (user_id,))
+        if not row:
+            return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+        target_username = normalize_username(row["username"])
+        execute(
+            conn,
+            "UPDATE admin_users SET totp_secret = '', two_factor_enabled = 0 WHERE id = ?",
+            (user_id,),
+        )
+        conn.commit()
+    audit("2fa_admin_reset", detail=f"target_username={target_username}")
     return jsonify({"ok": True})
 
 
