@@ -24,7 +24,16 @@ from accounting_payroll import (
     validate_office_amounts,
     validate_payment_split,
 )
-from accounting_period import date_clause, default_accounting_period, period_date_range, period_label
+from accounting_period import (
+    MONTH_PERIOD_RE,
+    date_clause,
+    default_accounting_period,
+    month_period_end_iso,
+    month_period_from_date,
+    parse_period,
+    period_date_range,
+    period_label,
+)
 from accounting_vault import (
     VAULT_ICONS,
     VAULT_PALETTE,
@@ -59,6 +68,145 @@ def slugify_name(value):
     value = value.translate(tr)
     value = re.sub(r"[^a-z0-9]+", "_", value)
     return (value.strip("_")[:48] or "kategori")
+
+
+def valid_month_period(period):
+    raw = (period or "").strip()
+    return raw if MONTH_PERIOD_RE.match(raw) else None
+
+
+def resolve_commission_rate(conn, payment_method_id, ref_date=None, period=None):
+    month = valid_month_period(period) or month_period_from_date(ref_date)
+    if month:
+        row = fetchone(
+            conn,
+            """
+            SELECT commission_rate FROM acc_payment_method_rates
+            WHERE payment_method_id = ? AND period = ?
+            """,
+            (payment_method_id, month),
+        )
+        if row is not None:
+            return float(row["commission_rate"] or 0)
+    pm = fetchone(conn, "SELECT commission_rate FROM acc_payment_methods WHERE id = ?", (payment_method_id,))
+    return float(pm["commission_rate"] or 0) if pm else 0.0
+
+
+def upsert_period_commission_rate(conn, payment_method_id, period, rate):
+    month = valid_month_period(period)
+    if not month:
+        return False
+    now = iso(utcnow())
+    existing = fetchone(
+        conn,
+        "SELECT id FROM acc_payment_method_rates WHERE payment_method_id = ? AND period = ?",
+        (payment_method_id, month),
+    )
+    if existing:
+        execute(
+            conn,
+            """
+            UPDATE acc_payment_method_rates
+            SET commission_rate = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (rate, now, existing["id"]),
+        )
+    else:
+        insert_returning_id(
+            conn,
+            """
+            INSERT INTO acc_payment_method_rates
+            (payment_method_id, period, commission_rate, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (payment_method_id, month, rate, now, now),
+        )
+    return True
+
+
+def enrich_payment_method(conn, row, period=None):
+    data = dict(row)
+    data["global_commission_rate"] = float(data.get("commission_rate") or 0)
+    month = valid_month_period(period)
+    data["period"] = month
+    data["period_rate_override"] = False
+    if month:
+        pr = fetchone(
+            conn,
+            """
+            SELECT commission_rate FROM acc_payment_method_rates
+            WHERE payment_method_id = ? AND period = ?
+            """,
+            (data["id"], month),
+        )
+        if pr is not None:
+            data["commission_rate"] = float(pr["commission_rate"] or 0)
+            data["period_rate_override"] = True
+    return data
+
+
+def compute_finance_commission(conn, payment_method_id, tx_date, fx, commission_rate_override=None):
+    if commission_rate_override is not None:
+        rate = float(commission_rate_override)
+    else:
+        rate = resolve_commission_rate(conn, payment_method_id, ref_date=tx_date)
+    commission_orig = round(fx["amount"] * rate / 100, 2)
+    comm_fx = convert_to_all(
+        commission_orig,
+        fx["currency"],
+        {"usd_try": fx["rate_usd_try"], "eur_try": fx["rate_eur_try"]},
+    )
+    return rate, commission_orig, comm_fx
+
+
+def insert_finance_transaction(
+    conn,
+    tx_date,
+    payment_method_id,
+    tx_type,
+    fx,
+    commission_rate_override=None,
+):
+    pm = fetchone(conn, "SELECT * FROM acc_payment_methods WHERE id = ?", (payment_method_id,))
+    if not pm:
+        return None, "Payment yöntemi bulunamadı."
+    if pm.get("tx_type") and pm["tx_type"] != tx_type:
+        return None, "Seçilen payment bu işlem türü için tanımlı değil."
+    rate, commission_orig, comm_fx = compute_finance_commission(
+        conn, payment_method_id, tx_date, fx, commission_rate_override
+    )
+    now = iso(utcnow())
+    tid = insert_returning_id(
+        conn,
+        """
+        INSERT INTO acc_finance_transactions
+        (tx_date, payment_method_id, tx_type, amount, currency,
+         amount_try, amount_usd, amount_eur,
+         commission_rate, commission_amount,
+         commission_amount_try, commission_amount_usd, commission_amount_eur,
+         rate_usd_try, rate_eur_try, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            tx_date, payment_method_id, tx_type, fx["amount"], fx["currency"],
+            fx["TRY"], fx["USD"], fx["EUR"],
+            rate, commission_orig,
+            comm_fx["TRY"], comm_fx["USD"], comm_fx["EUR"],
+            fx["rate_usd_try"], fx["rate_eur_try"], now,
+        ),
+    )
+    row = fetchone(
+        conn,
+        """
+        SELECT t.*, p.name AS payment_name
+        FROM acc_finance_transactions t
+        INNER JOIN acc_payment_methods p ON p.id = t.payment_method_id
+        WHERE t.id = ?
+        """,
+        (tid,),
+    )
+    return dict(row), None
 
 
 def fetch_employee_departments(conn):
@@ -497,6 +645,7 @@ def create_accounting_blueprint(permission_required):
     @acc_perm(*MODULE_ACCESS)
     def list_payment_methods():
         tx_type = (request.args.get("tx_type") or "").strip().lower()
+        period = valid_month_period(request.args.get("period") or "")
         with closing(get_db()) as conn:
             if tx_type in ("deposit", "withdrawal"):
                 rows = fetchall(
@@ -509,7 +658,11 @@ def create_accounting_blueprint(permission_required):
                     conn,
                     "SELECT * FROM acc_payment_methods ORDER BY name ASC, tx_type ASC",
                 )
-        return jsonify({"payment_methods": [dict(r) for r in rows]})
+            methods = [enrich_payment_method(conn, r, period) for r in rows]
+        payload = {"payment_methods": methods}
+        if period:
+            payload.update({"period": period, "period_label": period_label(period)})
+        return jsonify(payload)
 
     @bp.route("/payment-methods", methods=["POST"])
     @acc_perm(*MODULE_ACCESS)
@@ -535,12 +688,16 @@ def create_accounting_blueprint(permission_required):
                     """,
                     (name, tx_type, rate, now, now),
                 )
+                period = valid_month_period(data.get("period") or "")
+                if period:
+                    upsert_period_commission_rate(conn, pid, period, rate)
                 conn.commit()
                 row = fetchone(conn, "SELECT * FROM acc_payment_methods WHERE id = ?", (pid,))
+                method = enrich_payment_method(conn, row, period)
         except integrity_error_type():
             label = "Yatırım" if tx_type == "deposit" else "Çekim"
             return jsonify({"error": f"Bu payment için {label} komisyonu zaten tanımlı."}), 409
-        return jsonify({"payment_method": dict(row)}), 201
+        return jsonify({"payment_method": method}), 201
 
     @bp.route("/payment-methods/<int:method_id>", methods=["PUT"])
     @acc_perm(*MODULE_ACCESS)
@@ -548,6 +705,7 @@ def create_accounting_blueprint(permission_required):
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
         rate = data.get("commission_rate")
+        period = valid_month_period(data.get("period") or "")
         if rate is not None:
             rate = parse_amount(rate)
             if rate is None:
@@ -558,22 +716,31 @@ def create_accounting_blueprint(permission_required):
             if not row:
                 return jsonify({"error": "Payment bulunamadı."}), 404
             new_name = name or row["name"]
-            new_rate = rate if rate is not None else row["commission_rate"]
-            try:
+            if period and rate is not None:
+                upsert_period_commission_rate(conn, method_id, period, rate)
                 execute(
                     conn,
-                    """
-                    UPDATE acc_payment_methods
-                    SET name = ?, commission_rate = ?, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (new_name, new_rate, now, method_id),
+                    "UPDATE acc_payment_methods SET name = ?, updated_at = ? WHERE id = ?",
+                    (new_name, now, method_id),
                 )
-                conn.commit()
-            except integrity_error_type():
-                return jsonify({"error": "Bu payment ve işlem türü kombinasyonu zaten kayıtlı."}), 409
+            else:
+                new_rate = rate if rate is not None else row["commission_rate"]
+                try:
+                    execute(
+                        conn,
+                        """
+                        UPDATE acc_payment_methods
+                        SET name = ?, commission_rate = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (new_name, new_rate, now, method_id),
+                    )
+                except integrity_error_type():
+                    return jsonify({"error": "Bu payment ve işlem türü kombinasyonu zaten kayıtlı."}), 409
+            conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_payment_methods WHERE id = ?", (method_id,))
-        return jsonify({"payment_method": dict(row)})
+            method = enrich_payment_method(conn, row, period)
+        return jsonify({"payment_method": method})
 
     @bp.route("/payment-methods/<int:method_id>", methods=["DELETE"])
     @acc_perm(*MODULE_ACCESS)
@@ -644,27 +811,168 @@ def create_accounting_blueprint(permission_required):
             if pm.get("tx_type") and pm["tx_type"] != tx_type:
                 return jsonify({"error": "Seçilen payment bu işlem türü için tanımlı değil."}), 400
 
-            rate = float(pm["commission_rate"] or 0)
-            commission_orig = round(fx["amount"] * rate / 100, 2)
-            comm_fx = convert_to_all(commission_orig, fx["currency"], {"usd_try": fx["rate_usd_try"], "eur_try": fx["rate_eur_try"]})
-            now = iso(utcnow())
-            tid = insert_returning_id(
+            rate_override = data.get("commission_rate")
+            if rate_override is not None:
+                rate_override = parse_amount(rate_override)
+                if rate_override is None:
+                    return jsonify({"error": "Geçerli komisyon oranı girin."}), 400
+
+            row, err = insert_finance_transaction(
+                conn,
+                tx_date,
+                payment_method_id,
+                tx_type,
+                fx,
+                commission_rate_override=rate_override,
+            )
+            if err:
+                return jsonify({"error": err}), 400
+            conn.commit()
+        return jsonify({"transaction": row, "rates": used_rates_payload(fx)}), 201
+
+    @bp.route("/transactions/bulk", methods=["POST"])
+    @acc_perm(*MODULE_ACCESS)
+    def bulk_create_transactions():
+        data = request.get_json(silent=True) or {}
+        period = valid_month_period(data.get("period") or "")
+        if not period:
+            return jsonify({"error": "Geçerli dönem girin (YYYY-MM)."}), 400
+        default_date = month_period_end_iso(period)
+        if not default_date:
+            return jsonify({"error": "Geçerli dönem girin (YYYY-MM)."}), 400
+        items = data.get("items") or []
+        if not items:
+            return jsonify({"error": "En az bir işlem girin."}), 400
+
+        created, errors = [], []
+        with closing(get_db()) as conn:
+            for idx, item in enumerate(items, 1):
+                tx_date = parse_date(item.get("tx_date")) or default_date
+                tx_type = (item.get("tx_type") or "").strip().lower()
+                amount = parse_amount(item.get("amount"))
+                if tx_type not in ("deposit", "withdrawal"):
+                    errors.append({"index": idx, "error": "İşlem türü Yatırım veya Çekim olmalı."})
+                    continue
+                if amount is None or amount <= 0:
+                    errors.append({"index": idx, "error": "Geçerli miktar girin."})
+                    continue
+                rates, rate_err = rates_from_request(item)
+                if rate_err:
+                    errors.append({"index": idx, "error": rate_err})
+                    continue
+                fx, err = build_money(amount, item.get("currency"), rates)
+                if err:
+                    errors.append({"index": idx, "error": err})
+                    continue
+                try:
+                    payment_method_id = int(item.get("payment_method_id"))
+                except (TypeError, ValueError):
+                    errors.append({"index": idx, "error": "Payment yöntemi seçin."})
+                    continue
+
+                rate_override = item.get("commission_rate")
+                if rate_override is not None:
+                    rate_override = parse_amount(rate_override)
+                    if rate_override is None:
+                        errors.append({"index": idx, "error": "Geçerli komisyon oranı girin."})
+                        continue
+
+                row, ins_err = insert_finance_transaction(
+                    conn,
+                    tx_date,
+                    payment_method_id,
+                    tx_type,
+                    fx,
+                    commission_rate_override=rate_override,
+                )
+                if ins_err:
+                    errors.append({"index": idx, "error": ins_err})
+                else:
+                    created.append(row)
+            conn.commit()
+        return jsonify({
+            "period": period,
+            "period_label": period_label(period),
+            "created": len(created),
+            "transactions": created,
+            "errors": errors,
+        }), 201 if created else 400
+
+    @bp.route("/transactions/<int:tx_id>", methods=["PUT"])
+    @acc_perm(*MODULE_ACCESS)
+    def update_transaction(tx_id):
+        data = request.get_json(silent=True) or {}
+        with closing(get_db()) as conn:
+            existing = fetchone(conn, "SELECT * FROM acc_finance_transactions WHERE id = ?", (tx_id,))
+            if not existing:
+                return jsonify({"error": "İşlem bulunamadı."}), 404
+
+            tx_date = parse_date(data.get("tx_date")) or existing.get("tx_date")
+            tx_type = (data.get("tx_type") or existing.get("tx_type") or "").strip().lower()
+            amount = parse_amount(data.get("amount")) if data.get("amount") is not None else existing.get("amount")
+            currency = parse_currency(data.get("currency") or existing.get("currency"))
+
+            if not tx_date:
+                return jsonify({"error": "Geçerli tarih girin."}), 400
+            if tx_type not in ("deposit", "withdrawal"):
+                return jsonify({"error": "İşlem türü Yatırım veya Çekim olmalı."}), 400
+            if amount is None or amount <= 0:
+                return jsonify({"error": "Geçerli miktar girin."}), 400
+            if not currency:
+                return jsonify({"error": "Para birimi seçin: TRY, USD veya EUR."}), 400
+
+            try:
+                payment_method_id = int(
+                    data.get("payment_method_id")
+                    if data.get("payment_method_id") is not None
+                    else existing["payment_method_id"]
+                )
+            except (TypeError, ValueError):
+                return jsonify({"error": "Payment yöntemi seçin."}), 400
+
+            rates, rate_err = rates_from_request(data, stored=dict(existing))
+            if rate_err:
+                return jsonify({"error": rate_err}), 400
+            fx, err = build_money(amount, currency, rates)
+            if err:
+                return jsonify({"error": err}), 400
+
+            pm = fetchone(conn, "SELECT * FROM acc_payment_methods WHERE id = ?", (payment_method_id,))
+            if not pm:
+                return jsonify({"error": "Payment yöntemi bulunamadı."}), 404
+            if pm.get("tx_type") and pm["tx_type"] != tx_type:
+                return jsonify({"error": "Seçilen payment bu işlem türü için tanımlı değil."}), 400
+
+            rate_override = data.get("commission_rate")
+            if rate_override is not None:
+                rate_override = parse_amount(rate_override)
+                if rate_override is None:
+                    return jsonify({"error": "Geçerli komisyon oranı girin."}), 400
+            elif "commission_rate" not in data:
+                rate_override = existing.get("commission_rate")
+            else:
+                rate_override = None
+
+            rate, commission_orig, comm_fx = compute_finance_commission(
+                conn, payment_method_id, tx_date, fx, commission_rate_override=rate_override
+            )
+            execute(
                 conn,
                 """
-                INSERT INTO acc_finance_transactions
-                (tx_date, payment_method_id, tx_type, amount, currency,
-                 amount_try, amount_usd, amount_eur,
-                 commission_rate, commission_amount,
-                 commission_amount_try, commission_amount_usd, commission_amount_eur,
-                 rate_usd_try, rate_eur_try, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                UPDATE acc_finance_transactions
+                SET tx_date = ?, payment_method_id = ?, tx_type = ?, amount = ?, currency = ?,
+                    amount_try = ?, amount_usd = ?, amount_eur = ?,
+                    commission_rate = ?, commission_amount = ?,
+                    commission_amount_try = ?, commission_amount_usd = ?, commission_amount_eur = ?,
+                    rate_usd_try = ?, rate_eur_try = ?
+                WHERE id = ?
                 """,
                 (
                     tx_date, payment_method_id, tx_type, fx["amount"], fx["currency"],
                     fx["TRY"], fx["USD"], fx["EUR"],
                     rate, commission_orig,
                     comm_fx["TRY"], comm_fx["USD"], comm_fx["EUR"],
-                    fx["rate_usd_try"], fx["rate_eur_try"], now,
+                    fx["rate_usd_try"], fx["rate_eur_try"], tx_id,
                 ),
             )
             conn.commit()
@@ -676,9 +984,9 @@ def create_accounting_blueprint(permission_required):
                 INNER JOIN acc_payment_methods p ON p.id = t.payment_method_id
                 WHERE t.id = ?
                 """,
-                (tid,),
+                (tx_id,),
             )
-        return jsonify({"transaction": dict(row), "rates": used_rates_payload(fx)}), 201
+        return jsonify({"transaction": dict(row), "rates": used_rates_payload(fx)})
 
     @bp.route("/transactions/<int:tx_id>", methods=["DELETE"])
     @acc_perm(*MODULE_ACCESS)

@@ -82,5 +82,29 @@ def current_month_period(reference=None):
     return f"{reference.year:04d}-{reference.month:02d}"
 
 
+def month_period_from_date(date_str):
+    """ISO tarihten YYYY-MM üretir."""
+    if not date_str:
+        return None
+    match = MONTH_PERIOD_RE.match(str(date_str).strip()[:7])
+    if match:
+        return match.group(0)
+    parts = str(date_str).strip()[:10].split("-")
+    if len(parts) >= 2 and len(parts[0]) == 4:
+        try:
+            month = int(parts[1])
+            if 1 <= month <= 12:
+                return f"{parts[0]}-{month:02d}"
+        except ValueError:
+            pass
+    return None
+
+
+def month_period_end_iso(period, reference=None):
+    """Ay döneminin son günü (YYYY-MM-DD)."""
+    _, end, _ = parse_period(period, reference)
+    return end.isoformat() if end else None
+
+
 def default_accounting_period(reference=None):
     return current_month_period(reference)

@@ -331,6 +331,51 @@
     return p ? "?period=" + encodeURIComponent(p) : "";
   }
 
+  function accSelectedMonthPeriod() {
+    accResolvePeriod();
+    if (accPeriodMode !== "pick") return null;
+    var monthEl = document.getElementById("acc-filter-month");
+    return monthEl && monthEl.value ? monthEl.value : accCurrentMonth();
+  }
+
+  function accPaymentMethodsQuery() {
+    var month = accSelectedMonthPeriod();
+    return month ? "?period=" + encodeURIComponent(month) : "";
+  }
+
+  function accPeriodEndDate() {
+    var month = accSelectedMonthPeriod();
+    if (!month) return accToday();
+    var parts = month.split("-");
+    var y = parseInt(parts[0], 10);
+    var m = parseInt(parts[1], 10);
+    var last = new Date(y, m, 0).getDate();
+    return month + "-" + String(last).padStart(2, "0");
+  }
+
+  function accSyncTxDateToPeriod() {
+    var editId = document.getElementById("acc-tx-edit-id");
+    if (editId && editId.value) return;
+    var el = document.getElementById("acc-tx-date");
+    if (!el) return;
+    if (accPeriodMode === "pick") el.value = accPeriodEndDate();
+  }
+
+  function accUpdateCommPeriodLabel(label) {
+    var el = document.getElementById("acc-comm-period-label");
+    if (!el) return;
+    if (accSelectedMonthPeriod() && label) {
+      el.textContent = "· " + label.replace(/^·\s*/, "");
+    } else {
+      el.textContent = accSelectedMonthPeriod() ? "" : "· Varsayılan oranlar";
+    }
+  }
+
+  function accUpdateTxPeriodLabel(label) {
+    var el = document.getElementById("acc-tx-period-label");
+    if (el && label) el.textContent = label.replace(/^·\s*/, "");
+  }
+
   function accCompare(a, b, dir) {
     var m = dir === "asc" ? 1 : -1;
     if (a == null && b == null) return 0;
@@ -915,53 +960,186 @@
     });
   }
 
-  function accLoadPaymentMethods() {
-    return accApi("/api/accounting/payment-methods").then(function (res) {
-      if (!res || !res.ok) return;
-      accPaymentMethods = res.data.payment_methods || [];
-      accRefreshTxPaymentSelect();
-      var tbody = document.getElementById("acc-pm-table");
-      if (!tbody) return;
-      if (!accPaymentMethods.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz payment tanımı yok</td></tr>';
-        return;
-      }
-      tbody.innerHTML = accPaymentMethods.map(function (p) {
-        return '<tr><td><strong>' + accEsc(p.name) + '</strong></td>' +
-          '<td><span class="tag ' + (p.tx_type === "deposit" ? "online" : "offline") + '">' + accTxTypeLabel(p.tx_type) + '</span></td>' +
-          '<td><input type="number" class="acc-inline-rate" data-pm-id="' + p.id + '" value="' + p.commission_rate + '" step="0.01" min="0" style="width:80px;padding:0.3rem;"></td>' +
-          '<td class="mono muted">' + accEsc((p.updated_at || p.created_at || "").slice(0, 10)) + '</td>' +
-          '<td><button class="btn btn-sm btn-danger" data-del-pm="' + p.id + '">Sil</button></td></tr>';
-      }).join("");
-      tbody.querySelectorAll(".acc-inline-rate").forEach(function (inp) {
-        inp.addEventListener("change", function () {
-          accApi("/api/accounting/payment-methods/" + inp.getAttribute("data-pm-id"), {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ commission_rate: parseFloat(inp.value) || 0 })
-          }).then(function (r) {
-            if (r && r.ok) { accToast("Komisyon oranı güncellendi"); accLoadPaymentMethods(); }
-            else if (r) alert(r.data.error || "Hata");
-          });
+  function accBindPaymentMethodTable(tbodyId, methods, txType) {
+    var tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    var filtered = (methods || []).filter(function (p) { return p.tx_type === txType; });
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz ' +
+        (txType === "deposit" ? "yatırım" : "çekim") + ' yöntemi yok</td></tr>';
+      return;
+    }
+    var month = accSelectedMonthPeriod();
+    tbody.innerHTML = filtered.map(function (p) {
+      var globalRate = p.global_commission_rate != null ? p.global_commission_rate : p.commission_rate;
+      var overrideHint = p.period_rate_override
+        ? '<span class="tag online" style="font-size:0.62rem;margin-left:0.25rem;">aylık</span>'
+        : "";
+      return '<tr><td><strong>' + accEsc(p.name) + '</strong>' + overrideHint + '</td>' +
+        '<td><input type="number" class="acc-inline-rate" data-pm-id="' + p.id + '" value="' + p.commission_rate + '" step="0.01" min="0" style="width:80px;padding:0.3rem;"></td>' +
+        '<td class="mono muted">' + globalRate + '%</td>' +
+        '<td class="mono muted">' + accEsc((p.updated_at || p.created_at || "").slice(0, 10)) + '</td>' +
+        '<td><button class="btn btn-sm btn-danger" data-del-pm="' + p.id + '">Sil</button></td></tr>';
+    }).join("");
+    tbody.querySelectorAll(".acc-inline-rate").forEach(function (inp) {
+      inp.addEventListener("change", function () {
+        var body = { commission_rate: parseFloat(inp.value) || 0 };
+        if (month) body.period = month;
+        accApi("/api/accounting/payment-methods/" + inp.getAttribute("data-pm-id"), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }).then(function (r) {
+          if (r && r.ok) {
+            accToast(month ? "Aylık komisyon oranı güncellendi" : "Komisyon oranı güncellendi");
+            accLoadPaymentMethods();
+          } else if (r) alert(r.data.error || "Hata");
         });
       });
-      tbody.querySelectorAll("[data-del-pm]").forEach(function (btn) {
-        btn.onclick = function () {
-          if (!confirm("Silinsin mi?")) return;
-          accApi("/api/accounting/payment-methods/" + btn.getAttribute("data-del-pm"), { method: "DELETE" })
-            .then(function (r) {
-              if (r && r.ok) { accLoadPaymentMethods(); accToast("Silindi"); }
-              else if (r) alert(r.data.error || "Hata");
-            });
-        };
-      });
     });
+    tbody.querySelectorAll("[data-del-pm]").forEach(function (btn) {
+      btn.onclick = function () {
+        if (!confirm("Silinsin mi?")) return;
+        accApi("/api/accounting/payment-methods/" + btn.getAttribute("data-del-pm"), { method: "DELETE" })
+          .then(function (r) {
+            if (r && r.ok) { accLoadPaymentMethods(); accToast("Silindi"); }
+            else if (r) alert(r.data.error || "Hata");
+          });
+      };
+    });
+  }
+
+  function accLoadPaymentMethods() {
+    return accApi("/api/accounting/payment-methods" + accPaymentMethodsQuery()).then(function (res) {
+      if (!res || !res.ok) return;
+      accPaymentMethods = res.data.payment_methods || [];
+      if (res.data.period_label) accUpdateCommPeriodLabel(res.data.period_label);
+      accRefreshTxPaymentSelect();
+      accBindPaymentMethodTable("acc-pm-table-deposit", accPaymentMethods, "deposit");
+      accBindPaymentMethodTable("acc-pm-table-withdrawal", accPaymentMethods, "withdrawal");
+    });
+  }
+
+  function accTransactionPaymentTotals(rows) {
+    var map = {};
+    (rows || []).forEach(function (r) {
+      var key = (r.payment_name || "?") + "|" + r.tx_type;
+      if (!map[key]) {
+        map[key] = {
+          name: r.payment_name || "?",
+          tx_type: r.tx_type,
+          amount_try: 0,
+          commission_try: 0,
+          count: 0,
+        };
+      }
+      map[key].amount_try += parseFloat(r.amount_try) || 0;
+      map[key].commission_try += parseFloat(r.commission_amount_try) || 0;
+      map[key].count += 1;
+    });
+    return Object.keys(map).map(function (k) { return map[k]; })
+      .sort(function (a, b) { return b.amount_try - a.amount_try; });
+  }
+
+  function accUpdateTransactionSummary(rows) {
+    var depEl = document.getElementById("acc-tx-sum-deposit");
+    var wdrEl = document.getElementById("acc-tx-sum-withdrawal");
+    var commEl = document.getElementById("acc-tx-sum-commission");
+    var countEl = document.getElementById("acc-tx-sum-count");
+    if (!depEl) return;
+    var dep = 0, wdr = 0, comm = 0;
+    (rows || []).forEach(function (r) {
+      var tryAmt = parseFloat(r.amount_try) || 0;
+      var commAmt = parseFloat(r.commission_amount_try) || 0;
+      if (r.tx_type === "withdrawal") wdr += tryAmt;
+      else dep += tryAmt;
+      comm += commAmt;
+    });
+    depEl.textContent = accMoney(dep, "TRY");
+    wdrEl.textContent = accMoney(wdr, "TRY");
+    commEl.textContent = accMoney(comm, "TRY");
+    if (countEl) countEl.textContent = String((rows || []).length);
+    accRenderTransactionPmCards(rows);
+  }
+
+  function accRenderTransactionPmCards(rows) {
+    var el = document.getElementById("acc-tx-pm-cards");
+    if (!el) return;
+    var totals = accTransactionPaymentTotals(rows);
+    if (!totals.length) {
+      el.innerHTML = '<div class="acc-exp-cat-card acc-exp-cat-card-empty muted">Bu dönemde işlem yok</div>';
+      return;
+    }
+    el.innerHTML = totals.map(function (t) {
+      var cls = t.tx_type === "deposit" ? "acc-exp-cat-salary" : "acc-exp-cat-office";
+      return '<div class="acc-exp-cat-card ' + cls + '">' +
+        '<div class="acc-exp-cat-card-head">' +
+          '<span class="acc-exp-cat-card-name">' + accEsc(t.name) + '</span>' +
+          '<span class="acc-exp-cat-card-count">' + accTxTypeLabel(t.tx_type) + " · " + t.count + '</span>' +
+        '</div>' +
+        '<strong class="acc-exp-cat-card-try">' + accMoney(t.amount_try, "TRY") + '</strong>' +
+        '<span class="acc-exp-cat-card-usd">Kom: ' + accMoney(t.commission_try, "TRY") + '</span>' +
+      '</div>';
+    }).join("");
+  }
+
+  function accSetTxFormMode(editing) {
+    var title = document.getElementById("acc-tx-form-title");
+    var submit = document.getElementById("acc-tx-submit");
+    var cancel = document.getElementById("acc-tx-edit-cancel");
+    var section = document.getElementById("acc-tx-form-section");
+    if (title) title.textContent = editing ? "İşlemi Düzenle" : "Yeni İşlem";
+    if (submit) submit.textContent = editing ? "Güncelle" : "Kaydet";
+    if (cancel) cancel.hidden = !editing;
+    if (section) section.classList.toggle("acc-exp-form-editing", !!editing);
+  }
+
+  function accResetTxForm() {
+    var editId = document.getElementById("acc-tx-edit-id");
+    if (editId) editId.value = "";
+    var amount = document.getElementById("acc-tx-amount");
+    if (amount) amount.value = "";
+    accClearFormRates("acc-tx-rate-usd", "acc-tx-rate-eur");
+    var preview = document.getElementById("acc-tx-fx-preview");
+    if (preview) preview.textContent = "";
+    accSetTxFormMode(false);
+    accSyncTxDateToPeriod();
+    accRenderTransactions();
+  }
+
+  function accStartTxEdit(row) {
+    if (!row) return;
+    var editId = document.getElementById("acc-tx-edit-id");
+    var dateEl = document.getElementById("acc-tx-date");
+    var payEl = document.getElementById("acc-tx-payment");
+    var typeEl = document.getElementById("acc-tx-type");
+    var curEl = document.getElementById("acc-tx-currency");
+    var amountEl = document.getElementById("acc-tx-amount");
+    var rateUsdEl = document.getElementById("acc-tx-rate-usd");
+    var rateEurEl = document.getElementById("acc-tx-rate-eur");
+    if (editId) editId.value = String(row.id);
+    if (dateEl) dateEl.value = row.tx_date || "";
+    if (typeEl) typeEl.value = row.tx_type || "deposit";
+    accRefreshTxPaymentSelect();
+    if (payEl && row.payment_method_id) payEl.value = String(row.payment_method_id);
+    if (curEl) curEl.value = row.currency || "TRY";
+    if (amountEl) amountEl.value = row.amount != null ? row.amount : "";
+    if (rateUsdEl) rateUsdEl.value = row.rate_usd_try > 0 ? row.rate_usd_try : "";
+    if (rateEurEl) rateEurEl.value = row.rate_eur_try > 0 ? row.rate_eur_try : "";
+    accSetTxFormMode(true);
+    accRenderTransactions();
+    var section = document.getElementById("acc-tx-form-section");
+    if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (amountEl) amountEl.dispatchEvent(new Event("input"));
   }
 
   function accLoadTransactions() {
     return accApi("/api/accounting/transactions" + accPeriodQuery()).then(function (res) {
       if (!res || !res.ok) return;
-      if (res.data.period_label) accUpdatePeriodLabel(res.data.period_label);
+      if (res.data.period_label) {
+        accUpdatePeriodLabel(res.data.period_label);
+        accUpdateTxPeriodLabel(res.data.period_label);
+      }
       accData["acc-tx"].rows = res.data.transactions || [];
       accRenderTransactions();
     });
@@ -969,7 +1147,11 @@
 
   function accRenderTransactions() {
     var tbody = document.getElementById("acc-tx-table");
-    var rows = accSortRows("acc-tx", accData["acc-tx"].rows, {
+    var editIdEl = document.getElementById("acc-tx-edit-id");
+    var editingId = editIdEl && editIdEl.value ? parseInt(editIdEl.value, 10) : null;
+    var allRows = accData["acc-tx"].rows;
+    accUpdateTransactionSummary(allRows);
+    var rows = accSortRows("acc-tx", allRows, {
       tx_date: function (r) { return r.tx_date; },
       payment_name: function (r) { return r.payment_name; },
       tx_type: function (r) { return r.tx_type; },
@@ -977,28 +1159,56 @@
       commission_rate: function (r) { return r.commission_rate; },
       commission_amount: function (r) { return r.commission_amount; }
     });
-    if (!accData["acc-tx"].rows.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty">Kayıt yok</td></tr>';
+    if (!allRows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">Bu dönemde kayıt yok</td></tr>';
       accUpdateFoot("acc-tx", 0, "işlem");
       return;
     }
     tbody.innerHTML = rows.map(function (r) {
-      return '<tr><td class="mono">' + accEsc(r.tx_date) + '</td>' +
+      var editing = editingId === r.id;
+      return '<tr class="' + (editing ? "acc-exp-row-editing" : "") + '" data-edit-tx-row="' + r.id + '">' +
+        '<td class="mono">' + accEsc(r.tx_date) + '</td>' +
         '<td>' + accEsc(r.payment_name) + '</td>' +
         '<td><span class="tag ' + (r.tx_type === "deposit" ? "online" : "offline") + '">' + accTxTypeLabel(r.tx_type) + '</span></td>' +
         '<td>' + accMoneyCellHtml(r, "amount") + '</td>' +
         '<td>' + r.commission_rate + '%</td>' +
         '<td>' + accMoneyCellHtml(r, "commission_amount") + '</td>' +
-        '<td><button class="btn btn-sm btn-danger" data-del-tx="' + r.id + '">Sil</button></td></tr>';
+        '<td class="acc-exp-actions">' +
+          '<button type="button" class="btn btn-sm acc-exp-edit-btn" data-edit-tx="' + r.id + '" title="Düzenle">✎</button> ' +
+          '<button class="btn btn-sm btn-danger" data-del-tx="' + r.id + '">Sil</button>' +
+        '</td></tr>';
     }).join("");
-    tbody.querySelectorAll("[data-del-tx]").forEach(function (btn) {
-      btn.onclick = function () {
-        if (!confirm("Silinsin mi?")) return;
-        accApi("/api/accounting/transactions/" + btn.getAttribute("data-del-tx"), { method: "DELETE" })
-          .then(function (r) { if (r && r.ok) { accLoadTransactions(); accLoadDashboard(); accToast("Silindi"); } });
+    tbody.querySelectorAll("[data-edit-tx]").forEach(function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        var id = parseInt(btn.getAttribute("data-edit-tx"), 10);
+        var row = allRows.find(function (r) { return r.id === id; });
+        accStartTxEdit(row);
       };
     });
-    accUpdateFoot("acc-tx", accData["acc-tx"].rows.length, "işlem");
+    tbody.querySelectorAll("[data-edit-tx-row]").forEach(function (tr) {
+      tr.addEventListener("click", function (e) {
+        if (e.target.closest("button")) return;
+        var id = parseInt(tr.getAttribute("data-edit-tx-row"), 10);
+        var row = allRows.find(function (r) { return r.id === id; });
+        accStartTxEdit(row);
+      });
+    });
+    tbody.querySelectorAll("[data-del-tx]").forEach(function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        if (!confirm("Silinsin mi?")) return;
+        accApi("/api/accounting/transactions/" + btn.getAttribute("data-del-tx"), { method: "DELETE" })
+          .then(function (r) {
+            if (r && r.ok) {
+              var editId = document.getElementById("acc-tx-edit-id");
+              if (editId && editId.value === btn.getAttribute("data-del-tx")) accResetTxForm();
+              accLoadTransactions(); accLoadDashboard(); accToast("Silindi");
+            }
+          });
+      };
+    });
+    accUpdateFoot("acc-tx", allRows.length, "işlem");
     accUpdateSortHeaders("acc-tx");
   }
 
@@ -2049,7 +2259,7 @@
       el.hidden = !show;
     });
     if (tab === "dashboard") accLoadDashboard();
-    else if (tab === "transactions") { accLoadPaymentMethods(); accLoadTransactions(); }
+    else if (tab === "transactions") { accSyncTxDateToPeriod(); accLoadPaymentMethods(); accLoadTransactions(); }
     else if (tab === "commissions") accLoadPaymentMethods();
     else if (tab === "expenses") { accLoadCategories(); accLoadExpenses(); }
     else if (tab === "vault") accLoadVault();
@@ -2058,6 +2268,7 @@
 
   function accRefreshAll() {
     accLoadDashboard();
+    accSyncTxDateToPeriod();
     if (accActiveTab === "transactions") { accLoadPaymentMethods(); accLoadTransactions(); }
     else if (accActiveTab === "commissions") accLoadPaymentMethods();
     else if (accActiveTab === "expenses") { accLoadCategories(); accLoadExpenses(); }
@@ -2078,37 +2289,49 @@
 
     accBindForm("acc-tx-form", function (e) {
       e.preventDefault();
-      accApi("/api/accounting/transactions", {
-        method: "POST",
+      var editIdEl = document.getElementById("acc-tx-edit-id");
+      var editId = editIdEl && editIdEl.value ? editIdEl.value : "";
+      var payload = Object.assign({
+        tx_date: document.getElementById("acc-tx-date").value,
+        payment_method_id: document.getElementById("acc-tx-payment").value,
+        tx_type: document.getElementById("acc-tx-type").value,
+        amount: document.getElementById("acc-tx-amount").value,
+        currency: document.getElementById("acc-tx-currency").value
+      }, accReadFormRates("acc-tx-rate-usd", "acc-tx-rate-eur"));
+      var url = editId
+        ? "/api/accounting/transactions/" + editId
+        : "/api/accounting/transactions";
+      accApi(url, {
+        method: editId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(Object.assign({
-          tx_date: document.getElementById("acc-tx-date").value,
-          payment_method_id: document.getElementById("acc-tx-payment").value,
-          tx_type: document.getElementById("acc-tx-type").value,
-          amount: document.getElementById("acc-tx-amount").value,
-          currency: document.getElementById("acc-tx-currency").value
-        }, accReadFormRates("acc-tx-rate-usd", "acc-tx-rate-eur")))
+        body: JSON.stringify(payload)
       }).then(function (r) {
         if (r && r.ok) {
-          document.getElementById("acc-tx-amount").value = "";
-          accClearFormRates("acc-tx-rate-usd", "acc-tx-rate-eur");
-          accLoadTransactions(); accLoadDashboard(); accSavedToast("İşlem kaydedildi", r.data.rates);
+          accResetTxForm();
+          accLoadTransactions(); accLoadDashboard();
+          accSavedToast(editId ? "İşlem güncellendi" : "İşlem kaydedildi", r.data.rates);
         } else if (r) alert(r.data.error || "Hata");
       });
     });
+
+    var txCancel = document.getElementById("acc-tx-edit-cancel");
+    if (txCancel) txCancel.addEventListener("click", accResetTxForm);
 
     accBindForm("acc-pm-form", function (e) {
       e.preventDefault();
       var txType = document.getElementById("acc-pm-type").value;
       if (!txType) { alert("İşlem türü seçin: Yatırım veya Çekim."); return; }
+      var body = {
+        name: document.getElementById("acc-pm-name").value.trim(),
+        tx_type: txType,
+        commission_rate: document.getElementById("acc-pm-rate").value
+      };
+      var month = accSelectedMonthPeriod();
+      if (month) body.period = month;
       accApi("/api/accounting/payment-methods", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: document.getElementById("acc-pm-name").value.trim(),
-          tx_type: txType,
-          commission_rate: document.getElementById("acc-pm-rate").value
-        })
+        body: JSON.stringify(body)
       }).then(function (r) {
         if (r && r.ok) {
           document.getElementById("acc-pm-name").value = "";
@@ -2413,6 +2636,7 @@
       }
     }
     accResolvePeriod();
+    accSyncTxDateToPeriod();
   }
 
   function accInitUi() {

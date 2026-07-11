@@ -743,6 +743,7 @@ def migrate_schema(conn):
     migrate_admin_users(conn)
     migrate_tracked_links(conn)
     migrate_accounting_payment_methods(conn)
+    migrate_accounting_period_rates(conn)
     migrate_accounting_currency(conn)
     migrate_accounting_settings(conn)
     migrate_accounting_employees_payroll(conn)
@@ -1358,6 +1359,51 @@ def migrate_accounting_payment_methods(conn):
         )
         execute(conn, "DROP TABLE acc_payment_methods")
         execute(conn, "ALTER TABLE acc_payment_methods_new RENAME TO acc_payment_methods")
+    conn.commit()
+
+
+def migrate_accounting_period_rates(conn):
+    """Payment komisyon oranları — ay bazlı (YYYY-MM)."""
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_payment_method_rates (
+                id SERIAL PRIMARY KEY,
+                payment_method_id INTEGER NOT NULL REFERENCES acc_payment_methods(id) ON DELETE CASCADE,
+                period TEXT NOT NULL,
+                commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(payment_method_id, period)
+            )
+            """,
+        )
+    else:
+        table_exists = scalar(
+            conn,
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='acc_payment_method_rates'",
+        )
+        if not table_exists:
+            execute(
+                conn,
+                """
+                CREATE TABLE IF NOT EXISTS acc_payment_method_rates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    payment_method_id INTEGER NOT NULL,
+                    period TEXT NOT NULL,
+                    commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(payment_method_id, period),
+                    FOREIGN KEY (payment_method_id) REFERENCES acc_payment_methods(id)
+                )
+                """,
+            )
+    execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS idx_acc_pm_rates_period ON acc_payment_method_rates(period)",
+    )
     conn.commit()
 
 

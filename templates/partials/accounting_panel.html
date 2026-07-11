@@ -101,9 +101,10 @@
 
   <!-- Yatırım / Çekim -->
   <div class="acc-pane" id="acc-pane-transactions" data-acc-pane="transactions" hidden>
-    <section class="card">
-      <div class="card-head"><span>Yeni İşlem</span></div>
+    <section class="card" id="acc-tx-form-section">
+      <div class="card-head"><span id="acc-tx-form-title">Yeni İşlem</span><span class="muted" id="acc-tx-period-label" style="font-size:0.72rem;"></span></div>
       <div class="card-body">
+        <input type="hidden" id="acc-tx-edit-id" value="">
         <form id="acc-tx-form" class="form-row-4">
           <div><label>Tarih</label><input type="date" id="acc-tx-date" required></div>
           <div><label>Payment Yöntemi</label><select id="acc-tx-payment" required></select></div>
@@ -124,10 +125,32 @@
           <div><label>USD/TL</label><input type="number" id="acc-tx-rate-usd" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
           <div><label>EUR/TL</label><input type="number" id="acc-tx-rate-eur" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
           <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-tx-fx-preview"></p></div>
-          <div><button type="submit" class="btn btn-primary">Kaydet</button></div>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button type="submit" class="btn btn-primary" id="acc-tx-submit">Kaydet</button>
+            <button type="button" class="btn" id="acc-tx-edit-cancel" hidden>İptal</button>
+          </div>
         </form>
       </div>
     </section>
+    <div class="acc-exp-summary acc-tx-summary" id="acc-tx-summary">
+      <div class="acc-exp-summary-card">
+        <span class="acc-exp-summary-label">Yatırım (TRY)</span>
+        <strong id="acc-tx-sum-deposit">—</strong>
+      </div>
+      <div class="acc-exp-summary-card">
+        <span class="acc-exp-summary-label">Çekim (TRY)</span>
+        <strong id="acc-tx-sum-withdrawal">—</strong>
+      </div>
+      <div class="acc-exp-summary-card">
+        <span class="acc-exp-summary-label">Komisyon (TRY)</span>
+        <strong id="acc-tx-sum-commission">—</strong>
+      </div>
+      <div class="acc-exp-summary-card">
+        <span class="acc-exp-summary-label">Kayıt Sayısı</span>
+        <strong id="acc-tx-sum-count">—</strong>
+      </div>
+    </div>
+    <div class="acc-exp-cat-cards acc-tx-pm-cards" id="acc-tx-pm-cards"></div>
     <section class="card">
       <div class="card-head"><span>Site Yatırım / Çekim Kayıtları</span></div>
       <div class="table-wrap">
@@ -157,10 +180,13 @@
   <!-- Komisyon -->
   <div class="acc-pane" id="acc-pane-commissions" data-acc-pane="commissions" hidden>
     <section class="card">
-      <div class="card-head"><span>Payment & Komisyon Oranı</span></div>
+      <div class="card-head">
+        <span>Payment &amp; Komisyon Oranı</span>
+        <span class="muted" id="acc-comm-period-label" style="font-size:0.72rem;"></span>
+      </div>
       <div class="card-body">
         <p class="muted" style="font-size:0.75rem;margin-bottom:0.75rem;">
-          Oran değişince geçmiş işlemler etkilenmez — sadece yeni kayıtlar güncel orandan hesaplanır.
+          Komisyon oranları <strong>ay bazında</strong> tanımlanır. Seçili ay için oran girildiğinde sadece o ayın yeni işlemleri bu orandan hesaplanır; geçmiş kayıtlar değişmez.
         </p>
         <form id="acc-pm-form" class="form-row-4" style="grid-template-columns:1fr 140px 120px auto;">
           <div><label>Payment Adı</label><input id="acc-pm-name" placeholder="Papara, Havale, Kripto…" required></div>
@@ -175,10 +201,22 @@
           <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
         </form>
       </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><span>Yatırım Yöntemleri</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Payment</th><th>İşlem Türü</th><th>Komisyon %</th><th>Son Güncelleme</th><th></th></tr></thead>
-          <tbody id="acc-pm-table"><tr><td colspan="5" class="empty">Henüz payment tanımı yok</td></tr></tbody>
+          <thead><tr><th>Payment</th><th>Komisyon %</th><th>Varsayılan %</th><th>Son Güncelleme</th><th></th></tr></thead>
+          <tbody id="acc-pm-table-deposit"><tr><td colspan="5" class="empty">Henüz yatırım yöntemi yok</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><span>Çekim Yöntemleri</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Payment</th><th>Komisyon %</th><th>Varsayılan %</th><th>Son Güncelleme</th><th></th></tr></thead>
+          <tbody id="acc-pm-table-withdrawal"><tr><td colspan="5" class="empty">Henüz çekim yöntemi yok</td></tr></tbody>
         </table>
       </div>
     </section>
