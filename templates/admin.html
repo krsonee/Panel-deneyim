@@ -62,6 +62,7 @@
 
     .main { margin-left: var(--sidebar-w); flex: 1; min-width: 0; }
     .main-inner { padding: 1.25rem 1.5rem 2rem; max-width: 1200px; }
+    .main-inner:has(#module-accounting-panel:not([hidden])) { max-width: none; padding-left: 1rem; padding-right: 1rem; }
 
     .topbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.25rem; }
     .topbar h2 { font-size: 1.25rem; font-weight: 700; }
@@ -162,13 +163,14 @@
     }
     #acc-cat-chips { margin-top: 0.65rem; }
     .acc-payroll-total {
-      display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+      display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem;
       padding: 0.85rem 1.15rem; border-top: 1px solid var(--border); background: var(--surface-2);
       font-size: 0.85rem; flex-wrap: wrap;
     }
-    .acc-payroll-total-nums { text-align: right; }
-    .acc-payroll-total-nums small { display: block; font-size: 0.72rem; margin-top: 0.15rem; }
-    .acc-payroll-total strong { font-size: 1.15rem; color: var(--amber); display: block; }
+    .acc-payroll-total > span { font-weight: 600; color: var(--muted); }
+    .acc-payroll-total-nums { text-align: right; min-width: 0; flex: 1; }
+    .acc-payroll-total-nums small { display: block; font-size: 0.76rem; margin-top: 0.25rem; line-height: 1.45; color: var(--text); }
+    .acc-payroll-total strong { font-size: 1.2rem; color: var(--amber); display: block; font-variant-numeric: tabular-nums; }
     .acc-emp-filters select { width: 100%; }
     .acc-emp-toolbar {
       background: linear-gradient(180deg, var(--surface-2) 0%, transparent 100%);
@@ -176,19 +178,29 @@
     .acc-emp-table-wrap {
       border-top: 1px solid var(--border);
       background: var(--surface);
+      overflow: hidden;
     }
     .acc-emp-split {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0;
       min-height: 420px;
+      width: 100%;
     }
     .acc-emp-split-col {
       min-width: 0;
+      max-width: 100%;
       display: flex;
       flex-direction: column;
       border-right: 1px solid var(--border);
+      overflow: hidden;
+      isolation: isolate;
     }
-    .acc-emp-split-col:last-child { border-right: none; }
+    @media (max-width: 1280px) {
+      .acc-emp-split { grid-template-columns: 1fr; }
+      .acc-emp-split-col { border-right: none; border-bottom: 1px solid var(--border); }
+      .acc-emp-split-col:last-child { border-bottom: none; }
+    }
     .acc-emp-split-head {
       display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
       padding: 0.7rem 0.9rem; background: var(--surface-2);
@@ -206,12 +218,40 @@
     }
     .acc-emp-split-col .acc-emp-table-scroll {
       flex: 1;
+      width: 100%;
       max-height: min(560px, 62vh);
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
       border-radius: 0;
     }
-    .acc-emp-table-left { min-width: 720px; }
-    .acc-emp-table-right { min-width: 680px; }
+    .acc-emp-table-left,
+    .acc-emp-table-right {
+      width: 100%;
+      min-width: 580px;
+      table-layout: fixed;
+    }
     .acc-emp-table { border-collapse: separate; border-spacing: 0; }
+    .acc-emp-table .acc-emp-td-name { width: 92px; }
+    .acc-emp-table .acc-emp-td-ref { width: 72px; }
+    .acc-emp-table .acc-emp-td-dept { width: 88px; }
+    .acc-emp-table .acc-emp-td-loc { width: 68px; }
+    .acc-emp-table .acc-emp-td-date { width: 76px; }
+    .acc-emp-table .acc-emp-td-money { width: 72px; }
+    .acc-emp-table .acc-emp-td-wallet { width: 76px; }
+    .acc-emp-table .acc-emp-td-status { width: 68px; }
+    .acc-emp-table .acc-emp-td-action { width: 32px; }
+    .acc-emp-table td {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: middle;
+      padding: 0.4rem 0.35rem;
+    }
+    .acc-emp-table th {
+      padding: 0.45rem 0.35rem;
+      font-size: 0.58rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .acc-emp-table thead th {
       background: var(--surface-2);
       border-bottom: 1px solid var(--border);
@@ -251,7 +291,7 @@
       left: 0;
       z-index: 2;
       background: var(--surface);
-      box-shadow: 2px 0 6px rgba(0,0,0,0.18);
+      box-shadow: 1px 0 0 var(--border);
     }
     .acc-emp-table thead .acc-emp-col-sticky { z-index: 5; background: var(--surface-2); }
     tr.acc-emp-row:hover td { background: var(--row-hover); }
@@ -263,34 +303,34 @@
       padding: 0; border-top: 1px solid var(--border); background: transparent;
     }
     .acc-emp-section-inner {
-      display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap;
-      padding: 0.55rem 0.85rem; margin: 0.35rem 0.55rem 0.15rem;
-      border-radius: 10px; border: 1px solid var(--border);
-      background: linear-gradient(90deg, var(--surface-2), transparent);
+      display: flex; align-items: center; gap: 0.45rem;
+      padding: 0.4rem 0.65rem; margin: 0;
+      border-radius: 0; border: none; border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
     }
     tr.acc-emp-section-office-active .acc-emp-section-inner {
-      border-color: rgba(245,158,11,0.35);
-      background: linear-gradient(90deg, rgba(245,158,11,0.12), transparent);
+      background: rgba(245,158,11,0.08);
+      box-shadow: inset 3px 0 0 var(--amber);
     }
     tr.acc-emp-section-ops-active .acc-emp-section-inner,
     tr.acc-emp-section-tr-active .acc-emp-section-inner {
-      border-color: rgba(59,130,246,0.35);
-      background: linear-gradient(90deg, rgba(59,130,246,0.1), transparent);
+      background: rgba(59,130,246,0.08);
+      box-shadow: inset 3px 0 0 #3b82f6;
     }
     tr.acc-emp-section-office-left .acc-emp-section-inner,
     tr.acc-emp-section-ops-left .acc-emp-section-inner,
     tr.acc-emp-section-tr-left .acc-emp-section-inner {
-      border-color: rgba(244,63,94,0.28);
-      background: linear-gradient(90deg, rgba(244,63,94,0.08), transparent);
+      background: rgba(244,63,94,0.06);
+      box-shadow: inset 3px 0 0 var(--rose);
     }
-    .acc-emp-section-icon { font-size: 1rem; line-height: 1; }
-    .acc-emp-section-label { font-size: 0.78rem; font-weight: 700; color: var(--text); }
+    .acc-emp-section-icon { display: none; }
+    .acc-emp-section-label { font-size: 0.72rem; font-weight: 700; color: var(--text); }
     .acc-emp-section-count {
-      font-size: 0.68rem; font-weight: 700; color: var(--accent);
-      padding: 0.12rem 0.45rem; border-radius: 999px;
-      background: var(--accent-soft); border: 1px solid rgba(99,102,241,0.25);
+      font-size: 0.68rem; font-weight: 700; color: var(--muted);
+      padding: 0; border: none; background: none;
     }
-    .acc-emp-section-sub { font-size: 0.65rem; color: var(--muted); margin-left: auto; }
+    .acc-emp-section-count::before { content: "· "; }
+    .acc-emp-section-sub { font-size: 0.68rem; color: var(--muted); margin-left: 0; }
     .acc-emp-empty { padding: 2rem 1rem !important; text-align: center; color: var(--muted); }
     .acc-emp-cat-badge {
       display: inline-block; font-size: 0.62rem; font-weight: 700;
@@ -317,15 +357,26 @@
       background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text);
     }
     .acc-emp-inline {
-      width: 100%; min-width: 72px; max-width: 140px; padding: 0.32rem 0.45rem; font-size: 0.76rem;
-      background: transparent; border: 1px solid transparent; border-radius: 7px; color: var(--text);
+      width: 100%; min-width: 0; max-width: 100%; padding: 0.28rem 0.35rem; font-size: 0.72rem;
+      background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--text);
       transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
     }
     .acc-emp-inline:hover { border-color: var(--border); background: var(--surface-2); }
     .acc-emp-inline:focus { outline: none; border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 2px rgba(99,102,241,0.18); }
-    .acc-emp-inline-wide { max-width: 180px; }
-    .acc-emp-inline-salary { max-width: 110px; }
-    .acc-emp-inline-wallet { max-width: 220px; font-family: ui-monospace, monospace; font-size: 0.68rem; }
+    .acc-emp-inline-name { font-weight: 600; }
+    .acc-emp-inline-ref { color: var(--muted); font-size: 0.68rem; }
+    .acc-emp-inline-loc { font-size: 0.68rem; }
+    .acc-emp-inline-dept { font-size: 0.68rem; padding-right: 0.15rem; }
+    .acc-emp-inline-salary { font-variant-numeric: tabular-nums; }
+    .acc-emp-inline-wallet {
+      font-family: ui-monospace, monospace; font-size: 0.62rem;
+      text-overflow: ellipsis; overflow: hidden;
+    }
+    .acc-emp-money-cell {
+      display: block; font-weight: 600; font-size: 0.72rem;
+      font-variant-numeric: tabular-nums; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+    }
     .acc-wallet-input { font-family: ui-monospace, monospace; font-size: 0.78rem; }
     .acc-emp-payinfo { display: flex; flex-direction: column; gap: 0.28rem; min-width: 200px; }
     .acc-emp-payinfo label { font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -859,9 +910,8 @@
       .acc-emp-split { grid-template-columns: 1fr; }
       .acc-emp-split-col { border-right: none; border-bottom: 1px solid var(--border); }
       .acc-emp-split-col:last-child { border-bottom: none; }
-      #acc-emp-table-scroll table,
       .acc-emp-table-left,
-      .acc-emp-table-right { min-width: 640px; }
+      .acc-emp-table-right { min-width: 520px; }
       .acc-payroll-total {
         flex-direction: column; align-items: stretch; text-align: center; gap: 0.45rem;
       }
@@ -1485,7 +1535,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260710d"></script>
+  <script src="/static/accounting.js?v=20260711a"></script>
   <script>
     (function () {
       var API = "";

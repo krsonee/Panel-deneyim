@@ -612,6 +612,46 @@
       "</div>";
   }
 
+  function accPayrollCompactCellHtml(map, row, hidden) {
+    if (hidden) return accHiddenMoney();
+    if (!map) return '<span class="muted">—</span>';
+    var cur = (row && row.currency) || accEmpCurrencyView || "TRY";
+    var amt = map[cur];
+    if (amt == null) amt = map.TRY != null ? map.TRY : (map.USD != null ? map.USD : 0);
+    return '<span class="acc-emp-money-cell">' + accMoney(amt, cur) + "</span>";
+  }
+
+  function accEmpReferansDisplay(notes) {
+    if (!notes) return "";
+    var s = String(notes).trim();
+    var refMatch = s.match(/Ref(?:erans)?\s*:\s*([^|]+)/i);
+    if (refMatch) return refMatch[1].trim();
+    if (/^Panel:/i.test(s) || /Pozisyon:/i.test(s) || /Haziran kripto:/i.test(s) || /Sheet avans/i.test(s)) return "";
+    if (s.length > 36) return s.slice(0, 34) + "…";
+    return s;
+  }
+
+  function accEmpRefCellHtml(r, hidden) {
+    if (hidden) return accHiddenMoney();
+    var full = r.notes || "";
+    var short = accEmpReferansDisplay(full);
+    return '<input type="text" class="acc-emp-inline acc-emp-inline-ref"' +
+      ' data-emp-field="notes" data-emp-id="' + r.id + '"' +
+      ' title="' + accEsc(full || "Referans yok") + '"' +
+      ' placeholder="—"' +
+      ' value="' + accEsc(short) + '">';
+  }
+
+  function accEmpWalletCellHtml(r, hidden) {
+    if (hidden) return accHiddenMoney();
+    var w = r.crypto_wallet || "";
+    return '<input type="text" class="acc-emp-inline acc-emp-inline-wallet"' +
+      ' data-emp-field="crypto_wallet" data-emp-id="' + r.id + '"' +
+      ' title="' + accEsc(w || "Cüzdan yok") + '"' +
+      ' placeholder="TRC20"' +
+      ' value="' + accEsc(w) + '">';
+  }
+
   function accMultiCurCellHtml(map, hidden) {
     if (hidden) return accHiddenMoney();
     if (!map) return accHiddenMoney();
@@ -1426,9 +1466,9 @@
     return '<tr class="acc-emp-section acc-emp-section-' + type + '">' +
       '<td colspan="' + cols + '">' +
       '<div class="acc-emp-section-inner">' +
-      '<span class="acc-emp-section-icon" aria-hidden="true">' + icon + "</span>" +
+      (icon ? '<span class="acc-emp-section-icon" aria-hidden="true">' + icon + "</span>" : "") +
       '<span class="acc-emp-section-label">' + accEsc(label) + "</span>" +
-      '<span class="acc-emp-section-count">' + count + " kişi</span>" +
+      '<span class="acc-emp-section-count">' + count + "</span>" +
       (sub ? '<span class="acc-emp-section-sub">' + accEsc(sub) + "</span>" : "") +
       "</div></td></tr>";
   }
@@ -1490,14 +1530,12 @@
     var hidden = r.salary_hidden;
     var nameCell = hidden
       ? accHiddenMoney()
-      : accEmpInputHtml("name", r.name, r.id, "acc-emp-inline-wide");
-    var deptCell = accEmpSelectHtml("department", r.department, r.id, deptOpts);
-    var refCell = hidden
-      ? accHiddenMoney()
-      : accEmpInputHtml("notes", r.notes || "", r.id, "acc-emp-inline-wide", "text", null, "Referans");
+      : accEmpInputHtml("name", r.name, r.id, "acc-emp-inline-name");
+    var deptCell = accEmpSelectHtml("department", r.department, r.id, deptOpts, "acc-emp-inline-dept");
+    var refCell = accEmpRefCellHtml(r, hidden);
     var locCell = hidden
       ? accHiddenMoney()
-      : accEmpInputHtml("location", r.location || "", r.id, "acc-emp-inline-wide", "text", null, "Konum");
+      : accEmpInputHtml("location", r.location || "", r.id, "acc-emp-inline-loc", "text", null, "Konum");
     var startCell = accEmpInputHtml("start_date", r.start_date, r.id, "", "date");
     var endCell = r.status === "left"
       ? accEmpInputHtml("end_date", r.end_date || "", r.id, "", "date")
@@ -1516,11 +1554,9 @@
     var remainCell = hidden
       ? accHiddenMoney()
       : ('<span class="acc-emp-remain-cell">' + accMoney(r.payment_remaining != null ? r.payment_remaining : r.office_remaining, cur) + "</span>");
-    var walletCell = hidden
-      ? accHiddenMoney()
-      : accEmpInputHtml("crypto_wallet", r.crypto_wallet || "", r.id, "acc-emp-inline-wallet");
-    var accrualCell = accPayrollTriCurCellHtml(r.accrual, hidden);
-    var netCell = accPayrollTriCurCellHtml(r.net_accrual, hidden);
+    var walletCell = accEmpWalletCellHtml(r, hidden);
+    var accrualCell = accPayrollCompactCellHtml(r.accrual, r, hidden);
+    var netCell = accPayrollCompactCellHtml(r.net_accrual, r, hidden);
     var statusCell = accEmpSelectHtml("status", r.status || "active", r.id, [
       { value: "active", label: "Aktif" },
       { value: "left", label: "Ayrıldı" }
@@ -1529,34 +1565,34 @@
 
     if (panel === "left") {
       return '<tr class="' + rowCls + '">' +
-        '<td class="acc-emp-col-sticky">' + nameCell + "</td>" +
-        "<td>" + refCell + "</td>" +
-        "<td>" + deptCell + "</td>" +
-        "<td>" + locCell + "</td>" +
-        '<td class="mono">' + startCell + "</td>" +
-        '<td class="mono">' + endCell + "</td>" +
-        "<td>" + salaryCell + "</td>" +
-        "<td>" + cryptoCell + "</td>" +
-        "<td>" + advanceCell + "</td>" +
-        "<td>" + remainCell + "</td>" +
-        "<td>" + walletCell + "</td>" +
-        "<td>" + statusCell + "</td>" +
-        "<td>" + delCell + "</td></tr>";
+        '<td class="acc-emp-col-sticky acc-emp-td-name">' + nameCell + "</td>" +
+        '<td class="acc-emp-td-ref">' + refCell + "</td>" +
+        '<td class="acc-emp-td-dept">' + deptCell + "</td>" +
+        '<td class="acc-emp-td-loc">' + locCell + "</td>" +
+        '<td class="acc-emp-td-date mono">' + startCell + "</td>" +
+        '<td class="acc-emp-td-date mono">' + endCell + "</td>" +
+        '<td class="acc-emp-td-money">' + salaryCell + "</td>" +
+        '<td class="acc-emp-td-money">' + cryptoCell + "</td>" +
+        '<td class="acc-emp-td-money">' + advanceCell + "</td>" +
+        '<td class="acc-emp-td-money">' + remainCell + "</td>" +
+        '<td class="acc-emp-td-wallet">' + walletCell + "</td>" +
+        '<td class="acc-emp-td-status">' + statusCell + "</td>" +
+        '<td class="acc-emp-td-action">' + delCell + "</td></tr>";
     }
 
     return '<tr class="' + rowCls + '">' +
-      '<td class="acc-emp-col-sticky">' + nameCell + "</td>" +
-      "<td>" + refCell + "</td>" +
-      "<td>" + deptCell + "</td>" +
-      "<td>" + locCell + "</td>" +
-      '<td class="mono">' + startCell + "</td>" +
-      '<td class="mono">' + endCell + "</td>" +
-      "<td>" + salaryCell + "</td>" +
-      "<td>" + accrualCell + "</td>" +
-      "<td>" + cryptoCell + "</td>" +
-      "<td>" + netCell + "</td>" +
-      "<td>" + statusCell + "</td>" +
-      "<td>" + delCell + "</td></tr>";
+      '<td class="acc-emp-col-sticky acc-emp-td-name">' + nameCell + "</td>" +
+      '<td class="acc-emp-td-ref">' + refCell + "</td>" +
+      '<td class="acc-emp-td-dept">' + deptCell + "</td>" +
+      '<td class="acc-emp-td-loc">' + locCell + "</td>" +
+      '<td class="acc-emp-td-date mono">' + startCell + "</td>" +
+      '<td class="acc-emp-td-date mono">' + endCell + "</td>" +
+      '<td class="acc-emp-td-money">' + salaryCell + "</td>" +
+      '<td class="acc-emp-td-money">' + accrualCell + "</td>" +
+      '<td class="acc-emp-td-money">' + cryptoCell + "</td>" +
+      '<td class="acc-emp-td-money">' + netCell + "</td>" +
+      '<td class="acc-emp-td-status">' + statusCell + "</td>" +
+      '<td class="acc-emp-td-action">' + delCell + "</td></tr>";
   }
 
   function accBindEmployeeInlineEditors(tbody) {
@@ -1613,11 +1649,11 @@
 
     var html = "";
     if (activeRows.length) {
-      html += accEmpSectionHtml(cols, sectionType + "-active", panel === "left" ? "🏢" : "🇹🇷", "Aktif", activeRows.length, "");
+      html += accEmpSectionHtml(cols, sectionType + "-active", "", "Aktif", activeRows.length, "kişi");
       html += activeRows.map(function (r) { return accEmpRowHtml(r, panel); }).join("");
     }
     if (leftRows.length) {
-      html += accEmpSectionHtml(cols, sectionType + "-left", "⏹", "İşten Ayrılanlar", leftRows.length, "");
+      html += accEmpSectionHtml(cols, sectionType + "-left", "", "Ayrılan", leftRows.length, "kişi");
       html += leftRows.map(function (r) { return accEmpRowHtml(r, panel); }).join("");
     }
     tbody.innerHTML = html;
