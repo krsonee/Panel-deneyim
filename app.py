@@ -63,6 +63,10 @@ from database import (
 
 # ── Ortam değişkenleri (Render → Environment) ──
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+# NOT: "makro123" varsayılanı SADECE yerel geliştirme için. Production'da (Render)
+# ADMIN_PASSWORD ortam değişkeni MUTLAKA güçlü bir değerle override edilmelidir.
+# Bu satır bilerek değiştirilmedi — Render'da zaten farklı bir değer set edilmiş
+# olabilir; varsayılanı değiştirmek mevcut admin'i kilitleme riski taşır.
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "makro123")
 SECRET_KEY = os.environ.get("SECRET_KEY", "makrobet-analytics-gizli-anahtar-degistir")
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
@@ -224,6 +228,70 @@ def login_admin_user(user):
 
 def verify_admin(username, password):
     return get_admin_user(username, password) is not None
+
+
+# ── Giriş denemesi kısıtlama (brute-force koruması) ──
+# Tek worker/gthread deploy'u için basit bellek-içi çözüm yeterli (Redis/DB gerekmez).
+_LOGIN_ATTEMPT_LIMIT = 5
+_LOGIN_ATTEMPT_WINDOW = timedelta(minutes=15)
+_LOGIN_LOCKOUT_DURATION = timedelta(minutes=15)
+_LOGIN_LOCKOUT_MESSAGE = "Çok fazla başarısız giriş denemesi. Lütfen 15 dakika sonra tekrar deneyin."
+_login_attempts = {}
+_login_attempts_lock = threading.Lock()
+
+
+def _login_attempt_key(username, ip):
+    return f"{normalize_username(username)}|{ip or ''}"
+
+
+def _cleanup_login_attempts_locked(now):
+    """Süresi geçmiş kayıtları temizler. Çağıran, _login_attempts_lock'u tutuyor olmalı."""
+    expired = []
+    for key, info in _login_attempts.items():
+        locked_until = info.get("locked_until")
+        if locked_until:
+            if now >= locked_until:
+                expired.append(key)
+        elif now - info.get("first_attempt", now) > _LOGIN_ATTEMPT_WINDOW:
+            expired.append(key)
+    for key in expired:
+        _login_attempts.pop(key, None)
+
+
+def check_login_rate_limit(username, ip):
+    """Kilitliyse Türkçe hata mesajını döner, aksi halde None."""
+    now = utcnow()
+    key = _login_attempt_key(username, ip)
+    with _login_attempts_lock:
+        _cleanup_login_attempts_locked(now)
+        info = _login_attempts.get(key)
+        if info and info.get("locked_until") and now < info["locked_until"]:
+            return _LOGIN_LOCKOUT_MESSAGE
+    return None
+
+
+def record_login_failure(username, ip):
+    """Başarısız denemeyi kaydeder. Bu deneme kilitlenmeye sebep olduysa True döner."""
+    now = utcnow()
+    key = _login_attempt_key(username, ip)
+    with _login_attempts_lock:
+        _cleanup_login_attempts_locked(now)
+        info = _login_attempts.get(key)
+        if not info or now - info.get("first_attempt", now) > _LOGIN_ATTEMPT_WINDOW:
+            info = {"count": 0, "first_attempt": now, "locked_until": None}
+        info["count"] += 1
+        newly_locked = False
+        if info["count"] >= _LOGIN_ATTEMPT_LIMIT and not info["locked_until"]:
+            info["locked_until"] = now + _LOGIN_LOCKOUT_DURATION
+            newly_locked = True
+        _login_attempts[key] = info
+    return newly_locked
+
+
+def record_login_success(username, ip):
+    key = _login_attempt_key(username, ip)
+    with _login_attempts_lock:
+        _login_attempts.pop(key, None)
 
 
 def audit(action, detail="", status=200):
@@ -451,16 +519,47 @@ def migrate_domains():
         conn.commit()
 
 
+# Bu rotalar 3. parti (casino/bahis) sitelerine gömülü tracker.js tarafından
+# çapraz-origin çağrılır — bunlar için CORS her zaman açık kalmalı.
+_PUBLIC_CORS_PREFIXES = ("/api/track/",)
+
+
+def _is_public_cors_path(path):
+    return path.startswith(_PUBLIC_CORS_PREFIXES)
+
+
 def cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
+    path = request.path
+    if _is_public_cors_path(path):
+        # Genel takip uç noktaları: 3. parti sitelere gömülü, herkese açık kalmalı.
+        response.headers["Access-Control-Allow-Origin"] = "*"
+    elif _is_prod:
+        # Panel/iç API'ler: sadece kendi origin'imizden gelen isteklere izin ver.
+        origin = request.headers.get("Origin", "")
+        if origin and PUBLIC_BASE_URL and origin.rstrip("/") == PUBLIC_BASE_URL:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+        # Origin eşleşmiyorsa veya yoksa header eklenmez (çapraz-origin erişim reddedilir).
+    else:
+        # Yerel geliştirme kolaylığı için (prod değilken) serbest bırak.
+        response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
 
+def security_headers(response):
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if _is_prod:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
 @app.after_request
 def after_request(response):
-    return cors_headers(response)
+    return security_headers(cors_headers(response))
 
 
 @app.route("/api/<path:_path>", methods=["OPTIONS"])
@@ -796,24 +895,40 @@ def login_page():
     if request.method == "POST":
         username = normalize_username(request.form.get("username", ""))
         password = request.form.get("password", "")
-        user = get_admin_user(username, password)
-        if user:
-            if user.get("two_factor_required"):
-                session["pending_2fa_username"] = user["username"]
-                session["pending_2fa_display_name"] = user.get("display_name") or ""
-                audit("login_password_ok_pending_2fa", detail=f"username={user['username']}")
-                return redirect(url_for("verify_2fa_page"))
-            login_admin_user(user)
-            session.permanent = True
-            if not has_any_module_access(get_session_permissions()):
-                session.clear()
-                error = "Hesabınızda panel erişim yetkisi yok. Yöneticinize başvurun."
-            else:
-                audit("login_success")
-                return redirect(url_for("admin_page"))
+        client_ip = get_client_ip()
+        lockout_message = check_login_rate_limit(username, client_ip)
+        if lockout_message:
+            audit("login_rate_limited", detail=f"username={username}", status=429)
+            error = lockout_message
         else:
-            audit("login_failed", detail=f"username={username}", status=401)
-            error = "Kullanıcı adı veya şifre hatalı."
+            user = get_admin_user(username, password)
+            if user:
+                record_login_success(username, client_ip)
+                if user.get("two_factor_required"):
+                    session["pending_2fa_username"] = user["username"]
+                    session["pending_2fa_display_name"] = user.get("display_name") or ""
+                    audit("login_password_ok_pending_2fa", detail=f"username={user['username']}")
+                    return redirect(url_for("verify_2fa_page"))
+                login_admin_user(user)
+                session.permanent = True
+                if not has_any_module_access(get_session_permissions()):
+                    session.clear()
+                    error = "Hesabınızda panel erişim yetkisi yok. Yöneticinize başvurun."
+                else:
+                    audit("login_success")
+                    return redirect(url_for("admin_page"))
+            else:
+                just_locked = record_login_failure(username, client_ip)
+                audit("login_failed", detail=f"username={username}", status=401)
+                if just_locked:
+                    audit(
+                        "login_locked_out",
+                        detail=f"username={username} ip={client_ip}",
+                        status=429,
+                    )
+                    error = _LOGIN_LOCKOUT_MESSAGE
+                else:
+                    error = "Kullanıcı adı veya şifre hatalı."
     return render_template("login.html", error=error)
 
 
@@ -1964,7 +2079,8 @@ if __name__ == "__main__":
     print("\n  Merkezi Analiz Sunucusu")
     print("  ─────────────────────────")
     print(f"  Admin Panel : http://127.0.0.1:{port}/admin")
-    print("  Giriş       : admin / makro123")
+    if not _is_prod:
+        print("  Giriş       : admin / makro123 (varsayılan, yerel geliştirme)")
     print(f"  Demo Site   : http://127.0.0.1:{port}/demo")
     if debug and not use_reloader:
         print("  Mod         : debug açık, otomatik reload kapalı (stabil)")

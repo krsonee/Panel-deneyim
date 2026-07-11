@@ -17,7 +17,7 @@ services:
       - key: ADMIN_USERNAME
         value: admin
       - key: ADMIN_PASSWORD
-        value: makro123
+        sync: false  # Şifre repoda tutulmaz; Render Dashboard'dan manuel set edilmeli.
       - key: DATABASE_URL
         fromDatabase:
           name: makropanel-db
