@@ -961,12 +961,16 @@
     });
   }
 
-  function accPmStatusBadge(active, txCount) {
+  function accPmStatusBadge(active, txCount, manualActive, id) {
+    var manualHint = manualActive != null ? " · Manuel olarak ayarlandı" : "";
+    var manualTag = manualActive != null
+      ? '<span class="tag" style="font-size:0.62rem;margin-left:0.25rem;" title="Manuel olarak ayarlandı, tıklayarak değiştirebilirsiniz">Manuel</span>'
+      : "";
     if (active) {
       var hint = txCount ? " (" + txCount + " işlem)" : "";
-      return '<span class="tag online" title="Seçili dönemde kullanılıyor' + hint + '">Aktif</span>';
+      return '<span class="tag online acc-pm-status-toggle" data-toggle-pm-status="' + id + '" data-current-active="1" title="Tıklayarak pasif yapın' + hint + manualHint + '">Aktif</span>' + manualTag;
     }
-    return '<span class="tag offline" title="Seçili dönemde işlem yok">Pasif</span>';
+    return '<span class="tag offline acc-pm-status-toggle" data-toggle-pm-status="' + id + '" data-current-active="0" title="Tıklayarak aktif yapın · Seçili dönemde işlem yok' + manualHint + '">Pasif</span>' + manualTag;
   }
 
   function accUpdateHidePassivePmUi() {
@@ -1004,7 +1008,7 @@
         ? '<span class="tag online" style="font-size:0.62rem;margin-left:0.25rem;">aylık</span>'
         : "";
       var rowClass = p.period_active ? "" : ' class="acc-pm-row-passive"';
-      return '<tr' + rowClass + '><td>' + accPmStatusBadge(p.period_active, p.period_tx_count) + '</td>' +
+      return '<tr' + rowClass + '><td>' + accPmStatusBadge(p.period_active, p.period_tx_count, p.manual_active, p.id) + '</td>' +
         '<td><strong>' + accEsc(p.name) + '</strong>' + overrideHint + '</td>' +
         '<td><input type="number" class="acc-inline-rate" data-pm-id="' + p.id + '" value="' + p.commission_rate + '" step="0.01" min="0" style="width:80px;padding:0.3rem;"></td>' +
         '<td class="mono muted">' + globalRate + '%</td>' +
@@ -1035,6 +1039,23 @@
             if (r && r.ok) { accLoadPaymentMethods(); accToast("Silindi"); }
             else if (r) alert(r.data.error || "Hata");
           });
+      };
+    });
+    tbody.querySelectorAll("[data-toggle-pm-status]").forEach(function (badge) {
+      badge.onclick = function () {
+        var isActive = badge.getAttribute("data-current-active") === "1";
+        var body = { active: !isActive };
+        if (month) body.period = month;
+        accApi("/api/accounting/payment-methods/" + badge.getAttribute("data-toggle-pm-status") + "/status", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }).then(function (r) {
+          if (r && r.ok) {
+            accToast(!isActive ? "Aktif yapıldı" : "Pasif yapıldı");
+            accLoadPaymentMethods();
+          } else if (r) alert(r.data.error || "Hata");
+        });
       };
     });
   }

@@ -525,6 +525,8 @@
       background: rgba(148, 163, 184, 0.08);
     }
     .acc-pm-row-passive { opacity: 0.55; }
+    .acc-pm-status-toggle { cursor: pointer; user-select: none; transition: filter 0.15s; }
+    .acc-pm-status-toggle:hover { filter: brightness(1.35); }
     .acc-fx-preview { font-size: 0.72rem; color: var(--muted); min-height: 1.1rem; margin: 0.15rem 0 0.35rem; }
     .acc-form-rate::placeholder { font-size: 0.68rem; }
     .acc-office-fields {
@@ -1924,7 +1926,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260712b"></script>
+  <script src="/static/accounting.js?v=20260712c"></script>
   <script src="/static/mailing.js?v=20260711b"></script>
   <script>
     (function () {

@@ -885,6 +885,7 @@ def migrate_schema(conn):
     migrate_tracked_links(conn)
     migrate_accounting_payment_methods(conn)
     migrate_accounting_period_rates(conn)
+    migrate_accounting_payment_method_status(conn)
     migrate_accounting_currency(conn)
     migrate_accounting_settings(conn)
     migrate_accounting_employees_payroll(conn)
@@ -1720,6 +1721,15 @@ def migrate_accounting_period_rates(conn):
         conn,
         "CREATE INDEX IF NOT EXISTS idx_acc_pm_rates_period ON acc_payment_method_rates(period)",
     )
+    conn.commit()
+
+
+def migrate_accounting_payment_method_status(conn):
+    """Manuel aktif/pasif override — NULL ise işlem sayısına göre otomatik hesaplanır."""
+    cols = _table_columns(conn, "acc_payment_methods")
+    if not cols or "manual_active" in cols:
+        return
+    execute(conn, "ALTER TABLE acc_payment_methods ADD COLUMN manual_active INTEGER")
     conn.commit()
 
 

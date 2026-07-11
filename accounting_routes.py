@@ -195,7 +195,12 @@ def enrich_payment_method(conn, row, period=None, period_usage=None):
             data["period_rate_override"] = True
     cnt = payment_method_tx_count(conn, data["id"], period, period_usage)
     data["period_tx_count"] = cnt
-    data["period_active"] = cnt > 0
+    manual_active = data.get("manual_active")
+    if manual_active is not None:
+        data["period_active"] = bool(manual_active)
+    else:
+        data["period_active"] = cnt > 0
+    data["manual_active"] = None if manual_active is None else bool(manual_active)
     return data
 
 
@@ -810,6 +815,33 @@ def create_accounting_blueprint(permission_required):
             execute(conn, "DELETE FROM acc_payment_methods WHERE id = ?", (method_id,))
             conn.commit()
         return jsonify({"ok": True})
+
+    @bp.route("/payment-methods/<int:method_id>/status", methods=["PUT"])
+    @acc_perm(*MODULE_ACCESS)
+    def update_payment_method_status(method_id):
+        data = request.get_json(silent=True) or {}
+        period = valid_month_period(data.get("period") or "")
+        if "manual_active" in data:
+            raw = data.get("manual_active")
+        elif "active" in data:
+            raw = data.get("active")
+        else:
+            return jsonify({"error": "active veya manual_active belirtilmeli."}), 400
+        manual_active = None if raw is None else (1 if bool(raw) else 0)
+        now = iso(utcnow())
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM acc_payment_methods WHERE id = ?", (method_id,))
+            if not row:
+                return jsonify({"error": "Payment bulunamadı."}), 404
+            execute(
+                conn,
+                "UPDATE acc_payment_methods SET manual_active = ?, updated_at = ? WHERE id = ?",
+                (manual_active, now, method_id),
+            )
+            conn.commit()
+            row = fetchone(conn, "SELECT * FROM acc_payment_methods WHERE id = ?", (method_id,))
+            method = enrich_payment_method(conn, row, period)
+        return jsonify({"payment_method": method})
 
     # ── Site yatırım / çekim ──
 
