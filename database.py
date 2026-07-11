@@ -305,6 +305,7 @@ def init_schema(conn):
         execute(conn, sql)
     init_accounting_schema(conn)
     init_mailing_schema(conn)
+    init_audit_log_schema(conn)
     conn.commit()
 
 
@@ -1763,6 +1764,14 @@ def migrate_admin_users(conn):
         execute(conn, "ALTER TABLE admin_users ADD COLUMN role TEXT NOT NULL DEFAULT 'superadmin'")
     if "permissions" not in cols:
         execute(conn, "ALTER TABLE admin_users ADD COLUMN permissions TEXT NOT NULL DEFAULT '[\"*\"]'")
+    if "totp_secret" not in cols:
+        execute(conn, "ALTER TABLE admin_users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''")
+    if "two_factor_required" not in cols:
+        execute(conn, "ALTER TABLE admin_users ADD COLUMN two_factor_required INTEGER NOT NULL DEFAULT 0")
+    if "two_factor_enabled" not in cols:
+        execute(conn, "ALTER TABLE admin_users ADD COLUMN two_factor_enabled INTEGER NOT NULL DEFAULT 0")
+    if "display_name" not in cols:
+        execute(conn, "ALTER TABLE admin_users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
     rows = fetchall(conn, "SELECT id, username, role, permissions FROM admin_users")
@@ -1783,6 +1792,86 @@ def migrate_admin_users(conn):
                 (json.dumps(perms), row["id"]),
             )
     conn.commit()
+
+
+def init_audit_log_schema(conn):
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id SERIAL PRIMARY KEY,
+                username TEXT NOT NULL DEFAULT '',
+                display_name TEXT NOT NULL DEFAULT '',
+                action TEXT NOT NULL DEFAULT '',
+                method TEXT NOT NULL DEFAULT '',
+                path TEXT NOT NULL DEFAULT '',
+                status INTEGER NOT NULL DEFAULT 0,
+                ip TEXT NOT NULL DEFAULT '',
+                detail TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL DEFAULT '',
+                display_name TEXT NOT NULL DEFAULT '',
+                action TEXT NOT NULL DEFAULT '',
+                method TEXT NOT NULL DEFAULT '',
+                path TEXT NOT NULL DEFAULT '',
+                status INTEGER NOT NULL DEFAULT 0,
+                ip TEXT NOT NULL DEFAULT '',
+                detail TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at)")
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(username)")
+    conn.commit()
+
+
+def log_audit(conn, username="", display_name="", action="", method="", path="", status=0, ip="", detail=""):
+    try:
+        execute(
+            conn,
+            """
+            INSERT INTO audit_log (username, display_name, action, method, path, status, ip, detail, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                (username or "")[:64],
+                (display_name or "")[:100],
+                (action or "")[:200],
+                (method or "")[:10],
+                (path or "")[:300],
+                int(status or 0),
+                (ip or "")[:64],
+                (detail or "")[:500],
+                iso(utcnow()),
+            ),
+        )
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+
+def fetch_audit_log(conn, limit=300, username=None):
+    if username:
+        return fetchall(
+            conn,
+            "SELECT * FROM audit_log WHERE username = ? ORDER BY id DESC LIMIT ?",
+            (username, int(limit)),
+        )
+    return fetchall(conn, "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (int(limit),))
 
 
 MAILING_SEED_DOMAINS = (

@@ -38,11 +38,13 @@ from permissions import (
     normalize_permissions,
     permissions_from_role,
 )
+import totp
 from database import (
     DB_PATH,
     APP_DIR,
     delete_ref_code_label,
     execute,
+    fetch_audit_log,
     fetchall,
     fetchone,
     get_db,
@@ -51,6 +53,7 @@ from database import (
     insert_returning_id,
     integrity_error_type,
     iso,
+    log_audit,
     scalar,
     upsert_ref_code_label,
     utcnow,
@@ -146,9 +149,10 @@ def seed_admin_users():
 def admin_user_to_dict(row):
     if not row:
         return None
-    role = row["role"] if "role" in row.keys() else "superadmin"
-    perms = normalize_permissions(row["permissions"] if "permissions" in row.keys() else '["*"]')
-    username = row["username"] if "username" in row.keys() else ""
+    keys = row.keys()
+    role = row["role"] if "role" in keys else "superadmin"
+    perms = normalize_permissions(row["permissions"] if "permissions" in keys else '["*"]')
+    username = row["username"] if "username" in keys else ""
     if normalize_username(username) == normalize_username(ADMIN_USERNAME):
         role = "superadmin"
         perms = ["*"]
@@ -157,10 +161,27 @@ def admin_user_to_dict(row):
     return {
         "id": row["id"],
         "username": row["username"],
+        "display_name": (row["display_name"] if "display_name" in keys else "") or "",
         "role": role,
         "permissions": perms,
         "created_at": row["created_at"],
+        "two_factor_required": bool(int(row["two_factor_required"] or 0)) if "two_factor_required" in keys else False,
+        "two_factor_enabled": bool(int(row["two_factor_enabled"] or 0)) if "two_factor_enabled" in keys else False,
     }
+
+
+def display_name_for(username):
+    username = normalize_username(username)
+    if not username:
+        return ""
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT display_name FROM admin_users WHERE LOWER(username) = ?", (username,))
+    return (row["display_name"] or "").strip() if row and row["display_name"] else ""
+
+
+def current_display_name():
+    dn = (session.get("admin_display_name") or "").strip()
+    return dn or session.get("admin_username") or ""
 
 
 def normalize_username(value):
@@ -174,7 +195,10 @@ def get_admin_user(username, password):
         if row and check_password_hash(row["password_hash"], password):
             return admin_user_to_dict(row)
     if username == normalize_username(ADMIN_USERNAME) and password == ADMIN_PASSWORD:
-        return {"id": 0, "username": username, "role": "superadmin", "permissions": ["*"], "created_at": ""}
+        return {
+            "id": 0, "username": username, "display_name": "", "role": "superadmin",
+            "permissions": ["*"], "created_at": "", "two_factor_required": False, "two_factor_enabled": False,
+        }
     return None
 
 
@@ -192,12 +216,32 @@ def login_admin_user(user):
         perms = ["*"]
     session["admin_logged_in"] = True
     session["admin_username"] = user["username"]
+    session["admin_display_name"] = user.get("display_name") or ""
     session["admin_role"] = role
     session["admin_permissions"] = perms
 
 
 def verify_admin(username, password):
     return get_admin_user(username, password) is not None
+
+
+def audit(action, detail="", status=200):
+    """Genel işlem kaydı — süper admin panelinde 'kim ne yaptı' listesi için."""
+    try:
+        with closing(get_db()) as conn:
+            log_audit(
+                conn,
+                username=session.get("admin_username") or "",
+                display_name=current_display_name(),
+                action=action,
+                method=request.method,
+                path=request.path,
+                status=status,
+                ip=get_client_ip(),
+                detail=detail,
+            )
+    except Exception:
+        pass
 
 
 def send_telegram(text):
@@ -700,20 +744,82 @@ def login_page():
         password = request.form.get("password", "")
         user = get_admin_user(username, password)
         if user:
+            if user.get("two_factor_required"):
+                session["pending_2fa_username"] = user["username"]
+                session["pending_2fa_display_name"] = user.get("display_name") or ""
+                audit("login_password_ok_pending_2fa")
+                return redirect(url_for("verify_2fa_page"))
             login_admin_user(user)
             session.permanent = True
             if not has_any_module_access(get_session_permissions()):
                 session.clear()
                 error = "Hesabınızda panel erişim yetkisi yok. Yöneticinize başvurun."
             else:
+                audit("login_success")
                 return redirect(url_for("admin_page"))
         else:
+            audit("login_failed", detail=f"username={username}", status=401)
             error = "Kullanıcı adı veya şifre hatalı."
     return render_template("login.html", error=error)
 
 
+@app.route("/admin/verify-2fa", methods=["GET", "POST"])
+def verify_2fa_page():
+    username = normalize_username(session.get("pending_2fa_username") or "")
+    if not username:
+        return redirect(url_for("login_page"))
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT * FROM admin_users WHERE LOWER(username) = ?", (username,))
+    if not row:
+        session.pop("pending_2fa_username", None)
+        return redirect(url_for("login_page"))
+
+    is_setup = not bool(int(row["two_factor_enabled"] or 0))
+    secret = (row["totp_secret"] or "").strip()
+    if is_setup and not secret:
+        secret = totp.generate_secret()
+        with closing(get_db()) as conn:
+            execute(conn, "UPDATE admin_users SET totp_secret = ? WHERE id = ?", (secret, row["id"]))
+            conn.commit()
+
+    error = None
+    if request.method == "POST":
+        code = request.form.get("code", "")
+        if totp.verify_code(secret, code):
+            user = admin_user_to_dict(row)
+            if is_setup:
+                with closing(get_db()) as conn:
+                    execute(conn, "UPDATE admin_users SET two_factor_enabled = 1 WHERE id = ?", (row["id"],))
+                    conn.commit()
+            session.pop("pending_2fa_username", None)
+            session.pop("pending_2fa_display_name", None)
+            login_admin_user(user)
+            session.permanent = True
+            if not has_any_module_access(get_session_permissions()):
+                session.clear()
+                return redirect(url_for("login_page", error="Hesabınızda panel erişim yetkisi yok."))
+            audit("login_success_2fa")
+            return redirect(url_for("admin_page"))
+        audit("login_2fa_failed", status=401)
+        error = "Kod hatalı veya süresi geçmiş, tekrar dene."
+
+    qr_svg = None
+    if is_setup:
+        uri = totp.build_otpauth_uri(secret, username)
+        qr_svg = totp.qr_svg_data_uri(uri)
+    return render_template(
+        "login_2fa.html",
+        error=error,
+        setup=is_setup,
+        secret=secret if is_setup else "",
+        qr_svg=qr_svg,
+    )
+
+
 @app.route("/admin/logout")
 def logout():
+    if session.get("admin_username"):
+        audit("logout")
     session.clear()
     return redirect(url_for("login_page"))
 
