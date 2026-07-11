@@ -579,11 +579,65 @@
     .acc-exp-grid {
       display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 0.75rem; margin-bottom: 0.75rem;
     }
+    .acc-exp-grid-single { grid-template-columns: 1fr; }
+    .acc-exp-cat-fold {
+      margin-left: auto; font-size: 0.72rem; color: var(--muted); position: relative;
+    }
+    .acc-exp-cat-fold summary {
+      cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.28rem 0.55rem; border-radius: 999px; border: 1px solid var(--border);
+      background: var(--surface-2); user-select: none;
+    }
+    .acc-exp-cat-fold summary::-webkit-details-marker { display: none; }
+    .acc-exp-cat-fold summary:hover { border-color: rgba(99,102,241,0.35); color: var(--text); }
+    .acc-exp-cat-fold[open] summary { border-color: rgba(99,102,241,0.45); color: var(--text); }
+    .acc-exp-cat-count {
+      display: inline-flex; align-items: center; justify-content: center; min-width: 1.15rem; height: 1.15rem;
+      padding: 0 0.28rem; border-radius: 999px; background: rgba(99,102,241,0.18); color: #a5b4fc;
+      font-size: 0.62rem; font-weight: 700;
+    }
+    .acc-exp-cat-manage {
+      position: absolute; right: 0; top: calc(100% + 0.35rem); z-index: 20; width: min(360px, 92vw);
+      padding: 0.65rem; border-radius: 12px; border: 1px solid var(--border);
+      background: var(--surface); box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+    }
     .acc-exp-cat-form { display: flex; gap: 0.4rem; margin-bottom: 0.55rem; }
-    .acc-exp-cat-form input { flex: 1; padding: 0.45rem 0.6rem; font-size: 0.78rem; }
-    .acc-exp-chip-list { max-height: 220px; overflow-y: auto; }
-    .acc-exp-form-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
-    .acc-exp-form-hint { font-size: 0.68rem; }
+    .acc-exp-cat-form input { flex: 1; padding: 0.42rem 0.55rem; font-size: 0.76rem; }
+    .acc-exp-cat-pills {
+      display: flex; flex-wrap: wrap; gap: 0.3rem; max-height: 132px; overflow-y: auto;
+    }
+    .acc-exp-cat-pill {
+      display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.14rem 0.38rem;
+      border-radius: 999px; font-size: 0.64rem; font-weight: 600; background: var(--surface-2);
+      border: 1px solid var(--border); color: var(--text); max-width: 100%;
+    }
+    .acc-exp-cat-pill button {
+      background: none; border: none; color: var(--rose); cursor: pointer; font-size: 0.82rem;
+      line-height: 1; padding: 0 0.08rem; opacity: 0.75;
+    }
+    .acc-exp-cat-pill button:hover { opacity: 1; }
+    .acc-exp-cat-empty { font-size: 0.72rem; }
+    .acc-exp-filter-bar {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem;
+      padding: 0.65rem 0.95rem; border-bottom: 1px solid var(--border); background: var(--surface-2);
+    }
+    .acc-exp-filter-bar input[type="search"] {
+      flex: 1 1 180px; min-width: 140px; padding: 0.42rem 0.6rem; font-size: 0.76rem;
+    }
+    .acc-exp-filter-bar select {
+      flex: 0 1 180px; min-width: 140px; padding: 0.42rem 0.55rem; font-size: 0.76rem;
+    }
+    .acc-exp-filter-meta { font-size: 0.68rem; margin-left: auto; }
+    .acc-exp-cat-card-btn {
+      text-align: left; cursor: pointer; font: inherit; width: 100%;
+      transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+    }
+    .acc-exp-cat-card-btn:hover { transform: translateY(-1px); border-color: rgba(99,102,241,0.45); }
+    .acc-exp-cat-card-btn:focus { outline: none; box-shadow: 0 0 0 2px rgba(99,102,241,0.25); }
+    .acc-exp-cat-affiliate { border-color: rgba(236,72,153,0.35); }
+    .acc-exp-cat-affiliate .acc-exp-cat-card-try { color: #f472b6; }
+    .acc-exp-cat-variable { border-color: rgba(125,141,166,0.35); }
+    .acc-exp-cat-form-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
     .acc-exp-form-grid { align-items: end; }
     .acc-exp-desc-field { grid-column: span 2; }
     .acc-exp-form-actions { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
@@ -1716,7 +1770,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260711f"></script>
+  <script src="/static/accounting.js?v=20260711g"></script>
   <script>
     (function () {
       var API = "";

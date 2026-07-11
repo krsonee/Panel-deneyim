@@ -28,7 +28,7 @@
 
   var accData = {
     "acc-tx": { rows: [], expanded: false, sortKey: "tx_date", sortDir: "desc" },
-    "acc-exp": { rows: [], expanded: false, sortKey: "expense_date", sortDir: "desc" },
+    "acc-exp": { rows: [], expanded: false, sortKey: "expense_date", sortDir: "desc", filterCat: "", filterQ: "" },
     "acc-vault": { rows: [], expanded: false, sortKey: "tx_date", sortDir: "desc" },
     "acc-emp": { rows: [], expanded: false, sortKey: "name", sortDir: "asc" }
   };
@@ -1013,11 +1013,14 @@
           : '<option value="">Kategori ekleyin</option>';
       }
       var chips = document.getElementById("acc-cat-chips");
+      var countEl = document.getElementById("acc-cat-count");
+      if (countEl) countEl.textContent = String(accCategories.length);
+      accFillExpenseFilterCats();
       if (chips) {
         chips.innerHTML = accCategories.map(function (c) {
-          return '<span class="acc-chip">' + accEsc(c.name) +
-            ' <button type="button" data-del-cat="' + c.id + '" title="Sil">×</button></span>';
-        }).join("") || '<span class="muted">Henüz kategori yok</span>';
+          return '<span class="acc-exp-cat-pill">' + accEsc(c.name) +
+            '<button type="button" data-del-cat="' + c.id + '" title="Sil">×</button></span>';
+        }).join("") || '<span class="muted acc-exp-cat-empty">Henüz kategori yok</span>';
         chips.querySelectorAll("[data-del-cat]").forEach(function (btn) {
           btn.onclick = function () {
             if (!confirm("Kategori silinsin mi?")) return;
@@ -1050,11 +1053,73 @@
 
   function accExpenseCatClass(name) {
     var n = (name || "").toLowerCase();
-    if (n.indexOf("marketing") >= 0) return "acc-exp-cat-marketing";
-    if (n.indexOf("maa") >= 0) return "acc-exp-cat-salary";
-    if (n.indexOf("ofis") >= 0) return "acc-exp-cat-office";
-    if (n.indexOf("fatura") >= 0) return "acc-exp-cat-invoice";
+    if (n.indexOf("marketing") >= 0 || n.indexOf("boss") >= 0 || n.indexOf("site masraf") >= 0) return "acc-exp-cat-marketing";
+    if (n.indexOf("maa") >= 0 || n.indexOf("avans") >= 0) return "acc-exp-cat-salary";
+    if (n.indexOf("ofis") >= 0 || n.indexOf("sabit") >= 0 || n.indexOf("call") >= 0) return "acc-exp-cat-office";
+    if (n.indexOf("fatura") >= 0 || n.indexOf("kasa") >= 0) return "acc-exp-cat-invoice";
+    if (n.indexOf("affilate") >= 0 || n.indexOf("betroz") >= 0) return "acc-exp-cat-affiliate";
+    if (n.indexOf("değişken") >= 0 || n.indexOf("degisken") >= 0) return "acc-exp-cat-variable";
     return "acc-exp-cat-other";
+  }
+
+  function accFilteredExpenses() {
+    var rows = accData["acc-exp"].rows || [];
+    var cat = accData["acc-exp"].filterCat || "";
+    var q = (accData["acc-exp"].filterQ || "").toLowerCase().trim();
+    if (!cat && !q) return rows;
+    return rows.filter(function (r) {
+      if (cat && String(r.category_id) !== cat) return false;
+      if (q) {
+        var hay = ((r.description || "") + " " + (r.category_name || "")).toLowerCase();
+        if (hay.indexOf(q) < 0) return false;
+      }
+      return true;
+    });
+  }
+
+  function accSyncExpenseFilterUi() {
+    var catSel = document.getElementById("acc-exp-filter-cat");
+    var qEl = document.getElementById("acc-exp-filter-q");
+    var clearBtn = document.getElementById("acc-exp-filter-clear");
+    var meta = document.getElementById("acc-exp-filter-meta");
+    var cat = accData["acc-exp"].filterCat || "";
+    var q = accData["acc-exp"].filterQ || "";
+    if (catSel && catSel.value !== cat) catSel.value = cat;
+    if (qEl && qEl.value !== q) qEl.value = q;
+    if (clearBtn) clearBtn.hidden = !cat && !q;
+    if (meta) {
+      var filtered = accFilteredExpenses();
+      var total = accData["acc-exp"].rows.length;
+      meta.textContent = (cat || q) && filtered.length !== total
+        ? filtered.length + " / " + total + " kayıt"
+        : "";
+    }
+  }
+
+  function accSetExpenseFilter(cat, q) {
+    accData["acc-exp"].filterCat = cat != null ? String(cat) : accData["acc-exp"].filterCat;
+    accData["acc-exp"].filterQ = q != null ? String(q) : accData["acc-exp"].filterQ;
+    accData["acc-exp"].expanded = false;
+    accSyncExpenseFilterUi();
+    accRenderExpenses();
+  }
+
+  function accClearExpenseFilter() {
+    accData["acc-exp"].filterCat = "";
+    accData["acc-exp"].filterQ = "";
+    accSyncExpenseFilterUi();
+    accRenderExpenses();
+  }
+
+  function accFillExpenseFilterCats() {
+    var sel = document.getElementById("acc-exp-filter-cat");
+    if (!sel) return;
+    var cur = accData["acc-exp"].filterCat || "";
+    sel.innerHTML = '<option value="">Tüm kategoriler</option>' +
+      accCategories.map(function (c) {
+        return '<option value="' + c.id + '">' + accEsc(c.name) + "</option>";
+      }).join("");
+    sel.value = cur;
   }
 
   function accExpenseDescHtml(text) {
@@ -1102,32 +1167,43 @@
     }
     el.innerHTML = totals.map(function (t) {
       var cls = accExpenseCatClass(t.name);
-      return '<div class="acc-exp-cat-card ' + cls + '">' +
+      var catObj = accCategories.find(function (c) { return c.name === t.name; });
+      var catId = catObj ? catObj.id : "";
+      return '<button type="button" class="acc-exp-cat-card acc-exp-cat-card-btn ' + cls + '" data-exp-cat-filter="' + catId + '">' +
         '<div class="acc-exp-cat-card-head">' +
           '<span class="acc-exp-cat-card-name">' + accEsc(t.name) + "</span>" +
           '<span class="acc-exp-cat-card-count">' + t.count + " kayıt</span>" +
         "</div>" +
         '<strong class="acc-exp-cat-card-try">' + accMoney(t.try, "TRY") + "</strong>" +
         '<span class="acc-exp-cat-card-usd">' + accMoney(t.usd, "USD") + "</span>" +
-      "</div>";
+      "</button>";
     }).join("");
+    el.querySelectorAll("[data-exp-cat-filter]").forEach(function (btn) {
+      btn.onclick = function () {
+        var id = btn.getAttribute("data-exp-cat-filter");
+        if (!id) return;
+        var current = accData["acc-exp"].filterCat || "";
+        accSetExpenseFilter(current === id ? "" : id, accData["acc-exp"].filterQ);
+      };
+    });
   }
 
-  function accUpdateExpenseSummary(rows) {
+  function accUpdateExpenseSummary(rows, filteredRows) {
     var tryEl = document.getElementById("acc-exp-sum-try");
     var usdEl = document.getElementById("acc-exp-sum-usd");
     var countEl = document.getElementById("acc-exp-sum-count");
     var periodEl = document.getElementById("acc-exp-period-label");
     if (!tryEl) return;
+    var source = filteredRows || rows;
     var totalTry = 0;
     var totalUsd = 0;
-    (rows || []).forEach(function (r) {
+    (source || []).forEach(function (r) {
       totalTry += parseFloat(r.amount_try) || 0;
       totalUsd += parseFloat(r.amount_usd) || 0;
     });
     tryEl.textContent = accMoney(totalTry, "TRY");
     usdEl.textContent = accMoney(totalUsd, "USD");
-    countEl.textContent = String((rows || []).length);
+    countEl.textContent = String((source || []).length);
     if (periodEl) {
       var lbl = document.getElementById("acc-period-label");
       periodEl.textContent = lbl ? lbl.textContent : "";
@@ -1190,17 +1266,26 @@
     var tbody = document.getElementById("acc-exp-table");
     var editIdEl = document.getElementById("acc-exp-edit-id");
     var editingId = editIdEl && editIdEl.value ? parseInt(editIdEl.value, 10) : null;
-    var rows = accSortRows("acc-exp", accData["acc-exp"].rows, {
+    var allRows = accData["acc-exp"].rows;
+    var filtered = accFilteredExpenses();
+    accSyncExpenseFilterUi();
+    accUpdateExpenseSummary(allRows, filtered);
+    var rows = accSortRows("acc-exp", filtered, {
       expense_date: function (r) { return r.expense_date; },
       category_name: function (r) { return r.category_name; },
       description: function (r) { return r.description; },
       amount: function (r) { return r.amount; },
       rate_usd_try: function (r) { return r.rate_usd_try; }
     });
-    accUpdateExpenseSummary(accData["acc-exp"].rows);
-    if (!accData["acc-exp"].rows.length) {
+    if (!allRows.length) {
       tbody.innerHTML = '<tr><td colspan="6" class="empty acc-exp-empty">Bu dönemde gider kaydı yok</td></tr>';
       accUpdateFoot("acc-exp", 0, "gider");
+      return;
+    }
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty acc-exp-empty">Filtreye uygun kayıt yok</td></tr>';
+      accUpdateFoot("acc-exp", 0, "gider");
+      accUpdateSortHeaders("acc-exp");
       return;
     }
     tbody.innerHTML = rows.map(function (r) {
@@ -1252,7 +1337,7 @@
           });
       };
     });
-    accUpdateFoot("acc-exp", accData["acc-exp"].rows.length, "gider");
+    accUpdateFoot("acc-exp", filtered.length, "gider");
     accUpdateSortHeaders("acc-exp");
   }
 
@@ -2116,6 +2201,21 @@
 
     var expCancel = document.getElementById("acc-exp-edit-cancel");
     if (expCancel) expCancel.onclick = accResetExpenseForm;
+
+    var expFilterQ = document.getElementById("acc-exp-filter-q");
+    if (expFilterQ) {
+      expFilterQ.addEventListener("input", function () {
+        accSetExpenseFilter(accData["acc-exp"].filterCat, expFilterQ.value);
+      });
+    }
+    var expFilterCat = document.getElementById("acc-exp-filter-cat");
+    if (expFilterCat) {
+      expFilterCat.addEventListener("change", function () {
+        accSetExpenseFilter(expFilterCat.value, accData["acc-exp"].filterQ);
+      });
+    }
+    var expFilterClear = document.getElementById("acc-exp-filter-clear");
+    if (expFilterClear) expFilterClear.onclick = accClearExpenseFilter;
 
     accBindForm("acc-vault-form", function (e) {
       e.preventDefault();

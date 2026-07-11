@@ -201,22 +201,20 @@
       </div>
     </div>
 
-    <div class="acc-exp-grid">
-      <section class="card acc-exp-cats-card">
-        <div class="card-head"><span>Kategoriler</span></div>
-        <div class="card-body">
-          <form id="acc-cat-form" class="acc-exp-cat-form">
-            <input id="acc-cat-name" placeholder="Yeni kategori…" required>
-            <button type="submit" class="btn btn-primary btn-sm">+</button>
-          </form>
-          <div class="acc-chip-list acc-exp-chip-list" id="acc-cat-chips"></div>
-        </div>
-      </section>
-
+    <div class="acc-exp-grid acc-exp-grid-single">
       <section class="card acc-exp-form-card" id="acc-exp-form-section">
         <div class="card-head acc-exp-form-head">
           <span id="acc-exp-form-title">Yeni Gider</span>
-          <span class="muted acc-exp-form-hint">Satıra tıklayarak veya Düzenle ile güncelleyebilirsiniz</span>
+          <details class="acc-exp-cat-fold">
+            <summary>Kategoriler <span class="acc-exp-cat-count" id="acc-cat-count">0</span></summary>
+            <div class="acc-exp-cat-manage">
+              <form id="acc-cat-form" class="acc-exp-cat-form">
+                <input id="acc-cat-name" placeholder="Yeni kategori…" required>
+                <button type="submit" class="btn btn-primary btn-sm">Ekle</button>
+              </form>
+              <div class="acc-exp-cat-pills" id="acc-cat-chips"></div>
+            </div>
+          </details>
         </div>
         <div class="card-body">
           <form id="acc-exp-form" class="form-row-4 acc-exp-form-grid">
@@ -251,6 +249,14 @@
       </div>
       <div class="acc-exp-cat-cards" id="acc-exp-cat-cards">
         <div class="acc-exp-cat-card acc-exp-cat-card-empty muted">Kategori özeti yükleniyor…</div>
+      </div>
+      <div class="acc-exp-filter-bar">
+        <input type="search" id="acc-exp-filter-q" placeholder="Açıklama veya kategori ara…">
+        <select id="acc-exp-filter-cat">
+          <option value="">Tüm kategoriler</option>
+        </select>
+        <button type="button" class="btn btn-sm" id="acc-exp-filter-clear" hidden>Temizle</button>
+        <span class="acc-exp-filter-meta muted" id="acc-exp-filter-meta"></span>
       </div>
       <div class="table-wrap acc-exp-table-wrap">
         <div class="table-scroll acc-exp-table-scroll" id="acc-exp-table-scroll">
