@@ -480,6 +480,69 @@ def fetch_media_report(conn, period="all", force=False):
     return {**live_payload, "source": "live"}
 
 
+def fetch_subid_conversions(conn, affiliate_id, subid_param, force=False):
+    """Belirli bir affiliate hesabının linkinde, sub-id (afp1..afp9) bazında
+    kayıt/FTD/yatırım rakamlarını döner — her satır tek bir sub-id değerine
+    (bizde: mail contact_id) karşılık gelir.
+
+    Dönüş: {"rows": [{"subid": "123", "registration_count", "ftd_count",
+             "deposit_count", "deposit_total", ...}], "error": None|str}
+    """
+    cfg = get_config(conn)
+    if not cfg["api_key"]:
+        return {"rows": [], "error": "not_configured"}
+    affiliate_id = str(affiliate_id or "").strip()
+    subid_param = (subid_param or "afp1").strip() or "afp1"
+    if not affiliate_id:
+        return {"rows": [], "error": "affiliate_id_missing"}
+
+    params = {"group_by": subid_param, "affiliate_id": affiliate_id}
+    try:
+        data = _request(cfg["api_host"], "af2_media_report_op", cfg["api_key"], params)
+    except SmarticoError as exc:
+        return {"rows": [], "error": str(exc)}
+
+    if not isinstance(data, dict):
+        msg = "Smartico API beklenmeyen bir cevap döndürdü."
+        if isinstance(data, str) and data.strip():
+            msg = f"Smartico API hatası: {data.strip()}"
+        return {"rows": [], "error": msg}
+
+    rows_raw = data.get("data") or []
+    if not isinstance(rows_raw, list):
+        rows_raw = []
+    merged = {}
+    for r in rows_raw:
+        if not isinstance(r, dict):
+            continue
+        subid = str(r.get(subid_param) or "").strip()
+        if not subid:
+            continue
+        if subid not in merged:
+            merged[subid] = {
+                "subid": subid,
+                "visit_count": 0,
+                "registration_count": 0,
+                "ftd_count": 0,
+                "ftd_total": 0.0,
+                "deposit_count": 0,
+                "deposit_total": 0.0,
+            }
+        m = merged[subid]
+        m["visit_count"] += _num(r.get("visit_count"))
+        m["registration_count"] += _num(r.get("registration_count"))
+        m["ftd_count"] += _num(r.get("ftd_count"))
+        m["ftd_total"] += _num(r.get("ftd_total"))
+        m["deposit_count"] += _num(r.get("deposit_count"))
+        m["deposit_total"] += _num(r.get("deposit_total"))
+
+    rows = sorted(merged.values(), key=lambda x: x["subid"])
+    for row in rows:
+        for f in ("ftd_total", "deposit_total"):
+            row[f] = round(row[f], 2)
+    return {"rows": rows, "error": None}
+
+
 def _num(v):
     try:
         return float(v or 0)

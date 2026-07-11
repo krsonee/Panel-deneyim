@@ -238,7 +238,7 @@
       .replace(/\{\{email\}\}/g, "ali@ornek.com")
       .replace(/\{\{phone\}\}/g, "+90555…")
       .replace(/\{\{\s*link\s*:\s*([^}]+)\s*\}\}/gi, function (_m, url) {
-        var u = url.trim();
+        var u = url.trim().replace(/^sc\s*:\s*/i, "");
         return '<a href="' + u + '" style="color:#2563eb;">' + u + "</a>";
       });
   }
@@ -416,6 +416,10 @@
       document.getElementById("mail-set-user").value = s.smtp_user || "";
       document.getElementById("mail-set-pass").value = "";
       document.getElementById("mail-set-default-domain").value = s.default_domain_id || "";
+      var scAff = document.getElementById("mail-set-sc-affid");
+      var scSub = document.getElementById("mail-set-sc-subid");
+      if (scAff) scAff.value = s.smartico_affiliate_id || "";
+      if (scSub) scSub.value = s.smartico_subid_param || "afp1";
       setText("mail-set-webhook-masked", s.webhook_secret_masked || "—");
       setText("mail-set-pass-hint", s.smtp_password_set ? "Şifre kayıtlı (değiştirmek için yaz)" : "Şifre yok");
       updateProviderPill(s.provider_mode);
@@ -580,7 +584,8 @@
       var url = (document.getElementById("mail-tpl-link-url").value || "").trim();
       if (!url) { mailToast("Önce hedef URL yaz"); return; }
       if (!/^https?:\/\//i.test(url)) url = "https://" + url;
-      insertAtCursor(activeTplEditor(), "{{link:" + url + "}}");
+      var isSc = (document.getElementById("mail-tpl-link-smartico") || {}).checked;
+      insertAtCursor(activeTplEditor(), "{{link:" + (isSc ? "sc:" : "") + url + "}}");
       refreshTplPreview();
     });
 
@@ -740,6 +745,35 @@
         });
       });
     }
+    var scForm = document.getElementById("mail-smartico-form");
+    if (scForm) {
+      scForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        mailApi("/api/mailing/settings", {
+          method: "PATCH",
+          body: {
+            smartico_affiliate_id: document.getElementById("mail-set-sc-affid").value.trim(),
+            smartico_subid_param: document.getElementById("mail-set-sc-subid").value.trim() || "afp1"
+          }
+        }).then(function (res) {
+          if (!res || !res.ok) { mailToast("Kaydedilemedi"); return; }
+          mailToast("Smartico ayarları kaydedildi");
+          mailLoadSettings();
+        });
+      });
+    }
+    bindClick("mail-btn-sync-smartico", function () {
+      mailToast("Smartico segmentleri güncelleniyor…");
+      mailApi("/api/mailing/crm/sync-smartico", { method: "POST", timeoutMs: 30000 }).then(function (res) {
+        if (!res || !res.ok) {
+          mailToast((res && res.data && res.data.error) || "Güncellenemedi");
+          return;
+        }
+        mailToast(res.data.message || "Segmentler güncellendi");
+        mailLoadContacts();
+        mailLoadTags();
+      });
+    });
     bindClick("mail-btn-rotate-secret", function () {
       if (!confirm("Webhook secret yenilensin mi? IVR tarafını da güncellemen gerekir.")) return;
       mailApi("/api/mailing/settings", {

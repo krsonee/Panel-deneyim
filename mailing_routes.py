@@ -9,10 +9,12 @@ import json
 import os
 import re
 import secrets
+import urllib.parse
 from contextlib import closing
 
 from flask import Blueprint, jsonify, redirect, request
 
+import smartico_api
 from database import (
     execute,
     fetchall,
@@ -126,17 +128,29 @@ def _public_base():
         return ""
 
 
-def _make_click_token(conn, *, dest_url, send_id=None, contact_id=None, campaign_id=None):
+_SMARTICO_LINK_RE = re.compile(r"^\s*sc\s*:\s*(.+)$", re.I | re.S)
+
+
+def _split_smartico_marker(dest):
+    """'sc:https://...' işaretini ayıkla. Dönüş: (asıl_url, is_smartico)."""
+    dest = (dest or "").strip()
+    m = _SMARTICO_LINK_RE.match(dest)
+    if m:
+        return m.group(1).strip(), True
+    return dest, False
+
+
+def _make_click_token(conn, *, dest_url, send_id=None, contact_id=None, campaign_id=None, is_smartico=False):
     token = secrets.token_urlsafe(10)
     now = iso(utcnow())
     insert_returning_id(
         conn,
         """
         INSERT INTO mail_click_links
-        (token, send_id, contact_id, campaign_id, dest_url, click_count, created_at)
-        VALUES (?, ?, ?, ?, ?, 0, ?)
+        (token, send_id, contact_id, campaign_id, dest_url, is_smartico, click_count, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?)
         """,
-        (token, send_id, contact_id, campaign_id, dest_url, now),
+        (token, send_id, contact_id, campaign_id, dest_url, 1 if is_smartico else 0, now),
     )
     return token
 
@@ -145,14 +159,33 @@ def _track_url(token):
     return f"{_public_base()}/m/c/{token}"
 
 
+def _append_query_param(url, key, value):
+    """URL'e query param ekle/güncelle — mevcut parametreleri korur."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        qs = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        qs = [(k, v) for k, v in qs if k != key]
+        qs.append((key, str(value)))
+        new_query = urllib.parse.urlencode(qs)
+        return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+    except Exception:
+        sep = "&" if "?" in url else "?"
+        return f"{url}{sep}{key}={value}"
+
+
 def _inject_tracking(conn, body, *, send_id, contact_id=None, campaign_id=None, as_html=True):
-    """{{link:url}} ve <a href> adreslerini kişiye özel takip URL'sine çevir."""
+    """{{link:url}} / {{link:sc:url}} ve <a href> adreslerini kişiye özel takip URL'sine çevir.
+
+    'sc:' önekiyle işaretlenen linkler Smartico affiliate linkidir; tıklanınca
+    contact_id, sub-id parametresi (afp1 vb.) olarak Smartico'ya iletilir —
+    böylece kayıt/FTD raporunda hangi contact'ın dönüştüğü görülebilir.
+    """
     body = body or ""
     if not body:
         return body
 
-    def token_for(dest):
-        dest = (dest or "").strip()
+    def token_for(raw_dest):
+        dest, is_sc = _split_smartico_marker(raw_dest)
         if not dest or dest.startswith("/m/c/") or "/m/c/" in dest:
             return dest
         tok = _make_click_token(
@@ -161,13 +194,15 @@ def _inject_tracking(conn, body, *, send_id, contact_id=None, campaign_id=None, 
             send_id=send_id,
             contact_id=contact_id,
             campaign_id=campaign_id,
+            is_smartico=is_sc,
         )
         return _track_url(tok)
 
     def repl_token(m):
         tracked = token_for(m.group(1))
         if as_html:
-            safe_dest = html_lib.escape(m.group(1).strip(), quote=True)
+            safe_dest, _ = _split_smartico_marker(m.group(1))
+            safe_dest = html_lib.escape(safe_dest, quote=True)
             return f'<a href="{tracked}" target="_blank" rel="noopener">{safe_dest}</a>'
         return tracked
 
@@ -203,6 +238,23 @@ def _tag_contact(conn, contact_id, tag, now=None):
             conn,
             "INSERT INTO mail_contact_tags (name, created_at) VALUES (?, ?)",
             (tag, now),
+        )
+
+
+def _untag_contact(conn, contact_id, tag, now=None):
+    if not contact_id or not tag:
+        return
+    now = now or iso(utcnow())
+    row = fetchone(conn, "SELECT tags FROM mail_contacts WHERE id = ?", (contact_id,))
+    if not row:
+        return
+    tags = _parse_tags(row["tags"])
+    if tag in tags:
+        tags.remove(tag)
+        execute(
+            conn,
+            "UPDATE mail_contacts SET tags = ?, updated_at = ? WHERE id = ?",
+            (_tags_json(tags), now, contact_id),
         )
 
 
@@ -268,6 +320,9 @@ def create_mailing_click_blueprint():
             if not row:
                 return ("Link bulunamadı.", 404)
             dest = row["dest_url"]
+            if row["is_smartico"] and row["contact_id"]:
+                subid_param = (get_mail_setting(conn, "smartico_subid_param", "afp1") or "afp1").strip() or "afp1"
+                dest = _append_query_param(dest, subid_param, row["contact_id"])
             first = row["first_clicked_at"] or now
             execute(
                 conn,
@@ -535,6 +590,63 @@ def create_mailing_blueprint(permission_required):
         with closing(get_db()) as conn:
             rows = _rows(fetchall(conn, "SELECT * FROM mail_contact_tags ORDER BY name ASC"))
         return jsonify({"tags": rows})
+
+    @bp.route("/crm/sync-smartico", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def sync_smartico_segments():
+        """Smartico'daki kayıt/FTD verisini afp1 (sub-id) üzerinden contact_id'ye
+        eşleştirip CRM'i otomatik etiketler: uye_oldu / ftd_yapti / ftd_yok.
+        """
+        now = iso(utcnow())
+        with closing(get_db()) as conn:
+            affiliate_id = (get_mail_setting(conn, "smartico_affiliate_id", "") or "").strip()
+            subid_param = (get_mail_setting(conn, "smartico_subid_param", "afp1") or "afp1").strip() or "afp1"
+            if not affiliate_id:
+                return jsonify({"error": "Önce Ayarlar'dan Smartico Affiliate ID gir."}), 400
+            if not smartico_api.is_configured(conn):
+                return jsonify({"error": "Smartico API anahtarı tanımlı değil (Link Takip > Smartico)."}), 400
+
+            result = smartico_api.fetch_subid_conversions(conn, affiliate_id, subid_param)
+            if result.get("error"):
+                return jsonify({"error": result["error"]}), 400
+
+            matched = 0
+            unmatched = 0
+            tagged_uye = 0
+            tagged_ftd = 0
+            tagged_no_ftd = 0
+            for row in result["rows"]:
+                subid = row.get("subid") or ""
+                try:
+                    contact_id = int(subid)
+                except (TypeError, ValueError):
+                    unmatched += 1
+                    continue
+                contact = fetchone(conn, "SELECT id FROM mail_contacts WHERE id = ?", (contact_id,))
+                if not contact:
+                    unmatched += 1
+                    continue
+                matched += 1
+                if row.get("registration_count", 0) > 0:
+                    _tag_contact(conn, contact_id, "uye_oldu", now)
+                    tagged_uye += 1
+                    if row.get("ftd_count", 0) > 0:
+                        _tag_contact(conn, contact_id, "ftd_yapti", now)
+                        _untag_contact(conn, contact_id, "ftd_yok", now)
+                        tagged_ftd += 1
+                    else:
+                        _tag_contact(conn, contact_id, "ftd_yok", now)
+                        tagged_no_ftd += 1
+            conn.commit()
+        return jsonify({
+            "ok": True,
+            "matched": matched,
+            "unmatched": unmatched,
+            "tagged_uye_oldu": tagged_uye,
+            "tagged_ftd_yapti": tagged_ftd,
+            "tagged_ftd_yok": tagged_no_ftd,
+            "message": f"{matched} contact eşleşti · {tagged_uye} üye oldu · {tagged_ftd} FTD yaptı · {tagged_no_ftd} FTD yok",
+        })
 
     @bp.route("/tags", methods=["POST"])
     @mail_perm(*MAIL_CRM)
@@ -970,6 +1082,7 @@ def create_mailing_blueprint(permission_required):
         keys = (
             "provider_mode", "smtp_host", "smtp_port", "smtp_user", "smtp_password",
             "webhook_secret", "default_domain_id",
+            "smartico_affiliate_id", "smartico_subid_param",
         )
         with closing(get_db()) as conn:
             settings = {k: get_mail_setting(conn, k, "") or "" for k in keys}
@@ -988,6 +1101,7 @@ def create_mailing_blueprint(permission_required):
         allowed = {
             "provider_mode", "smtp_host", "smtp_port", "smtp_user", "smtp_password",
             "webhook_secret", "default_domain_id",
+            "smartico_affiliate_id", "smartico_subid_param",
         }
         with closing(get_db()) as conn:
             if data.get("rotate_webhook_secret"):

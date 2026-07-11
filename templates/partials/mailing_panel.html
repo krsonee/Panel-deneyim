@@ -59,6 +59,17 @@
         </div>
       </div>
     </section>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Smartico'dan otomatik segment</span></div>
+      <div class="card-body">
+        <p class="hint">
+          Mail şablonunda Smartico affiliate linkini <code>{{ '{{link:sc:https://...}}' }}</code> olarak eklersen,
+          tıklayan kişi Smartico'ya kendi contact ID'siyle yönlenir. Bu buton Smartico raporundan kayıt/FTD
+          verisini çekip kontakları otomatik etiketler: <code>uye_oldu</code>, <code>ftd_yapti</code>, <code>ftd_yok</code>.
+        </p>
+        <button type="button" class="btn btn-primary" id="mail-btn-sync-smartico" style="margin-top:0.5rem;">Smartico segmentlerini güncelle</button>
+      </div>
+    </section>
     <section class="card">
       <div class="card-head">
         <span>Kontaklar</span>
@@ -100,6 +111,8 @@
           <p class="hint mail-tpl-hint">
             Değişkenler: <code>{{ '{{name}}' }}</code> <code>{{ '{{email}}' }}</code> <code>{{ '{{phone}}' }}</code>
             · Takip linki: <code>{{ '{{link:https://site.com}}' }}</code> (tıklayan kişi CRM’e <code>mail_tiklayan</code> etiketiyle düşer)
+            · Smartico linki: aşağıdaki "Smartico linki" kutusunu işaretle — tıklayan kişi Smartico'ya kendi
+            contact ID'siyle yönlenir, CRM &gt; "Smartico segmentlerini güncelle" ile kayıt/FTD durumu otomatik etiketlenir.
           </p>
 
           <div class="mail-tpl-toolbar">
@@ -107,6 +120,9 @@
             <button type="button" class="btn btn-sm" id="mail-tpl-insert-email">{{ '{{email}}' }}</button>
             <button type="button" class="btn btn-sm" id="mail-tpl-insert-link">Takip linki ekle</button>
             <input type="url" id="mail-tpl-link-url" placeholder="https://hedef-site.com/…" class="mail-tpl-link-input">
+            <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.78rem;cursor:pointer;white-space:nowrap;">
+              <input type="checkbox" id="mail-tpl-link-smartico"> Smartico linki
+            </label>
           </div>
 
           <div id="mail-tpl-pane-simple" class="mail-tpl-editor-pane">
@@ -279,6 +295,21 @@
             <span class="muted" id="mail-set-pass-hint" style="font-size:0.72rem;"></span>
           </div>
         </form>
+      </div>
+    </section>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Smartico CRM eşleştirme</span></div>
+      <div class="card-body">
+        <form id="mail-smartico-form" class="form-row-4">
+          <div><label>Smartico Affiliate ID (mailing hesabı)</label><input type="text" id="mail-set-sc-affid" placeholder="örn. 1042"></div>
+          <div><label>Sub-ID parametresi</label><input type="text" id="mail-set-sc-subid" placeholder="afp1"></div>
+          <div style="grid-column:1/-1;"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+        </form>
+        <p class="hint" style="margin-top:0.5rem;">
+          Smartico affiliate panelinden mailing için oluşturduğun linkin affiliate ID'sini gir. Şablonlarda
+          <code>{{ '{{link:sc:URL}}' }}</code> ile işaretlenen linkler bu ID üzerinden takip edilir — Smartico'daki
+          API anahtarı Link Takip &gt; Smartico ayarlarından tanımlı olmalı.
+        </p>
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">

@@ -1739,6 +1739,8 @@ def migrate_tracked_links(conn):
 
     if "label" not in cols:
         execute(conn, "ALTER TABLE tracked_links ADD COLUMN label TEXT NOT NULL DEFAULT ''")
+    if "created_by" not in cols:
+        execute(conn, "ALTER TABLE tracked_links ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
 
@@ -1839,6 +1841,10 @@ def seed_mailing_defaults(conn):
     if get_mail_setting(conn, "default_domain_id") is None:
         first = fetchone(conn, "SELECT id FROM mail_domains ORDER BY id ASC LIMIT 1")
         upsert_mail_setting(conn, "default_domain_id", str(first["id"]) if first else "")
+    if get_mail_setting(conn, "smartico_affiliate_id") is None:
+        upsert_mail_setting(conn, "smartico_affiliate_id", "")
+    if get_mail_setting(conn, "smartico_subid_param") is None:
+        upsert_mail_setting(conn, "smartico_subid_param", "afp1")
     # Default IVR rule if none
     rule_count = scalar(conn, "SELECT COUNT(*) FROM mail_ivr_rules") or 0
     if not rule_count:
@@ -1990,6 +1996,7 @@ def init_mailing_schema(conn):
                 contact_id INTEGER REFERENCES mail_contacts(id),
                 campaign_id INTEGER REFERENCES mail_campaigns(id),
                 dest_url TEXT NOT NULL,
+                is_smartico INTEGER NOT NULL DEFAULT 0,
                 click_count INTEGER NOT NULL DEFAULT 0,
                 first_clicked_at TEXT,
                 last_clicked_at TEXT,
@@ -2147,6 +2154,7 @@ def init_mailing_schema(conn):
                 contact_id INTEGER,
                 campaign_id INTEGER,
                 dest_url TEXT NOT NULL,
+                is_smartico INTEGER NOT NULL DEFAULT 0,
                 click_count INTEGER NOT NULL DEFAULT 0,
                 first_clicked_at TEXT,
                 last_clicked_at TEXT,
@@ -2206,6 +2214,9 @@ def ensure_mail_click_links_table(conn):
             """,
         )
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_click_token ON mail_click_links(token)")
+    cols = _table_columns(conn, "mail_click_links")
+    if cols and "is_smartico" not in cols:
+        execute(conn, "ALTER TABLE mail_click_links ADD COLUMN is_smartico INTEGER NOT NULL DEFAULT 0")
     conn.commit()
 
 
