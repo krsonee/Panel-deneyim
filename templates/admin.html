@@ -474,6 +474,13 @@
     .acc-emp-period-note strong { color: var(--amber); font-size: 0.92rem; }
     .acc-emp-period-note small { display: block; margin-top: 0.15rem; font-size: 0.68rem; }
     tr.acc-emp-row-left td { color: color-mix(in srgb, var(--text) 82%, var(--muted)); }
+    .acc-salary-blurred {
+      display: inline-block;
+      filter: blur(5px);
+      user-select: none;
+      pointer-events: none;
+      letter-spacing: 0.12em;
+    }
     .acc-emp-del {
       width: 1.65rem; height: 1.65rem; padding: 0; line-height: 1;
       border-radius: 8px; font-size: 1rem; font-weight: 700;
@@ -1616,7 +1623,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260711c"></script>
+  <script src="/static/accounting.js?v=20260711d"></script>
   <script>
     (function () {
       var API = "";

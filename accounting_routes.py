@@ -17,6 +17,8 @@ from accounting_payroll import (
     compute_payroll_daily,
     employee_active_in_period,
     enrich_employee_row,
+    filter_payroll_employees,
+    is_executive_salary_employee,
     redact_employee_for_view,
     validate_advance_amount,
     validate_office_amounts,
@@ -130,15 +132,46 @@ def create_accounting_blueprint(permission_required):
     def can_view_office_salaries():
         return has_permission(session.get("admin_permissions"), ACC_OFFICE_SALARIES)
 
+    def can_view_executive_salaries():
+        return (session.get("admin_username") or "").strip().lower() == "admin"
+
     def permissions_meta():
-        return {"can_view_office_salaries": can_view_office_salaries()}
+        return {
+            "can_view_office_salaries": can_view_office_salaries(),
+            "can_view_executive_salaries": can_view_executive_salaries(),
+        }
 
     def payroll_include_office():
         return can_view_office_salaries()
 
+    def payroll_source_rows(rows, category_map):
+        return filter_payroll_employees(
+            rows,
+            can_view_office_salaries(),
+            can_view_executive_salaries(),
+            category_map,
+        )
+
     def prepare_employee_row(row, period, category_map=None):
         enriched = enrich_employee_row(dict(row), period)
-        return redact_employee_for_view(enriched, can_view_office_salaries(), category_map)
+        return redact_employee_for_view(
+            enriched,
+            can_view_office_salaries(),
+            category_map,
+            can_view_executive=can_view_executive_salaries(),
+        )
+
+    def guard_executive_salary_fields(data, existing):
+        if can_view_executive_salaries() or not is_executive_salary_employee(existing):
+            return data
+        blocked = {
+            "salary", "currency", "bank_salary", "crypto_salary", "advance_amount",
+            "bonus_amount", "crypto_wallet", "bank_iban", "bank_account_name",
+        }
+        cleaned = dict(data)
+        for key in blocked:
+            cleaned.pop(key, None)
+        return cleaned
 
     def stored_rates(row):
         if not row:
@@ -364,7 +397,10 @@ def create_accounting_blueprint(permission_required):
         employees = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employees")]
         _, salary_categories = payroll_context(conn)
         payroll_data = compute_payroll_daily(
-            employees, period, include_office=payroll_include_office(), category_map=salary_categories
+            payroll_source_rows(employees, salary_categories),
+            period,
+            include_office=True,
+            category_map=salary_categories,
         )
         payroll_accrual = payroll_data["period_accrual"]
         result = {}
@@ -436,7 +472,10 @@ def create_accounting_blueprint(permission_required):
             employees = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employees")]
             departments, salary_categories = payroll_context(conn)
         payroll_daily = compute_payroll_daily(
-            employees, period, include_office=payroll_include_office(), category_map=salary_categories
+            payroll_source_rows(employees, salary_categories),
+            period,
+            include_office=True,
+            category_map=salary_categories,
         )
         try:
             rates = rates_json(fetch_exchange_rates())
@@ -1416,9 +1455,9 @@ def create_accounting_blueprint(permission_required):
             ]
             employees = [prepare_employee_row(r, period, salary_categories) for r in rows]
             payroll_data = compute_payroll_daily(
-                [dict(r) for r in rows],
+                payroll_source_rows([dict(r) for r in rows], salary_categories),
                 period,
-                include_office=payroll_include_office(),
+                include_office=True,
                 category_map=salary_categories,
             )
         return jsonify({
@@ -1492,6 +1531,8 @@ def create_accounting_blueprint(permission_required):
             dept_names = [d["name"] for d in departments]
 
             if set(data.keys()) == {"advance_amount"}:
+                if not can_view_executive_salaries() and is_executive_salary_employee(dict(row)):
+                    return jsonify({"error": "Bu personelin maaş bilgilerine erişim yetkiniz yok."}), 403
                 advance = parse_office_amount(data.get("advance_amount"))
                 if advance is None:
                     return jsonify({"error": "Geçerli avans tutarı girin."}), 400
@@ -1510,6 +1551,7 @@ def create_accounting_blueprint(permission_required):
                     **permissions_meta(),
                 })
 
+            data = guard_executive_salary_fields(data, dict(row))
             payload, err = employee_payload(
                 data, dict(row), salary_categories=salary_categories, department_names=dept_names
             )

@@ -1,6 +1,7 @@
 """Personel maaş hak edişi ve günlük yevmiye hesapları."""
 
 import calendar
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 
 from accounting_period import parse_period, utc_today
@@ -106,19 +107,62 @@ OFFICE_SALARY_FIELDS = (
     "salary_try", "salary_usd", "salary_eur", "net_salary", "office_remaining",
 )
 
+EXECUTIVE_SALARY_NAMES = frozenset({"onder", "dalton", "suzi"})
 
-def redact_employee_for_view(emp, can_view_office, category_map=None):
-    row = dict(emp)
-    if can_view_office or not is_office_employee(row, category_map):
-        row["salary_hidden"] = False
-        return row
+
+def normalize_person_name(name):
+    s = unicodedata.normalize("NFKD", (name or "").strip().lower())
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+
+def is_executive_salary_employee(emp):
+    return normalize_person_name(emp.get("name")) in EXECUTIVE_SALARY_NAMES
+
+
+def filter_payroll_employees(employees, can_view_office, can_view_executive, category_map=None):
+    """Toplam/KPI hesabına dahil edilecek personel (gizli maaşlar hariç)."""
+    _, office_slugs, _ = category_lookup(category_map)
+    rows = []
+    for emp in employees:
+        row = dict(emp)
+        if not can_view_executive and is_executive_salary_employee(row):
+            continue
+        slug = (row.get("salary_category") or "turkey").lower()
+        if not can_view_office and slug in office_slugs:
+            continue
+        rows.append(row)
+    return rows
+
+
+def _apply_salary_redaction(row, full_hide_name=False):
     for field in OFFICE_SALARY_FIELDS:
         row[field] = None
     row["accrual"] = {cur: None for cur in CURRENCIES}
     row["net_accrual"] = {cur: None for cur in CURRENCIES}
     row["advance_by_currency"] = {cur: None for cur in CURRENCIES}
-    row["salary_hidden"] = True
+    row["payment_remaining"] = None
+    row["office_remaining"] = None
+    row["crypto_wallet"] = None
+    row["bank_iban"] = None
+    row["bank_account_name"] = None
+    if full_hide_name:
+        row["salary_hidden"] = True
+        row["salary_redacted"] = False
+    else:
+        row["salary_hidden"] = False
+        row["salary_redacted"] = True
     return row
+
+
+def redact_employee_for_view(emp, can_view_office, category_map=None, can_view_executive=True):
+    row = dict(emp)
+    if not can_view_executive and is_executive_salary_employee(row):
+        return _apply_salary_redaction(row, full_hide_name=False)
+    if can_view_office or not is_office_employee(row, category_map):
+        row["salary_hidden"] = False
+        row["salary_redacted"] = False
+        return row
+    return _apply_salary_redaction(row, full_hide_name=True)
 
 
 def compute_payroll_daily(employees, period="month", reference=None, include_office=True, category_map=None):

@@ -43,7 +43,15 @@
   }
 
   function accHiddenMoney() {
-    return '<span class="muted">Gizli</span>';
+    return '<span class="acc-salary-blurred muted">•••••</span>';
+  }
+
+  function accSalaryHidden(r) {
+    return !!(r && r.salary_hidden);
+  }
+
+  function accSalaryRedacted(r) {
+    return !!(r && (r.salary_hidden || r.salary_redacted));
   }
 
   function accApplyPermissionsMeta(data) {
@@ -704,7 +712,7 @@
     var net = 0;
     var advance = 0;
     rows.forEach(function (r) {
-      if (r.salary_hidden) return;
+      if (accSalaryRedacted(r)) return;
       gross += accAccrualValue(r);
       net += accNetAccrualValue(r);
       advance += accAdvanceDisplay(r);
@@ -728,7 +736,7 @@
     var advance = 0;
     var hiddenCount = 0;
     panelRows.forEach(function (r) {
-      if (r.salary_hidden) {
+      if (accSalaryRedacted(r)) {
         hiddenCount++;
         return;
       }
@@ -1584,36 +1592,37 @@
       return { value: d.name, label: d.name };
     });
     var statusCls = r.status === "active" ? "active-status" : "left-status";
-    var hidden = r.salary_hidden;
-    var nameCell = hidden
+    var nameHidden = accSalaryHidden(r);
+    var moneyHidden = accSalaryRedacted(r);
+    var nameCell = nameHidden
       ? accHiddenMoney()
       : accEmpInputHtml("name", r.name, r.id, "acc-emp-inline-name");
     var deptCell = accEmpSelectHtml("department", r.department, r.id, deptOpts, "acc-emp-inline-dept");
-    var refCell = accEmpRefCellHtml(r, hidden);
-    var locCell = hidden
+    var refCell = accEmpRefCellHtml(r, moneyHidden);
+    var locCell = moneyHidden
       ? accHiddenMoney()
       : accEmpInputHtml("location", r.location || "", r.id, "acc-emp-inline-loc", "text", null, "Konum");
     var startCell = accEmpInputHtml("start_date", r.start_date, r.id, "", "date");
     var endCell = r.status === "left"
       ? accEmpInputHtml("end_date", r.end_date || "", r.id, "", "date")
       : '<span class="muted">—</span>';
-    var salaryCell = hidden
+    var salaryCell = moneyHidden
       ? accHiddenMoney()
       : ('<div class="acc-emp-salary-cell">' +
         accEmpInputHtml("salary", r.salary, r.id, "acc-emp-inline-salary", "number", "0.01") +
         '<span class="acc-emp-salary-cur">' + accEsc(cur) + "</span></div>");
-    var cryptoCell = hidden
+    var cryptoCell = moneyHidden
       ? accHiddenMoney()
       : accEmpInputHtml("crypto_salary", r.crypto_salary || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
-    var advanceCell = hidden
+    var advanceCell = moneyHidden
       ? accHiddenMoney()
       : accEmpInputHtml("advance_amount", r.advance_amount || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
-    var remainCell = hidden
+    var remainCell = moneyHidden
       ? accHiddenMoney()
       : ('<span class="acc-emp-remain-cell">' + accMoney(r.payment_remaining != null ? r.payment_remaining : r.office_remaining, cur) + "</span>");
-    var walletCell = accEmpWalletCellHtml(r, hidden);
-    var accrualCell = accPayrollCompactCellHtml(r.accrual, r, hidden);
-    var netCell = accPayrollCompactCellHtml(r.net_accrual, r, hidden);
+    var walletCell = accEmpWalletCellHtml(r, moneyHidden);
+    var accrualCell = accPayrollCompactCellHtml(r.accrual, r, moneyHidden);
+    var netCell = accPayrollCompactCellHtml(r.net_accrual, r, moneyHidden);
     var statusCell = accEmpSelectHtml("status", r.status || "active", r.id, [
       { value: "active", label: "Aktif" },
       { value: "left", label: "Ayrıldı" }
