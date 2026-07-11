@@ -26,17 +26,17 @@
   </div>
 
   <div class="acc-tabs" id="acc-tabs">
-    <button type="button" class="acc-tab active" data-acc-tab="dashboard">Dashboard</button>
-    <button type="button" class="acc-tab" data-acc-tab="transactions">Yatırım / Çekim</button>
-    <button type="button" class="acc-tab" data-acc-tab="commissions">Komisyon</button>
-    <button type="button" class="acc-tab" data-acc-tab="expenses">Cari Gider</button>
-    <button type="button" class="acc-tab" data-acc-tab="vault">Tahsilat & Kasa</button>
-    <button type="button" class="acc-tab" data-acc-tab="payroll">Personel</button>
-    <button type="button" class="acc-tab" data-acc-tab="invoices">Fatura</button>
+    <button type="button" class="acc-tab active" data-acc-tab="dashboard" data-perm="accounting.dashboard">Dashboard</button>
+    <button type="button" class="acc-tab" data-acc-tab="transactions" data-perm="accounting.transactions">Yatırım / Çekim</button>
+    <button type="button" class="acc-tab" data-acc-tab="commissions" data-perm="accounting.commissions">Komisyon</button>
+    <button type="button" class="acc-tab" data-acc-tab="expenses" data-perm="accounting.expenses">Cari Gider</button>
+    <button type="button" class="acc-tab" data-acc-tab="vault" data-perm="accounting.vault">Tahsilat & Kasa</button>
+    <button type="button" class="acc-tab" data-acc-tab="payroll" data-perm="accounting.payroll">Personel</button>
+    <button type="button" class="acc-tab" data-acc-tab="invoices" data-perm="accounting.invoices">Fatura</button>
   </div>
 
   <!-- Dashboard -->
-  <div class="acc-pane active" id="acc-pane-dashboard" data-acc-pane="dashboard">
+  <div class="acc-pane active" id="acc-pane-dashboard" data-acc-pane="dashboard" data-perm="accounting.dashboard">
     <section class="kpi-grid acc-kpi-grid">
       <div class="kpi green">
         <div class="val" id="acc-kpi-deposits">—</div>
@@ -100,7 +100,7 @@
   </div>
 
   <!-- Yatırım / Çekim -->
-  <div class="acc-pane" id="acc-pane-transactions" data-acc-pane="transactions" hidden>
+  <div class="acc-pane" id="acc-pane-transactions" data-acc-pane="transactions" data-perm="accounting.transactions" hidden>
     <section class="card" id="acc-tx-form-section">
       <div class="card-head"><span id="acc-tx-form-title">Yeni İşlem</span><span class="muted" id="acc-tx-period-label" style="font-size:0.72rem;"></span></div>
       <div class="card-body">
@@ -178,7 +178,7 @@
   </div>
 
   <!-- Komisyon -->
-  <div class="acc-pane" id="acc-pane-commissions" data-acc-pane="commissions" hidden>
+  <div class="acc-pane" id="acc-pane-commissions" data-acc-pane="commissions" data-perm="accounting.commissions" hidden>
     <section class="card">
       <div class="card-head">
         <span>Payment &amp; Komisyon Oranı</span>
@@ -228,7 +228,7 @@
   </div>
 
   <!-- Cari Gider -->
-  <div class="acc-pane" id="acc-pane-expenses" data-acc-pane="expenses" hidden>
+  <div class="acc-pane" id="acc-pane-expenses" data-acc-pane="expenses" data-perm="accounting.expenses" hidden>
     <div class="acc-exp-summary" id="acc-exp-summary">
       <div class="acc-exp-summary-card">
         <span class="acc-exp-summary-label">Dönem Toplamı (TRY)</span>
@@ -324,7 +324,7 @@
   </div>
 
   <!-- Kasa -->
-  <div class="acc-pane" id="acc-pane-vault" data-acc-pane="vault" hidden>
+  <div class="acc-pane" id="acc-pane-vault" data-acc-pane="vault" data-perm="accounting.vault" hidden>
     <!-- Dashboard -->
     <section class="acc-vault-dash">
       <div class="acc-vault-dash-head">
@@ -495,7 +495,7 @@
   </div>
 
   <!-- Personel -->
-  <div class="acc-pane" id="acc-pane-payroll" data-acc-pane="payroll" hidden>
+  <div class="acc-pane" id="acc-pane-payroll" data-acc-pane="payroll" data-perm="accounting.payroll" hidden>
     <section class="card">
       <div class="card-head"><span>Departman & Maaş Kategorileri</span></div>
       <div class="card-body">
@@ -721,7 +721,7 @@
   </div>
 
   <!-- Fatura / Pronet Proforma -->
-  <div class="acc-pane" id="acc-pane-invoices" data-acc-pane="invoices" hidden>
+  <div class="acc-pane" id="acc-pane-invoices" data-acc-pane="invoices" data-perm="accounting.invoices" hidden>
     <section class="card">
       <div class="card-head">
         <span>Pronet Proforma Fatura</span>

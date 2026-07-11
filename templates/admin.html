@@ -1280,6 +1280,7 @@
         <button type="button" class="btn btn-sm" id="btn-theme">🌙 Koyu Tema</button>
       </div>
       <div class="sidebar-foot">
+        <a href="#" id="btn-open-account" style="display:block;margin-bottom:0.5rem;">👤 Hesabım</a>
         <a href="/admin/logout">Çıkış Yap</a>
       </div>
     </aside>
@@ -1773,6 +1774,21 @@
           <div class="user-list" id="admin-users-list"></div>
         </section>
 
+        <section class="settings-section" data-perm-any="admin.audit,admin.users">
+          <div class="settings-section-head">
+            <h4><span class="sec-icon">🕵️</span> Aktivite Günlüğü</h4>
+            <button type="button" class="btn btn-sm" id="btn-audit-refresh">Yenile</button>
+          </div>
+          <div class="table-wrap">
+            <div class="table-scroll" style="max-height:340px;">
+              <table>
+                <thead><tr><th>Zaman</th><th>Kullanıcı</th><th>İşlem</th><th>Detay</th><th>IP</th></tr></thead>
+                <tbody id="audit-log-table"><tr><td colspan="5" class="empty">Yükleniyor…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <section class="settings-section" data-perm="admin.users">
           <div class="settings-section-head">
             <h4><span class="sec-icon">➕</span> Yeni Kullanıcı</h4>
@@ -1786,6 +1802,16 @@
               <div>
                 <label class="field-label" for="new-user-pass">Şifre</label>
                 <input class="field-input" id="new-user-pass" type="password" placeholder="En az 6 karakter" required>
+              </div>
+            </div>
+            <div class="form-grid-2">
+              <div>
+                <label class="field-label" for="new-user-display">Panelde görünecek isim (ops.)</label>
+                <input class="field-input" id="new-user-display" placeholder="Örn: Tolga">
+              </div>
+              <div style="display:flex;align-items:flex-end;gap:0.6rem;padding-bottom:0.55rem;">
+                <input type="checkbox" id="new-user-2fa" style="width:auto;">
+                <label class="field-label" for="new-user-2fa" style="margin:0;">Google Authenticator zorunlu</label>
               </div>
             </div>
             <div class="role-field">
@@ -1843,6 +1869,10 @@
             <label class="field-label" for="edit-user-pass">Yeni şifre (opsiyonel)</label>
             <input class="field-input" id="edit-user-pass" type="password" placeholder="Değiştirmek için yaz">
           </div>
+          <div style="margin-bottom:0.85rem;display:flex;align-items:center;gap:0.6rem;">
+            <input type="checkbox" id="edit-user-2fa" style="width:auto;">
+            <label class="field-label" for="edit-user-2fa" style="margin:0;">Google Authenticator zorunlu</label>
+          </div>
           <div class="perm-panel">
             <div class="perm-panel-head">
               <span>Yetkiler</span>
@@ -1851,6 +1881,52 @@
             <div class="perm-groups" id="edit-user-perms"></div>
           </div>
           <button type="button" class="btn-add-user" id="btn-save-user-perms">Değişiklikleri Kaydet</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hesabım Modal -->
+  <div class="modal-overlay" id="account-modal">
+    <div class="modal modal-settings" style="max-width:480px;">
+      <div class="modal-head">
+        <h3>Hesabım</h3>
+        <button class="modal-close" id="account-modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-section edit-user-form" style="border:none;padding-top:0.5rem;">
+          <p class="muted" id="account-info-line" style="font-size:0.8rem;margin-bottom:1rem;"></p>
+
+          <form id="account-password-form">
+            <div class="settings-section-head" style="margin-bottom:0.65rem;">
+              <h4 style="font-size:0.9rem;"><span class="sec-icon">🔑</span> Şifre Değiştir</h4>
+            </div>
+            <div style="margin-bottom:0.65rem;">
+              <label class="field-label" for="account-current-pass">Mevcut şifre</label>
+              <input class="field-input" id="account-current-pass" type="password" autocomplete="current-password" required>
+            </div>
+            <div style="margin-bottom:0.65rem;">
+              <label class="field-label" for="account-new-pass">Yeni şifre</label>
+              <input class="field-input" id="account-new-pass" type="password" autocomplete="new-password" placeholder="En az 6 karakter" required>
+            </div>
+            <div style="margin-bottom:0.85rem;">
+              <label class="field-label" for="account-new-pass2">Yeni şifre (tekrar)</label>
+              <input class="field-input" id="account-new-pass2" type="password" autocomplete="new-password" required>
+            </div>
+            <button type="submit" class="btn-add-user">Şifreyi Güncelle</button>
+          </form>
+
+          <div id="account-2fa-box" style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1.25rem;">
+            <div class="settings-section-head" style="margin-bottom:0.65rem;">
+              <h4 style="font-size:0.9rem;"><span class="sec-icon">🔐</span> Google Authenticator</h4>
+            </div>
+            <p class="muted" id="account-2fa-status" style="font-size:0.8rem;margin-bottom:0.75rem;"></p>
+            <div id="account-2fa-reset-wrap" style="display:none;">
+              <label class="field-label" for="account-2fa-reset-pass">Onay için şifreni gir</label>
+              <input class="field-input" id="account-2fa-reset-pass" type="password" placeholder="Mevcut şifre" style="margin-bottom:0.65rem;">
+              <button type="button" class="btn btn-sm" id="account-2fa-reset-btn">Authenticator'ı sıfırla (yeni cihaz)</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2432,6 +2508,7 @@
             '<div class="info-card"><div class="info-label">Giriş yapan</div><div class="info-val">'+esc(s.current_user||"—")+' <span class="role-pill">'+esc(s.current_role||"")+'</span></div></div>'+
             '<div class="info-card" style="grid-column:1/-1;"><div class="info-label">Özel domain</div><div class="info-val muted-sm">'+esc(s.custom_domain_hint)+'</div></div>';
         });
+        if (hasAnyPerm("admin.audit,admin.users")) loadAuditLog();
         if (!hasPerm("admin.users")) return;
         fetch(API+"/api/admin/users").then(function(r){return r.json();}).then(function(d) {
           var box = document.getElementById("admin-users-list");
@@ -2443,8 +2520,10 @@
             return '<div class="user-card">'+
               '<div class="user-card-main">'+
                 '<div class="user-avatar">'+esc(initial)+'</div>'+
-                '<div><div class="user-card-name">'+esc(u.username)+'</div>'+
-                '<div class="user-card-meta"><span class="role-pill">'+esc(u.role_label||u.role)+'</span></div></div>'+
+                '<div><div class="user-card-name">'+esc(u.display_name||u.username)+'</div>'+
+                '<div class="user-card-meta"><span class="role-pill">'+esc(u.role_label||u.role)+'</span>'+
+                (u.two_factor_required ? ' <span class="role-pill" style="background:rgba(34,197,94,0.15);color:#22c55e;">2FA '+(u.two_factor_enabled?"kurulu":"bekliyor")+'</span>' : '')+
+                '</div></div>'+
               '</div>'+
               '<div class="user-card-actions">'+
                 '<button type="button" class="btn-ghost" data-edit-user="'+u.id+'">Yetki</button>'+
@@ -2459,6 +2538,7 @@
               document.getElementById("edit-user-id").value = uid;
               document.getElementById("edit-user-title").textContent = user.username + " — Yetkiler";
               document.getElementById("edit-user-pass").value = "";
+              document.getElementById("edit-user-2fa").checked = !!user.two_factor_required;
               fillRoleSelect("edit-user-role", user.role);
               updateRoleDesc("edit-user-role", "edit-user-role-desc");
               renderPermissionGrid("edit-user-perms", user.permissions || []);
@@ -2474,6 +2554,27 @@
                 .then(function(res){ if(!res.ok){alert(res.data.error);return;} loadSettings(); toast("Silindi"); });
             };
           });
+        });
+      }
+
+      function loadAuditLog() {
+        var tbody = document.getElementById("audit-log-table");
+        if (!tbody) return;
+        fetch(API+"/api/admin/audit-log?limit=200").then(function(r){return r.json();}).then(function(d) {
+          var entries = d.entries || [];
+          if (!entries.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz kayıt yok</td></tr>';
+            return;
+          }
+          tbody.innerHTML = entries.map(function(e) {
+            return '<tr>'+
+              '<td class="muted-sm">'+esc(fmtDate(e.created_at))+'</td>'+
+              '<td>'+esc(e.display_name || e.username || "—")+'</td>'+
+              '<td>'+esc(e.action || "")+'</td>'+
+              '<td class="muted-sm">'+esc(e.detail || "")+'</td>'+
+              '<td class="muted-sm">'+esc(e.ip || "")+'</td>'+
+              '</tr>';
+          }).join("");
         });
       }
 
@@ -3982,7 +4083,7 @@
         var uid = document.getElementById("edit-user-id").value;
         var role = document.getElementById("edit-user-role").value;
         var perms = role === "custom" ? getCheckedPermissions("edit-user-perms") : (roleTemplates[role] ? roleTemplates[role].permissions : []);
-        var body = { role: role, permissions: perms };
+        var body = { role: role, permissions: perms, two_factor_required: document.getElementById("edit-user-2fa").checked };
         var np = document.getElementById("edit-user-pass").value;
         if (np) body.password = np;
         fetch(API+"/api/admin/users/"+uid, {
@@ -4008,6 +4109,8 @@
           body: JSON.stringify({
             username: document.getElementById("new-user-name").value.trim(),
             password: document.getElementById("new-user-pass").value,
+            display_name: document.getElementById("new-user-display").value.trim(),
+            two_factor_required: document.getElementById("new-user-2fa").checked,
             role: role,
             permissions: perms
           })
@@ -4016,6 +4119,8 @@
             if (!res.ok) { alert(res.data.error); return; }
             document.getElementById("new-user-name").value = "";
             document.getElementById("new-user-pass").value = "";
+            document.getElementById("new-user-display").value = "";
+            document.getElementById("new-user-2fa").checked = false;
             loadSettings();
             toast("Admin eklendi!");
           });
@@ -4025,6 +4130,67 @@
         if (!hasAnyPerm("admin.users,module.settings")) { toast("Yetkiniz yok"); return; }
         loadSettings();
         document.getElementById("settings-modal").classList.add("open");
+      });
+      bindOptional("btn-audit-refresh", "click", loadAuditLog);
+
+      bindOptional("btn-open-account", "click", function(e) {
+        e.preventDefault();
+        fetch(API+"/api/me").then(function(r){return r.json();}).then(function(d) {
+          document.getElementById("account-info-line").textContent =
+            (d.display_name || d.username) + " · " + (d.role_templates && d.role_templates[d.role] ? d.role_templates[d.role].label : d.role);
+          var box = document.getElementById("account-2fa-status");
+          var resetWrap = document.getElementById("account-2fa-reset-wrap");
+          if (!d.two_factor_required) {
+            box.textContent = "Hesabında Google Authenticator zorunlu değil.";
+            resetWrap.style.display = "none";
+          } else if (d.two_factor_enabled) {
+            box.textContent = "Aktif ve kurulu ✅. Telefon değiştiyse aşağıdan sıfırlayabilirsin.";
+            resetWrap.style.display = "";
+          } else {
+            box.textContent = "Zorunlu ama henüz kurulmadı — çıkış yapıp tekrar girişte kurulum ekranı gelecek.";
+            resetWrap.style.display = "none";
+          }
+          document.getElementById("account-password-form").reset();
+          document.getElementById("account-2fa-reset-pass").value = "";
+          document.getElementById("account-modal").classList.add("open");
+        });
+      });
+      bindOptional("account-modal-close", "click", function() {
+        document.getElementById("account-modal").classList.remove("open");
+      });
+      bindOptional("account-modal", "click", function(e) {
+        if (e.target === this) this.classList.remove("open");
+      });
+      bindOptional("account-password-form", "submit", function(e) {
+        e.preventDefault();
+        var cur = document.getElementById("account-current-pass").value;
+        var np1 = document.getElementById("account-new-pass").value;
+        var np2 = document.getElementById("account-new-pass2").value;
+        if (np1.length < 6) { alert("Yeni şifre en az 6 karakter olmalı."); return; }
+        if (np1 !== np2) { alert("Yeni şifreler eşleşmiyor."); return; }
+        fetch(API+"/api/me/password", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ current_password: cur, new_password: np1 })
+        }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+          .then(function(res) {
+            if (!res.ok) { alert(res.data.error || "Şifre güncellenemedi."); return; }
+            document.getElementById("account-password-form").reset();
+            toast("Şifren güncellendi.");
+          });
+      });
+      bindOptional("account-2fa-reset-btn", "click", function() {
+        var pass = document.getElementById("account-2fa-reset-pass").value;
+        if (!pass) { alert("Onay için şifreni gir."); return; }
+        if (!confirm("Authenticator sıfırlanacak, bir sonraki girişte yeniden kurman gerekecek. Devam?")) return;
+        fetch(API+"/api/me/2fa/reset", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ current_password: pass })
+        }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+          .then(function(res) {
+            if (!res.ok) { alert(res.data.error || "Sıfırlanamadı."); return; }
+            toast("Authenticator sıfırlandı. Bir sonraki girişte yeniden kurulum gelecek.");
+            document.getElementById("account-modal").classList.remove("open");
+          });
       });
 
       ["search-input","filter-domain","filter-ref","filter-device","filter-status"].forEach(function(id){

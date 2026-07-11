@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from flask import (
     Flask,
     Response,
+    g,
     jsonify,
     redirect,
     render_template,
@@ -240,8 +241,61 @@ def audit(action, detail="", status=200):
                 ip=get_client_ip(),
                 detail=detail,
             )
+        g.audit_logged = True
     except Exception:
         pass
+
+
+_AUDIT_SKIP_PREFIXES = ("/static/", "/api/audit-log", "/api/admin/audit-log")
+_AUDIT_SENSITIVE_KEYS = {
+    "password", "current_password", "new_password", "confirm_password", "code",
+    "secret", "api_secret", "totp_secret", "smtp_password",
+}
+
+
+def _short_body_summary():
+    try:
+        data = request.get_json(silent=True)
+    except Exception:
+        data = None
+    if not isinstance(data, dict) or not data:
+        return ""
+    parts = []
+    for key, val in list(data.items())[:8]:
+        if key in _AUDIT_SENSITIVE_KEYS:
+            continue
+        text = str(val)
+        if len(text) > 40:
+            text = text[:40] + "…"
+        parts.append(f"{key}={text}")
+    return " ".join(parts)[:400]
+
+
+@app.after_request
+def _auto_audit(response):
+    try:
+        if (
+            request.method in ("POST", "PUT", "PATCH", "DELETE")
+            and response.status_code < 400
+            and session.get("admin_logged_in")
+            and not getattr(g, "audit_logged", False)
+            and not request.path.startswith(_AUDIT_SKIP_PREFIXES)
+        ):
+            with closing(get_db()) as conn:
+                log_audit(
+                    conn,
+                    username=session.get("admin_username") or "",
+                    display_name=current_display_name(),
+                    action=f"{request.method} {request.path}",
+                    method=request.method,
+                    path=request.path,
+                    status=response.status_code,
+                    ip=get_client_ip(),
+                    detail=_short_body_summary(),
+                )
+    except Exception:
+        pass
+    return response
 
 
 def send_telegram(text):
@@ -747,7 +801,7 @@ def login_page():
             if user.get("two_factor_required"):
                 session["pending_2fa_username"] = user["username"]
                 session["pending_2fa_display_name"] = user.get("display_name") or ""
-                audit("login_password_ok_pending_2fa")
+                audit("login_password_ok_pending_2fa", detail=f"username={user['username']}")
                 return redirect(url_for("verify_2fa_page"))
             login_admin_user(user)
             session.permanent = True
@@ -800,7 +854,7 @@ def verify_2fa_page():
                 return redirect(url_for("login_page", error="Hesabınızda panel erişim yetkisi yok."))
             audit("login_success_2fa")
             return redirect(url_for("admin_page"))
-        audit("login_2fa_failed", status=401)
+        audit("login_2fa_failed", detail=f"username={username}", status=401)
         error = "Kod hatalı veya süresi geçmiş, tekrar dene."
 
     qr_svg = None
@@ -919,12 +973,13 @@ def create_link():
         return jsonify({"error": "Domain zorunludur."}), 400
 
     created_at = iso(utcnow())
+    created_by = current_display_name()
     try:
         with closing(get_db()) as conn:
             link_id = insert_returning_id(
                 conn,
-                "INSERT INTO tracked_links (domain, ref_code, label, created_at) VALUES (?, ?, ?, ?)",
-                (domain, ref_code, label, created_at),
+                "INSERT INTO tracked_links (domain, ref_code, label, created_at, created_by) VALUES (?, ?, ?, ?, ?)",
+                (domain, ref_code, label, created_at, created_by),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM tracked_links WHERE id = ?", (link_id,))
@@ -955,13 +1010,14 @@ def create_links_bulk():
 
     added, skipped, errors = [], [], []
     created_at = iso(utcnow())
+    created_by = current_display_name()
     for domain in domain_list:
         try:
             with closing(get_db()) as conn:
                 insert_returning_id(
                     conn,
-                    "INSERT INTO tracked_links (domain, ref_code, label, created_at) VALUES (?, ?, ?, ?)",
-                    (domain, ref_code, "", created_at),
+                    "INSERT INTO tracked_links (domain, ref_code, label, created_at, created_by) VALUES (?, ?, ?, ?, ?)",
+                    (domain, ref_code, "", created_at, created_by),
                 )
                 conn.commit()
             added.append(domain)
@@ -1544,7 +1600,11 @@ def list_admin_users():
     with closing(get_db()) as conn:
         rows = fetchall(
             conn,
-            "SELECT id, username, role, permissions, created_at FROM admin_users ORDER BY username",
+            """
+            SELECT id, username, display_name, role, permissions, created_at,
+                   two_factor_required, two_factor_enabled
+            FROM admin_users ORDER BY username
+            """,
         )
     users = []
     for row in rows:
@@ -1560,8 +1620,10 @@ def create_admin_user():
     data = request.get_json(silent=True) or {}
     username = normalize_username(data.get("username"))
     password = (data.get("password") or "").strip()
+    display_name = (data.get("display_name") or "").strip()[:100]
     role = (data.get("role") or "custom").strip().lower()
     permissions = permissions_from_role(role, data.get("permissions"))
+    two_factor_required = 1 if data.get("two_factor_required") else 0
     if not username or not password:
         return jsonify({"error": "Kullanıcı adı ve şifre gerekli."}), 400
     if len(password) < 6:
@@ -1572,18 +1634,25 @@ def create_admin_user():
         with closing(get_db()) as conn:
             insert_returning_id(
                 conn,
-                "INSERT INTO admin_users (username, password_hash, role, permissions, created_at) VALUES (?, ?, ?, ?, ?)",
+                """
+                INSERT INTO admin_users
+                  (username, password_hash, role, permissions, created_at, display_name, two_factor_required)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
                 (
                     username,
                     generate_password_hash(password, method="pbkdf2:sha256"),
                     role,
                     json.dumps(permissions),
                     iso(utcnow()),
+                    display_name,
+                    two_factor_required,
                 ),
             )
             conn.commit()
     except IntegrityError:
         return jsonify({"error": "Bu kullanıcı adı zaten var."}), 409
+    audit("user_created", detail=f"target={username} role={role}")
     return jsonify({"ok": True, "username": username, "role": role, "permissions": permissions}), 201
 
 
@@ -1600,26 +1669,38 @@ def update_admin_user(user_id):
         row = fetchone(conn, "SELECT * FROM admin_users WHERE id = ?", (user_id,))
         if not row:
             return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+
+        set_clauses = ["role = ?", "permissions = ?"]
+        params = [role, json.dumps(permissions)]
+
+        if "display_name" in data:
+            set_clauses.append("display_name = ?")
+            params.append((data.get("display_name") or "").strip()[:100])
+
+        if "two_factor_required" in data:
+            two_factor_required = 1 if data.get("two_factor_required") else 0
+            set_clauses.append("two_factor_required = ?")
+            params.append(two_factor_required)
+            if not two_factor_required:
+                # Kapatınca eski secret'ı da temizle — tekrar açılırsa sıfırdan kurulum ister.
+                set_clauses.append("totp_secret = ''")
+                set_clauses.append("two_factor_enabled = 0")
+
         if password:
             if len(password) < 6:
                 return jsonify({"error": "Şifre en az 6 karakter olmalı."}), 400
-            execute(
-                conn,
-                "UPDATE admin_users SET role = ?, permissions = ?, password_hash = ? WHERE id = ?",
-                (role, json.dumps(permissions), generate_password_hash(password, method="pbkdf2:sha256"), user_id),
-            )
-        else:
-            execute(
-                conn,
-                "UPDATE admin_users SET role = ?, permissions = ? WHERE id = ?",
-                (role, json.dumps(permissions), user_id),
-            )
+            set_clauses.append("password_hash = ?")
+            params.append(generate_password_hash(password, method="pbkdf2:sha256"))
+
+        params.append(user_id)
+        execute(conn, f"UPDATE admin_users SET {', '.join(set_clauses)} WHERE id = ?", tuple(params))
         conn.commit()
         updated = fetchone(conn, "SELECT * FROM admin_users WHERE id = ?", (user_id,))
     item = admin_user_to_dict(updated)
     if session.get("admin_username") == item["username"]:
         session["admin_role"] = item["role"]
         session["admin_permissions"] = item["permissions"]
+    audit("user_updated", detail=f"target={item['username']} role={item['role']}")
     return jsonify({"ok": True, "user": item})
 
 
@@ -1638,7 +1719,69 @@ def delete_admin_user(user_id):
             return jsonify({"error": "Son admin kullanıcı silinemez."}), 400
         execute(conn, "DELETE FROM admin_users WHERE id = ?", (user_id,))
         conn.commit()
+    audit("user_deleted", detail=f"target={row['username']}")
     return jsonify({"ok": True})
+
+
+@app.route("/api/me/password", methods=["POST"])
+@login_required
+def change_own_password():
+    data = request.get_json(silent=True) or {}
+    current_password = (data.get("current_password") or "").strip()
+    new_password = (data.get("new_password") or "").strip()
+    username = session.get("admin_username")
+    if not current_password or not new_password:
+        return jsonify({"error": "Mevcut ve yeni şifre gerekli."}), 400
+    if len(new_password) < 6:
+        return jsonify({"error": "Yeni şifre en az 6 karakter olmalı."}), 400
+    if not verify_admin(username, current_password):
+        audit("password_change_failed", status=401)
+        return jsonify({"error": "Mevcut şifre hatalı."}), 401
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT id FROM admin_users WHERE LOWER(username) = ?", (normalize_username(username),))
+        if not row:
+            # Sadece env tabanlı ana admin hesabı DB'de yoksa burada oluşturulmaz — güvenlik için reddet.
+            return jsonify({"error": "Bu hesap ortam değişkeninden geliyor, panelden şifre değiştirilemez."}), 400
+        execute(
+            conn,
+            "UPDATE admin_users SET password_hash = ? WHERE id = ?",
+            (generate_password_hash(new_password, method="pbkdf2:sha256"), row["id"]),
+        )
+        conn.commit()
+    audit("password_changed")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/me/2fa/reset", methods=["POST"])
+@login_required
+def reset_own_2fa():
+    """Telefon değişti / authenticator kayboldu — kendi secret'ını sıfırla, sonraki girişte yeniden kurulum ister."""
+    data = request.get_json(silent=True) or {}
+    current_password = (data.get("current_password") or "").strip()
+    username = session.get("admin_username")
+    if not current_password:
+        return jsonify({"error": "Onay için mevcut şifreni gir."}), 400
+    if not verify_admin(username, current_password):
+        return jsonify({"error": "Şifre hatalı."}), 401
+    with closing(get_db()) as conn:
+        execute(
+            conn,
+            "UPDATE admin_users SET totp_secret = '', two_factor_enabled = 0 WHERE LOWER(username) = ?",
+            (normalize_username(username),),
+        )
+        conn.commit()
+    audit("2fa_self_reset")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/audit-log", methods=["GET"])
+@permission_required("admin.audit", "admin.users")
+def get_audit_log():
+    limit = min(int(request.args.get("limit", 300) or 300), 1000)
+    username_filter = (request.args.get("username") or "").strip() or None
+    with closing(get_db()) as conn:
+        rows = fetch_audit_log(conn, limit=limit, username=username_filter)
+    return jsonify({"entries": [dict(r) for r in rows]})
 
 
 @app.route("/api/settings", methods=["GET"])
