@@ -629,14 +629,38 @@
     }
     .acc-exp-filter-meta { font-size: 0.68rem; margin-left: auto; }
     .acc-exp-cat-card-btn {
-      text-align: left; cursor: pointer; font: inherit; width: 100%;
+      text-align: left; cursor: pointer; font: inherit; width: 100%; color: var(--text);
       transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
     }
     .acc-exp-cat-card-btn:hover { transform: translateY(-1px); border-color: rgba(99,102,241,0.45); }
     .acc-exp-cat-card-btn:focus { outline: none; box-shadow: 0 0 0 2px rgba(99,102,241,0.25); }
-    .acc-exp-cat-affiliate { border-color: rgba(236,72,153,0.35); }
-    .acc-exp-cat-affiliate .acc-exp-cat-card-try { color: #f472b6; }
-    .acc-exp-cat-variable { border-color: rgba(125,141,166,0.35); }
+    .acc-exp-cat-card-btn.acc-exp-cat-card-active {
+      box-shadow: 0 0 0 2px rgba(99,102,241,0.55); border-color: rgba(99,102,241,0.65);
+    }
+    .acc-exp-cat-card-name { color: #e2e8f0; }
+    .acc-exp-cat-card-try { color: #f8fafc; }
+    .acc-exp-cat-card-usd { color: #94a3b8; }
+    .acc-exp-cat-card.acc-exp-cat-marketing { background: rgba(168,85,247,0.14); border-color: rgba(168,85,247,0.42); }
+    .acc-exp-cat-card.acc-exp-cat-marketing .acc-exp-cat-card-name { color: #e9d5ff; }
+    .acc-exp-cat-card.acc-exp-cat-marketing .acc-exp-cat-card-try { color: #d8b4fe; }
+    .acc-exp-cat-card.acc-exp-cat-salary { background: rgba(59,130,246,0.14); border-color: rgba(59,130,246,0.42); }
+    .acc-exp-cat-card.acc-exp-cat-salary .acc-exp-cat-card-name { color: #bfdbfe; }
+    .acc-exp-cat-card.acc-exp-cat-salary .acc-exp-cat-card-try { color: #93c5fd; }
+    .acc-exp-cat-card.acc-exp-cat-office { background: rgba(6,182,212,0.14); border-color: rgba(6,182,212,0.42); }
+    .acc-exp-cat-card.acc-exp-cat-office .acc-exp-cat-card-name { color: #a5f3fc; }
+    .acc-exp-cat-card.acc-exp-cat-office .acc-exp-cat-card-try { color: #67e8f9; }
+    .acc-exp-cat-card.acc-exp-cat-invoice { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.42); }
+    .acc-exp-cat-card.acc-exp-cat-invoice .acc-exp-cat-card-name { color: #fde68a; }
+    .acc-exp-cat-card.acc-exp-cat-invoice .acc-exp-cat-card-try { color: #fbbf24; }
+    .acc-exp-cat-card.acc-exp-cat-affiliate { background: rgba(236,72,153,0.14); border-color: rgba(236,72,153,0.42); }
+    .acc-exp-cat-card.acc-exp-cat-affiliate .acc-exp-cat-card-name { color: #fbcfe8; }
+    .acc-exp-cat-card.acc-exp-cat-affiliate .acc-exp-cat-card-try { color: #f472b6; }
+    .acc-exp-cat-card.acc-exp-cat-variable { background: rgba(148,163,184,0.16); border-color: rgba(148,163,184,0.48); }
+    .acc-exp-cat-card.acc-exp-cat-variable .acc-exp-cat-card-name { color: #cbd5e1; }
+    .acc-exp-cat-card.acc-exp-cat-variable .acc-exp-cat-card-try { color: #f1f5f9; }
+    .acc-exp-cat-card.acc-exp-cat-other { background: rgba(100,116,139,0.16); border-color: rgba(100,116,139,0.45); }
+    .acc-exp-cat-card.acc-exp-cat-other .acc-exp-cat-card-name { color: #cbd5e1; }
+    .acc-exp-cat-card.acc-exp-cat-other .acc-exp-cat-card-try { color: #e2e8f0; }
     .acc-exp-cat-form-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
     .acc-exp-form-grid { align-items: end; }
     .acc-exp-desc-field { grid-column: span 2; }
@@ -660,17 +684,8 @@
     }
     .acc-exp-cat-card-count { font-size: 0.58rem; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
     .acc-exp-cat-card-try { font-size: 0.92rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.2; }
-    .acc-exp-cat-card-usd { font-size: 0.62rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .acc-exp-cat-card-usd { font-size: 0.62rem; font-variant-numeric: tabular-nums; }
     .acc-exp-cat-card-empty { grid-column: 1 / -1; text-align: center; padding: 0.85rem; font-size: 0.75rem; border: none; background: transparent; min-height: 0; }
-    .acc-exp-cat-card.acc-exp-cat-marketing { border-color: rgba(168,85,247,0.35); }
-    .acc-exp-cat-card.acc-exp-cat-marketing .acc-exp-cat-card-try { color: #c084fc; }
-    .acc-exp-cat-card.acc-exp-cat-salary { border-color: rgba(59,130,246,0.35); }
-    .acc-exp-cat-card.acc-exp-cat-salary .acc-exp-cat-card-try { color: #93c5fd; }
-    .acc-exp-cat-card.acc-exp-cat-office { border-color: rgba(6,182,212,0.35); }
-    .acc-exp-cat-card.acc-exp-cat-office .acc-exp-cat-card-try { color: var(--cyan); }
-    .acc-exp-cat-card.acc-exp-cat-invoice { border-color: rgba(245,158,11,0.35); }
-    .acc-exp-cat-card.acc-exp-cat-invoice .acc-exp-cat-card-try { color: var(--amber); }
-    .acc-exp-cat-card.acc-exp-cat-other .acc-exp-cat-card-try { color: var(--text); }
     .acc-exp-table-wrap { border-top: 1px solid var(--border); }
     .acc-exp-table-scroll { max-height: 520px; overflow: auto; }
     .acc-exp-table { min-width: 860px; }
@@ -698,11 +713,13 @@
       display: inline-block; padding: 0.18rem 0.5rem; border-radius: 999px;
       font-size: 0.66rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap;
     }
-    .acc-exp-cat-marketing { background: rgba(168,85,247,0.15); color: #c084fc; border: 1px solid rgba(168,85,247,0.25); }
+    .acc-exp-cat-marketing { background: rgba(168,85,247,0.15); color: #d8b4fe; border: 1px solid rgba(168,85,247,0.25); }
     .acc-exp-cat-salary { background: rgba(59,130,246,0.15); color: #93c5fd; border: 1px solid rgba(59,130,246,0.25); }
-    .acc-exp-cat-office { background: rgba(6,182,212,0.15); color: var(--cyan); border: 1px solid rgba(6,182,212,0.25); }
-    .acc-exp-cat-invoice { background: rgba(245,158,11,0.15); color: var(--amber); border: 1px solid rgba(245,158,11,0.25); }
-    .acc-exp-cat-other { background: rgba(125,141,166,0.12); color: var(--muted); border: 1px solid var(--border); }
+    .acc-exp-cat-office { background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.25); }
+    .acc-exp-cat-invoice { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.25); }
+    .acc-exp-cat-affiliate { background: rgba(236,72,153,0.15); color: #f472b6; border: 1px solid rgba(236,72,153,0.25); }
+    .acc-exp-cat-variable { background: rgba(148,163,184,0.18); color: #e2e8f0; border: 1px solid rgba(148,163,184,0.35); }
+    .acc-exp-cat-other { background: rgba(100,116,139,0.18); color: #cbd5e1; border: 1px solid rgba(100,116,139,0.35); }
     .acc-exp-empty { padding: 2rem 1rem; }
     @media (max-width: 900px) {
       .acc-exp-summary { grid-template-columns: 1fr; }
@@ -1770,7 +1787,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260711g"></script>
+  <script src="/static/accounting.js?v=20260711h"></script>
   <script>
     (function () {
       var API = "";

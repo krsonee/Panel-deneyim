@@ -1169,7 +1169,9 @@
       var cls = accExpenseCatClass(t.name);
       var catObj = accCategories.find(function (c) { return c.name === t.name; });
       var catId = catObj ? catObj.id : "";
-      return '<button type="button" class="acc-exp-cat-card acc-exp-cat-card-btn ' + cls + '" data-exp-cat-filter="' + catId + '">' +
+      var active = String(accData["acc-exp"].filterCat || "") === String(catId);
+      return '<button type="button" class="acc-exp-cat-card acc-exp-cat-card-btn ' + cls +
+        (active ? " acc-exp-cat-card-active" : "") + '" data-exp-cat-filter="' + catId + '">' +
         '<div class="acc-exp-cat-card-head">' +
           '<span class="acc-exp-cat-card-name">' + accEsc(t.name) + "</span>" +
           '<span class="acc-exp-cat-card-count">' + t.count + " kayıt</span>" +
