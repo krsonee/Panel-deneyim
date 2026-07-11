@@ -94,24 +94,24 @@
         <form id="mail-tpl-form" class="mail-tpl-form">
           <div class="mail-tpl-meta">
             <div><label>Şablon adı</label><input type="text" id="mail-tpl-name" required placeholder="Hoş geldin / VIP kampanya"></div>
-            <div><label>Konu satırı</label><input type="text" id="mail-tpl-subject" placeholder="Merhaba {{name}}, özel fırsatın hazır"></div>
+            <div><label>Konu satırı</label><input type="text" id="mail-tpl-subject" placeholder="Merhaba {{ '{{name}}' }}, özel fırsatın hazır"></div>
           </div>
 
           <p class="hint mail-tpl-hint">
-            Değişkenler: <code>{{name}}</code> <code>{{email}}</code> <code>{{phone}}</code>
-            · Takip linki: <code>{{link:https://site.com}}</code> (tıklayan kişi CRM’e <code>mail_tiklayan</code> etiketiyle düşer)
+            Değişkenler: <code>{{ '{{name}}' }}</code> <code>{{ '{{email}}' }}</code> <code>{{ '{{phone}}' }}</code>
+            · Takip linki: <code>{{ '{{link:https://site.com}}' }}</code> (tıklayan kişi CRM’e <code>mail_tiklayan</code> etiketiyle düşer)
           </p>
 
           <div class="mail-tpl-toolbar">
-            <button type="button" class="btn btn-sm" id="mail-tpl-insert-name">{{name}}</button>
-            <button type="button" class="btn btn-sm" id="mail-tpl-insert-email">{{email}}</button>
+            <button type="button" class="btn btn-sm" id="mail-tpl-insert-name">{{ '{{name}}' }}</button>
+            <button type="button" class="btn btn-sm" id="mail-tpl-insert-email">{{ '{{email}}' }}</button>
             <button type="button" class="btn btn-sm" id="mail-tpl-insert-link">Takip linki ekle</button>
             <input type="url" id="mail-tpl-link-url" placeholder="https://hedef-site.com/…" class="mail-tpl-link-input">
           </div>
 
           <div id="mail-tpl-pane-simple" class="mail-tpl-editor-pane">
             <label>Mail metni</label>
-            <textarea id="mail-tpl-text" class="mail-tpl-textarea" rows="14" placeholder="Merhaba {{name}},&#10;&#10;Sana özel bir fırsatımız var.&#10;&#10;Hemen bak: {{link:https://ornek.com}}"></textarea>
+            <textarea id="mail-tpl-text" class="mail-tpl-textarea" rows="14" placeholder="Merhaba {{ '{{name}}' }},&#10;&#10;Sana özel bir fırsatımız var.&#10;&#10;Hemen bak: {{ '{{link:https://ornek.com}}' }}"></textarea>
             <p class="hint">Kaydedince HTML otomatik üretilir. Satır sonları paragrafa çevrilir.</p>
           </div>
 
@@ -119,7 +119,7 @@
             <div class="mail-tpl-split">
               <div>
                 <label>HTML kod</label>
-                <textarea id="mail-tpl-html" class="mail-tpl-textarea mail-tpl-htmlcode" rows="16" placeholder="<p>Merhaba {{name}},</p>&#10;<p><a href=&quot;{{link:https://ornek.com}}&quot;>Tıkla</a></p>"></textarea>
+                <textarea id="mail-tpl-html" class="mail-tpl-textarea mail-tpl-htmlcode" rows="16" placeholder="<p>Merhaba {{ '{{name}}' }},</p>&#10;<p><a href=&quot;{{ '{{link:https://ornek.com}}' }}&quot;>Tıkla</a></p>"></textarea>
               </div>
               <div>
                 <label>Canlı önizleme</label>
