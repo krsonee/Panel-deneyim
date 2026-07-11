@@ -453,17 +453,26 @@
     return t === "deposit" ? "Yatırım" : "Çekim";
   }
 
-  function accRefreshTxPaymentSelect() {
+  function accRefreshTxPaymentSelect(keepId) {
     var sel = document.getElementById("acc-tx-payment");
     var typeEl = document.getElementById("acc-tx-type");
     if (!sel || !typeEl) return;
     var txType = typeEl.value;
+    var keep = keepId != null ? String(keepId) : (sel.value || "");
     var filtered = accPaymentMethods.filter(function (p) {
-      return !p.tx_type || p.tx_type === txType;
+      if (!p.tx_type || p.tx_type === txType) {
+        // Pasif yöntemler listeden çıkarılır; sadece düzenlenmekte olan işlemin
+        // o anda seçili pasif yöntemi görünür kalır ki mevcut seçim kaybolmasın.
+        if (p.period_active === false) return keep !== "" && String(p.id) === keep;
+        return true;
+      }
+      return false;
     });
     sel.innerHTML = filtered.length
       ? filtered.map(function (p) {
-          return '<option value="' + p.id + '">' + accEsc(p.name) + " (%" + p.commission_rate + ")</option>";
+          var passive = p.period_active === false;
+          return '<option value="' + p.id + '">' + accEsc(p.name) + " (%" + p.commission_rate + ")" +
+            (passive ? " — Pasif" : "") + "</option>";
         }).join("")
       : '<option value="">Bu tür için payment ekleyin (' + accTxTypeLabel(txType) + ')</option>';
   }
@@ -1172,7 +1181,7 @@
     if (editId) editId.value = String(row.id);
     if (dateEl) dateEl.value = row.tx_date || "";
     if (typeEl) typeEl.value = row.tx_type || "deposit";
-    accRefreshTxPaymentSelect();
+    accRefreshTxPaymentSelect(row.payment_method_id);
     if (payEl && row.payment_method_id) payEl.value = String(row.payment_method_id);
     if (curEl) curEl.value = row.currency || "TRY";
     if (amountEl) amountEl.value = row.amount != null ? row.amount : "";
