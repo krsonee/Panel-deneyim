@@ -1414,6 +1414,14 @@
     return accIsOfficeCategory(r && r.salary_category);
   }
 
+  function accEmpPanelSide(r) {
+    if (!r) return "right";
+    if (r.salary_category === "turkey") return "right";
+    var loc = String(r.location || "").toLowerCase().replace(/ı/g, "i").replace(/ü/g, "u");
+    if (r.salary_category === "crypto" && loc.indexOf("turk") >= 0) return "right";
+    return "left";
+  }
+
   function accEmpSectionHtml(cols, type, icon, label, count, sub) {
     return '<tr class="acc-emp-section acc-emp-section-' + type + '">' +
       '<td colspan="' + cols + '">' +
@@ -1471,27 +1479,22 @@
       "</div>";
   }
 
-  function accEmpRowHtml(r) {
+  function accEmpRowHtml(r, panel) {
     var cur = r.currency || "TRY";
-    var isOffice = accIsOfficeEmployee(r);
-    var rowCls = "acc-emp-row " + (isOffice ? "acc-emp-row-office" : "acc-emp-row-ops");
+    var rowCls = "acc-emp-row " + (panel === "left" ? "acc-emp-row-office" : "acc-emp-row-tr");
     if (r.status === "left") rowCls += " acc-emp-row-left";
     var deptOpts = accEmployeeDepartments.map(function (d) {
       return { value: d.name, label: d.name };
-    });
-    var catOpts = accSalaryCategories.map(function (c) {
-      return { value: c.slug, label: c.name };
     });
     var statusCls = r.status === "active" ? "active-status" : "left-status";
     var hidden = r.salary_hidden;
     var nameCell = hidden
       ? accHiddenMoney()
       : accEmpInputHtml("name", r.name, r.id, "acc-emp-inline-wide");
-    var catCell = hidden ? accHiddenMoney() : accEmpSelectHtml("salary_category", r.salary_category, r.id, catOpts);
     var deptCell = accEmpSelectHtml("department", r.department, r.id, deptOpts);
     var refCell = hidden
       ? accHiddenMoney()
-      : accEmpInputHtml("notes", r.notes || "", r.id, "acc-emp-inline-wide", "text", null, "Referans / not");
+      : accEmpInputHtml("notes", r.notes || "", r.id, "acc-emp-inline-wide", "text", null, "Referans");
     var locCell = hidden
       ? accHiddenMoney()
       : accEmpInputHtml("location", r.location || "", r.id, "acc-emp-inline-wide", "text", null, "Konum");
@@ -1503,53 +1506,57 @@
       ? accHiddenMoney()
       : ('<div class="acc-emp-salary-cell">' +
         accEmpInputHtml("salary", r.salary, r.id, "acc-emp-inline-salary", "number", "0.01") +
-        '<span class="acc-emp-salary-cur">' + accEsc(cur) + "</span></div>" +
-        '<small class="acc-emp-salary-fx muted">' + accMoney(r.salary_try, "TRY") + " · " + accMoney(r.salary_usd, "USD") + " · " + accMoney(r.salary_eur, "EUR") + "</small>");
-    var bankCell = hidden
-      ? accHiddenMoney()
-      : accEmpInputHtml("bank_salary", r.bank_salary || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
+        '<span class="acc-emp-salary-cur">' + accEsc(cur) + "</span></div>");
     var cryptoCell = hidden
       ? accHiddenMoney()
       : accEmpInputHtml("crypto_salary", r.crypto_salary || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
     var advanceCell = hidden
       ? accHiddenMoney()
       : accEmpInputHtml("advance_amount", r.advance_amount || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
-    var bonusCell = hidden
-      ? accHiddenMoney()
-      : accEmpInputHtml("bonus_amount", r.bonus_amount || 0, r.id, "acc-emp-inline-salary", "number", "0.01");
     var remainCell = hidden
       ? accHiddenMoney()
       : ('<span class="acc-emp-remain-cell">' + accMoney(r.payment_remaining != null ? r.payment_remaining : r.office_remaining, cur) + "</span>");
-    var payInfoCell = accEmpPayInfoHtml(r, hidden);
+    var walletCell = hidden
+      ? accHiddenMoney()
+      : accEmpInputHtml("crypto_wallet", r.crypto_wallet || "", r.id, "acc-emp-inline-wallet");
     var accrualCell = accPayrollTriCurCellHtml(r.accrual, hidden);
     var netCell = accPayrollTriCurCellHtml(r.net_accrual, hidden);
     var statusCell = accEmpSelectHtml("status", r.status || "active", r.id, [
-      { value: "active", label: "Aktif Çalışıyor" },
+      { value: "active", label: "Aktif" },
       { value: "left", label: "Ayrıldı" }
     ], "acc-emp-status-select " + statusCls);
-    var catBadge = hidden
-      ? accHiddenMoney()
-      : ('<span class="acc-emp-cat-badge acc-emp-cat-' + accEsc(r.salary_category || "other") + '">' +
-        accEsc(accCategoryLabel(r.salary_category)) + "</span>");
+    var delCell = '<button class="btn btn-sm btn-danger acc-emp-del" data-del-emp="' + r.id + '" title="Sil">×</button>';
+
+    if (panel === "left") {
+      return '<tr class="' + rowCls + '">' +
+        '<td class="acc-emp-col-sticky">' + nameCell + "</td>" +
+        "<td>" + refCell + "</td>" +
+        "<td>" + deptCell + "</td>" +
+        "<td>" + locCell + "</td>" +
+        '<td class="mono">' + startCell + "</td>" +
+        '<td class="mono">' + endCell + "</td>" +
+        "<td>" + salaryCell + "</td>" +
+        "<td>" + cryptoCell + "</td>" +
+        "<td>" + advanceCell + "</td>" +
+        "<td>" + remainCell + "</td>" +
+        "<td>" + walletCell + "</td>" +
+        "<td>" + statusCell + "</td>" +
+        "<td>" + delCell + "</td></tr>";
+    }
+
     return '<tr class="' + rowCls + '">' +
-      '<td class="acc-emp-col-sticky acc-emp-col-identity">' + nameCell + "</td>" +
-      '<td class="acc-emp-col-identity">' + refCell + "</td>" +
-      '<td class="acc-emp-col-identity">' + catBadge + (hidden ? "" : ('<div class="acc-emp-cat-select">' + catCell + "</div>")) + "</td>" +
-      '<td class="acc-emp-col-identity">' + deptCell + "</td>" +
-      '<td class="acc-emp-col-identity">' + locCell + "</td>" +
-      '<td class="acc-emp-col-identity mono">' + startCell + "</td>" +
-      '<td class="acc-emp-col-identity mono">' + endCell + "</td>" +
-      '<td class="acc-emp-col-money">' + salaryCell + "</td>" +
-      '<td class="acc-emp-col-money">' + bankCell + "</td>" +
-      '<td class="acc-emp-col-money">' + cryptoCell + "</td>" +
-      '<td class="acc-emp-col-money">' + advanceCell + "</td>" +
-      '<td class="acc-emp-col-money">' + bonusCell + "</td>" +
-      '<td class="acc-emp-col-money">' + remainCell + "</td>" +
-      '<td class="acc-emp-col-money">' + payInfoCell + "</td>" +
-      '<td class="acc-emp-col-accrual">' + accrualCell + "</td>" +
-      '<td class="acc-emp-col-accrual">' + netCell + "</td>" +
-      '<td class="acc-emp-col-action">' + statusCell + "</td>" +
-      '<td class="acc-emp-col-action"><button class="btn btn-sm btn-danger acc-emp-del" data-del-emp="' + r.id + '" title="Sil">×</button></td></tr>';
+      '<td class="acc-emp-col-sticky">' + nameCell + "</td>" +
+      "<td>" + refCell + "</td>" +
+      "<td>" + deptCell + "</td>" +
+      "<td>" + locCell + "</td>" +
+      '<td class="mono">' + startCell + "</td>" +
+      '<td class="mono">' + endCell + "</td>" +
+      "<td>" + salaryCell + "</td>" +
+      "<td>" + accrualCell + "</td>" +
+      "<td>" + cryptoCell + "</td>" +
+      "<td>" + netCell + "</td>" +
+      "<td>" + statusCell + "</td>" +
+      "<td>" + delCell + "</td></tr>";
   }
 
   function accBindEmployeeInlineEditors(tbody) {
@@ -1592,58 +1599,32 @@
     });
   }
 
-  function accRenderEmployees() {
-    var tbody = document.getElementById("acc-emp-table");
-    var filtered = accFilteredEmployees();
-    var ordered = accOrderEmployees(filtered);
-    var cols = 18;
-    var groups = [
-      {
-        type: "office-active",
-        icon: "🏢",
-        label: "Ofis Personeli",
-        sub: "Aktif — banka / kripto / avans dağılımı",
-        rows: ordered.filter(function (r) { return r.status === "active" && accIsOfficeEmployee(r); })
-      },
-      {
-        type: "ops-active",
-        icon: "⚡",
-        label: "Operasyon Personeli",
-        sub: "Aktif — Türkiye & kripto ekipleri",
-        rows: ordered.filter(function (r) { return r.status === "active" && !accIsOfficeEmployee(r); })
-      },
-      {
-        type: "office-left",
-        icon: "🏢",
-        label: "Ofis — İşten Ayrılanlar",
-        sub: "",
-        rows: ordered.filter(function (r) { return r.status === "left" && accIsOfficeEmployee(r); })
-      },
-      {
-        type: "ops-left",
-        icon: "⚡",
-        label: "Operasyon — İşten Ayrılanlar",
-        sub: "",
-        rows: ordered.filter(function (r) { return r.status === "left" && !accIsOfficeEmployee(r); })
-      }
-    ];
+  function accRenderEmployeesPanel(tbody, rows, panel, cols) {
+    var ordered = accOrderEmployees(rows);
+    var activeRows = ordered.filter(function (r) { return r.status === "active"; });
+    var leftRows = ordered.filter(function (r) { return r.status === "left"; });
+    var sectionType = panel === "left" ? "office" : "tr";
+    var emptyMsg = panel === "left" ? "Sol panelde personel yok" : "Sağ panelde personel yok";
 
-    if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="' + cols + '" class="empty acc-emp-empty">' +
-        (accData["acc-emp"].rows.length ? "Bu dönemde personel yok" : "Personel yok") + "</td></tr>";
-      accUpdateFoot("acc-emp", 0, "personel");
-      accUpdateEmpPayrollTotals([]);
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="' + cols + '" class="empty acc-emp-empty">' + emptyMsg + "</td></tr>";
       return;
     }
 
     var html = "";
-    groups.forEach(function (g) {
-      if (!g.rows.length) return;
-      html += accEmpSectionHtml(cols, g.type, g.icon, g.label, g.rows.length, g.sub);
-      html += g.rows.map(accEmpRowHtml).join("");
-    });
+    if (activeRows.length) {
+      html += accEmpSectionHtml(cols, sectionType + "-active", panel === "left" ? "🏢" : "🇹🇷", "Aktif", activeRows.length, "");
+      html += activeRows.map(function (r) { return accEmpRowHtml(r, panel); }).join("");
+    }
+    if (leftRows.length) {
+      html += accEmpSectionHtml(cols, sectionType + "-left", "⏹", "İşten Ayrılanlar", leftRows.length, "");
+      html += leftRows.map(function (r) { return accEmpRowHtml(r, panel); }).join("");
+    }
     tbody.innerHTML = html;
+  }
 
+  function accBindEmployeeTable(tbody) {
+    if (!tbody) return;
     accBindEmployeeInlineEditors(tbody);
     tbody.querySelectorAll("[data-del-emp]").forEach(function (btn) {
       btn.onclick = function () {
@@ -1652,6 +1633,34 @@
           .then(function (r) { if (r && r.ok) { accLoadEmployees(); accLoadDashboard(); accToast("Silindi"); } });
       };
     });
+  }
+
+  function accRenderEmployees() {
+    var tbodyLeft = document.getElementById("acc-emp-table-left");
+    var tbodyRight = document.getElementById("acc-emp-table-right");
+    var filtered = accFilteredEmployees();
+    var leftRows = filtered.filter(function (r) { return accEmpPanelSide(r) === "left"; });
+    var rightRows = filtered.filter(function (r) { return accEmpPanelSide(r) === "right"; });
+
+    if (!filtered.length) {
+      if (tbodyLeft) tbodyLeft.innerHTML = '<tr><td colspan="13" class="empty acc-emp-empty">Personel yok</td></tr>';
+      if (tbodyRight) tbodyRight.innerHTML = '<tr><td colspan="12" class="empty acc-emp-empty">Personel yok</td></tr>';
+      accUpdateFoot("acc-emp", 0, "personel");
+      accUpdateEmpPayrollTotals([]);
+      return;
+    }
+
+    accRenderEmployeesPanel(tbodyLeft, leftRows, "left", 13);
+    accRenderEmployeesPanel(tbodyRight, rightRows, "right", 12);
+
+    accBindEmployeeTable(tbodyLeft);
+    accBindEmployeeTable(tbodyRight);
+
+    var leftCount = document.getElementById("acc-emp-left-count");
+    var rightCount = document.getElementById("acc-emp-right-count");
+    if (leftCount) leftCount.textContent = leftRows.length + " kişi";
+    if (rightCount) rightCount.textContent = rightRows.length + " kişi";
+
     accUpdateFoot("acc-emp", filtered.length, "personel");
     accUpdateEmpPayrollTotals(filtered);
   }

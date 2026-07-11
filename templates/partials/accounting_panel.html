@@ -532,46 +532,68 @@
         </div>
       </div>
       <div class="table-wrap acc-emp-table-wrap">
-        <div class="acc-emp-table-headbar">
-          <span class="acc-emp-table-title">Personel Listesi</span>
-          <span class="acc-emp-table-legend">
-            <span class="acc-emp-legend-item acc-emp-legend-office">Ofis</span>
-            <span class="acc-emp-legend-item acc-emp-legend-ops">Operasyon</span>
-            <span class="acc-emp-legend-item acc-emp-legend-left">Ayrılan</span>
-          </span>
-        </div>
-        <div class="table-scroll acc-emp-table-scroll" id="acc-emp-table-scroll">
-          <table class="acc-emp-table">
-            <thead>
-              <tr class="acc-emp-head-groups">
-                <th colspan="7">Kimlik &amp; Pozisyon</th>
-                <th colspan="7">Ödeme Dağılımı</th>
-                <th colspan="2">Tahakkuk</th>
-                <th colspan="2"></th>
-              </tr>
-              <tr class="acc-emp-head-cols">
-                <th class="acc-emp-col-sticky">Personel</th>
-                <th>Referans</th>
-                <th>Kategori</th>
-                <th>Departman</th>
-                <th>Konum</th>
-                <th>Başlangıç</th>
-                <th>Çıkış</th>
-                <th class="acc-emp-col-money">Maaş</th>
-                <th class="acc-emp-col-money">Banka</th>
-                <th class="acc-emp-col-money">Kripto</th>
-                <th class="acc-emp-col-money">Avans</th>
-                <th class="acc-emp-col-money">Prim</th>
-                <th class="acc-emp-col-money">Kalan</th>
-                <th class="acc-emp-col-money">Ödeme Bilgisi</th>
-                <th class="acc-emp-col-accrual">Hak Ediş</th>
-                <th class="acc-emp-col-accrual">Net Ödeme</th>
-                <th>Durum</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="acc-emp-table"><tr><td colspan="18" class="empty acc-emp-empty">Personel yok</td></tr></tbody>
-          </table>
+        <div class="acc-emp-split">
+          <div class="acc-emp-split-col acc-emp-split-left">
+            <div class="acc-emp-split-head">
+              <div>
+                <span class="acc-emp-split-title">Ofis / Uluslararası</span>
+                <small class="acc-emp-split-sub">EUR · Arnavutluk &amp; yurtdışı ekip</small>
+              </div>
+              <span class="acc-emp-split-count" id="acc-emp-left-count">0</span>
+            </div>
+            <div class="table-scroll acc-emp-table-scroll">
+              <table class="acc-emp-table acc-emp-table-left">
+                <thead>
+                  <tr class="acc-emp-head-cols">
+                    <th class="acc-emp-col-sticky">Personel</th>
+                    <th>Referans</th>
+                    <th>Departman</th>
+                    <th>Konum</th>
+                    <th>Başlangıç</th>
+                    <th>Çıkış</th>
+                    <th>Maaş</th>
+                    <th>Kripto</th>
+                    <th>Avans</th>
+                    <th>Kalan</th>
+                    <th>Cüzdan</th>
+                    <th>Durum</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="acc-emp-table-left"><tr><td colspan="13" class="empty acc-emp-empty">Personel yok</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="acc-emp-split-col acc-emp-split-right">
+            <div class="acc-emp-split-head">
+              <div>
+                <span class="acc-emp-split-title">TR Personeli</span>
+                <small class="acc-emp-split-sub">TRY · Türkiye operasyon ekibi</small>
+              </div>
+              <span class="acc-emp-split-count" id="acc-emp-right-count">0</span>
+            </div>
+            <div class="table-scroll acc-emp-table-scroll">
+              <table class="acc-emp-table acc-emp-table-right">
+                <thead>
+                  <tr class="acc-emp-head-cols">
+                    <th class="acc-emp-col-sticky">Personel</th>
+                    <th>Referans</th>
+                    <th>Departman</th>
+                    <th>Konum</th>
+                    <th>Başlangıç</th>
+                    <th>Çıkış</th>
+                    <th>Maaş</th>
+                    <th>Hak Ediş</th>
+                    <th>Kripto</th>
+                    <th>Net Ödeme</th>
+                    <th>Durum</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="acc-emp-table-right"><tr><td colspan="12" class="empty acc-emp-empty">Personel yok</td></tr></tbody>
+              </table>
+            </div>
+          </div>
         </div>
         <div class="table-foot" id="acc-emp-table-foot" style="display:none;">
           <button type="button" class="btn btn-sm" data-acc-toggle="acc-emp">Tümünü göster</button>
