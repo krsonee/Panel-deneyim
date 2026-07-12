@@ -570,7 +570,11 @@ def cors_headers(response):
 
 
 def security_headers(response):
-    response.headers["X-Frame-Options"] = "DENY"
+    # Bio sayfa önizlemesi admin panelinde same-origin iframe ile açılır.
+    if request.path.startswith("/p/"):
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    else:
+        response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     if _is_prod:

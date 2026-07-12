@@ -341,6 +341,48 @@ def get_public_page(conn, slug):
     return page
 
 
+def get_page_by_slug(conn, slug, *, active_only=False, buttons_active_only=False):
+    slug = (slug or "").strip().lower()
+    if active_only:
+        row = fetchone(
+            conn,
+            "SELECT * FROM biolink_pages WHERE slug = ? AND COALESCE(is_active,1) = 1",
+            (slug,),
+        )
+    else:
+        row = fetchone(conn, "SELECT * FROM biolink_pages WHERE slug = ?", (slug,))
+    if not row:
+        return None
+    page = _page_row(row)
+    page["buttons"] = list_buttons(conn, page["id"], active_only=buttons_active_only)
+    return page
+
+
+def apply_preview_overrides(page, args):
+    """Admin iframe önizlemesi — kaydedilmemiş form değerlerini query ile uygula."""
+    if not page or not args:
+        return page
+    theme = (args.get("theme") or "").strip()
+    if theme in THEMES:
+        page["theme"] = theme
+    shape = (args.get("button_shape") or "").strip()
+    if shape in BUTTON_SHAPES:
+        page["button_shape"] = shape
+    if "title" in args:
+        page["title"] = (args.get("title") or "").strip()[:200] or page.get("title") or ""
+    if "subtitle" in args:
+        page["subtitle"] = (args.get("subtitle") or "").strip()[:400]
+    if "avatar_url" in args:
+        av = (args.get("avatar_url") or "").strip()[:500]
+        page["avatar_url"] = av or DEFAULT_BRAND_LOGO
+        page["logo_url"] = page["avatar_url"]
+    if "banner_url" in args:
+        page["banner_url"] = (args.get("banner_url") or "").strip()[:500] or DEFAULT_BANNER
+    if "accent_color" in args:
+        page["accent_color"] = (args.get("accent_color") or "").strip()[:32]
+    return page
+
+
 def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_color="",
                  avatar_url="", banner_url="", button_shape="pill", ga4_measurement_id="", ga4_api_secret="",
                  created_by=""):

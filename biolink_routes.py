@@ -174,11 +174,23 @@ def create_biolink_blueprint(permission_required):
     # ── Public sayfa + tıklama ─────────────────────────────────
     @bp.route("/p/<slug>")
     def public_page(slug):
+        preview = request.args.get("preview") == "1"
+        is_admin = bool(session.get("admin_logged_in"))
         with closing(get_db()) as conn:
-            page = biolink_api.get_public_page(conn, slug)
+            if preview and is_admin:
+                page = biolink_api.get_page_by_slug(
+                    conn, slug, active_only=False, buttons_active_only=True,
+                )
+            else:
+                page = biolink_api.get_public_page(conn, slug)
             if not page:
                 return render_template("biolink_404.html"), 404
-            biolink_api.record_view(conn, slug)
+            if not (preview and is_admin):
+                biolink_api.record_view(conn, slug)
+        if preview and is_admin:
+            page = biolink_api.apply_preview_overrides(page, request.args)
+            theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
+            return render_template("biolink_page.html", page=page, theme=theme, preview=True)
         biolink_api.send_ga4_event(page, event_name="biolink_page_view")
         theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
         return render_template("biolink_page.html", page=page, theme=theme)

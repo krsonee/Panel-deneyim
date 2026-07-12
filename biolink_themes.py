@@ -2,6 +2,16 @@
 
 from __future__ import annotations
 
+# makrobet804.com marka paleti (mail / site ile uyumlu)
+_MB_BG = "#061c3d"
+_MB_CARD = "#0b2347"
+_MB_ROW = "#0f2d55"
+_MB_TEXT = "#e8efff"
+_MB_MUTED = "#8fa3cc"
+_MB_GOLD = "#ffd53e"
+_MB_BLUE = "#4a8fe7"
+_MB_DARK = "#10152b"
+
 
 def _theme(
     name,
@@ -101,10 +111,109 @@ THEMES = {
     ),
     "makrobet": _theme(
         "★ Makrobet",
-        bg="#061c3d", text="#e8efff", muted="#8fa3cc",
+        bg=_MB_BG, text=_MB_TEXT, muted=_MB_MUTED,
         card_bg="rgba(11, 35, 71, 0.88)", card_border="rgba(255, 213, 62, 0.38)",
-        card_hover="rgba(15, 45, 85, 0.95)", accent="#ffd53e", accent2="#4a8fe7",
-        category="Marka", style="neon", animated=True, animation="makrobet", brand_logo=True,
+        card_hover="rgba(15, 45, 85, 0.95)", accent=_MB_GOLD, accent2=_MB_BLUE,
+        category="Makrobet", style="neon", animated=True, animation="makrobet", brand_logo=True,
+    ),
+    "mb_classic": _theme(
+        "Makrobet Klasik",
+        bg=_MB_BG, text=_MB_TEXT, muted=_MB_MUTED,
+        card_bg=_MB_CARD, card_border="rgba(255, 213, 62, 0.32)",
+        card_hover=_MB_ROW, accent=_MB_GOLD, accent2=_MB_BLUE,
+        category="Makrobet", style="classic", brand_logo=True,
+    ),
+    "mb_804": _theme(
+        "Makrobet 804",
+        bg=f"radial-gradient(1100px 620px at 50% -12%, #1a4480 0%, {_MB_BG} 42%, #030912 100%)",
+        text=_MB_TEXT, muted=_MB_MUTED,
+        card_bg="rgba(11, 35, 71, 0.92)", card_border="rgba(255, 213, 62, 0.35)",
+        card_hover="rgba(15, 45, 85, 0.98)", accent=_MB_GOLD, accent2=_MB_BLUE,
+        category="Makrobet", style="neon", animated=True, animation="makrobet", brand_logo=True,
+    ),
+    "mb_neon": _theme(
+        "Makrobet Neon",
+        bg=f"radial-gradient(900px 520px at 50% -15%, {_MB_ROW}, {_MB_BG} 55%, {_MB_DARK})",
+        text=_MB_TEXT, muted=_MB_MUTED,
+        card_bg="rgba(255,255,255,0.05)", card_border="rgba(255, 213, 62, 0.42)",
+        card_hover="rgba(255,255,255,0.10)", accent=_MB_GOLD, accent2=_MB_BLUE,
+        category="Makrobet", style="neon", animated=True, animation="makrobet", brand_logo=True,
+    ),
+    "mb_altin": _theme(
+        "Makrobet Altın",
+        bg=f"radial-gradient(900px 520px at 50% -10%, #2a2208, {_MB_BG} 50%, {_MB_DARK})",
+        text="#fff8eb", muted="#c4b07a",
+        card_bg="rgba(255,213,62,0.08)", card_border="rgba(255,213,62,0.38)",
+        card_hover="rgba(255,213,62,0.14)", accent=_MB_GOLD, accent2="#f59e0b",
+        category="Makrobet", style="glow", animated=True, animation="gold", brand_logo=True,
+    ),
+    "mb_mavi": _theme(
+        "Makrobet Mavi",
+        bg=f"linear-gradient(165deg, {_MB_BG} 0%, {_MB_CARD} 45%, #1a4480 100%)",
+        text=_MB_TEXT, muted="#9db8e8",
+        card_bg="rgba(74,143,231,0.12)", card_border="rgba(74,143,231,0.38)",
+        card_hover="rgba(74,143,231,0.20)", accent=_MB_BLUE, accent2=_MB_GOLD,
+        category="Makrobet", style="glass", brand_logo=True,
+    ),
+    "mb_gece": _theme(
+        "Makrobet Gece",
+        bg=_MB_DARK, text=_MB_TEXT, muted=_MB_MUTED,
+        card_bg=_MB_CARD, card_border="rgba(255,255,255,0.10)",
+        card_hover=_MB_ROW, accent=_MB_GOLD, accent2=_MB_BLUE,
+        category="Makrobet", style="solid", brand_logo=True,
+    ),
+    "mb_promo": _theme(
+        "Makrobet Promo",
+        bg=_MB_BG, text=_MB_TEXT, muted=_MB_MUTED,
+        card_bg=_MB_ROW, card_border="rgba(255,213,62,0.12)",
+        card_hover="#132f58", accent=_MB_GOLD, accent2=_MB_BLUE,
+        category="Makrobet", style="lift", brand_logo=True,
+    ),
+    "mb_vip": _theme(
+        "Makrobet VIP",
+        bg=f"radial-gradient(1000px 560px at 50% -10%, #1a3a6e, {_MB_BG} 50%, #030912)",
+        text="#f5f8ff", muted="#8fa8cc",
+        card_bg="rgba(255,255,255,0.07)", card_border="rgba(212,175,55,0.35)",
+        card_hover="rgba(255,255,255,0.12)", accent="#d4af37", accent2=_MB_GOLD,
+        category="Makrobet", style="glow", animated=True, animation="gold", brand_logo=True,
+    ),
+    "mb_cam": _theme(
+        "Makrobet Cam",
+        bg=f"linear-gradient(160deg, {_MB_BG} 0%, {_MB_CARD} 50%, {_MB_BG} 100%)",
+        text=_MB_TEXT, muted=_MB_MUTED,
+        card_bg="rgba(74,143,231,0.10)", card_border="rgba(74,143,231,0.32)",
+        card_hover="rgba(74,143,231,0.18)", accent=_MB_BLUE, accent2=_MB_GOLD,
+        category="Makrobet", style="glass", brand_logo=True,
+    ),
+    "mb_soft": _theme(
+        "Makrobet Soft",
+        bg=f"linear-gradient(180deg, {_MB_CARD}, {_MB_BG})",
+        text=_MB_TEXT, muted=_MB_MUTED,
+        card_bg="rgba(255,255,255,0.06)", card_border="rgba(255,255,255,0.14)",
+        card_hover="rgba(255,255,255,0.11)", accent=_MB_GOLD, accent2=_MB_BLUE,
+        category="Makrobet", style="soft", brand_logo=True,
+    ),
+    "mb_outline": _theme(
+        "Makrobet Outline",
+        bg=_MB_BG, text=_MB_TEXT, muted=_MB_MUTED,
+        card_bg="transparent", card_border="rgba(255,213,62,0.45)",
+        card_hover="rgba(11,35,71,0.55)", accent=_MB_GOLD, accent2=_MB_BLUE,
+        category="Makrobet", style="outline", brand_logo=True,
+    ),
+    "mb_canli": _theme(
+        "Makrobet Canlı ★",
+        bg=_MB_BG, text=_MB_TEXT, muted=_MB_MUTED,
+        card_bg="rgba(11, 35, 71, 0.88)", card_border="rgba(255, 213, 62, 0.42)",
+        card_hover="rgba(15, 45, 85, 0.95)", accent=_MB_GOLD, accent2=_MB_BLUE,
+        category="Makrobet", style="neon", animated=True, animation="makrobet", brand_logo=True,
+    ),
+    "mb_spot": _theme(
+        "Makrobet Spot Işık",
+        bg=f"radial-gradient(800px 480px at 50% 0%, rgba(255,213,62,0.18), {_MB_BG} 55%, {_MB_DARK})",
+        text=_MB_TEXT, muted=_MB_MUTED,
+        card_bg=_MB_CARD, card_border="rgba(255,213,62,0.28)",
+        card_hover=_MB_ROW, accent=_MB_GOLD, accent2="#fbbf24",
+        category="Makrobet", style="chip", animated=True, animation="gold", brand_logo=True,
     ),
     "aurora": _theme(
         "★ Aurora",

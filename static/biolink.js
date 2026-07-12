@@ -12,6 +12,7 @@
   var blCurrentPage = null;
   var blComposerType = "link";
   var blEmojiTarget = null;
+  var blPreviewTimer = null;
 
   var BL_EMOJIS = [
     "🔗", "💬", "✈️", "📸", "🎁", "🏆", "⚡", "🔥", "💎", "🎯",
@@ -220,6 +221,7 @@
       btn.onclick = function () {
         if (hidden) hidden.value = btn.getAttribute("data-bl-theme-pick");
         renderThemeGallery();
+        schedulePreviewRefresh();
       };
     });
   }
@@ -267,6 +269,7 @@
         btn.onclick = function () {
           document.getElementById("bl-avatar").value = btn.getAttribute("data-bl-logo");
           renderAssetPickers();
+          schedulePreviewRefresh();
         };
       });
     }
@@ -282,6 +285,7 @@
         btn.onclick = function () {
           document.getElementById("bl-banner").value = btn.getAttribute("data-bl-banner");
           renderAssetPickers();
+          schedulePreviewRefresh();
         };
       });
     }
@@ -390,10 +394,39 @@
     hideEmojiPopover();
   }
 
+  function blPreviewDraftParams() {
+    var q = new URLSearchParams();
+    q.set("preview", "1");
+    var el;
+    el = document.getElementById("bl-theme");
+    if (el && el.value) q.set("theme", el.value);
+    el = document.getElementById("bl-shape");
+    if (el && el.value) q.set("button_shape", el.value);
+    el = document.getElementById("bl-title");
+    if (el) q.set("title", el.value);
+    el = document.getElementById("bl-subtitle");
+    if (el) q.set("subtitle", el.value);
+    el = document.getElementById("bl-avatar");
+    if (el) q.set("avatar_url", (el.value || "").trim());
+    el = document.getElementById("bl-banner");
+    if (el) q.set("banner_url", (el.value || "").trim());
+    el = document.getElementById("bl-accent");
+    if (el && el.value) q.set("accent_color", el.value);
+    return q;
+  }
+
+  function schedulePreviewRefresh() {
+    clearTimeout(blPreviewTimer);
+    blPreviewTimer = setTimeout(refreshPreview, 300);
+  }
+
   function refreshPreview() {
     if (!blCurrentPage) return;
     var frame = document.getElementById("biolink-preview-frame");
-    if (frame) frame.src = "/p/" + blCurrentPage.slug + "?_=" + Date.now();
+    if (!frame) return;
+    var q = blPreviewDraftParams();
+    q.set("_", String(Date.now()));
+    frame.src = "/p/" + encodeURIComponent(blCurrentPage.slug) + "?" + q.toString();
   }
 
   function createNewPage() {
@@ -789,6 +822,12 @@
     document.getElementById("btn-biolink-save").onclick = savePage;
     document.getElementById("btn-biolink-close").onclick = closeEditor;
     document.getElementById("btn-biolink-add-button").onclick = addButton;
+    ["bl-title", "bl-subtitle", "bl-avatar", "bl-banner", "bl-accent"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener("input", schedulePreviewRefresh);
+    });
+    var shapeEl = document.getElementById("bl-shape");
+    if (shapeEl) shapeEl.addEventListener("change", schedulePreviewRefresh);
     document.addEventListener("click", function (e) {
       if (!e.target.closest("#bl-emoji-popover") && !e.target.closest(".bl-emoji-btn") && !e.target.closest("[data-bl-emoji-inline]")) {
         hideEmojiPopover();
