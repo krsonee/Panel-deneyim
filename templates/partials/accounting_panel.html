@@ -779,11 +779,11 @@
           <table class="acc-inv-table">
             <thead>
               <tr>
-                <th>Sağlayıcı</th>
-                <th>Hacim (TRY)</th>
-                <th>Jackpot (TRY)</th>
-                <th>Oran %</th>
-                <th>Komisyon (TRY)</th>
+                <th class="col-sortable" data-inv-sort="sport" data-sort="label">Sağlayıcı</th>
+                <th class="col-sortable" data-inv-sort="sport" data-sort="volume_try">Hacim (TRY)</th>
+                <th class="col-sortable" data-inv-sort="sport" data-sort="jackpot_try">Jackpot (TRY)</th>
+                <th class="col-sortable" data-inv-sort="sport" data-sort="commission_rate">Oran %</th>
+                <th class="col-sortable" data-inv-sort="sport" data-sort="commission_try">Komisyon (TRY)</th>
               </tr>
             </thead>
             <tbody id="acc-inv-sport-body"><tr><td colspan="5" class="empty">Yükleniyor…</td></tr></tbody>
@@ -803,11 +803,11 @@
           <table class="acc-inv-table">
             <thead>
               <tr>
-                <th>Sağlayıcı</th>
-                <th>Kar / Hacim (TRY)</th>
-                <th>J.P Cnt. (TRY)</th>
-                <th>Oran %</th>
-                <th>Komisyon (TRY)</th>
+                <th class="col-sortable" data-inv-sort="casino" data-sort="label">Sağlayıcı</th>
+                <th class="col-sortable" data-inv-sort="casino" data-sort="volume_try">Kar / Hacim (TRY)</th>
+                <th class="col-sortable" data-inv-sort="casino" data-sort="jackpot_try">J.P Cnt. (TRY)</th>
+                <th class="col-sortable" data-inv-sort="casino" data-sort="commission_rate">Oran %</th>
+                <th class="col-sortable" data-inv-sort="casino" data-sort="commission_try">Komisyon (TRY)</th>
               </tr>
             </thead>
             <tbody id="acc-inv-casino-body"><tr><td colspan="5" class="empty">Yükleniyor…</td></tr></tbody>
@@ -824,7 +824,12 @@
       <div class="table-wrap">
         <table class="acc-inv-table">
           <thead>
-            <tr><th>Kalem</th><th>Hacim</th><th>Oran %</th><th>Komisyon</th></tr>
+            <tr>
+              <th class="col-sortable" data-inv-sort="special" data-sort="label">Kalem</th>
+              <th class="col-sortable" data-inv-sort="special" data-sort="volume_try">Hacim</th>
+              <th class="col-sortable" data-inv-sort="special" data-sort="commission_rate">Oran %</th>
+              <th class="col-sortable" data-inv-sort="special" data-sort="commission_try">Komisyon</th>
+            </tr>
           </thead>
           <tbody id="acc-inv-special-body"></tbody>
         </table>
@@ -840,9 +845,9 @@
         <table class="acc-inv-table">
           <thead>
             <tr>
-              <th>Hizmet</th>
-              <th>EUR</th>
-              <th>TRY (kur ile)</th>
+              <th class="col-sortable" data-inv-sort="fixed" data-sort="label">Hizmet</th>
+              <th class="col-sortable" data-inv-sort="fixed" data-sort="amount_eur">EUR</th>
+              <th class="col-sortable" data-inv-sort="fixed" data-sort="commission_try">TRY (kur ile)</th>
             </tr>
           </thead>
           <tbody id="acc-inv-fixed-body"><tr><td colspan="3" class="empty">Yükleniyor…</td></tr></tbody>

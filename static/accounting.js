@@ -2310,6 +2310,47 @@
   }
 
   var accInvoiceData = null;
+  var accInvSortState = {
+    sport: { key: null, dir: "desc" },
+    casino: { key: null, dir: "desc" },
+    special: { key: null, dir: "desc" },
+    fixed: { key: null, dir: "desc" },
+  };
+
+  function accInvSortLines(section, lines) {
+    var st = accInvSortState[section];
+    if (!st || !st.key || !lines || !lines.length) return lines || [];
+    var getter = function (r) { return r[st.key]; };
+    return lines.slice().sort(function (a, b) { return accCompare(getter(a), getter(b), st.dir); });
+  }
+
+  function accInvUpdateSortHeaders(section) {
+    var st = accInvSortState[section];
+    document.querySelectorAll('[data-inv-sort="' + section + '"]').forEach(function (th) {
+      var sk = th.getAttribute("data-sort");
+      th.classList.toggle("sorted-asc", sk === st.key && st.dir === "asc");
+      th.classList.toggle("sorted-desc", sk === st.key && st.dir === "desc");
+    });
+  }
+
+  function accInvToggleSort(section, sortKey) {
+    var st = accInvSortState[section];
+    if (!st) return;
+    if (st.key === sortKey) st.dir = st.dir === "asc" ? "desc" : "asc";
+    else { st.key = sortKey; st.dir = "desc"; }
+    accInvUpdateSortHeaders(section);
+    if (accInvoiceData) accRenderInvoice(accInvoiceData, true);
+  }
+
+  function accInitInvoiceSort() {
+    document.querySelectorAll("[data-inv-sort]").forEach(function (th) {
+      if (th._accInvSortBound) return;
+      th._accInvSortBound = true;
+      th.addEventListener("click", function () {
+        accInvToggleSort(th.getAttribute("data-inv-sort"), th.getAttribute("data-sort"));
+      });
+    });
+  }
 
   function accIsPeriodLocked(period) {
     if (!period || period === "all") return false;
@@ -2410,15 +2451,17 @@
     if (notesIn) notesIn.value = m.notes || "";
     var sections = data.sections || {};
     var editable = !locked;
-    accRenderInvRows("acc-inv-sport-body", sections.sport, editable);
-    accRenderInvRows("acc-inv-casino-body", sections.casino, editable);
+    accRenderInvRows("acc-inv-sport-body", accInvSortLines("sport", sections.sport), editable);
+    accRenderInvRows("acc-inv-casino-body", accInvSortLines("casino", sections.casino), editable);
     var special = sections.special || [];
     var specialCard = document.getElementById("acc-inv-special-card");
     if (specialCard) specialCard.hidden = !special.length;
-    accRenderInvRows("acc-inv-special-body", special, editable);
+    accRenderInvRows("acc-inv-special-body", accInvSortLines("special", special), editable);
     accSetText("acc-inv-special-total", accInvFmt(t.special_commission_try));
-    accRenderInvFixed(sections.fixed, m.eur_try_rate);
+    accRenderInvFixed(accInvSortLines("fixed", sections.fixed), m.eur_try_rate);
     accApplyInvoiceLock(locked);
+    accInitInvoiceSort();
+    ["sport", "casino", "special", "fixed"].forEach(accInvUpdateSortHeaders);
   }
 
   function accLoadInvoice() {
