@@ -21,11 +21,15 @@ from database import (
     execute,
     fetchall,
     fetchone,
+    insert_returning_id,
+    integrity_error_type,
     iso,
     scalar,
     uses_postgres,
     utcnow,
 )
+
+IntegrityError = integrity_error_type()
 
 DEFAULT_PUBLIC_HOST = "makrovip.com"
 DEFAULT_AFF_BASE = "https://go.aff.makroaffi.com"
@@ -60,6 +64,59 @@ def upsert_setting(conn, key, value):
             (key, str(value)),
         )
     conn.commit()
+
+
+def _normalize_domain(domain):
+    """app.py'deki normalize_domain ile aynı mantık (tracked_links ile uyumlu kalması için)."""
+    raw = (domain or "").strip().lower()
+    if not raw:
+        return ""
+    if "://" in raw or raw.startswith("//"):
+        if not raw.startswith(("http://", "https://", "//")):
+            raw = "https://" + raw.lstrip("/")
+        d = (urlparse(raw).hostname or "").strip().lower()
+    else:
+        d = raw.split("/")[0].split("?")[0].split("#")[0].strip().lower()
+    d = d.removeprefix("www.")
+    if d == "127.0.0.1":
+        return "localhost"
+    return d
+
+
+def _sync_tracked_link(conn, domain, ref_code, label):
+    """MakroLink'in hedef domaini + kısa kodunu tracked_links'e UPSERT eder,
+    böylece bu linkten gelen ziyaretçiler takip listesinde MakroLink etiketiyle görünür."""
+    domain = _normalize_domain(domain)
+    ref_code = (ref_code or "").strip()
+    label = (label or "").strip()[:200]
+    if not domain or not ref_code:
+        return
+    now = iso(utcnow())
+    existing = fetchone(
+        conn,
+        "SELECT id FROM tracked_links WHERE domain = ? AND ref_code = ?",
+        (domain, ref_code),
+    )
+    if existing:
+        execute(
+            conn,
+            "UPDATE tracked_links SET label = ? WHERE id = ?",
+            (label, existing["id"]),
+        )
+        return
+    try:
+        insert_returning_id(
+            conn,
+            "INSERT INTO tracked_links (domain, ref_code, label, created_at, created_by) VALUES (?, ?, ?, ?, ?)",
+            (domain, ref_code, label, now, "makrolink"),
+        )
+    except IntegrityError:
+        # Yarış durumu — muhtemelen aynı anda oluştu, etiketi güncelle.
+        execute(
+            conn,
+            "UPDATE tracked_links SET label = ? WHERE domain = ? AND ref_code = ?",
+            (label, domain, ref_code),
+        )
 
 
 def _clean_host(host):
@@ -288,6 +345,7 @@ def create_link(
     smartico_link_id="",
     ref_code="",
     created_by="",
+    target_domain=None,
 ):
     destination_url = normalize_smartico_aff_url(conn, destination_url)
     if not _valid_url(destination_url):
@@ -298,6 +356,7 @@ def create_link(
     smartico_link_id = (smartico_link_id or "").strip()[:64]
     ref_code = (ref_code or "").strip()[:128]
     created_by = (created_by or "").strip()[:64]
+    target_domain = _normalize_domain(target_domain) if target_domain else ""
     now = iso(utcnow())
 
     slug = urlparse(destination_url).path.strip("/").split("/")[0]
@@ -334,10 +393,10 @@ def create_link(
             UPDATE makrolink_links
             SET destination_url = ?, label = ?, affiliate_id = ?, smartico_link_id = ?,
                 ref_code = ?, click_count = 0, is_active = 1, created_by = ?,
-                created_at = ?, updated_at = ?
+                created_at = ?, updated_at = ?, target_domain = ?
             WHERE id = ?
             """,
-            (destination_url, label, affiliate_id, smartico_link_id, ref_code, created_by, now, now, revive_id),
+            (destination_url, label, affiliate_id, smartico_link_id, ref_code, created_by, now, now, target_domain, revive_id),
         )
         link_id = revive_id
     elif uses_postgres():
@@ -346,11 +405,11 @@ def create_link(
             """
             INSERT INTO makrolink_links
               (code, destination_url, label, affiliate_id, smartico_link_id, ref_code,
-               click_count, is_active, created_by, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?)
+               click_count, is_active, created_by, created_at, updated_at, target_domain)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?)
             RETURNING id
             """,
-            (code, destination_url, label, affiliate_id, smartico_link_id, ref_code, created_by, now, now),
+            (code, destination_url, label, affiliate_id, smartico_link_id, ref_code, created_by, now, now, target_domain),
         )
         link_id = cur.fetchone()["id"]
     else:
@@ -359,12 +418,16 @@ def create_link(
             """
             INSERT INTO makrolink_links
               (code, destination_url, label, affiliate_id, smartico_link_id, ref_code,
-               click_count, is_active, created_by, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?)
+               click_count, is_active, created_by, created_at, updated_at, target_domain)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?)
             """,
-            (code, destination_url, label, affiliate_id, smartico_link_id, ref_code, created_by, now, now),
+            (code, destination_url, label, affiliate_id, smartico_link_id, ref_code, created_by, now, now, target_domain),
         )
         link_id = cur.lastrowid
+
+    if target_domain:
+        _sync_tracked_link(conn, target_domain, code, label)
+
     conn.commit()
     row = fetchone(conn, "SELECT * FROM makrolink_links WHERE id = ?", (link_id,))
     return _row_to_dict(conn, row)
@@ -381,10 +444,11 @@ def deactivate_link(conn, link_id):
     return cur.rowcount > 0
 
 
-def update_link(conn, link_id, destination_url=None, label=None, ref_code=None):
+def update_link(conn, link_id, destination_url=None, label=None, ref_code=None, target_domain=None):
     row = fetchone(conn, "SELECT * FROM makrolink_links WHERE id = ?", (int(link_id),))
     if not row:
         raise ValueError("Link bulunamadı.")
+    row = dict(row)
     if destination_url is not None:
         dest = normalize_smartico_aff_url(conn, destination_url)
     else:
@@ -393,16 +457,24 @@ def update_link(conn, link_id, destination_url=None, label=None, ref_code=None):
         raise ValueError("Geçerli hedef URL gerekli.")
     lab = label if label is not None else row["label"]
     ref = ref_code if ref_code is not None else row["ref_code"]
+    lab = (lab or "").strip()[:200]
+    ref = (ref or "").strip()[:128]
+    if target_domain is not None:
+        new_target_domain = _normalize_domain(target_domain)
+    else:
+        new_target_domain = row.get("target_domain") or ""
     now = iso(utcnow())
     execute(
         conn,
         """
         UPDATE makrolink_links
-        SET destination_url = ?, label = ?, ref_code = ?, updated_at = ?
+        SET destination_url = ?, label = ?, ref_code = ?, target_domain = ?, updated_at = ?
         WHERE id = ?
         """,
-        (dest, (lab or "").strip()[:200], (ref or "").strip()[:128], now, int(link_id)),
+        (dest, lab, ref, new_target_domain, now, int(link_id)),
     )
+    if new_target_domain:
+        _sync_tracked_link(conn, new_target_domain, row["code"], lab)
     conn.commit()
     return _row_to_dict(conn, fetchone(conn, "SELECT * FROM makrolink_links WHERE id = ?", (int(link_id),)))
 

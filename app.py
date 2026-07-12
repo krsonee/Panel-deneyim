@@ -833,6 +833,20 @@ def admin_only_required(view):
     return wrapped
 
 
+def superadmin_required(view):
+    """Süper admin katmanı: yetki listesinde "*" olan HERKES (ana admin + superadmin rolündeki diğer hesaplar).
+    admin_only_required'tan farklı — o SADECE ana admin hesabına (literal ADMIN_USERNAME) izin verir."""
+    @wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        if "*" not in get_session_permissions():
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Bu işlem için süper admin yetkisi gerekir."}), 403
+            return render_template("login.html", error="Bu sayfa için süper admin yetkisi gerekir."), 403
+        return view(*args, **kwargs)
+    return wrapped
+
+
 def build_journey(session_data):
     """Kullanıcının kronolojik zaman tüneli."""
     ref = session_data["ref_code"] or "Direkt giriş"
@@ -1107,7 +1121,7 @@ def demo_page():
 
 
 @app.route("/api/links", methods=["GET"])
-@permission_required("tracking.domains")
+@superadmin_required
 def list_links():
     cutoff = iso(utcnow() - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
     with closing(get_db()) as conn:
@@ -1133,7 +1147,7 @@ def list_links():
 
 
 @app.route("/api/links", methods=["POST"])
-@permission_required("tracking.domains")
+@superadmin_required
 def create_link():
     data = request.get_json(silent=True) or {}
     domain = normalize_domain(data.get("domain", ""))
@@ -1165,7 +1179,7 @@ def create_link():
 
 
 @app.route("/api/links/bulk", methods=["POST"])
-@permission_required("tracking.domains")
+@superadmin_required
 def create_links_bulk():
     data = request.get_json(silent=True) or {}
     raw_domains = data.get("domains") or data.get("text") or ""
@@ -1208,7 +1222,7 @@ def create_links_bulk():
 
 
 @app.route("/api/links/bulk/preview", methods=["POST"])
-@permission_required("tracking.domains")
+@superadmin_required
 def preview_links_bulk():
     data = request.get_json(silent=True) or {}
     raw = data.get("text") or data.get("domains") or ""
@@ -1226,7 +1240,7 @@ def preview_links_bulk():
 
 
 @app.route("/api/links/<int:link_id>", methods=["DELETE"])
-@permission_required("tracking.domains")
+@superadmin_required
 def delete_link(link_id):
     with closing(get_db()) as conn:
         execute(conn, "DELETE FROM visitor_sessions WHERE tracked_link_id = ?", (link_id,))
@@ -1766,7 +1780,7 @@ def clear_sessions():
 
 
 @app.route("/api/admin/users", methods=["GET"])
-@permission_required("admin.users")
+@superadmin_required
 def list_admin_users():
     with closing(get_db()) as conn:
         rows = fetchall(
@@ -1786,7 +1800,7 @@ def list_admin_users():
 
 
 @app.route("/api/admin/users", methods=["POST"])
-@permission_required("admin.users")
+@superadmin_required
 def create_admin_user():
     data = request.get_json(silent=True) or {}
     username = normalize_username(data.get("username"))
@@ -1828,7 +1842,7 @@ def create_admin_user():
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["PUT"])
-@permission_required("admin.users")
+@superadmin_required
 def update_admin_user(user_id):
     data = request.get_json(silent=True) or {}
     role = (data.get("role") or "custom").strip().lower()
@@ -1892,7 +1906,7 @@ def update_admin_user(user_id):
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
-@permission_required("admin.users")
+@superadmin_required
 def delete_admin_user(user_id):
     current = session.get("admin_username")
     with closing(get_db()) as conn:
@@ -1913,7 +1927,7 @@ def delete_admin_user(user_id):
 
 
 @app.route("/api/admin/users/<int:user_id>/unlock", methods=["POST"])
-@permission_required("admin.users")
+@superadmin_required
 def unlock_admin_user(user_id):
     with closing(get_db()) as conn:
         row = fetchone(conn, "SELECT username FROM admin_users WHERE id = ?", (user_id,))
@@ -1930,7 +1944,7 @@ def unlock_admin_user(user_id):
 
 
 @app.route("/api/admin/users/<int:user_id>/2fa/reset", methods=["POST"])
-@permission_required("admin.users")
+@superadmin_required
 def admin_reset_user_2fa(user_id):
     """Süper admin, başka bir kullanıcının 2FA'sını sıfırlar (telefon değişti/kayboldu vb.) — hedefin şifresi istenmez."""
     with closing(get_db()) as conn:
@@ -2004,7 +2018,7 @@ def reset_own_2fa():
 
 
 @app.route("/api/admin/audit-log", methods=["GET"])
-@permission_required("admin.audit", "admin.users")
+@admin_only_required
 def get_audit_log():
     limit = min(int(request.args.get("limit", 300) or 300), 1000)
     username_filter = (request.args.get("username") or "").strip() or None
@@ -2014,7 +2028,7 @@ def get_audit_log():
 
 
 @app.route("/api/settings", methods=["GET"])
-@permission_required("module.settings", "admin.users")
+@admin_only_required
 def get_settings():
     return jsonify({
         "public_base_url": get_server_base_url(),
@@ -2139,8 +2153,8 @@ from mailing_routes import create_mailing_blueprint, create_mailing_click_bluepr
 import makrolink_api
 
 app.register_blueprint(create_accounting_blueprint(permission_required))
-app.register_blueprint(create_smartico_blueprint(permission_required, admin_only_required))
-app.register_blueprint(create_blink_blueprint(permission_required, admin_only_required))
+app.register_blueprint(create_smartico_blueprint(permission_required, superadmin_required))
+app.register_blueprint(create_blink_blueprint(permission_required, superadmin_required))
 app.register_blueprint(create_makrolink_blueprint(permission_required, admin_only_required))
 app.register_blueprint(create_mailing_blueprint(permission_required))
 app.register_blueprint(create_mailing_click_blueprint())

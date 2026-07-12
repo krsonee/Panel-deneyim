@@ -656,6 +656,9 @@ def migrate_makrolink(conn):
             INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('short_hosts', 'makrovip.com')
             """,
         )
+    cols = _table_columns(conn, "makrolink_links")
+    if cols and "target_domain" not in cols:
+        execute(conn, "ALTER TABLE makrolink_links ADD COLUMN target_domain TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
 

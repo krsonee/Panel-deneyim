@@ -5,7 +5,7 @@ from contextlib import closing
 from flask import Blueprint, jsonify, redirect, request
 
 import makrolink_api
-from database import get_db
+from database import fetchall, get_db
 
 MODULE_ACCESS = ("tracking.makrolink",)
 
@@ -61,6 +61,17 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
             items = makrolink_api.list_links(conn, q_text=q)
         return jsonify({"links": items})
 
+    @api.route("/target-domains", methods=["GET"])
+    @perm(*MODULE_ACCESS)
+    def target_domains():
+        """Zaten takip edilen domainlerin (tracked_links) hafif listesi — MakroLink oluşturma
+        formundaki 'Hedef Domain' seçim kutusunu doldurmak için. Tam domain yönetimi
+        (/api/links) süper admin katmanına kilitlidir, bu picker listesi ise MakroLink'e
+        erişimi olan herkes için (operatör dahil) açık kalmalıdır."""
+        with closing(get_db()) as conn:
+            rows = fetchall(conn, "SELECT DISTINCT domain FROM tracked_links ORDER BY domain")
+        return jsonify({"domains": [r["domain"] for r in rows]})
+
     @api.route("/links", methods=["POST"])
     @perm(*MODULE_ACCESS)
     def create_link():
@@ -79,6 +90,7 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
                     smartico_link_id=data.get("smartico_link_id") or "",
                     ref_code=data.get("ref_code") or "",
                     created_by=username,
+                    target_domain=data.get("target_domain") or None,
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -96,6 +108,7 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
                     destination_url=data.get("destination_url"),
                     label=data.get("label"),
                     ref_code=data.get("ref_code"),
+                    target_domain=data.get("target_domain") if "target_domain" in data else None,
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400

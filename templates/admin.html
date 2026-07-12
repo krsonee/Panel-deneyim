@@ -803,6 +803,7 @@
     .top5-list li.muted { justify-content: center; color: var(--muted); font-size: 0.72rem; }
 
     [data-admin-only-hidden="1"] { display: none !important; }
+    [data-superadmin-hidden="1"] { display: none !important; }
 
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 0.85rem; }
     .card-head {
@@ -1272,7 +1273,7 @@
         <button type="button" class="nav-item active" data-module="tracking" data-perm="module.tracking"><span class="icon">📊</span> Link Takip & Analiz</button>
         <button type="button" class="nav-item" data-module="accounting" data-perm="module.accounting"><span class="icon">💰</span> Muhasebe</button>
         <button type="button" class="nav-item" data-module="mailing" data-perm="module.mailing"><span class="icon">✉️</span> Mailing</button>
-        <button type="button" class="nav-item" id="btn-open-settings" data-perm-any="admin.users,module.settings" style="width:100%;border:none;background:none;cursor:pointer;font:inherit;text-align:left;">
+        <button type="button" class="nav-item" id="btn-open-settings" data-superadmin-only="1" style="width:100%;border:none;background:none;cursor:pointer;font:inherit;text-align:left;">
           <span class="icon">⚙️</span> Ayarlar
         </button>
       </nav>
@@ -1311,6 +1312,88 @@
             </select>
           </div>
         </div>
+
+        <section class="card" data-perm="tracking.makrolink">
+          <div class="card-head">
+            <span>MakroLink <span class="muted" style="font-weight:400;font-size:0.72rem;">(makrovip.com · kısa link · tıklama)</span></span>
+            <div class="card-actions">
+              <input id="makrolink-search" placeholder="🔎 Link ara…" style="width:150px;" autocomplete="off">
+              <span class="muted" id="makrolink-updated" style="font-size:0.72rem;"></span>
+              <button type="button" class="btn btn-sm" id="btn-makrolink-settings" data-admin-only="1">⚙️ Ayarlar</button>
+              <button type="button" class="btn btn-sm" id="btn-makrolink-refresh">Yenile</button>
+            </div>
+          </div>
+          <div class="card-body" id="makrolink-settings-box" data-admin-only="1" style="display:none;">
+            <p class="hint">Kısa domainler Render custom domain + CNAME. Hepsi aynı kodu açar. GA tek property — Measurement Protocol.</p>
+            <form id="makrolink-config-form">
+              <div class="form-row-4">
+                <div><label for="makrolink-host">Varsayılan short host</label><input id="makrolink-host" placeholder="makrovip.com" autocomplete="off"></div>
+                <div><label for="makrolink-aff-base">Smartico aff base</label><input id="makrolink-aff-base" placeholder="https://go.aff.makroaffi.com" autocomplete="off"></div>
+                <div><label for="makrolink-scheme">Scheme</label>
+                  <select id="makrolink-scheme"><option value="https">https</option><option value="http">http</option></select>
+                </div>
+                <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+              </div>
+              <div style="margin-top:0.65rem;">
+                <label for="makrolink-hosts">Kısa domain listesi <span class="muted">(satır veya virgül)</span></label>
+                <textarea id="makrolink-hosts" rows="3" placeholder="makrovip.com&#10;sada.com&#10;asdf.com" style="width:100%;"></textarea>
+              </div>
+              <div class="form-row-4" style="margin-top:0.65rem;">
+                <div><label for="makrolink-ga4-id">GA4 Measurement ID</label><input id="makrolink-ga4-id" placeholder="G-XXXXXXXX" autocomplete="off"></div>
+                <div><label for="makrolink-ga4-secret">GA4 API Secret</label><input id="makrolink-ga4-secret" type="password" placeholder="boş = değiştirme" autocomplete="off"></div>
+                <div style="align-self:end;"><span class="muted" id="makrolink-ga4-status" style="font-size:0.72rem;"></span></div>
+              </div>
+            </form>
+          </div>
+          <div class="card-body">
+            <form id="makrolink-create-form">
+              <div class="form-row-4">
+                <div style="grid-column: span 2;"><label for="makrolink-dest">Smartico go.aff linki</label>
+                  <input id="makrolink-dest" placeholder="https://go.aff.makroaffi.com/46ix1iwv  veya  46ix1iwv" required autocomplete="off">
+                </div>
+                <div><label for="makrolink-label">Etiket</label><input id="makrolink-label" placeholder="örn. slotbuse FTD" autocomplete="off"></div>
+                <div><label for="makrolink-code">Özel kod (ops.)</label><input id="makrolink-code" placeholder="boş = otomatik" autocomplete="off"></div>
+              </div>
+              <div class="form-row-4" style="margin-top:0.5rem;">
+                <div><label for="makrolink-affid">Affiliate ID (not)</label><input id="makrolink-affid" placeholder="opsiyonel not" autocomplete="off"></div>
+                <div><label for="makrolink-ref">Ref notu</label><input id="makrolink-ref" placeholder="opsiyonel" autocomplete="off"></div>
+                <div><label for="makrolink-target-domain">Hedef Domain (takip için)</label>
+                  <select id="makrolink-target-domain"><option value="">— Seçin (opsiyonel) —</option></select>
+                </div>
+                <div style="align-self:end"><button type="submit" class="btn btn-primary" id="btn-makrolink-create">Kısalt &amp; kopyala</button></div>
+              </div>
+              <p class="muted-sm" style="margin-top:0.4rem;">Seçersen, bu linkten gelen ziyaretçiler takip listesinde bu etiketle görünür.</p>
+            </form>
+            <div id="makrolink-created-box" style="display:none;margin-top:0.75rem;padding:0.65rem 0.75rem;border:1px solid var(--border, #333);border-radius:8px;">
+              <div class="muted" style="font-size:0.72rem;margin-bottom:0.25rem;">Son oluşturulan kısa link</div>
+              <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                <a id="makrolink-created-url" href="#" target="_blank" rel="noopener" style="font-weight:600;word-break:break-all;"></a>
+                <button type="button" class="btn btn-sm" id="btn-makrolink-created-copy">Kopyala</button>
+                <span class="muted" style="font-size:0.72rem;">DNS yokken test: <code id="makrolink-created-test"></code></span>
+              </div>
+            </div>
+            <p class="hint" style="margin-top:0.5rem;">Akış: <code>makrovip.com/xxx</code> → <code>go.aff.makroaffi.com/…</code> → site (804/805 Smartico’da). Eski bl.ink linklerine dokunulmaz.</p>
+          </div>
+          <div class="table-wrap">
+            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
+            <div class="table-scroll" id="makrolink-table-scroll">
+              <table>
+                <thead><tr>
+                  <th>Kısa Link</th>
+                  <th>Etiket</th>
+                  <th>Hedef</th>
+                  <th>Aff / Ref</th>
+                  <th>Tıklama</th>
+                  <th></th>
+                </tr></thead>
+                <tbody id="makrolink-table"><tr><td colspan="6" class="empty">Henüz link yok</td></tr></tbody>
+              </table>
+            </div>
+            <div class="table-foot">
+              <span class="table-count" id="makrolink-table-count"></span>
+            </div>
+          </div>
+        </section>
 
         <!-- KPI Widgets -->
         <section class="kpi-grid" data-perm="tracking.dashboard">
@@ -1374,40 +1457,10 @@
           </div>
         </section>
 
-        <section class="card" data-perm="tracking.domains">
-          <div class="card-head">Domain & Araçlar</div>
-          <div class="card-body">
-            <form id="add-link-form">
-              <div class="form-row-4">
-                <div><label for="input-label">İsim</label><input id="input-label" placeholder="Örn: Ahmet affiliate"></div>
-                <div><label for="input-domain">Domain</label><input id="input-domain" placeholder="makrobet804.com"></div>
-                <div><label for="input-ref">Referans (?ref=) — opsiyonel</label><input id="input-ref" placeholder="Boş = tüm site"></div>
-                <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
-              </div>
-            </form>
-            <div class="tools-grid" style="margin-top:1rem;">
-              <div class="tool-box">
-                <h4>📦 Toplu Domain Ekle</h4>
-                <p class="muted" style="font-size:0.72rem;margin-bottom:0.45rem;">
-                  Aralık: <strong>makrobet804 - 1084</strong> → 804’ten 1084’e kadar otomatik ekler.<br>
-                  Tek domain veya her satıra bir domain de yazabilirsin.
-                </p>
-                <textarea id="bulk-domains" placeholder="makrobet804 - 1084&#10;makrogir.com"></textarea>
-                <div style="margin-top:0.45rem;display:flex;gap:0.4rem;flex-wrap:wrap;">
-                  <input id="bulk-ref" placeholder="Ortak ref (opsiyonel)" style="flex:1;min-width:140px;">
-                  <button type="button" class="btn" id="btn-bulk-preview">Önizle</button>
-                  <button type="button" class="btn btn-primary" id="btn-bulk-add">Toplu Ekle</button>
-                </div>
-                <p class="muted" id="bulk-result" style="font-size:0.7rem;margin-top:0.4rem;"></p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="card" data-perm="tracking.domains">
+        <section class="card" data-superadmin-only="1">
           <div class="card-head"><span>Takip Edilen Domainler</span><a href="/demo" target="_blank" class="btn btn-sm">Demo Site</a></div>
           <div class="card-body" style="padding-top:0;">
-            <div class="tracking-code-panel">
+            <div class="tracking-code-panel" data-superadmin-only="1">
               <div class="tracking-code-head">
                 <h4>📋 Ortak Takip Kodu</h4>
                 <button type="button" class="btn btn-sm btn-success" onclick="copyCode('global-tracking-code')">Kopyala</button>
@@ -1446,11 +1499,11 @@
                 <input type="checkbox" id="smartico-hide-inactive" checked style="width:auto;margin:0;"> Hareketsizleri gizle (6 ay)
               </label>
               <span class="muted" id="smartico-updated" style="font-size:0.72rem;"></span>
-              <button type="button" class="btn btn-sm" id="btn-smartico-settings" data-admin-only="1">⚙️ Ayarlar</button>
+              <button type="button" class="btn btn-sm" id="btn-smartico-settings" data-superadmin-only="1">⚙️ Ayarlar</button>
               <button type="button" class="btn btn-sm" id="btn-smartico-refresh">Yenile</button>
             </div>
           </div>
-          <div class="card-body" id="smartico-settings-box" data-admin-only="1" style="display:none;">
+          <div class="card-body" id="smartico-settings-box" data-superadmin-only="1" style="display:none;">
             <p class="hint">Smartico BackOffice → <strong>Ayarlar</strong> bölümündeki "API Key to access Media reports, Balance API and Affiliates data" anahtarını buraya yapıştır. Anahtar sadece sunucuda saklanır.</p>
             <form id="smartico-config-form">
               <div class="form-row-4">
@@ -1614,95 +1667,17 @@
           </div>
         </section>
 
-        <section class="card" data-perm="tracking.makrolink">
-          <div class="card-head">
-            <span>MakroLink <span class="muted" style="font-weight:400;font-size:0.72rem;">(makrovip.com · kısa link · tıklama)</span></span>
-            <div class="card-actions">
-              <input id="makrolink-search" placeholder="🔎 Link ara…" style="width:150px;" autocomplete="off">
-              <span class="muted" id="makrolink-updated" style="font-size:0.72rem;"></span>
-              <button type="button" class="btn btn-sm" id="btn-makrolink-settings" data-admin-only="1">⚙️ Ayarlar</button>
-              <button type="button" class="btn btn-sm" id="btn-makrolink-refresh">Yenile</button>
-            </div>
-          </div>
-          <div class="card-body" id="makrolink-settings-box" data-admin-only="1" style="display:none;">
-            <p class="hint">Kısa domainler Render custom domain + CNAME. Hepsi aynı kodu açar. GA tek property — Measurement Protocol.</p>
-            <form id="makrolink-config-form">
-              <div class="form-row-4">
-                <div><label for="makrolink-host">Varsayılan short host</label><input id="makrolink-host" placeholder="makrovip.com" autocomplete="off"></div>
-                <div><label for="makrolink-aff-base">Smartico aff base</label><input id="makrolink-aff-base" placeholder="https://go.aff.makroaffi.com" autocomplete="off"></div>
-                <div><label for="makrolink-scheme">Scheme</label>
-                  <select id="makrolink-scheme"><option value="https">https</option><option value="http">http</option></select>
-                </div>
-                <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
-              </div>
-              <div style="margin-top:0.65rem;">
-                <label for="makrolink-hosts">Kısa domain listesi <span class="muted">(satır veya virgül)</span></label>
-                <textarea id="makrolink-hosts" rows="3" placeholder="makrovip.com&#10;sada.com&#10;asdf.com" style="width:100%;"></textarea>
-              </div>
-              <div class="form-row-4" style="margin-top:0.65rem;">
-                <div><label for="makrolink-ga4-id">GA4 Measurement ID</label><input id="makrolink-ga4-id" placeholder="G-XXXXXXXX" autocomplete="off"></div>
-                <div><label for="makrolink-ga4-secret">GA4 API Secret</label><input id="makrolink-ga4-secret" type="password" placeholder="boş = değiştirme" autocomplete="off"></div>
-                <div style="align-self:end;"><span class="muted" id="makrolink-ga4-status" style="font-size:0.72rem;"></span></div>
-              </div>
-            </form>
-          </div>
-          <div class="card-body">
-            <form id="makrolink-create-form">
-              <div class="form-row-4">
-                <div style="grid-column: span 2;"><label for="makrolink-dest">Smartico go.aff linki</label>
-                  <input id="makrolink-dest" placeholder="https://go.aff.makroaffi.com/46ix1iwv  veya  46ix1iwv" required autocomplete="off">
-                </div>
-                <div><label for="makrolink-label">Etiket</label><input id="makrolink-label" placeholder="örn. slotbuse FTD" autocomplete="off"></div>
-                <div><label for="makrolink-code">Özel kod (ops.)</label><input id="makrolink-code" placeholder="boş = otomatik" autocomplete="off"></div>
-              </div>
-              <div class="form-row-4" style="margin-top:0.5rem;">
-                <div><label for="makrolink-affid">Affiliate ID (not)</label><input id="makrolink-affid" placeholder="opsiyonel not" autocomplete="off"></div>
-                <div><label for="makrolink-ref">Ref notu</label><input id="makrolink-ref" placeholder="opsiyonel" autocomplete="off"></div>
-                <div style="align-self:end"><button type="submit" class="btn btn-primary" id="btn-makrolink-create">Kısalt &amp; kopyala</button></div>
-              </div>
-            </form>
-            <div id="makrolink-created-box" style="display:none;margin-top:0.75rem;padding:0.65rem 0.75rem;border:1px solid var(--border, #333);border-radius:8px;">
-              <div class="muted" style="font-size:0.72rem;margin-bottom:0.25rem;">Son oluşturulan kısa link</div>
-              <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                <a id="makrolink-created-url" href="#" target="_blank" rel="noopener" style="font-weight:600;word-break:break-all;"></a>
-                <button type="button" class="btn btn-sm" id="btn-makrolink-created-copy">Kopyala</button>
-                <span class="muted" style="font-size:0.72rem;">DNS yokken test: <code id="makrolink-created-test"></code></span>
-              </div>
-            </div>
-            <p class="hint" style="margin-top:0.5rem;">Akış: <code>makrovip.com/xxx</code> → <code>go.aff.makroaffi.com/…</code> → site (804/805 Smartico’da). Eski bl.ink linklerine dokunulmaz.</p>
-          </div>
-          <div class="table-wrap">
-            <div class="scroll-hint">Tabloyu yatay kaydırın</div>
-            <div class="table-scroll" id="makrolink-table-scroll">
-              <table>
-                <thead><tr>
-                  <th>Kısa Link</th>
-                  <th>Etiket</th>
-                  <th>Hedef</th>
-                  <th>Aff / Ref</th>
-                  <th>Tıklama</th>
-                  <th></th>
-                </tr></thead>
-                <tbody id="makrolink-table"><tr><td colspan="6" class="empty">Henüz link yok</td></tr></tbody>
-              </table>
-            </div>
-            <div class="table-foot">
-              <span class="table-count" id="makrolink-table-count"></span>
-            </div>
-          </div>
-        </section>
-
         <section class="card" data-perm="tracking.blink">
           <div class="card-head">
             <span>bl.ink Link Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(kısa linkler · tıklama · şu an online)</span></span>
             <div class="card-actions">
               <input id="blink-search" placeholder="🔎 Link ara…" style="width:150px;" autocomplete="off">
               <span class="muted" id="blink-updated" style="font-size:0.72rem;"></span>
-              <button type="button" class="btn btn-sm" id="btn-blink-settings" data-admin-only="1">⚙️ Ayarlar</button>
+              <button type="button" class="btn btn-sm" id="btn-blink-settings" data-superadmin-only="1">⚙️ Ayarlar</button>
               <button type="button" class="btn btn-sm" id="btn-blink-refresh">Yenile</button>
             </div>
           </div>
-          <div class="card-body" id="blink-settings-box" data-admin-only="1" style="display:none;">
+          <div class="card-body" id="blink-settings-box" data-superadmin-only="1" style="display:none;">
             <p class="hint">bl.ink hesabına giriş yapan <strong>email</strong> ve <strong>şifreyi</strong> gir. Bilgiler sadece sunucuda saklanır, kimseye gösterilmez.</p>
             <form id="blink-config-form">
               <div class="form-row-4">
@@ -1759,14 +1734,14 @@
         <button class="modal-close" id="settings-close">&times;</button>
       </div>
       <div class="modal-body">
-        <section class="settings-section">
+        <section class="settings-section" data-admin-only="1">
           <div class="settings-section-head">
             <h4><span class="sec-icon">📡</span> Sistem Bilgisi</h4>
           </div>
           <div class="info-grid" id="settings-info"></div>
         </section>
 
-        <section class="settings-section" data-perm="admin.users">
+        <section class="settings-section" data-superadmin-only="1">
           <div class="settings-section-head">
             <h4><span class="sec-icon">👥</span> Admin Kullanıcıları</h4>
             <span class="sec-count" id="admin-users-count">0 kullanıcı</span>
@@ -1774,7 +1749,7 @@
           <div class="user-list" id="admin-users-list"></div>
         </section>
 
-        <section class="settings-section" data-perm-any="admin.audit,admin.users">
+        <section class="settings-section" data-admin-only="1">
           <div class="settings-section-head">
             <h4><span class="sec-icon">🕵️</span> Aktivite Günlüğü</h4>
             <button type="button" class="btn btn-sm" id="btn-audit-refresh">Yenile</button>
@@ -1789,7 +1764,7 @@
           </div>
         </section>
 
-        <section class="settings-section" data-perm="admin.users">
+        <section class="settings-section" data-superadmin-only="1">
           <div class="settings-section-head">
             <h4><span class="sec-icon">➕</span> Yeni Kullanıcı</h4>
           </div>
@@ -2257,6 +2232,10 @@
         document.querySelectorAll("[data-admin-only]").forEach(function(el) {
           el.setAttribute("data-admin-only-hidden", isAdminUser ? "0" : "1");
         });
+        var isSuperAdminOrAbove = (myPermissions || []).indexOf("*") !== -1;
+        document.querySelectorAll("[data-superadmin-only]").forEach(function(el) {
+          el.setAttribute("data-superadmin-hidden", isSuperAdminOrAbove ? "0" : "1");
+        });
         var badge = document.getElementById("user-role-badge");
         if (badge) {
           var label = (roleTemplates[myRole] && roleTemplates[myRole].label) || myRole || "";
@@ -2501,18 +2480,24 @@
       }
 
       function loadSettings() {
-        if (!hasAnyPerm("admin.users,module.settings")) return;
-        fetch(API+"/api/settings").then(function(r){return r.json();}).then(function(s) {
-          document.getElementById("settings-info").innerHTML =
-            '<div class="info-card"><div class="info-label">Panel URL</div><div class="info-val">'+esc(s.public_base_url)+'</div></div>'+
-            '<div class="info-card"><div class="info-label">Veritabanı</div><div class="info-val '+(s.database==="postgresql"?"ok":"")+'">'+(s.database==="postgresql"?"PostgreSQL ✅ Kalıcı":"SQLite ⚠️ Deploy\'da silinir")+'</div></div>'+
-            (s.database_warning ? '<div class="info-card" style="grid-column:1/-1;border-color:rgba(244,63,94,0.35);"><div class="info-label">Uyarı</div><div class="info-val muted-sm" style="color:#f43f5e;">'+esc(s.database_warning)+'</div></div>' : '')+
-            '<div class="info-card"><div class="info-label">Telegram</div><div class="info-val '+(s.telegram_enabled?"ok":"")+'">'+(s.telegram_enabled?"Aktif":"Kapalı")+'</div></div>'+
-            '<div class="info-card"><div class="info-label">Giriş yapan</div><div class="info-val">'+esc(s.current_user||"—")+' <span class="role-pill">'+esc(s.current_role||"")+'</span></div></div>'+
-            '<div class="info-card" style="grid-column:1/-1;"><div class="info-label">Özel domain</div><div class="info-val muted-sm">'+esc(s.custom_domain_hint)+'</div></div>';
-        });
-        if (hasAnyPerm("admin.audit,admin.users")) loadAuditLog();
-        if (!hasPerm("admin.users")) return;
+        var isAdminUser = (myUsername || "").trim().toLowerCase() === "admin";
+        var isSuperAdminOrAbove = myPermissions.indexOf("*") !== -1;
+        if (!isAdminUser && !isSuperAdminOrAbove) return;
+
+        if (isAdminUser) {
+          fetch(API+"/api/settings").then(function(r){return r.json();}).then(function(s) {
+            document.getElementById("settings-info").innerHTML =
+              '<div class="info-card"><div class="info-label">Panel URL</div><div class="info-val">'+esc(s.public_base_url)+'</div></div>'+
+              '<div class="info-card"><div class="info-label">Veritabanı</div><div class="info-val '+(s.database==="postgresql"?"ok":"")+'">'+(s.database==="postgresql"?"PostgreSQL ✅ Kalıcı":"SQLite ⚠️ Deploy\'da silinir")+'</div></div>'+
+              (s.database_warning ? '<div class="info-card" style="grid-column:1/-1;border-color:rgba(244,63,94,0.35);"><div class="info-label">Uyarı</div><div class="info-val muted-sm" style="color:#f43f5e;">'+esc(s.database_warning)+'</div></div>' : '')+
+              '<div class="info-card"><div class="info-label">Telegram</div><div class="info-val '+(s.telegram_enabled?"ok":"")+'">'+(s.telegram_enabled?"Aktif":"Kapalı")+'</div></div>'+
+              '<div class="info-card"><div class="info-label">Giriş yapan</div><div class="info-val">'+esc(s.current_user||"—")+' <span class="role-pill">'+esc(s.current_role||"")+'</span></div></div>'+
+              '<div class="info-card" style="grid-column:1/-1;"><div class="info-label">Özel domain</div><div class="info-val muted-sm">'+esc(s.custom_domain_hint)+'</div></div>';
+          });
+          loadAuditLog();
+        }
+
+        if (!isSuperAdminOrAbove) return;
         fetch(API+"/api/admin/users").then(function(r){return r.json();}).then(function(d) {
           var box = document.getElementById("admin-users-list");
           var countEl = document.getElementById("admin-users-count");
@@ -3572,6 +3557,20 @@
           }).catch(function() {});
       }
 
+      function loadMakrolinkTargetDomains() {
+        if (!hasPerm("tracking.makrolink")) return;
+        var sel = document.getElementById("makrolink-target-domain");
+        if (!sel) return;
+        fetch(API + "/api/makrolink/target-domains").then(function(r) { return r.status === 401 ? null : r.json(); })
+          .then(function(d) {
+            if (!d) return;
+            var current = sel.value;
+            sel.innerHTML = '<option value="">— Seçin (opsiyonel) —</option>' +
+              (d.domains || []).map(function(dom) { return '<option value="' + esc(dom) + '">' + esc(dom) + '</option>'; }).join("");
+            sel.value = current;
+          }).catch(function() {});
+      }
+
       function refreshLive() {
         if (!trackingPollEnabled || document.hidden || liveInFlight) return;
         var pq = periodQuery();
@@ -3678,6 +3677,7 @@
           if (!smarticoConfigLoaded) loadSmarticoConfig();
           if (!blinkConfigLoaded) loadBlinkConfig();
           loadMakroLinkConfig();
+          loadMakrolinkTargetDomains();
           if (hasPerm("tracking.makrolink")) loadMakroLinks();
           setInterval(refreshLive, REFRESH_LIVE_MS);
           setInterval(refreshDashboard, REFRESH_DASH_MS);
@@ -3921,7 +3921,8 @@
             label: document.getElementById("makrolink-label").value.trim(),
             code: document.getElementById("makrolink-code").value.trim() || null,
             affiliate_id: document.getElementById("makrolink-affid").value.trim(),
-            ref_code: document.getElementById("makrolink-ref").value.trim()
+            ref_code: document.getElementById("makrolink-ref").value.trim(),
+            target_domain: document.getElementById("makrolink-target-domain").value
           })
         }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
           .then(function(res) {
@@ -3932,6 +3933,7 @@
             document.getElementById("makrolink-code").value = "";
             document.getElementById("makrolink-affid").value = "";
             document.getElementById("makrolink-ref").value = "";
+            document.getElementById("makrolink-target-domain").value = "";
             var link = res.data.link || {};
             var shortUrl = link.short_url || "";
             var box = document.getElementById("makrolink-created-box");
@@ -4156,7 +4158,7 @@
       });
 
       bindOptional("btn-open-settings", "click", function() {
-        if (!hasAnyPerm("admin.users,module.settings")) { toast("Yetkiniz yok"); return; }
+        if (myPermissions.indexOf("*") === -1) { toast("Yetkiniz yok"); return; }
         loadSettings();
         document.getElementById("settings-modal").classList.add("open");
       });
