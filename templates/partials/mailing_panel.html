@@ -46,7 +46,12 @@
           </div>
           <div><button type="submit" class="btn btn-primary">Etiket oluştur</button></div>
         </form>
-        <p class="hint" style="margin-top:0.55rem;">Önce etiketi oluştur, sonra data yüklerken listeden seç. Üyelik sonrası segment kaydırmak için aşağıdaki toplu taşımayı kullan.</p>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-top:0.65rem;">
+          <button type="button" class="btn btn-sm" id="mail-tag-cleanup-btn">Boş etiketleri temizle</button>
+          <span class="hint" id="mail-tag-manage-status" style="margin:0;">—</span>
+        </div>
+        <div id="mail-tag-manage-list" class="mail-tag-manage-list" style="margin-top:0.75rem;"></div>
+        <p class="hint" style="margin-top:0.55rem;">Önce etiketi oluştur, sonra data yüklerken listeden seç. Taşıma sonrası 0 kalan etiket otomatik silinir; elle de silebilirsin.</p>
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">

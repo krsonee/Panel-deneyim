@@ -711,6 +711,29 @@
       if (cur) sel.value = cur;
     });
     mailFillCampTagSelect();
+    mailRenderTagManageList();
+  }
+
+  function mailRenderTagManageList() {
+    var box = document.getElementById("mail-tag-manage-list");
+    if (!box) return;
+    var countMap = {};
+    (mailTagCounts || []).forEach(function (t) { countMap[t.name] = t.count; });
+    var list = mailTagNameList();
+    if (!list.length) {
+      box.innerHTML = '<span class="hint">Henüz etiket yok</span>';
+      return;
+    }
+    box.innerHTML = list.map(function (name) {
+      var c = countMap[name];
+      if (c == null) c = 0;
+      var empty = Number(c) === 0;
+      return '<span class="mail-tag-manage-item' + (empty ? " is-empty" : "") + '">' +
+        '<span>' + esc(name) + "</span>" +
+        '<span class="mail-tag-manage-count">' + fmtNum(c) + "</span>" +
+        '<button type="button" class="mail-tag-delete-btn" data-tag="' + esc(name) + '" data-count="' + c + '" title="Etiketi sil">×</button>' +
+        "</span>";
+    }).join("");
   }
 
   function mailRenderTagFilterOptions() {
@@ -1539,6 +1562,56 @@
     bindClick("mail-tag-move-btn", function () { mailRunBulkTag("move"); });
     bindClick("mail-tag-add-btn", function () { mailRunBulkTag("add"); });
     bindClick("mail-tag-remove-btn", function () { mailRunBulkTag("remove"); });
+
+    bindClick("mail-tag-cleanup-btn", function () {
+      if (!confirm("0 kontaklı tüm etiketler silinsin mi?")) return;
+      var st = document.getElementById("mail-tag-manage-status");
+      if (st) st.textContent = "Temizleniyor…";
+      mailApi("/api/mailing/tags/cleanup", { method: "POST", timeoutMs: 300000 }).then(function (res) {
+        var msg = (res && res.data && res.data.message) || ((res && res.ok) ? "Tamam" : "Hata");
+        if (st) st.textContent = msg;
+        mailToast(msg);
+        mailLoadTags();
+        mailLoadContactStats();
+      });
+    });
+
+    document.addEventListener("click", function (e) {
+      var delTag = e.target.closest(".mail-tag-delete-btn");
+      if (!delTag) return;
+      var name = delTag.getAttribute("data-tag") || "";
+      var count = Number(delTag.getAttribute("data-count") || 0);
+      if (!name) return;
+      var force = false;
+      if (count > 0) {
+        if (!confirm("«" + name + "» etiketinde " + fmtNum(count) + " kontak var.\nKontaklardan da kaldırıp etiketi tamamen silmek istiyor musun?")) {
+          return;
+        }
+        force = true;
+      } else if (!confirm("«" + name + "» silinsin mi?")) {
+        return;
+      }
+      var st = document.getElementById("mail-tag-manage-status");
+      if (st) st.textContent = "Siliniyor…";
+      mailApi("/api/mailing/tags/delete", {
+        method: "POST",
+        body: { name: name, force: force },
+        timeoutMs: 300000
+      }).then(function (res) {
+        if (!res || !res.ok) {
+          var err = (res && res.data && res.data.error) || "Silinemedi";
+          if (st) st.textContent = err;
+          mailToast(err);
+          return;
+        }
+        var msg = (res.data && res.data.message) || "Silindi";
+        if (st) st.textContent = msg;
+        mailToast(msg);
+        mailLoadTags();
+        mailLoadContactStats();
+        mailLoadContacts();
+      });
+    });
 
     var tagCreateForm = document.getElementById("mail-tag-create-form");
     if (tagCreateForm) {

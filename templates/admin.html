@@ -1195,6 +1195,46 @@
     [data-theme="light"] .mail-tag-move {
       background: rgba(248,250,252,0.95);
     }
+    .mail-tag-manage-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+    }
+    .mail-tag-manage-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.35rem 0.55rem 0.35rem 0.7rem;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.28);
+      background: rgba(15,23,42,0.4);
+      font-size: 0.74rem;
+      font-weight: 600;
+    }
+    .mail-tag-manage-item .mail-tag-manage-count {
+      font-variant-numeric: tabular-nums;
+      color: #c7d2fe;
+      font-size: 0.68rem;
+    }
+    .mail-tag-manage-item button {
+      border: none;
+      background: rgba(244,63,94,0.15);
+      color: #fb7185;
+      border-radius: 999px;
+      width: 1.35rem;
+      height: 1.35rem;
+      line-height: 1;
+      cursor: pointer;
+      font-size: 0.85rem;
+      padding: 0;
+    }
+    .mail-tag-manage-item button:hover {
+      background: rgba(244,63,94,0.35);
+    }
+    .mail-tag-manage-item.is-empty {
+      opacity: 0.65;
+      border-style: dashed;
+    }
     [data-theme="light"] .mail-tag-stats {
       background: linear-gradient(180deg, rgba(99,102,241,0.06), rgba(248,250,252,0.9));
     }
@@ -2374,7 +2414,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="/static/accounting.js?v=20260712m"></script>
-  <script src="/static/mailing.js?v=20260712r"></script>
+  <script src="/static/mailing.js?v=20260712s"></script>
   <script src="/static/biolink.js?v=20260712g"></script>
   <script src="/static/marketing.js?v=20260712d"></script>
   <script>

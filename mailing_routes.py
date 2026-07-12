@@ -546,6 +546,15 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
         refresh_names.append(to_tag)
     if match_tag and match_tag not in refresh_names:
         refresh_names.append(match_tag)
+
+    cleaned = []
+    # Taşı/kaldır sonrası kaynak etiket boşaldıysa otomatik sil
+    if action in ("move", "remove") and from_tag:
+        try:
+            cleaned = _cleanup_empty_tags(conn, [from_tag])
+        except Exception:
+            cleaned = []
+
     if refresh_names:
         _refresh_tag_counts_async(refresh_names)
 
@@ -556,6 +565,7 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
         "action": action,
         "from_tag": from_tag,
         "to_tag": to_tag,
+        "cleaned_tags": cleaned,
     }
 
 
@@ -925,6 +935,55 @@ def _ensure_tag(conn, name, now):
         )
 
 
+def _tag_usage_count(conn, name):
+    name = (name or "").strip()
+    if not name:
+        return 0
+    return int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts WHERE tags LIKE ?", (f'%"{name}"%',)) or 0)
+
+
+def _delete_tag(conn, name, *, force=False):
+    """Etiketi registry'den sil. Kontak varsa force=True ile önce kontaktan kaldırır."""
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Etiket adı gerekli.")
+    usage = _tag_usage_count(conn, name)
+    stripped = 0
+    if usage > 0:
+        if not force:
+            raise ValueError(
+                f"«{name}» etiketinde {usage} kontak var. "
+                "Önce taşı/kaldır veya zorla sil (kontaklardan da silinir)."
+            )
+        result = _bulk_retag_contacts(
+            conn, action="remove", from_tag=name, match_tag=name
+        )
+        stripped = int(result.get("updated") or 0)
+    execute(conn, "DELETE FROM mail_contact_tags WHERE name = ?", (name,))
+    return {"deleted": name, "stripped": stripped, "had_contacts": usage}
+
+
+def _cleanup_empty_tags(conn, names=None):
+    """0 kontak kalan etiketleri registry'den sil — çöp birikmesin."""
+    if names is None:
+        rows = fetchall(conn, "SELECT name FROM mail_contact_tags")
+        names = [(r["name"] or "").strip() for r in rows]
+    deleted = []
+    for name in names:
+        name = (name or "").strip()
+        if not name:
+            continue
+        if _tag_usage_count(conn, name) == 0:
+            execute(conn, "DELETE FROM mail_contact_tags WHERE name = ?", (name,))
+            deleted.append(name)
+    if deleted:
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    return deleted
+
+
 _STATS_CACHE = {"ts": 0.0, "payload": None}
 _STATS_LOCK = threading.Lock()
 _TAG_COUNT_CACHE = {"ts": 0.0, "rows": None}
@@ -1011,12 +1070,22 @@ def _refresh_tag_counts_async(tag_names=None):
             with closing(get_db()) as conn:
                 if names:
                     for name in names:
-                        _ensure_tag(conn, name, iso(utcnow()))
+                        exists = scalar(
+                            conn,
+                            "SELECT COUNT(*) FROM mail_contact_tags WHERE name = ?",
+                            (name,),
+                        )
+                        if not exists:
+                            continue
                         _recount_tag(conn, name)
+                    cleaned = _cleanup_empty_tags(conn, names)
                 else:
                     _contact_tag_counts(conn, live=True)
+                    cleaned = _cleanup_empty_tags(conn)
                 conn.commit()
             _invalidate_mail_stats_cache()
+            if cleaned:
+                print(f"🧹 boş etiket silindi: {', '.join(cleaned)}")
         except Exception as exc:
             print(f"⚠️  tag count refresh: {exc}")
 
@@ -1519,6 +1588,48 @@ def create_mailing_blueprint(permission_required):
         _invalidate_mail_stats_cache()
         return jsonify({"tag": _row(row)}), 201
 
+    @bp.route("/tags/delete", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def delete_tag():
+        """Etiketi sil. force=true ise kontaktaki etiketleri de temizler."""
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        force = bool(data.get("force"))
+        if not name:
+            return jsonify({"error": "Etiket adı gerekli."}), 400
+        try:
+            with closing(get_db()) as conn:
+                result = _delete_tag(conn, name, force=force)
+                conn.commit()
+        except ValueError as exc:
+            return jsonify({"error": str(exc), "needs_force": True}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Etiket silinemedi: {exc}"}), 400
+        _invalidate_mail_stats_cache()
+        msg = f"«{name}» silindi"
+        if result.get("stripped"):
+            msg += f" · {result['stripped']} kontaktan kaldırıldı"
+        result["message"] = msg
+        return jsonify(result)
+
+    @bp.route("/tags/cleanup", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def cleanup_tags():
+        """0 kontak kalan tüm etiketleri sil."""
+        with closing(get_db()) as conn:
+            deleted = _cleanup_empty_tags(conn)
+            conn.commit()
+        _invalidate_mail_stats_cache()
+        return jsonify({
+            "ok": True,
+            "deleted": deleted,
+            "count": len(deleted),
+            "message": (
+                f"{len(deleted)} boş etiket silindi: {', '.join(deleted)}"
+                if deleted else "Silinecek boş etiket yok"
+            ),
+        })
+
     @bp.route("/contacts/tags/bulk", methods=["POST"])
     @mail_perm(*MAIL_CRM)
     def bulk_contact_tags():
@@ -1547,6 +1658,9 @@ def create_mailing_blueprint(permission_required):
             msg = f"{result.get('updated', 0)} kontağa «{result.get('to_tag')}» eklendi"
         elif action == "remove":
             msg = f"{result.get('updated', 0)} kontaktan «{result.get('from_tag')}» kaldırıldı"
+        cleaned = result.get("cleaned_tags") or []
+        if cleaned:
+            msg += f" · boş etiket silindi: {', '.join(cleaned)}"
         result["message"] = msg
         return jsonify(result)
 
