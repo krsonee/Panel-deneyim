@@ -1,10 +1,13 @@
-"""Makrobet davet mail şablonu — deploy'da otomatik seed edilir."""
+"""Makrobet davet mail şablonu — deploy'da otomatik seed edilir.
+
+Logo: harici CDN hotlink engelliyor → HTML wordmark (MAKRO + BET) kullanılıyor.
+Promolar: küçük banner kırpımları yerine tipografi kartları.
+"""
 
 DAVET_TEST_NAME = "Davet test"
 
 DAVET_TEST_SUBJECT = "{{name}}, Makrobet'te seni 3.000 TL deneme kasası bekliyor!"
 
-LOGO_URL = "https://makrobet804.com/cdn/makrobet/upload_files/logo-black.png"
 PROMO_LINK = "{{link:sc:https://makrobet804.com/tr/pages/promotions}}"
 
 C_BG = "#061c3d"
@@ -14,53 +17,48 @@ C_TEXT = "#e8efff"
 C_MUTED = "#8fa3cc"
 C_GOLD = "#ffd53e"
 C_DARK = "#10152b"
+C_ACCENT = "#4a8fe7"
 
 PROMOS = [
-    {
-        "title": "%100 Kayıp Bonusu",
-        "desc": "Sıfır riskle yatırım senden, güvence Makrobet'ten.",
-        "img": "https://gateway.makroz.org/cdn/makrobet/uploads/general/100KaypWeb-b93d6f94-ba47-49d3-bfee-2f59a54f3402.png",
-    },
-    {
-        "title": "Arkadaşını Getir",
-        "desc": "Arkadaşının bonusunu sana da ekleyelim.",
-        "img": "https://gateway.makroz.org/cdn/makrobet/uploads/general/ArkadasWeb-4419cecd-2bcc-4030-918e-07c39b2a6090.png",
-    },
-    {
-        "title": "Makro Görev",
-        "desc": "Günlük görevleri tamamla, Görev Kasa ödülünü al.",
-        "img": "https://gateway.makroz.org/cdn/makrobet/promotion-posts/41/cover_mobile.png",
-    },
-    {
-        "title": "Happy Hours",
-        "desc": "Her yatırıma ek sürpriz fırsatlar.",
-        "img": "https://gateway.makroz.org/cdn/makrobet/uploads/general/YatEkCase-7646aa0d-c9de-4e4f-a28b-27ae4ee8a2e4.png",
-    },
-    {
-        "title": "Amusnet Yarışı",
-        "desc": "500.000₺ ödüllü yarışta yerini ayırt.",
-        "img": "https://gateway.makroz.org/cdn/makrobet/uploads/general/Race-e1e97157-150a-4c10-84f9-b1feb9cd4824.png",
-    },
-    {
-        "title": "Kripto Ultra Kasa",
-        "desc": "Kripto yatır, havale çek — Ultra Kasa kazan.",
-        "img": "https://gateway.makroz.org/cdn/makrobet/uploads/general/K&HWeb-970f7a17-d9d0-48f0-a61f-459610227bd3.png",
-    },
+    {"title": "%100 Kayıp Bonusu", "desc": "Sıfır riskle yatırım senden, güvence Makrobet'ten."},
+    {"title": "Arkadaşını Getir", "desc": "Arkadaşının aldığı yatırım bonusunu sana da ekleyelim."},
+    {"title": "Makro Görev", "desc": "Günlük görevleri tamamla, Görev Kasa ödülünü kaçırma."},
+    {"title": "Happy Hours", "desc": "Her yatırıma ek sürpriz — Mutlu Saatler."},
+    {"title": "Amusnet Yarışı", "desc": "500.000₺ ödüllü yarışta zirve için yerini ayırt."},
+    {"title": "Kripto Ultra Kasa", "desc": "Kripto yatır, havale çek — Ultra Kasa fırsatı."},
 ]
+
+
+def _logo_html():
+    """Site logosu — CDN 403 verdiği için e-postada güvenilir HTML wordmark."""
+    return f"""<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
+  <tr>
+    <td style="font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:900;color:{C_TEXT};letter-spacing:3px;line-height:1;padding-right:8px;">MAKRO</td>
+    <td style="background-color:{C_GOLD};border-radius:7px;padding:6px 12px;">
+      <span style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:{C_DARK};letter-spacing:1px;">BET</span>
+    </td>
+  </tr>
+</table>"""
 
 
 def _promo_rows_html():
     rows = []
-    for p in PROMOS:
+    for i, p in enumerate(PROMOS, 1):
         rows.append(
-            f"""<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:6px;background-color:{C_ROW};border-radius:8px;border:1px solid rgba(255,213,62,0.1);">
+            f"""<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:7px;">
   <tr>
-    <td width="100" style="padding:8px 10px;vertical-align:middle;">
-      <img src="{p['img']}" alt="{p['title']}" width="88" height="36" style="display:block;width:88px;height:36px;border-radius:5px;border:0;">
-    </td>
-    <td style="padding:8px 12px 8px 0;vertical-align:middle;">
-      <div style="font-size:11px;font-weight:700;color:{C_GOLD};line-height:1.25;">{p['title']}</div>
-      <div style="font-size:10px;color:{C_MUTED};margin-top:2px;line-height:1.35;">{p['desc']}</div>
+    <td style="background-color:{C_ROW};border-radius:8px;border:1px solid rgba(255,213,62,0.12);border-left:3px solid {C_GOLD};">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+        <tr>
+          <td width="34" style="padding:11px 0 11px 12px;vertical-align:top;">
+            <div style="width:22px;height:22px;border-radius:50%;background:rgba(255,213,62,0.14);border:1px solid rgba(255,213,62,0.35);text-align:center;line-height:22px;font-size:10px;font-weight:800;color:{C_GOLD};">{i}</div>
+          </td>
+          <td style="padding:10px 14px 10px 4px;vertical-align:top;">
+            <div style="font-size:12px;font-weight:700;color:{C_GOLD};line-height:1.3;">{p['title']}</div>
+            <div style="font-size:11px;color:{C_MUTED};margin-top:3px;line-height:1.45;">{p['desc']}</div>
+          </td>
+        </tr>
+      </table>
     </td>
   </tr>
 </table>"""
@@ -76,7 +74,7 @@ Makrobet ailesine özel davetlisin!
 Kayıt ol, deneme kasanı al ve hemen oynamaya başla.
 
 Güncel promosyonlar:
-{chr(10).join('- ' + p['title'] + ' — ' + p['desc'] for p in PROMOS)}
+{chr(10).join(str(i + 1) + '. ' + p['title'] + ' — ' + p['desc'] for i, p in enumerate(PROMOS))}
 
 Tüm promosyonlar: {PROMO_LINK}
 
@@ -93,56 +91,61 @@ DAVET_TEST_HTML = f"""<!DOCTYPE html>
 <body style="margin:0;padding:0;background-color:{C_BG};font-family:Arial,Helvetica,sans-serif;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:{C_BG};">
     <tr>
-      <td align="center" style="padding:20px 10px;">
+      <td align="center" style="padding:22px 12px;">
         <table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;width:100%;">
+          <!-- Logo -->
           <tr>
-            <td style="background-color:{C_CARD};padding:16px 20px;text-align:center;border-radius:12px 12px 0 0;border:1px solid rgba(255,213,62,0.15);border-bottom:none;">
-              <a href="{PROMO_LINK}" style="text-decoration:none;">
-                <img src="{LOGO_URL}" alt="Makrobet" width="150" height="30" style="display:inline-block;width:150px;max-width:150px;height:30px;border:0;">
-              </a>
+            <td style="background-color:{C_CARD};padding:20px 22px 16px;text-align:center;border-radius:12px 12px 0 0;border:1px solid rgba(255,213,62,0.14);border-bottom:1px solid rgba(255,213,62,0.08);">
+              <a href="{PROMO_LINK}" style="text-decoration:none;">{_logo_html()}</a>
             </td>
           </tr>
+          <!-- Karşılama -->
           <tr>
-            <td style="background-color:{C_CARD};border-left:1px solid rgba(255,213,62,0.1);border-right:1px solid rgba(255,213,62,0.1);padding:16px 22px 8px;">
-              <p style="margin:0 0 4px;font-size:9px;color:{C_GOLD};font-weight:700;text-transform:uppercase;letter-spacing:1.2px;">Özel davet</p>
-              <h1 style="margin:0;font-size:18px;line-height:1.35;color:{C_TEXT};font-weight:700;">Merhaba {{{{name}}}},</h1>
-              <p style="margin:8px 0 0;font-size:12px;line-height:1.55;color:{C_MUTED};">Makrobet'te seni güncel promosyonlar ve hızlı ödeme altyapısı bekliyor.</p>
+            <td style="background-color:{C_CARD};border-left:1px solid rgba(255,213,62,0.1);border-right:1px solid rgba(255,213,62,0.1);padding:18px 24px 10px;">
+              <p style="margin:0 0 5px;font-size:9px;color:{C_GOLD};font-weight:700;text-transform:uppercase;letter-spacing:1.4px;">Özel davet</p>
+              <h1 style="margin:0;font-size:19px;line-height:1.35;color:{C_TEXT};font-weight:700;">Merhaba {{{{name}}}},</h1>
+              <p style="margin:8px 0 0;font-size:12px;line-height:1.55;color:{C_MUTED};">Makrobet'te güncel promosyonlar, yüksek oranlar ve hızlı ödeme seni bekliyor.</p>
             </td>
           </tr>
+          <!-- 3.000 TL hero -->
           <tr>
-            <td style="background-color:{C_CARD};border-left:1px solid rgba(255,213,62,0.1);border-right:1px solid rgba(255,213,62,0.1);padding:8px 22px 14px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#102a52;border-radius:10px;border:2px solid {C_GOLD};">
+            <td style="background-color:{C_CARD};border-left:1px solid rgba(255,213,62,0.1);border-right:1px solid rgba(255,213,62,0.1);padding:8px 24px 16px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:linear-gradient(160deg,#12325e 0%,{C_BG} 100%);border-radius:11px;border:2px solid {C_GOLD};">
                 <tr>
-                  <td style="padding:16px 14px;text-align:center;">
-                    <p style="margin:0 0 6px;font-size:9px;font-weight:700;color:{C_GOLD};text-transform:uppercase;letter-spacing:0.8px;">Yeni üyelere özel</p>
-                    <p style="margin:0;font-size:28px;font-weight:900;color:{C_GOLD};line-height:1;">3.000 TL</p>
-                    <p style="margin:4px 0 0;font-size:13px;font-weight:700;color:{C_TEXT};letter-spacing:0.3px;">DENEME KASASI</p>
-                    <p style="margin:10px 0 0;font-size:11px;line-height:1.45;color:{C_MUTED};">Kayıt ol, deneme kasanı al ve risk almadan oyunları dene.</p>
+                  <td style="padding:18px 16px;text-align:center;">
+                    <p style="margin:0 0 8px;font-size:9px;font-weight:700;color:{C_GOLD};text-transform:uppercase;letter-spacing:1px;">★ Yeni üyelere özel ★</p>
+                    <p style="margin:0;font-size:32px;font-weight:900;color:{C_GOLD};line-height:1;">3.000 TL</p>
+                    <p style="margin:5px 0 0;font-size:14px;font-weight:800;color:{C_TEXT};letter-spacing:0.5px;">DENEME KASASI</p>
+                    <p style="margin:12px 0 0;font-size:11px;line-height:1.5;color:{C_MUTED};max-width:380px;display:inline-block;">Kayıt ol, deneme kasanı al ve risk almadan slot &amp; casino deneyimini yaşa.</p>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
+          <!-- Promolar -->
           <tr>
-            <td style="background-color:{C_CARD};border-left:1px solid rgba(255,213,62,0.1);border-right:1px solid rgba(255,213,62,0.1);padding:4px 22px 12px;">
-              <p style="margin:0 0 6px;font-size:9px;font-weight:700;color:{C_GOLD};text-transform:uppercase;letter-spacing:0.8px;">Diğer promosyonlar</p>
+            <td style="background-color:{C_CARD};border-left:1px solid rgba(255,213,62,0.1);border-right:1px solid rgba(255,213,62,0.1);padding:2px 24px 14px;">
+              <p style="margin:0 0 8px;font-size:9px;font-weight:700;color:{C_GOLD};text-transform:uppercase;letter-spacing:1px;">Diğer promosyonlar</p>
               {_promo_rows_html()}
             </td>
           </tr>
+          <!-- CTA -->
           <tr>
-            <td style="background-color:{C_CARD};border-left:1px solid rgba(255,213,62,0.1);border-right:1px solid rgba(255,213,62,0.1);padding:4px 22px 18px;text-align:center;">
+            <td style="background-color:{C_CARD};border-left:1px solid rgba(255,213,62,0.1);border-right:1px solid rgba(255,213,62,0.1);padding:6px 24px 20px;text-align:center;">
               <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
                 <tr>
                   <td style="border-radius:9px;background-color:{C_GOLD};">
-                    <a href="{PROMO_LINK}" style="display:inline-block;padding:11px 26px;font-size:13px;font-weight:700;color:{C_DARK};text-decoration:none;border-radius:9px;">Promosyonları Gör</a>
+                    <a href="{PROMO_LINK}" style="display:inline-block;padding:12px 30px;font-size:13px;font-weight:700;color:{C_DARK};text-decoration:none;border-radius:9px;">Promosyonları İncele</a>
                   </td>
                 </tr>
               </table>
+              <p style="margin:10px 0 0;font-size:10px;color:#5d6f94;">makrobet804.com/tr/pages/promotions</p>
             </td>
           </tr>
+          <!-- Footer -->
           <tr>
-            <td style="background-color:#071528;border-radius:0 0 12px 12px;border:1px solid rgba(255,213,62,0.08);border-top:none;padding:12px 22px;text-align:center;">
-              <p style="margin:0;font-size:9px;color:#64748b;line-height:1.45;">18+ · Sorumlu oyun · makrobet804.com</p>
+            <td style="background-color:#071528;border-radius:0 0 12px 12px;border:1px solid rgba(255,213,62,0.08);border-top:none;padding:13px 24px;text-align:center;">
+              <p style="margin:0;font-size:9px;color:#5d6f94;line-height:1.5;">18+ · Kumar bağımlılık yapabilir — sorumlu oyun.</p>
             </td>
           </tr>
         </table>
