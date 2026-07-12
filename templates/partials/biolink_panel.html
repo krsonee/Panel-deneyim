@@ -36,13 +36,21 @@
           <div class="biolink-page-meta">
             <div><label for="bl-title">Sayfa Başlığı</label><input id="bl-title" placeholder="MAKROVIP DESTEK HATTI" autocomplete="off"></div>
             <div><label for="bl-slug">Slug (URL)</label><input id="bl-slug" placeholder="vipmakro" autocomplete="off"></div>
-            <div><label for="bl-theme">Tema</label><select id="bl-theme"></select></div>
             <div><label for="bl-shape">Buton Stili</label>
               <select id="bl-shape">
                 <option value="pill">Pill — yuvarlak</option>
                 <option value="rounded">Rounded</option>
                 <option value="square">Köşeli</option>
               </select>
+            </div>
+            <div class="full">
+              <label>Tasarım Temaları</label>
+              <input type="hidden" id="bl-theme" value="makrobet">
+              <div class="bl-theme-toolbar">
+                <select id="bl-theme-cat"><option value="">Tüm kategoriler</option></select>
+                <span class="muted-sm" id="bl-theme-count"></span>
+              </div>
+              <div class="bl-theme-gallery" id="bl-theme-gallery"></div>
             </div>
             <div class="full"><label for="bl-subtitle">Alt Başlık / Açıklama</label><textarea id="bl-subtitle" rows="2" placeholder="Kısa tanıtım metni…"></textarea></div>
             <div class="full">

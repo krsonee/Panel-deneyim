@@ -5,6 +5,8 @@
   var blPerms = [];
   var blPages = [];
   var blThemes = [];
+  var blHeadingStyles = [];
+  var blComposerHeadingStyle = "classic";
   var blTypes = [];
   var blAssets = { logos: [], banners: [], default_logo: "/static/biolink/logo/logo-400.png", default_banner: "/static/biolink/banners/banner-468x60.gif" };
   var blCurrentPage = null;
@@ -174,13 +176,70 @@
     return blApi("/api/biolink/themes").then(function (r) {
       if (!r || !r.ok) return;
       blThemes = r.data.themes || [];
-      var sel = document.getElementById("bl-theme");
-      if (sel) {
-        sel.innerHTML = blThemes.map(function (t) {
-          return '<option value="' + blEsc(t.key) + '">' + blEsc(t.name) + "</option>";
+      blHeadingStyles = r.data.heading_styles || [];
+      var catSel = document.getElementById("bl-theme-cat");
+      if (catSel) {
+        var cats = [];
+        blThemes.forEach(function (t) {
+          if (t.category && cats.indexOf(t.category) < 0) cats.push(t.category);
+        });
+        var cur = catSel.value || "";
+        catSel.innerHTML = '<option value="">Tüm kategoriler</option>' + cats.map(function (c) {
+          return '<option value="' + blEsc(c) + '">' + blEsc(c) + "</option>";
         }).join("");
+        catSel.value = cur;
+        catSel.onchange = function () { renderThemeGallery(); };
       }
+      renderThemeGallery();
     });
+  }
+
+  function renderThemeGallery() {
+    var box = document.getElementById("bl-theme-gallery");
+    var hidden = document.getElementById("bl-theme");
+    var countEl = document.getElementById("bl-theme-count");
+    var catSel = document.getElementById("bl-theme-cat");
+    if (!box) return;
+    var selected = (hidden && hidden.value) || "makrobet";
+    var cat = catSel ? catSel.value : "";
+    var list = blThemes.filter(function (t) { return !cat || t.category === cat; });
+    if (countEl) countEl.textContent = list.length + " / " + blThemes.length + " tema";
+    box.innerHTML = list.map(function (t) {
+      var active = t.key === selected ? " active" : "";
+      var a2 = t.accent2 || t.accent;
+      return '<button type="button" class="bl-theme-card' + active + '" data-bl-theme-pick="' + blEsc(t.key) + '" title="' + blEsc(t.name) + '">' +
+        '<span class="bl-theme-preview" style="background:' + blEsc(t.bg || "#111") + '">' +
+        '<span class="bl-theme-btn-demo" style="background:' + blEsc(t.accent) + ';box-shadow:0 0 0 1px ' + blEsc(a2) + ';"></span>' +
+        '<span class="bl-theme-btn-demo soft" style="border-color:' + blEsc(t.accent) + ';"></span>' +
+        "</span>" +
+        '<span class="bl-theme-name">' + blEsc(t.name) + "</span>" +
+        '<span class="bl-theme-meta">' + blEsc(t.style || "classic") + (t.animated ? " · ★" : "") + "</span>" +
+        "</button>";
+    }).join("");
+    box.querySelectorAll("[data-bl-theme-pick]").forEach(function (btn) {
+      btn.onclick = function () {
+        if (hidden) hidden.value = btn.getAttribute("data-bl-theme-pick");
+        renderThemeGallery();
+      };
+    });
+  }
+
+  function blHeadingStyleName(key) {
+    var h = blHeadingStyles.find(function (x) { return x.key === key; });
+    return h ? h.name : key;
+  }
+
+  function renderHeadingStylePicker(selected, attrs) {
+    attrs = attrs || "";
+    var sel = selected || "classic";
+    return '<div class="bl-heading-style-scroll" ' + attrs + '>' +
+      blHeadingStyles.map(function (h) {
+        var active = h.key === sel ? " active" : "";
+        return '<button type="button" class="bl-hs-chip' + active + '" data-hs="' + blEsc(h.key) + '" title="' + blEsc(h.category) + '">' +
+          '<span class="heading bl-hs-preview hs-' + blEsc(h.key) + '"><span class="hs-inner">Örnek</span></span>' +
+          '<span class="bl-hs-label">' + blEsc(h.name) + "</span></button>";
+      }).join("") +
+      "</div>";
   }
 
   function loadAssets() {
@@ -304,6 +363,7 @@
     document.getElementById("bl-slug").value = page.slug || "";
     document.getElementById("bl-theme").value = page.theme || "makrobet";
     document.getElementById("bl-shape").value = page.button_shape || "pill";
+    renderThemeGallery();
     document.getElementById("bl-subtitle").value = page.subtitle || "";
     document.getElementById("bl-avatar").value = page.avatar_url || page.logo_url || blAssets.default_logo || "";
     var bannerEl = document.getElementById("bl-banner");
@@ -434,6 +494,10 @@
       html += '<div class="' + cls + '"><label>' + blEsc(f.label) + '</label>' +
         '<input id="bl-new-' + f.key + '" value="' + blEsc(val) + '" placeholder="' + blEsc(f.placeholder || "") + '"></div>';
     });
+    if (blComposerType === "heading") {
+      html += '<div class="bl-field full"><label>Ayırıcı stili (' + blHeadingStyles.length + ')</label>' +
+        renderHeadingStylePicker(blComposerHeadingStyle, 'id="bl-composer-hs"') + "</div>";
+    }
     box.innerHTML = html;
     box.querySelectorAll("[data-bl-emoji-target]").forEach(function (btn) {
       btn.onclick = function (e) {
@@ -441,6 +505,15 @@
         openEmojiPopover(btn.getAttribute("data-bl-emoji-target"), btn);
       };
     });
+    var hsBox = document.getElementById("bl-composer-hs");
+    if (hsBox) {
+      hsBox.querySelectorAll("[data-hs]").forEach(function (btn) {
+        btn.onclick = function () {
+          blComposerHeadingStyle = btn.getAttribute("data-hs");
+          renderComposerFields();
+        };
+      });
+    }
   }
 
   function readComposerPayload() {
@@ -449,6 +522,8 @@
     if (blComposerType !== "heading") {
       var iconEl = document.getElementById("bl-new-icon");
       body.icon = iconEl ? iconEl.value.trim() : (p.icon || "");
+    } else {
+      body.heading_style = blComposerHeadingStyle || "classic";
     }
     if (blIsBrandType(blComposerType)) body.icon = "";
     p.fields.forEach(function (f) {
@@ -531,12 +606,16 @@
         '<button type="button" data-bl-down="' + b.id + '" ' + (idx === buttons.length - 1 ? "disabled" : "") + ">▼</button></div>";
 
       if (isHeading) {
+        var hs = b.heading_style || "classic";
         return '<div class="' + cardCls + '" style="--bl-color:' + meta.color + '">' + order +
           '<div class="bl-block-main">' +
-          '<span class="bl-block-type-badge">' + meta.icon + " " + blEsc(meta.label) + "</span>" +
+          '<span class="bl-block-type-badge">' + meta.icon + " " + blEsc(meta.label) +
+          ' · <em>' + blEsc(blHeadingStyleName(hs)) + "</em></span>" +
           '<div class="bl-block-fields heading-fields">' +
           '<input value="' + blEsc(b.label) + '" data-bl-field="label" data-bl-id="' + b.id + '" placeholder="Bölüm başlığı">' +
-          "</div></div>" +
+          '<div class="full"><label class="muted-sm">Ayırıcı stili</label>' +
+          renderHeadingStylePicker(hs, 'data-bl-hs-for="' + b.id + '"') +
+          "</div></div></div>" +
           '<div class="bl-block-actions">' +
           '<label class="bl-toggle-pill"><input type="checkbox" ' + (b.is_active ? "checked" : "") + ' data-bl-field="is_active" data-bl-id="' + b.id + '"> Aktif</label>' +
           '<button type="button" class="btn btn-danger btn-sm" data-bl-btn-del="' + b.id + '">Sil</button></div></div>';
@@ -616,6 +695,21 @@
     });
     box.querySelectorAll("[data-bl-down]").forEach(function (btn) {
       btn.onclick = function () { moveButton(parseInt(btn.getAttribute("data-bl-down"), 10), 1); };
+    });
+    box.querySelectorAll("[data-bl-hs-for]").forEach(function (scroller) {
+      var bid = scroller.getAttribute("data-bl-hs-for");
+      scroller.querySelectorAll("[data-hs]").forEach(function (chip) {
+        chip.onclick = function () {
+          var style = chip.getAttribute("data-hs");
+          blApi("/api/biolink/buttons/" + bid, { method: "PUT", body: { heading_style: style } }).then(function (r) {
+            if (r && r.ok) {
+              updateLocalButton(r.data.button);
+              renderButtonsList(blCurrentPage.buttons);
+              refreshPreview();
+            } else if (r) alert((r.data && r.data.error) || "Stil güncellenemedi");
+          });
+        };
+      });
     });
     box.querySelectorAll("[data-bl-emoji-inline]").forEach(function (btn) {
       btn.onclick = function (e) {

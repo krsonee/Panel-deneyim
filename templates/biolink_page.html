@@ -14,6 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/biolink-skins.css?v=20260712a">
 <style>
   :root {
     --bg: {{ theme.bg }};
@@ -181,15 +182,6 @@
     max-width: 340px; line-height: 1.5;
   }
   .links { width: 100%; display: flex; flex-direction: column; gap: 0.7rem; }
-  .heading {
-    text-align: center; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em;
-    color: var(--muted); text-transform: uppercase; margin: 1rem 0 0.1rem;
-  }
-  .heading::before, .heading::after {
-    content: ""; display: inline-block; width: 28px; height: 1px;
-    background: color-mix(in srgb, var(--accent) 40%, transparent);
-    vertical-align: middle; margin: 0 0.5rem;
-  }
 
   a.link-btn {
     display: flex; align-items: center; gap: 0.75rem;
@@ -266,7 +258,7 @@
   .powered { font-size: 0.65rem; color: var(--muted); opacity: 0.55; }
 </style>
 </head>
-<body class="{% if theme.animated %}animated-bg anim-{{ theme.animation }}{% endif %}">
+<body class="skel-{{ theme.style or 'classic' }}{% if theme.animated %} animated-bg anim-{{ theme.animation }}{% endif %}">
   <div class="bg-layer" aria-hidden="true">
     {% if theme.brand_logo_src %}
     <img class="brand-watermark" src="{{ theme.brand_logo_src }}" alt="">
@@ -291,7 +283,7 @@
     <div class="links">
       {% for b in page.buttons %}
         {% if b.button_type == 'heading' %}
-          <div class="heading">{{ b.label }}</div>
+          <div class="heading hs-{{ b.heading_style or 'classic' }}"><span class="hs-inner">{{ b.label }}</span></div>
         {% elif b.button_type == 'bonus' %}
           <a class="link-btn bonus-card highlight" href="/p/{{ page.slug }}/go/{{ b.id }}">
             <div class="bonus-top">
