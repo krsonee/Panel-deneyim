@@ -7,6 +7,7 @@
   var mktPayments = [];
   var mktEditingId = null;
   var mktExpandedDealId = null;
+  var mktExpandedEndedDealId = null;
   var mktCurrentPeriodLabel = "";
 
   var STATUS_LABELS = { active: "Aktif", paused: "Duraklatıldı", ended: "Anlaşma Bitti · Ödeme Bitti" };
@@ -84,7 +85,7 @@
     var acEl = document.getElementById("mkt-kpi-active-channels");
     if (acEl) acEl.textContent = summary.active_channel_count != null ? summary.active_channel_count : "—";
     var dcEl = document.getElementById("mkt-kpi-deal-count");
-    if (dcEl) dcEl.textContent = summary.deal_count != null ? summary.deal_count : "—";
+    if (dcEl) dcEl.textContent = mktActiveDeals().length || (summary.deal_count != null ? summary.deal_count : "—");
     var pmEl = document.getElementById("mkt-kpi-pending-month");
     if (pmEl) pmEl.textContent = summary.pending_this_month != null ? summary.pending_this_month : "—";
     var odEl = document.getElementById("mkt-kpi-overdue");
@@ -141,14 +142,22 @@
     }).join("");
   }
 
-  function mktRenderDealSchedules() {
-    var box = document.getElementById("mkt-deal-schedules");
+  function mktActiveDeals() {
+    return mktDeals.filter(function (d) { return d.status === "active"; });
+  }
+
+  function mktEndedDeals() {
+    return mktDeals.filter(function (d) { return d.status === "ended"; });
+  }
+
+  function mktRenderDealScheduleBox(containerId, expandedId) {
+    var box = document.getElementById(containerId);
     if (!box) return;
-    if (mktExpandedDealId == null) {
+    if (expandedId == null) {
       box.innerHTML = "";
       return;
     }
-    var deal = mktDeals.filter(function (d) { return d.id === mktExpandedDealId; })[0];
+    var deal = mktDeals.filter(function (d) { return d.id === expandedId; })[0];
     if (!deal || !deal.payments || !deal.payments.length) {
       box.innerHTML = "";
       return;
@@ -176,43 +185,78 @@
     }).join("");
     box.innerHTML =
       '<div class="card" style="margin:0 1rem 1rem;border:1px solid var(--border);">' +
-      '<div class="card-head"><span>' + mktEsc(deal.channel_name) + ' — Aylık Ödeme Takvimi</span></div>' +
+      '<div class="card-head"><span>' + mktEsc(deal.channel_name) + ' — Ödeme Geçmişi</span></div>' +
       '<div class="table-wrap"><div class="table-scroll"><table class="acc-inv-table">' +
       '<thead><tr><th>Ay</th><th>Ödeme Tarihi</th><th>Tutar</th><th>Durum</th><th></th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table></div></div></div>';
   }
 
+  function mktRenderDealSchedules() {
+    mktRenderDealScheduleBox("mkt-deal-schedules", mktExpandedDealId);
+  }
+
+  function mktRenderEndedDealSchedules() {
+    mktRenderDealScheduleBox("mkt-ended-deal-schedules", mktExpandedEndedDealId);
+  }
+
   function mktRenderDealsTable() {
     var tbody = document.getElementById("mkt-deals-table");
     if (!tbody) return;
-    if (!mktDeals.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty">Henüz anlaşma eklenmedi</td></tr>';
+    var active = mktActiveDeals();
+    if (!active.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">Aktif anlaşma yok</td></tr>';
       mktRenderDealSchedules();
+      mktRenderEndedDealsTable();
       return;
     }
-    tbody.innerHTML = mktDeals.map(function (d) {
-      var passiveCls = d.status !== "active" ? " acc-pm-row-passive" : "";
+    tbody.innerHTML = active.map(function (d) {
       var expanded = mktExpandedDealId === d.id ? " mkt-row-expanded" : "";
       var ps = d.payment_summary || {};
       var overdueHint = ps.overdue_count > 0 ? ' <span class="mkt-badge mkt-badge-overdue">' + ps.overdue_count + ' gecikmiş</span>' : "";
-      var endBtn = d.status === "active"
-        ? '<button type="button" class="btn btn-sm btn-danger" data-mkt-end="' + d.id + '">Anlaşma Bitti</button> '
-        : "";
-      return '<tr class="mkt-deal-row' + passiveCls + expanded + '" data-mkt-deal-row="' + d.id + '">' +
+      return '<tr class="mkt-deal-row' + expanded + '" data-mkt-deal-row="' + d.id + '">' +
         '<td>' + mktFmtDate(d.agreement_date) + '</td>' +
         '<td class="acc-inv-name">' + mktEsc(d.channel_name) + overdueHint + '</td>' +
         '<td>' + mktEsc(d.channel_type || "—") + '</td>' +
         '<td>' + mktMoney(d.fixed_fee, d.fixed_fee_currency) + '</td>' +
         '<td>%' + (parseFloat(d.affiliate_commission_rate) || 0).toLocaleString("tr-TR") + '</td>' +
-        '<td><span class="mkt-status-' + d.status + '">' + (STATUS_LABELS[d.status] || d.status) + '</span></td>' +
+        '<td><span class="mkt-status-active">' + (STATUS_LABELS.active) + '</span></td>' +
         '<td>' +
-        endBtn +
+        '<button type="button" class="btn btn-sm btn-danger" data-mkt-end="' + d.id + '">Anlaşma Bitti</button> ' +
         '<button type="button" class="btn btn-sm" data-mkt-edit="' + d.id + '">Düzenle</button> ' +
         '<button type="button" class="btn btn-sm btn-danger" data-mkt-del="' + d.id + '">Sil</button>' +
         '</td>' +
         '</tr>';
     }).join("");
     mktRenderDealSchedules();
+    mktRenderEndedDealsTable();
+  }
+
+  function mktRenderEndedDealsTable() {
+    var tbody = document.getElementById("mkt-ended-deals-table");
+    var countEl = document.getElementById("mkt-ended-count");
+    var ended = mktEndedDeals();
+    if (countEl) countEl.textContent = ended.length ? ended.length + " kayıt" : "";
+    if (!tbody) return;
+    if (!ended.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">Biten anlaşma yok</td></tr>';
+      mktRenderEndedDealSchedules();
+      return;
+    }
+    tbody.innerHTML = ended.map(function (d) {
+      var expanded = mktExpandedEndedDealId === d.id ? " mkt-row-expanded" : "";
+      return '<tr class="mkt-deal-row acc-pm-row-passive' + expanded + '" data-mkt-ended-row="' + d.id + '">' +
+        '<td>' + mktFmtDate(d.end_date || d.updated_at) + '</td>' +
+        '<td>' + mktFmtDate(d.agreement_date) + '</td>' +
+        '<td class="acc-inv-name">' + mktEsc(d.channel_name) + '</td>' +
+        '<td>' + mktEsc(d.channel_type || "—") + '</td>' +
+        '<td>' + mktMoney(d.fixed_fee, d.fixed_fee_currency) + '</td>' +
+        '<td>%' + (parseFloat(d.affiliate_commission_rate) || 0).toLocaleString("tr-TR") + '</td>' +
+        '<td>' +
+        '<button type="button" class="btn btn-sm btn-danger" data-mkt-del="' + d.id + '">Sil</button>' +
+        '</td>' +
+        '</tr>';
+    }).join("");
+    mktRenderEndedDealSchedules();
   }
 
   function mktLoadAll() {
@@ -258,14 +302,16 @@
   }
 
   function mktEndDeal(dealId) {
-    if (!confirm("Anlaşmayı bitirmek istediğine emin misin?\n\nAna listede \"Anlaşma Bitti · Ödeme Bitti\" olarak pasife alınır. Gelecek ayların bekleyen ödemeleri iptal edilir.")) return;
+    if (!confirm("Anlaşmayı bitirmek istediğine emin misin?\n\nKayıt Ana Anlaşma listesinden kaldırılıp Biten Anlaşmalar tablosuna taşınır. Gelecek ayların bekleyen ödemeleri iptal edilir.")) return;
     mktApi("/api/marketing/deals/" + dealId + "/end", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({})
     }).then(function (r) {
       if (r && r.ok) {
-        mktToast("Anlaşma sonlandırıldı");
+        mktToast("Anlaşma sonlandırıldı — Biten Anlaşmalar listesine taşındı");
+        if (String(mktExpandedDealId) === String(dealId)) mktExpandedDealId = null;
+        mktExpandedEndedDealId = parseInt(dealId, 10);
         mktLoadAll();
       } else if (r) {
         alert((r.data && r.data.error) || "İşlem başarısız");
@@ -449,6 +495,33 @@
 
     var schedules = document.getElementById("mkt-deal-schedules");
     if (schedules) schedules.addEventListener("click", payClickHandler);
+
+    var endedTbody = document.getElementById("mkt-ended-deals-table");
+    if (endedTbody) {
+      endedTbody.addEventListener("click", function (e) {
+        var row = e.target.closest ? e.target.closest("[data-mkt-ended-row]") : null;
+        if (row && !e.target.closest("button")) {
+          var id = parseInt(row.getAttribute("data-mkt-ended-row"), 10);
+          mktExpandedEndedDealId = mktExpandedEndedDealId === id ? null : id;
+          mktRenderEndedDealsTable();
+          return;
+        }
+        var delBtn = e.target.closest ? e.target.closest("[data-mkt-del]") : null;
+        if (delBtn) {
+          if (!confirm("Bu biten anlaşma ve tüm ödeme planı silinsin mi?")) return;
+          mktApi("/api/marketing/deals/" + delBtn.getAttribute("data-mkt-del"), { method: "DELETE" }).then(function (r) {
+            if (r && r.ok) {
+              if (String(mktExpandedEndedDealId) === delBtn.getAttribute("data-mkt-del")) mktExpandedEndedDealId = null;
+              mktLoadAll();
+              mktToast("Silindi");
+            }
+          });
+        }
+      });
+    }
+
+    var endedSchedules = document.getElementById("mkt-ended-deal-schedules");
+    if (endedSchedules) endedSchedules.addEventListener("click", payClickHandler);
 
     var remClose = document.getElementById("mkt-reminder-close");
     if (remClose) remClose.addEventListener("click", mktDismissReminderToday);

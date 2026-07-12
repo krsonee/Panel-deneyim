@@ -18,7 +18,7 @@
     </div>
     <div class="kpi">
       <div class="val" id="mkt-kpi-deal-count">—</div>
-      <div class="lbl">Toplam Anlaşma</div>
+      <div class="lbl">Aktif Anlaşma</div>
     </div>
     <div class="kpi amber">
       <div class="val" id="mkt-kpi-pending-month">—</div>
@@ -114,6 +114,35 @@
       </div>
     </div>
     <div id="mkt-deal-schedules"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <span>Biten Anlaşmalar</span>
+      <span class="muted" id="mkt-ended-count" style="font-size:0.72rem;font-weight:400;"></span>
+    </div>
+    <p class="hint" style="margin:0 1rem 0.85rem;">
+      <strong>Anlaşma Bitti</strong> ile sonlandırılan kayıtlar burada listelenir. Satıra tıklayınca geçmiş ödeme planı açılır.
+    </p>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table class="acc-inv-table">
+          <thead>
+            <tr>
+              <th>Bitiş Tarihi</th>
+              <th>İlk Ödeme Tarihi</th>
+              <th>Kanal Adı</th>
+              <th>Kanal Türü</th>
+              <th>Aylık Ücret</th>
+              <th>Aff. Kom. %</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="mkt-ended-deals-table"><tr><td colspan="7" class="empty">Biten anlaşma yok</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="mkt-ended-deal-schedules"></div>
   </section>
 </div>
 

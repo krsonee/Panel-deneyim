@@ -732,10 +732,6 @@
       });
     }
 
-    bindClick("mail-btn-import-csv", function () {
-      var box = document.getElementById("mail-csv-box");
-      if (box) box.hidden = !box.hidden;
-    });
     bindClick("mail-csv-submit", function () {
       mailApi("/api/mailing/contacts/import", {
         method: "POST",

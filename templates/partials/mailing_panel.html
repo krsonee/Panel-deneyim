@@ -37,38 +37,29 @@
   <!-- CRM -->
   <div class="acc-pane" id="mail-pane-crm" data-mail-pane="crm" hidden>
     <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head"><span>Yeni kontak</span></div>
+      <div class="card-head"><span>Kontak ekle</span></div>
       <div class="card-body">
-        <form id="mail-contact-form" class="form-row-4" style="grid-template-columns:1fr 1.2fr 1fr;">
-          <div><label>E-posta</label><input type="email" id="mail-c-email" required placeholder="ornek@mail.com"></div>
-          <div><label>Ad</label><input type="text" id="mail-c-name" placeholder="Ad Soyad"></div>
-          <div><label>Etiketler</label><input type="text" id="mail-c-tags" placeholder="vip, ivr"></div>
-          <div style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;">
-            <button type="submit" class="btn btn-primary">Ekle</button>
-            <button type="button" class="btn" id="mail-btn-import-csv">CSV İçe Aktar</button>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;align-items:start;">
+          <div>
+            <p class="hint" style="margin:0 0 0.65rem;font-weight:600;color:var(--text,#e2e8f0);">Tek tek ekle</p>
+            <form id="mail-contact-form" class="form-row-4" style="grid-template-columns:1fr;">
+              <div><label>E-posta</label><input type="email" id="mail-c-email" required placeholder="ornek@mail.com"></div>
+              <div><label>Ad</label><input type="text" id="mail-c-name" placeholder="Ad Soyad (opsiyonel)"></div>
+              <div><label>Etiketler</label><input type="text" id="mail-c-tags" placeholder="vip, davet_datasi"></div>
+              <div><button type="submit" class="btn btn-primary">Ekle</button></div>
+            </form>
           </div>
-        </form>
-        <div id="mail-csv-box" hidden style="margin-top:0.85rem;">
-          <label>CSV (email, name, tags)</label>
-          <textarea id="mail-csv-input" rows="5" placeholder="email,name,tags&#10;a@b.com,Ali,vip"></textarea>
-          <div style="margin-top:0.5rem;display:flex;gap:0.5rem;">
-            <input type="text" id="mail-csv-tag" placeholder="Varsayılan etiket (opsiyonel)" style="max-width:220px;">
-            <button type="button" class="btn btn-primary" id="mail-csv-submit">İçe aktar</button>
+          <div>
+            <p class="hint" style="margin:0 0 0.65rem;font-weight:600;color:var(--text,#e2e8f0);">Çoklu dosya ekle</p>
+            <form id="mail-bulk-import-form" class="form-row-4" style="grid-template-columns:1fr;">
+              <div><label>CSV veya XLSX — birden fazla seçebilirsin</label><input type="file" id="mail-bulk-file" multiple accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
+              <div><label>Etiket (opsiyonel)</label><input type="text" id="mail-bulk-tag" placeholder="örn. davet_datasi"></div>
+              <div><button type="submit" class="btn btn-primary">Yüklemeyi başlat</button></div>
+            </form>
+            <p class="hint" style="margin-top:0.45rem;">İlk satır başlık olmalı: <code>email</code> ve <code>name</code> sütunları. Birden fazla dosya seçersen veya yükleme sürerken yeni dosya eklersen sıraya alınır, öncekiler bitince otomatik başlar.</p>
           </div>
-          <p class="hint" style="margin-top:0.4rem;">Bu kutu küçük listeler için (birkaç bin satıra kadar). Yüz binler / milyonlar için aşağıdaki "Büyük liste yükle" bölümünü kullan.</p>
         </div>
-      </div>
-    </section>
-    <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head"><span>Büyük liste yükle (dosya — sınırsız satır)</span></div>
-      <div class="card-body">
-        <form id="mail-bulk-import-form" class="form-row-4" style="grid-template-columns:1.4fr 1fr auto;">
-          <div><label>CSV veya XLSX dosyası (email, name sütunları) — birden fazla seçebilirsin</label><input type="file" id="mail-bulk-file" multiple accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
-          <div><label>Etiket (opsiyonel)</label><input type="text" id="mail-bulk-tag" placeholder="örn. eski_liste"></div>
-          <div style="display:flex;align-items:flex-end;"><button type="submit" class="btn btn-primary">Yüklemeyi başlat</button></div>
-        </form>
-        <p class="hint" style="margin-top:0.5rem;">.csv veya .xlsx (Excel) yükleyebilirsin. İlk satır başlık olmalı, sütun adları "email" ve "name" (büyük/küçük harf önemsiz). Birden fazla dosya seçersen veya bir yükleme sürerken yeni dosya eklersen, sıraya girer ve öncekiler bitince otomatik başlar — sayfada beklemene gerek yok. Not: Excel dosyası tek sayfada en fazla ~1.048.576 satır tutabilir, daha büyük listelerde CSV kullan ya da dosyayı bölüp ayrı ayrı yükle.</p>
-        <div id="mail-bulk-queue" hidden style="margin-top:0.6rem;">
+        <div id="mail-bulk-queue" hidden style="margin-top:0.85rem;">
           <p class="hint">Sırada bekleyen: <span id="mail-bulk-queue-list">—</span></p>
         </div>
         <div id="mail-bulk-progress" hidden style="margin-top:0.85rem;">
@@ -80,6 +71,17 @@
             <button type="button" class="btn btn-sm" id="mail-bulk-cancel" hidden>İptal et</button>
           </div>
         </div>
+        <details style="margin-top:0.85rem;">
+          <summary class="hint" style="cursor:pointer;">Küçük CSV yapıştır (birkaç bin satıra kadar)</summary>
+          <div id="mail-csv-box" style="margin-top:0.65rem;">
+            <label>CSV (email, name, tags)</label>
+            <textarea id="mail-csv-input" rows="4" placeholder="email,name,tags&#10;a@b.com,Ali,vip"></textarea>
+            <div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+              <input type="text" id="mail-csv-tag" placeholder="Varsayılan etiket (opsiyonel)" style="max-width:220px;">
+              <button type="button" class="btn btn-primary" id="mail-csv-submit">İçe aktar</button>
+            </div>
+          </div>
+        </details>
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
