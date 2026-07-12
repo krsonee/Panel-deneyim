@@ -35,6 +35,14 @@
       color: #e8edf5; font-size: 0.95rem;
     }
     input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.2); }
+    .pw-field { position: relative; }
+    .pw-field input { padding-right: 2.6rem; }
+    .pw-toggle {
+      position: absolute; right: 0.55rem; top: 50%; transform: translateY(-50%);
+      margin-top: -0.5rem; background: none; border: none; cursor: pointer;
+      color: #7d8da6; font-size: 1rem; padding: 0.3rem; line-height: 1;
+    }
+    .pw-toggle:hover { color: #e8edf5; }
     .btn {
       width: 100%; padding: 0.8rem; border: none; border-radius: 10px;
       background: #6366f1; color: #fff; font-size: 0.95rem; font-weight: 600;
@@ -60,7 +68,10 @@
       <label for="username">Kullanıcı Adı</label>
       <input id="username" name="username" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" required autofocus>
       <label for="password">Şifre</label>
-      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <div class="pw-field">
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <button type="button" class="pw-toggle" id="password-toggle" aria-label="Şifreyi göster/gizle" tabindex="-1">👁</button>
+      </div>
       <button type="submit" class="btn" id="login-btn">Giriş Yap</button>
     </form>
     <p class="hint">Render ücretsiz planda ilk giriş 30–60 sn sürebilir.<br>Demo site: /demo</p>
@@ -70,6 +81,12 @@
       var btn = document.getElementById("login-btn");
       btn.disabled = true;
       btn.textContent = "Giriş yapılıyor…";
+    });
+    document.getElementById("password-toggle").addEventListener("click", function() {
+      var input = document.getElementById("password");
+      var showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      this.textContent = showing ? "👁" : "🙈";
     });
   </script>
 </body>
