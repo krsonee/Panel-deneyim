@@ -1553,7 +1553,7 @@
           <div class="card-body" id="smartico-error-box" style="display:none;">
             <p class="hint" style="color:#f87171;" id="smartico-error-text"></p>
           </div>
-          <section class="kpi-grid" id="smartico-kpi-grid" style="display:none;padding:0 1rem 1rem;grid-template-columns:repeat(5,1fr);">
+          <section class="kpi-grid" id="smartico-kpi-grid" style="display:none;padding:0 1rem 1rem;grid-template-columns:repeat(6,1fr);">
             <div class="kpi">
               <div class="val" id="smartico-kpi-visits">0</div>
               <div class="lbl">Ziyaret</div>
@@ -1569,6 +1569,10 @@
             <div class="kpi cyan">
               <div class="val" id="smartico-kpi-deposit">0</div>
               <div class="lbl">Toplam Yatırım</div>
+            </div>
+            <div class="kpi rose">
+              <div class="val" id="smartico-kpi-withdrawal">0</div>
+              <div class="lbl">Toplam Çekim</div>
             </div>
             <div class="kpi">
               <div class="val" id="smartico-kpi-bonus">0</div>
@@ -1591,10 +1595,11 @@
                   <th class="col-sortable" data-sort="registration_count">Kayıt</th>
                   <th>İlk Yatırım</th>
                   <th class="col-sortable" data-sort="deposit_total">Toplam Yatırım</th>
+                  <th class="col-sortable" data-sort="withdrawal_total">Toplam Çekim</th>
                   <th class="col-sortable" data-sort="commissions_total">Komisyon</th>
                   <th class="col-sortable" data-sort="bonus_total">Üyelere Verilen Bonus</th>
                 </tr></thead>
-                <tbody id="smartico-table"><tr><td colspan="9" class="empty">Veri yok</td></tr></tbody>
+                <tbody id="smartico-table"><tr><td colspan="10" class="empty">Veri yok</td></tr></tbody>
               </table>
             </div>
             <div class="table-foot" id="smartico-table-foot" style="display:none;">
@@ -3350,6 +3355,7 @@
           visit_count: function(r) { return r.visit_count || 0; },
           registration_count: function(r) { return r.registration_count || 0; },
           deposit_total: function(r) { return r.deposit_total || 0; },
+          withdrawal_total: function(r) { return r.withdrawal_total || 0; },
           commissions_total: function(r) { return r.commissions_total || 0; },
           bonus_total: function(r) { return r.bonus_total || 0; }
         });
@@ -3358,6 +3364,8 @@
         document.getElementById("smartico-kpi-regs").textContent = fmtSmarticoNum(s.registration_count);
         document.getElementById("smartico-kpi-ftd").textContent = fmtSmarticoNum(s.ftd_count);
         document.getElementById("smartico-kpi-deposit").textContent = fmtSmarticoMoney(s.deposit_total) + (result.currency ? " " + result.currency : "");
+        var withdrawalEl = document.getElementById("smartico-kpi-withdrawal");
+        if (withdrawalEl) withdrawalEl.textContent = fmtSmarticoMoney(s.withdrawal_total) + (result.currency ? " " + result.currency : "");
         var bonusEl = document.getElementById("smartico-kpi-bonus");
         if (bonusEl) bonusEl.textContent = fmtSmarticoMoney(s.bonus_total) + (result.currency ? " " + result.currency : "");
         var tbody = document.getElementById("smartico-table");
@@ -3365,7 +3373,7 @@
         updateTableFoot("smartico-table", rows.length);
         updateSortHeaders("smartico-table");
         if (!rows.length) {
-          tbody.innerHTML = '<tr><td colspan="9" class="empty">Bu dönem için veri yok</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" class="empty">Bu dönem için veri yok</td></tr>';
         } else {
           tbody.innerHTML = rows.map(function(r, idx) {
             var rowKey = String(r.affiliate_id) + "::" + String(r.link_id);
@@ -3387,6 +3395,7 @@
               '<td>' + fmtSmarticoNum(r.registration_count) + '</td>' +
               '<td>' + fmtSmarticoNum(r.ftd_count) + '</td>' +
               '<td>' + fmtSmarticoMoney(r.deposit_total) + '</td>' +
+              '<td>' + (r.withdrawal_total ? fmtSmarticoMoney(r.withdrawal_total) : '<span class="muted">0</span>') + '</td>' +
               '<td>' + fmtSmarticoMoney(r.commissions_total) + '</td>' +
               '<td>' + (r.bonus_total ? fmtSmarticoMoney(r.bonus_total) : '<span class="muted">0</span>') + '</td></tr>';
           }).join("");

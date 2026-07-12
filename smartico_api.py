@@ -446,6 +446,8 @@ def fetch_media_report(conn, period="all", force=False):
                 "ftd_total": 0.0,
                 "deposit_count": 0,
                 "deposit_total": 0.0,
+                "withdrawal_count": 0,
+                "withdrawal_total": 0.0,
                 "commissions_total": 0.0,
                 "bonus_total": 0.0,
                 "balance": 0.0,
@@ -457,6 +459,8 @@ def fetch_media_report(conn, period="all", force=False):
         m["ftd_total"] += _num(r.get("ftd_total"))
         m["deposit_count"] += _num(r.get("deposit_count"))
         m["deposit_total"] += _num(r.get("deposit_total"))
+        m["withdrawal_count"] += _num(r.get("withdrawal_count"))
+        m["withdrawal_total"] += _num(r.get("withdrawal_total"))
         m["commissions_total"] += _num(r.get("commissions_total"))
         # bonus_amount = oyunculara/uyelere verilen bonus tutari (adjustments alani
         # affiliate komisyon duzeltmesidir, bonusla ilgisi yok - onceki hatali versiyon onu kullaniyordu)
@@ -465,7 +469,7 @@ def fetch_media_report(conn, period="all", force=False):
 
     rows = sorted(merged.values(), key=lambda x: x["visit_count"], reverse=True)
     for row in rows:
-        for f in ("ftd_total", "deposit_total", "commissions_total", "bonus_total", "balance"):
+        for f in ("ftd_total", "deposit_total", "withdrawal_total", "commissions_total", "bonus_total", "balance"):
             row[f] = round(row[f], 2)
 
     summary = _empty_summary()
@@ -475,9 +479,12 @@ def fetch_media_report(conn, period="all", force=False):
         summary["ftd_count"] += row["ftd_count"]
         summary["deposit_count"] += row["deposit_count"]
         summary["deposit_total"] += row["deposit_total"]
+        summary["withdrawal_count"] += row["withdrawal_count"]
+        summary["withdrawal_total"] += row["withdrawal_total"]
         summary["commissions_total"] += row["commissions_total"]
         summary["bonus_total"] += row["bonus_total"]
     summary["deposit_total"] = round(summary["deposit_total"], 2)
+    summary["withdrawal_total"] = round(summary["withdrawal_total"], 2)
     summary["commissions_total"] = round(summary["commissions_total"], 2)
     summary["bonus_total"] = round(summary["bonus_total"], 2)
 
@@ -570,6 +577,8 @@ def _empty_summary():
         "ftd_count": 0,
         "deposit_count": 0,
         "deposit_total": 0.0,
+        "withdrawal_count": 0,
+        "withdrawal_total": 0.0,
         "commissions_total": 0.0,
         "bonus_total": 0.0,
     }
