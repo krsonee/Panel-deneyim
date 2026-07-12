@@ -1070,9 +1070,15 @@
         <label style="display:flex;flex-direction:column;gap:0.25rem;font-size:0.72rem;color:var(--muted);min-width:220px;flex:1;">Sağlayıcı ara
           <input type="text" id="acc-ic-search" placeholder="örn. Pragmatic, Evolution…">
         </label>
+        <button type="button" class="btn btn-sm" id="acc-ic-download-template">📥 Excel Şablonu</button>
+        <label class="btn btn-sm btn-primary" style="cursor:pointer;margin:0;">
+          📤 Excel Yükle
+          <input type="file" id="acc-ic-upload-file" accept=".xlsx,.xlsm" hidden>
+        </label>
         <span class="muted" id="acc-ic-updated" style="font-size:0.72rem;white-space:nowrap;"></span>
       </div>
-      <p class="hint" style="margin:0 1rem 0.85rem;">Formül: <code>Stake − Winning = GGR</code>, komisyon <code>GGR × Oran %</code> üzerinden hesaplanır. Aylık toplamlar, komisyonu tüm ayın GGR'si üzerinden (gerçek fatura mantığıyla) hesaplar.</p>
+      <p class="hint" style="margin:0 1rem 0.85rem;">Formül: <code>Stake − Winning = GGR</code>, komisyon <code>GGR × Oran %</code> üzerinden hesaplanır. Aylık toplamlar, komisyonu tüm ayın GGR'si üzerinden (gerçek fatura mantığıyla) hesaplar. Günlük giriş için <strong>Excel Şablonu</strong> indirip Pronet verilerini doldurun, sonra <strong>Excel Yükle</strong> ile panele aktarın.</p>
+      <div id="acc-ic-import-result" class="hint" style="display:none;margin:0 1rem 0.85rem;padding:0.55rem 0.75rem;border-radius:8px;border:1px solid var(--border,#333);"></div>
     </section>
 
     <section class="kpi-grid acc-kpi-grid">

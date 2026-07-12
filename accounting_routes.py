@@ -4,7 +4,7 @@ import re
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request, send_file, session
 
 from accounting_fx import (
     CURRENCIES,
@@ -39,6 +39,7 @@ from accounting_period import (
     period_label,
 )
 from accounting_invoices import build_payment_invoices
+from accounting_invoice_calc_import import generate_template_bytes, import_workbook, upsert_invoice_calc_daily_batch
 from accounting_pronet import build_invoice_payload, calc_commission, reseed_period_from_history
 from accounting_pl import (
     SECTION_LABELS as PL_SECTION_LABELS,
@@ -2465,58 +2466,51 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             return jsonify({"error": "Geçerli bir tarih girin."}), 400
         period = entry_date[:7]
         rows = data.get("rows") or []
-        now = iso(utcnow())
         who = (session.get("admin_display_name") or session.get("admin_username") or "").strip()
         with closing(get_db()) as conn:
-            valid_ids = {r["id"] for r in fetchall(conn, "SELECT id FROM acc_invoice_calc_providers")}
-            for item in rows:
-                try:
-                    pid = int(item.get("provider_id"))
-                except (TypeError, ValueError):
-                    continue
-                if pid not in valid_ids:
-                    continue
-                stake = parse_amount(item.get("stake_amount"))
-                winning = parse_amount(item.get("winning_amount"))
-                stake = stake if stake is not None else 0.0
-                winning = winning if winning is not None else 0.0
-                exists = scalar(
-                    conn,
-                    "SELECT COUNT(*) FROM acc_invoice_calc_daily WHERE entry_date = ? AND provider_id = ?",
-                    (entry_date, pid),
-                )
-                if stake == 0 and winning == 0:
-                    if exists:
-                        execute(
-                            conn,
-                            "DELETE FROM acc_invoice_calc_daily WHERE entry_date = ? AND provider_id = ?",
-                            (entry_date, pid),
-                        )
-                    continue
-                if exists:
-                    execute(
-                        conn,
-                        """
-                        UPDATE acc_invoice_calc_daily
-                        SET stake_amount = ?, winning_amount = ?, created_by = ?, updated_at = ?
-                        WHERE entry_date = ? AND provider_id = ?
-                        """,
-                        (stake, winning, who, now, entry_date, pid),
-                    )
-                else:
-                    insert_returning_id(
-                        conn,
-                        """
-                        INSERT INTO acc_invoice_calc_daily
-                        (period, entry_date, provider_id, stake_amount, winning_amount, created_by, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (period, entry_date, pid, stake, winning, who, now),
-                    )
+            upsert_invoice_calc_daily_batch(conn, entry_date, rows, who=who)
             conn.commit()
             payload = build_invoice_calc_payload(conn, period)
         payload["period_label"] = period_label(period)
         payload["saved_date"] = entry_date
+        return jsonify(payload)
+
+    @bp.route("/invoice-calc/template", methods=["GET"])
+    @acc_perm("accounting.invoice_calc", *ACC_READ)
+    def download_invoice_calc_template():
+        entry_date = parse_date(request.args.get("date"))
+        if not entry_date:
+            entry_date = datetime.now(timezone.utc).date().isoformat()
+        with closing(get_db()) as conn:
+            content = generate_template_bytes(conn, entry_date)
+        from io import BytesIO
+        buf = BytesIO(content)
+        buf.seek(0)
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name=f"fatura-hesaplama-{entry_date}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    @bp.route("/invoice-calc/import", methods=["POST"])
+    @acc_perm("accounting.invoice_calc", *MODULE_ACCESS)
+    def import_invoice_calc_excel():
+        upload = request.files.get("file")
+        if not upload or not (upload.filename or "").strip():
+            return jsonify({"error": "Excel dosyası seçin."}), 400
+        who = (session.get("admin_display_name") or session.get("admin_username") or "").strip()
+        try:
+            with closing(get_db()) as conn:
+                result = import_workbook(conn, upload, who=who)
+                period = result["periods"][-1] if result.get("periods") else default_accounting_period()
+                payload = build_invoice_calc_payload(conn, period)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception:
+            return jsonify({"error": "Excel dosyası okunamadı. Şablonu indirip tekrar deneyin."}), 400
+        payload["period_label"] = period_label(payload["period"])
+        payload["import"] = result
         return jsonify(payload)
 
     @bp.route("/invoice-calc/providers/<int:provider_id>", methods=["PUT"])

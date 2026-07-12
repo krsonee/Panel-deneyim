@@ -2824,6 +2824,70 @@
     });
   }
 
+  function accIcDownloadTemplate() {
+    var dateEl = document.getElementById("acc-ic-date");
+    var entryDate = dateEl && dateEl.value ? dateEl.value : accToday();
+    window.location.href = "/api/accounting/invoice-calc/template?date=" + encodeURIComponent(entryDate);
+  }
+
+  function accIcShowImportResult(info) {
+    var box = document.getElementById("acc-ic-import-result");
+    if (!box || !info) return;
+    var parts = [];
+    parts.push("<strong>Excel yüklendi.</strong> " + (info.saved || 0) + " kayıt güncellendi/eklendi");
+    if (info.deleted) parts.push(", " + info.deleted + " sıfır satır silindi");
+    if (info.dates && info.dates.length) {
+      parts.push(" — günler: " + info.dates.map(function (d) { return d.slice(8, 10) + "." + d.slice(5, 7); }).join(", "));
+    }
+    if (info.unknown_count) {
+      parts.push('<br><span style="color:#f59e0b;">' + info.unknown_count + " sağlayıcı eşleşmedi (ad kontrol edin).</span>");
+      if (info.unknown_providers && info.unknown_providers.length) {
+        parts.push(" Örnek: " + accEsc(info.unknown_providers.slice(0, 5).join(", ")));
+      }
+    }
+    box.innerHTML = parts.join("");
+    box.style.display = "";
+  }
+
+  function accIcUploadExcel(file) {
+    if (!file) return;
+    var fd = new FormData();
+    fd.append("file", file);
+    var uploadLabel = document.querySelector('label[for="acc-ic-upload-file"], label.btn-primary input#acc-ic-upload-file');
+    accToast("Excel yükleniyor…");
+    fetch("/api/accounting/invoice-calc/import", { method: "POST", body: fd })
+      .then(function (r) {
+        if (r.status === 401) { location.href = "/admin/login"; return null; }
+        return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+      })
+      .then(function (res) {
+        var fileInput = document.getElementById("acc-ic-upload-file");
+        if (fileInput) fileInput.value = "";
+        if (!res) { alert("Yükleme başarısız."); return; }
+        if (!res.ok) {
+          alert((res.data && res.data.error) || "Excel yüklenemedi.");
+          return;
+        }
+        var imp = res.data.import || {};
+        accIcShowImportResult(imp);
+        if (imp.dates && imp.dates.length) {
+          var dateEl = document.getElementById("acc-ic-date");
+          if (dateEl) dateEl.value = imp.dates[imp.dates.length - 1];
+          var newPeriod = imp.dates[imp.dates.length - 1].slice(0, 7);
+          var monthEl = document.getElementById("acc-filter-month");
+          var modeEl = document.getElementById("acc-filter-period");
+          if (modeEl) modeEl.value = "pick";
+          if (monthEl) monthEl.value = newPeriod;
+          accResolvePeriod();
+        }
+        accRenderInvoiceCalc(res.data, res.data.period);
+        accToast("Excel verisi fatura hesaplamaya aktarıldı");
+      })
+      .catch(function () {
+        alert("Excel yüklenemedi.");
+      });
+  }
+
   function accIcOnDateChange() {
     var dateEl = document.getElementById("acc-ic-date");
     if (!dateEl || !dateEl.value) return;
@@ -3725,6 +3789,14 @@
     if (icDateEl) icDateEl.addEventListener("change", accIcOnDateChange);
     var icSearchEl = document.getElementById("acc-ic-search");
     if (icSearchEl) icSearchEl.addEventListener("input", accIcApplySearchFilter);
+    var icDownloadBtn = document.getElementById("acc-ic-download-template");
+    if (icDownloadBtn) icDownloadBtn.addEventListener("click", accIcDownloadTemplate);
+    var icUploadFile = document.getElementById("acc-ic-upload-file");
+    if (icUploadFile) {
+      icUploadFile.addEventListener("change", function () {
+        if (icUploadFile.files && icUploadFile.files[0]) accIcUploadExcel(icUploadFile.files[0]);
+      });
+    }
     var icTableBody = document.getElementById("acc-ic-table-body");
     if (icTableBody) {
       icTableBody.addEventListener("input", function (e) {
