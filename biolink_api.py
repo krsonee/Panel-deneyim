@@ -60,6 +60,10 @@ RESERVED_SLUGS = frozenset({
 
 BUTTON_SHAPES = ("pill", "rounded", "square")
 
+NONE_MARKER = "__none__"
+BANNER_LAYOUTS = ("top", "towers", "none")
+DEFAULT_BANNER_LAYOUT = "top"
+
 HEADING_TYPE = "heading"
 CLICKABLE_TYPE_LIST = ("link", "whatsapp", "telegram", "instagram", "twitter", "tiktok", "youtube", "bonus")
 CLICKABLE_TYPES = frozenset(CLICKABLE_TYPE_LIST)
@@ -257,6 +261,20 @@ def _normalize_url(url):
     return url
 
 
+def _store_avatar_url(val):
+    val = (val or "").strip()[:500]
+    if val == NONE_MARKER:
+        return NONE_MARKER
+    return val or DEFAULT_BRAND_LOGO
+
+
+def _store_banner_url(val):
+    val = (val or "").strip()[:500]
+    if val == NONE_MARKER:
+        return NONE_MARKER
+    return val or DEFAULT_BANNER
+
+
 def _page_row(row):
     if not row:
         return None
@@ -265,9 +283,25 @@ def _page_row(row):
     d["view_count"] = int(d.get("view_count") or 0)
     d["theme"] = d.get("theme") or DEFAULT_THEME
     d["button_shape"] = d.get("button_shape") or "pill"
-    d["avatar_url"] = (d.get("avatar_url") or "").strip()
-    d["banner_url"] = (d.get("banner_url") or "").strip() or DEFAULT_BANNER
-    d["logo_url"] = d["avatar_url"] or DEFAULT_BRAND_LOGO
+
+    raw_avatar = (d.get("avatar_url") or "").strip()
+    raw_banner = (d.get("banner_url") or "").strip()
+    layout = (d.get("banner_layout") or DEFAULT_BANNER_LAYOUT).strip()
+    if layout not in BANNER_LAYOUTS:
+        layout = DEFAULT_BANNER_LAYOUT
+
+    d["hide_logo"] = raw_avatar == NONE_MARKER
+    d["avatar_url"] = raw_avatar
+    d["logo_url"] = "" if d["hide_logo"] else (raw_avatar or DEFAULT_BRAND_LOGO)
+
+    d["hide_banner"] = raw_banner == NONE_MARKER or layout == "none"
+    if d["hide_banner"]:
+        d["banner_url"] = ""
+        d["banner_layout"] = "none"
+    else:
+        d["banner_url"] = raw_banner or DEFAULT_BANNER
+        d["banner_layout"] = layout
+
     d["public_path"] = f"/p/{d['slug']}"
     return d
 
@@ -387,22 +421,49 @@ def apply_preview_overrides(page, args):
         page["subtitle"] = (args.get("subtitle") or "").strip()[:400]
     if "avatar_url" in args:
         av = (args.get("avatar_url") or "").strip()[:500]
-        page["avatar_url"] = av or DEFAULT_BRAND_LOGO
-        page["logo_url"] = page["avatar_url"]
+        if av == NONE_MARKER:
+            page["avatar_url"] = NONE_MARKER
+            page["logo_url"] = ""
+            page["hide_logo"] = True
+        else:
+            page["hide_logo"] = False
+            page["avatar_url"] = av or DEFAULT_BRAND_LOGO
+            page["logo_url"] = page["avatar_url"]
     if "banner_url" in args:
-        page["banner_url"] = (args.get("banner_url") or "").strip()[:500] or DEFAULT_BANNER
+        ban = (args.get("banner_url") or "").strip()[:500]
+        if ban == NONE_MARKER:
+            page["banner_url"] = ""
+            page["hide_banner"] = True
+            page["banner_layout"] = "none"
+        else:
+            page["hide_banner"] = False
+            page["banner_url"] = ban or DEFAULT_BANNER
+    if "banner_layout" in args:
+        bl = (args.get("banner_layout") or "").strip()
+        if bl in BANNER_LAYOUTS:
+            if bl == "none":
+                page["hide_banner"] = True
+                page["banner_url"] = ""
+                page["banner_layout"] = "none"
+            elif not page.get("hide_banner"):
+                page["banner_layout"] = bl
     if "accent_color" in args:
         page["accent_color"] = (args.get("accent_color") or "").strip()[:32]
     return page
 
 
 def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_color="",
-                 avatar_url="", banner_url="", button_shape="pill", ga4_measurement_id="", ga4_api_secret="",
-                 created_by=""):
+                 avatar_url="", banner_url="", banner_layout=None, button_shape="pill",
+                 ga4_measurement_id="", ga4_api_secret="", created_by=""):
     title = (title or "").strip()[:200] or "Yeni Sayfa"
     subtitle = (subtitle or "").strip()[:400]
-    avatar_url = (avatar_url or "").strip()[:500] or DEFAULT_BRAND_LOGO
-    banner_url = (banner_url or "").strip()[:500] or DEFAULT_BANNER
+    avatar_url = _store_avatar_url(avatar_url)
+    banner_url = _store_banner_url(banner_url)
+    banner_layout = (banner_layout or DEFAULT_BANNER_LAYOUT).strip()
+    if banner_layout not in BANNER_LAYOUTS:
+        banner_layout = DEFAULT_BANNER_LAYOUT
+    if banner_url == NONE_MARKER:
+        banner_layout = "none"
     theme = theme if theme in THEMES else DEFAULT_THEME
     accent_color = (accent_color or "").strip()[:32]
     button_shape = button_shape if button_shape in BUTTON_SHAPES else "pill"
@@ -418,11 +479,11 @@ def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_co
         conn,
         """
         INSERT INTO biolink_pages
-          (slug, title, subtitle, avatar_url, banner_url, theme, accent_color, button_shape,
+          (slug, title, subtitle, avatar_url, banner_url, banner_layout, theme, accent_color, button_shape,
            is_active, view_count, ga4_measurement_id, ga4_api_secret, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?)
         """,
-        (final_slug, title, subtitle, avatar_url, banner_url, theme, accent_color, button_shape,
+        (final_slug, title, subtitle, avatar_url, banner_url, banner_layout, theme, accent_color, button_shape,
          ga4_measurement_id, ga4_api_secret, created_by, now, now),
     )
     conn.commit()
@@ -450,7 +511,8 @@ def update_page(conn, page_id, data):
     title = pick("title", row["title"], 200) or "Sayfa"
     subtitle = pick("subtitle", row["subtitle"], 400)
     avatar_url = pick("avatar_url", row.get("avatar_url") or "", 500)
-    banner_url = pick("banner_url", row.get("banner_url") or DEFAULT_BANNER, 500)
+    banner_url = pick("banner_url", row.get("banner_url") or "", 500)
+    banner_layout = pick("banner_layout", row.get("banner_layout") or DEFAULT_BANNER_LAYOUT, choices=set(BANNER_LAYOUTS))
     theme = pick("theme", row["theme"], choices=set(THEMES.keys()))
     accent_color = pick("accent_color", row["accent_color"], 32)
     button_shape = pick("button_shape", row["button_shape"], choices=set(BUTTON_SHAPES))
@@ -469,15 +531,19 @@ def update_page(conn, page_id, data):
         new_slug = candidate
 
     now = iso(utcnow())
+    stored_avatar = _store_avatar_url(avatar_url)
+    stored_banner = _store_banner_url(banner_url)
+    stored_layout = "none" if stored_banner == NONE_MARKER else banner_layout
     execute(
         conn,
         """
         UPDATE biolink_pages
-        SET slug = ?, title = ?, subtitle = ?, avatar_url = ?, banner_url = ?, theme = ?, accent_color = ?,
-            button_shape = ?, is_active = ?, ga4_measurement_id = ?, ga4_api_secret = ?, updated_at = ?
+        SET slug = ?, title = ?, subtitle = ?, avatar_url = ?, banner_url = ?, banner_layout = ?,
+            theme = ?, accent_color = ?, button_shape = ?, is_active = ?,
+            ga4_measurement_id = ?, ga4_api_secret = ?, updated_at = ?
         WHERE id = ?
         """,
-        (new_slug, title, subtitle, avatar_url or DEFAULT_BRAND_LOGO, banner_url or DEFAULT_BANNER,
+        (new_slug, title, subtitle, stored_avatar, stored_banner, stored_layout,
          theme, accent_color, button_shape,
          is_active, ga4_measurement_id, ga4_api_secret, now, int(page_id)),
     )
@@ -506,6 +572,7 @@ def duplicate_page(conn, page_id, created_by=""):
         accent_color=src["accent_color"],
         avatar_url=src.get("avatar_url") or DEFAULT_BRAND_LOGO,
         banner_url=src.get("banner_url") or DEFAULT_BANNER,
+        banner_layout=src.get("banner_layout") or DEFAULT_BANNER_LAYOUT,
         button_shape=src["button_shape"],
         created_by=created_by,
     )

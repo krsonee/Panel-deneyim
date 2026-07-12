@@ -13,6 +13,7 @@
   var blComposerType = "link";
   var blEmojiTarget = null;
   var blPreviewTimer = null;
+  var BL_NONE = "__none__";
 
   var BL_EMOJIS = [
     "🔗", "💬", "✈️", "📸", "🎁", "🏆", "⚡", "🔥", "💎", "🎯",
@@ -254,6 +255,16 @@
     });
   }
 
+  function blNoneAsset(kind) {
+    return {
+      key: "none",
+      label: kind === "logo" ? "Logo yok" : "Banner yok",
+      url: BL_NONE,
+      custom: false,
+      isNone: true,
+    };
+  }
+
   function blAssetChipHtml(a, type) {
     var isBanner = type === "banner";
     var val = isBanner
@@ -265,6 +276,13 @@
     var delBtn = a.custom
       ? '<button type="button" class="bl-asset-del" data-bl-asset-del="' + a.id + '" title="Sil">×</button>'
       : "";
+    if (a.isNone || a.url === BL_NONE) {
+      return '<div class="bl-asset-chip-wrap">' +
+        '<button type="button" class="bl-asset-chip none' + (isBanner ? " banner" : "") + active + '" ' +
+        dataAttr + '="' + BL_NONE + '" title="' + blEsc(a.label) + '">' +
+        '<span class="bl-asset-none-icon">∅</span>' +
+        '<span>' + blEsc(a.label) + "</span></button></div>";
+    }
     return '<div class="bl-asset-chip-wrap">' +
       '<button type="button" class="bl-asset-chip' + (isBanner ? " banner" : "") + active + customCls + '" ' +
       dataAttr + '="' + blEsc(a.url) + '" title="' + blEsc(a.label) + '">' +
@@ -292,6 +310,12 @@
       bannerBox.querySelectorAll("[data-bl-banner]").forEach(function (btn) {
         btn.onclick = function () {
           document.getElementById("bl-banner").value = btn.getAttribute("data-bl-banner");
+          var layoutEl = document.getElementById("bl-banner-layout");
+          if (layoutEl && btn.getAttribute("data-bl-banner") === BL_NONE) {
+            layoutEl.value = "none";
+          } else if (layoutEl && layoutEl.value === "none") {
+            layoutEl.value = "top";
+          }
           renderAssetPickers();
           schedulePreviewRefresh();
         };
@@ -353,13 +377,13 @@
     var bannerBox = document.getElementById("bl-banner-picks");
 
     if (logoBox) {
-      logoBox.innerHTML = (blAssets.logos || []).map(function (a) {
+      logoBox.innerHTML = [blNoneAsset("logo")].concat(blAssets.logos || []).map(function (a) {
         return blAssetChipHtml(a, "logo");
       }).join("");
     }
 
     if (bannerBox) {
-      bannerBox.innerHTML = (blAssets.banners || []).map(function (a) {
+      bannerBox.innerHTML = [blNoneAsset("banner")].concat(blAssets.banners || []).map(function (a) {
         return blAssetChipHtml(a, "banner");
       }).join("");
     }
@@ -445,9 +469,11 @@
     document.getElementById("bl-shape").value = page.button_shape || "pill";
     renderThemeGallery();
     document.getElementById("bl-subtitle").value = page.subtitle || "";
-    document.getElementById("bl-avatar").value = page.avatar_url || page.logo_url || blAssets.default_logo || "";
+    document.getElementById("bl-avatar").value = page.hide_logo ? BL_NONE : (page.avatar_url || page.logo_url || blAssets.default_logo || "");
     var bannerEl = document.getElementById("bl-banner");
-    if (bannerEl) bannerEl.value = page.banner_url || blAssets.default_banner || "";
+    if (bannerEl) bannerEl.value = page.hide_banner ? BL_NONE : (page.banner_url || blAssets.default_banner || "");
+    var layoutEl = document.getElementById("bl-banner-layout");
+    if (layoutEl) layoutEl.value = page.banner_layout || "top";
     document.getElementById("bl-accent").value = page.accent_color || "#ffd53e";
     document.getElementById("bl-ga4-id").value = page.ga4_measurement_id || "";
     document.getElementById("bl-ga4-secret").value = "";
@@ -486,6 +512,8 @@
     if (el) q.set("avatar_url", (el.value || "").trim());
     el = document.getElementById("bl-banner");
     if (el) q.set("banner_url", (el.value || "").trim());
+    el = document.getElementById("bl-banner-layout");
+    if (el && el.value) q.set("banner_layout", el.value);
     el = document.getElementById("bl-accent");
     if (el && el.value) q.set("accent_color", el.value);
     return q;
@@ -531,7 +559,8 @@
       button_shape: document.getElementById("bl-shape").value,
       subtitle: document.getElementById("bl-subtitle").value,
       avatar_url: document.getElementById("bl-avatar").value.trim(),
-      banner_url: (document.getElementById("bl-banner") || {}).value ? document.getElementById("bl-banner").value.trim() : "",
+      banner_url: (document.getElementById("bl-banner") || {}).value.trim(),
+      banner_layout: (document.getElementById("bl-banner-layout") || {}).value || "top",
       accent_color: document.getElementById("bl-accent").value,
       ga4_measurement_id: document.getElementById("bl-ga4-id").value.trim(),
       is_active: document.getElementById("bl-is-active").checked,
@@ -926,6 +955,19 @@
     });
     var shapeEl = document.getElementById("bl-shape");
     if (shapeEl) shapeEl.addEventListener("change", schedulePreviewRefresh);
+    var layoutEl = document.getElementById("bl-banner-layout");
+    if (layoutEl) {
+      layoutEl.addEventListener("change", function () {
+        var bannerEl = document.getElementById("bl-banner");
+        if (layoutEl.value === "none" && bannerEl) {
+          bannerEl.value = BL_NONE;
+        } else if (layoutEl.value !== "none" && bannerEl && bannerEl.value === BL_NONE) {
+          bannerEl.value = blAssets.default_banner || "";
+        }
+        renderAssetPickers();
+        schedulePreviewRefresh();
+      });
+    }
     document.addEventListener("click", function (e) {
       if (!e.target.closest("#bl-emoji-popover") && !e.target.closest(".bl-emoji-btn") && !e.target.closest("[data-bl-emoji-inline]")) {
         hideEmojiPopover();

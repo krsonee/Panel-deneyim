@@ -160,6 +160,42 @@
     display: block; width: 100%; height: auto; max-height: 140px; object-fit: cover;
   }
   .banner-wrap.square img { max-height: none; aspect-ratio: 1; object-fit: cover; }
+
+  /* Yan kule banner — geniş ekranda sol/sağ dikey şerit */
+  .banner-towers { display: none; }
+  body.banner-layout-towers .banner-towers {
+    display: block;
+  }
+  .banner-tower {
+    position: fixed;
+    top: 0; bottom: 0;
+    width: min(88px, 11vw);
+    overflow: hidden;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.92;
+  }
+  .banner-tower.left { left: 0; }
+  .banner-tower.right { right: 0; }
+  .banner-tower img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    object-position: center;
+  }
+  body.banner-layout-towers .banner-wrap.towers-mobile {
+    display: none;
+  }
+  @media (max-width: 959px) {
+    body.banner-layout-towers .banner-towers { display: none; }
+    body.banner-layout-towers .banner-wrap.towers-mobile { display: block; }
+  }
+  @media (min-width: 960px) {
+    body.banner-layout-towers {
+      padding-left: max(96px, 12vw);
+      padding-right: max(96px, 12vw);
+    }
+  }
+
   .avatar-ring {
     padding: 3px; border-radius: 50%;
     background: linear-gradient(135deg, var(--accent), var(--accent2));
@@ -258,9 +294,9 @@
   .powered { font-size: 0.65rem; color: var(--muted); opacity: 0.55; }
 </style>
 </head>
-<body class="skel-{{ theme.style or 'classic' }}{% if theme.animated %} animated-bg anim-{{ theme.animation }}{% endif %}">
+<body class="skel-{{ theme.style or 'classic' }}{% if theme.animated %} animated-bg anim-{{ theme.animation }}{% endif %} banner-layout-{{ page.banner_layout or 'top' }}">
   <div class="bg-layer" aria-hidden="true">
-    {% if theme.brand_logo_src %}
+    {% if theme.brand_logo_src and page.logo_url %}
     <img class="brand-watermark" src="{{ theme.brand_logo_src }}" alt="">
     {% endif %}
     <div class="bg-glow g1"></div>
@@ -268,13 +304,28 @@
     <div class="bg-glow g3"></div>
   </div>
 
+  {% if page.banner_url and page.banner_layout == 'towers' %}
+  <div class="banner-towers" aria-hidden="true">
+    <div class="banner-tower left"><img src="{{ page.banner_url }}" alt=""></div>
+    <div class="banner-tower right"><img src="{{ page.banner_url }}" alt=""></div>
+  </div>
+  {% endif %}
+
   <div class="wrap">
-    <img class="brand-logo-top" src="{{ page.logo_url or theme.brand_logo_src }}" alt="Makrobet">
+    {% if page.logo_url %}
+    <img class="brand-logo-top" src="{{ page.logo_url }}" alt="Makrobet">
+    {% endif %}
 
     {% if page.banner_url %}
+      {% if page.banner_layout == 'top' %}
     <div class="banner-wrap{% if '1080' in page.banner_url %} square{% endif %}">
       <img src="{{ page.banner_url }}" alt="Makrobet Banner" width="468" height="60">
     </div>
+      {% elif page.banner_layout == 'towers' %}
+    <div class="banner-wrap towers-mobile{% if '1080' in page.banner_url %} square{% endif %}">
+      <img src="{{ page.banner_url }}" alt="Makrobet Banner" width="468" height="60">
+    </div>
+      {% endif %}
     {% endif %}
 
     <h1>{{ page.title }}</h1>

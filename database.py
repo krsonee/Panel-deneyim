@@ -681,6 +681,7 @@ def migrate_biolink(conn):
                 subtitle TEXT NOT NULL DEFAULT '',
                 avatar_url TEXT NOT NULL DEFAULT '',
                 banner_url TEXT NOT NULL DEFAULT '',
+                banner_layout TEXT NOT NULL DEFAULT 'top',
                 theme TEXT NOT NULL DEFAULT 'makrobet',
                 accent_color TEXT NOT NULL DEFAULT '',
                 button_shape TEXT NOT NULL DEFAULT 'pill',
@@ -740,6 +741,7 @@ def migrate_biolink(conn):
                 subtitle TEXT NOT NULL DEFAULT '',
                 avatar_url TEXT NOT NULL DEFAULT '',
                 banner_url TEXT NOT NULL DEFAULT '',
+                banner_layout TEXT NOT NULL DEFAULT 'top',
                 theme TEXT NOT NULL DEFAULT 'makrobet',
                 accent_color TEXT NOT NULL DEFAULT '',
                 button_shape TEXT NOT NULL DEFAULT 'pill',
@@ -797,6 +799,8 @@ def migrate_biolink(conn):
     cols = _table_columns(conn, "biolink_pages")
     if "banner_url" not in cols:
         execute(conn, "ALTER TABLE biolink_pages ADD COLUMN banner_url TEXT NOT NULL DEFAULT ''")
+    if "banner_layout" not in cols:
+        execute(conn, "ALTER TABLE biolink_pages ADD COLUMN banner_layout TEXT NOT NULL DEFAULT 'top'")
     btn_cols = _table_columns(conn, "biolink_buttons")
     if "heading_style" not in btn_cols:
         execute(conn, "ALTER TABLE biolink_buttons ADD COLUMN heading_style TEXT NOT NULL DEFAULT 'classic'")
