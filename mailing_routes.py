@@ -272,6 +272,49 @@ def _untag_contact(conn, contact_id, tag, now=None):
         )
 
 
+def _campaign_selection_where(tag_filter, exclude_previously_sent):
+    """Kampanya alıcı seçiminde kullanılan WHERE + params — hem sayım
+    önizlemesinde hem gerçek eklemede aynı filtre mantığı kullanılsın diye."""
+    clauses = ["unsubscribed = 0"]
+    params = []
+    tag_filter = (tag_filter or "").strip()
+    if tag_filter:
+        clauses.append('tags LIKE ?')
+        params.append(f'%"{tag_filter}"%')
+    if exclude_previously_sent:
+        clauses.append(
+            "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
+        )
+    return " AND ".join(clauses), params
+
+
+def _attach_campaign_recipients(conn, campaign_id, *, tag_filter, max_recipients, exclude_previously_sent, now):
+    """Filtreye uyan kontakları (limitliyse en fazla max_recipients kadar,
+    en eski/ilk eklenenden başlayarak) tek seferde toplu INSERT ile kampanyaya
+    ekler — yüz binlerce satırda da satır-satır sorgu yapmaz."""
+    where_sql, params = _campaign_selection_where(tag_filter, exclude_previously_sent)
+    sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
+    if max_recipients:
+        sql += " LIMIT ?"
+        params.append(max_recipients)
+    contact_ids = [r["id"] for r in fetchall(conn, sql, tuple(params))]
+    attached = 0
+    chunk_size = 5000
+    for i in range(0, len(contact_ids), chunk_size):
+        chunk = contact_ids[i:i + chunk_size]
+        values_sql = ",".join(["(?, ?, 'pending', ?)"] * len(chunk))
+        vparams = []
+        for contact_id in chunk:
+            vparams += [campaign_id, contact_id, now]
+        execute(
+            conn,
+            f"INSERT INTO mail_campaign_recipients (campaign_id, contact_id, status, created_at) VALUES {values_sql}",
+            tuple(vparams),
+        )
+        attached += len(chunk)
+    return attached
+
+
 def _bulk_upsert_contacts(conn, batch, tag, now):
     """batch: [(email, name), ...]. Tek SQL ifadesiyle toplu insert/upsert —
     milyonlarca satırı satır-satır sorgu yapmadan işlemek için."""
@@ -1058,6 +1101,15 @@ def create_mailing_blueprint(permission_required):
             return jsonify({"error": "Domain seçin."}), 400
         now = iso(utcnow())
         tag_filter = (data.get("tag_filter") or "").strip()
+        max_recipients = data.get("max_recipients")
+        try:
+            max_recipients = int(max_recipients)
+            if max_recipients <= 0:
+                max_recipients = None
+        except (TypeError, ValueError):
+            max_recipients = None
+        exclude_sent = data.get("exclude_previously_sent")
+        exclude_sent = True if exclude_sent is None else bool(exclude_sent)
         with closing(get_db()) as conn:
             if not fetchone(conn, "SELECT id FROM mail_templates WHERE id = ?", (template_id,)):
                 return jsonify({"error": "Şablon bulunamadı."}), 404
@@ -1072,33 +1124,28 @@ def create_mailing_blueprint(permission_required):
                 """,
                 (name, template_id, domain_id, tag_filter, (data.get("notes") or "").strip(), now, now),
             )
-            # Attach recipients: all active contacts, optionally filtered by tag
-            contacts = _rows(fetchall(
-                conn,
-                "SELECT * FROM mail_contacts WHERE unsubscribed = 0 ORDER BY id ASC",
-            ))
-            attached = 0
-            for c in contacts:
-                tags = _parse_tags(c.get("tags"))
-                if tag_filter and tag_filter not in tags:
-                    continue
-                try:
-                    insert_returning_id(
-                        conn,
-                        """
-                        INSERT INTO mail_campaign_recipients (campaign_id, contact_id, status, created_at)
-                        VALUES (?, ?, 'pending', ?)
-                        """,
-                        (cid, c["id"], now),
-                    )
-                    attached += 1
-                except Exception:
-                    pass
+            attached = _attach_campaign_recipients(
+                conn, cid, tag_filter=tag_filter, max_recipients=max_recipients,
+                exclude_previously_sent=exclude_sent, now=now,
+            )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (cid,))
             out = _row(row)
             out["recipient_count"] = attached
         return jsonify({"campaign": out}), 201
+
+    @bp.route("/campaigns/select-preview", methods=["POST"])
+    @mail_perm(*MAIL_CAMP)
+    def preview_campaign_selection():
+        """Kampanya oluşturmadan önce filtreye kaç kişinin denk geldiğini gösterir."""
+        data = request.get_json(silent=True) or {}
+        tag_filter = (data.get("tag_filter") or "").strip()
+        exclude_sent = data.get("exclude_previously_sent")
+        exclude_sent = True if exclude_sent is None else bool(exclude_sent)
+        with closing(get_db()) as conn:
+            where_sql, params = _campaign_selection_where(tag_filter, exclude_sent)
+            total = scalar(conn, f"SELECT COUNT(*) FROM mail_contacts WHERE {where_sql}", tuple(params)) or 0
+        return jsonify({"matching_count": total})
 
     @bp.route("/campaigns/<int:campaign_id>", methods=["PATCH"])
     @mail_perm(*MAIL_CAMP)

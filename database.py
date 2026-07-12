@@ -2335,6 +2335,7 @@ def init_mailing_schema(conn):
             "CREATE INDEX IF NOT EXISTS idx_mail_contacts_phone ON mail_contacts(phone)",
             "CREATE INDEX IF NOT EXISTS idx_mail_sends_created ON mail_sends(created_at)",
             "CREATE INDEX IF NOT EXISTS idx_mail_sends_status ON mail_sends(status)",
+            "CREATE INDEX IF NOT EXISTS idx_mail_sends_contact ON mail_sends(contact_id)",
             "CREATE INDEX IF NOT EXISTS idx_mail_ivr_events_created ON mail_ivr_events(created_at)",
             """
             CREATE TABLE IF NOT EXISTS mail_click_links (
@@ -2508,6 +2509,7 @@ def init_mailing_schema(conn):
             "CREATE INDEX IF NOT EXISTS idx_mail_contacts_phone ON mail_contacts(phone)",
             "CREATE INDEX IF NOT EXISTS idx_mail_sends_created ON mail_sends(created_at)",
             "CREATE INDEX IF NOT EXISTS idx_mail_sends_status ON mail_sends(status)",
+            "CREATE INDEX IF NOT EXISTS idx_mail_sends_contact ON mail_sends(contact_id)",
             "CREATE INDEX IF NOT EXISTS idx_mail_ivr_events_created ON mail_ivr_events(created_at)",
             """
             CREATE TABLE IF NOT EXISTS mail_click_links (

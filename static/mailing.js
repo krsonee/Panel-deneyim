@@ -733,30 +733,53 @@
       });
     });
 
+    function mailCampSelectionPayload() {
+      var maxEl = document.getElementById("mail-camp-max");
+      var maxVal = maxEl && maxEl.value ? Number(maxEl.value) : null;
+      return {
+        tag_filter: document.getElementById("mail-camp-tag").value.trim(),
+        max_recipients: maxVal,
+        exclude_previously_sent: document.getElementById("mail-camp-exclude-sent").checked
+      };
+    }
+
     var campForm = document.getElementById("mail-camp-form");
     if (campForm) {
       campForm.addEventListener("submit", function (e) {
         e.preventDefault();
-        mailApi("/api/mailing/campaigns", {
-          method: "POST",
-          body: {
-            name: document.getElementById("mail-camp-name").value.trim(),
-            template_id: Number(document.getElementById("mail-camp-tpl").value),
-            domain_id: Number(document.getElementById("mail-camp-domain").value),
-            tag_filter: document.getElementById("mail-camp-tag").value.trim(),
-            notes: document.getElementById("mail-camp-notes").value.trim()
-          }
-        }).then(function (res) {
+        var body = mailCampSelectionPayload();
+        body.name = document.getElementById("mail-camp-name").value.trim();
+        body.template_id = Number(document.getElementById("mail-camp-tpl").value);
+        body.domain_id = Number(document.getElementById("mail-camp-domain").value);
+        body.notes = document.getElementById("mail-camp-notes").value.trim();
+        mailApi("/api/mailing/campaigns", { method: "POST", body: body }).then(function (res) {
           if (!res || !res.ok) {
             mailToast((res && res.data && res.data.error) || "Oluşturulamadı");
             return;
           }
           mailToast("Kampanya oluşturuldu · " + (res.data.campaign.recipient_count || 0) + " alıcı");
           campForm.reset();
+          document.getElementById("mail-camp-exclude-sent").checked = true;
+          var hint = document.getElementById("mail-camp-preview-hint");
+          if (hint) hint.textContent = "";
           mailLoadCampaigns();
         });
       });
     }
+    bindClick("mail-camp-preview", function () {
+      var hint = document.getElementById("mail-camp-preview-hint");
+      if (hint) hint.textContent = "Hesaplanıyor…";
+      mailApi("/api/mailing/campaigns/select-preview", { method: "POST", body: mailCampSelectionPayload() })
+        .then(function (res) {
+          if (!hint) return;
+          if (!res || !res.ok) { hint.textContent = "Hesaplanamadı"; return; }
+          var total = res.data.matching_count || 0;
+          var maxEl = document.getElementById("mail-camp-max");
+          var maxVal = maxEl && maxEl.value ? Number(maxEl.value) : null;
+          var willAttach = maxVal ? Math.min(maxVal, total) : total;
+          hint.textContent = "Filtreye uyan: " + total + " kişi · bu kampanyaya eklenecek: " + willAttach + " kişi";
+        });
+    });
     bindClick("mail-camp-refresh", mailLoadCampaigns);
 
     var ivrForm = document.getElementById("mail-ivr-form");

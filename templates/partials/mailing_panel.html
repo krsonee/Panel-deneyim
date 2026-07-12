@@ -195,10 +195,18 @@
           <div><label>Şablon</label><select id="mail-camp-tpl" required></select></div>
           <div><label>Domain</label><select id="mail-camp-domain" required></select></div>
           <div><label>Etiket filtresi</label><input type="text" id="mail-camp-tag" placeholder="boş = tüm aktif"></div>
+          <div><label>Maks alıcı sayısı</label><input type="number" id="mail-camp-max" min="1" placeholder="örn. 150000"></div>
+          <div style="display:flex;align-items:flex-end;">
+            <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
+              <input type="checkbox" id="mail-camp-exclude-sent" checked> Önceden mail atılmışları hariç tut
+            </label>
+          </div>
+          <div style="display:flex;align-items:flex-end;"><button type="button" class="btn btn-sm" id="mail-camp-preview">Kaç kişi eşleşiyor?</button></div>
           <div style="grid-column:1/-1;"><label>Not</label><input type="text" id="mail-camp-notes" placeholder="opsiyonel"></div>
           <div style="grid-column:1/-1;"><button type="submit" class="btn btn-primary">Oluştur (taslak)</button></div>
         </form>
-        <p class="hint" style="margin-top:0.5rem;">Oluşturunca alıcılar CRM’den eklenir. “Kuyruğa al” ile stub gönderim kayıtları üretilir.</p>
+        <p class="hint" id="mail-camp-preview-hint" style="margin-top:0.5rem;"></p>
+        <p class="hint">Oluşturunca alıcılar CRM’den eklenir. Maks alıcı boşsa filtreye uyan herkes eklenir; doldurursan en fazla o kadarı (ilk eklenenden başlayarak) eklenir — tek domainden aynı anda gönderebileceğin miktarı aşmamak için kullan (örn. 100-200k). “Önceden mail atılmışları hariç tut” işaretliyse, sistemden herhangi bir kanaldan daha önce mail almış kişiler yeni kampanyaya bir daha eklenmez; böylece sıradaki batch otomatik olarak bir sonraki grubu seçer. “Kuyruğa al” ile stub gönderim kayıtları üretilir.</p>
       </div>
     </section>
     <section class="card">
