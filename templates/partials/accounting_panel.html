@@ -78,7 +78,8 @@
       </div>
       <div class="kpi green">
         <div class="val" id="acc-kpi-personnel-accrual">—</div>
-        <div class="lbl">Personel Hakedişi <span class="muted" style="font-weight:400;">(bu ay · ₺)</span></div>
+        <div class="lbl">Personel Hakedişi <span class="muted" style="font-weight:400;">(bu ay)</span></div>
+        <div class="sub muted" id="acc-kpi-personnel-accrual-sub"></div>
       </div>
     </section>
     <section class="card" id="acc-kpi-expense-cat-card">
@@ -687,18 +688,18 @@
               <table class="acc-emp-table acc-emp-table-left">
                 <thead>
                   <tr class="acc-emp-head-cols">
-                    <th class="acc-emp-col-sticky">Personel</th>
+                    <th class="acc-emp-col-sticky col-sortable" data-acc-sort="acc-emp" data-sort="name">Personel</th>
                     <th>Referans</th>
-                    <th>Departman</th>
+                    <th class="col-sortable" data-acc-sort="acc-emp" data-sort="department">Departman</th>
                     <th>Konum</th>
-                    <th>Başlangıç</th>
-                    <th>Çıkış</th>
-                    <th>Maaş</th>
+                    <th class="col-sortable" data-acc-sort="acc-emp" data-sort="start_date">Başlangıç</th>
+                    <th class="col-sortable" data-acc-sort="acc-emp" data-sort="end_date">Çıkış</th>
+                    <th class="col-sortable" data-acc-sort="acc-emp" data-sort="salary">Maaş</th>
                     <th>Kripto</th>
                     <th>Avans</th>
                     <th>Kalan</th>
                     <th>Cüzdan</th>
-                    <th>Durum</th>
+                    <th class="col-sortable" data-acc-sort="acc-emp" data-sort="status">Durum</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -719,17 +720,17 @@
               <table class="acc-emp-table acc-emp-table-right">
                 <thead>
                   <tr class="acc-emp-head-cols">
-                    <th class="acc-emp-col-sticky">Personel</th>
+                    <th class="acc-emp-col-sticky col-sortable" data-acc-sort="acc-emp" data-sort="name">Personel</th>
                     <th>Referans</th>
-                    <th>Departman</th>
+                    <th class="col-sortable" data-acc-sort="acc-emp" data-sort="department">Departman</th>
                     <th>Konum</th>
-                    <th>Başlangıç</th>
-                    <th>Çıkış</th>
-                    <th>Maaş</th>
+                    <th class="col-sortable" data-acc-sort="acc-emp" data-sort="start_date">Başlangıç</th>
+                    <th class="col-sortable" data-acc-sort="acc-emp" data-sort="end_date">Çıkış</th>
+                    <th class="col-sortable" data-acc-sort="acc-emp" data-sort="salary">Maaş</th>
                     <th>Hak Ediş</th>
                     <th>Kripto</th>
                     <th>Net Ödeme</th>
-                    <th>Durum</th>
+                    <th class="col-sortable" data-acc-sort="acc-emp" data-sort="status">Durum</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -787,42 +788,61 @@
       <div class="card-head">
         <span>Personel <span class="muted" style="font-weight:400;font-size:0.72rem;">(sade Ofis / Türkiye listesi — isim, işbaşı tarihi, maaş; Maaş Ödemeleri alanıyla bağlantısı yoktur)</span></span>
       </div>
-      <p class="hint" style="margin:0 1rem 0.85rem;">Günlük yevmiye = Maaş ÷ o ayın gün sayısı. Dashboard'daki "Personel Hakedişi" kartı, işbaşı tarihinden bugüne kadarki (seçili ayda) toplam yevmiyeyi buradan çeker.</p>
+      <p class="hint" style="margin:0 1rem 0.85rem;">Günlük yevmiye = Maaş ÷ o ayın gün sayısı. Para birimi seçip kur girmezseniz güncel kurdan otomatik hesaplanır. Dashboard'daki "Personel Hakedişi" kartı buradan besleniyor.</p>
     </section>
 
     <section class="kpi-grid acc-kpi-grid">
       <div class="kpi green">
         <div class="val" id="acc-pers-total-office">—</div>
         <div class="lbl">Ofis Personeli Hakedişi (bu ay)</div>
+        <div class="sub muted" id="acc-pers-total-office-sub"></div>
       </div>
       <div class="kpi">
         <div class="val" id="acc-pers-total-turkey">—</div>
         <div class="lbl">Türkiye Personeli Hakedişi (bu ay)</div>
+        <div class="sub muted" id="acc-pers-total-turkey-sub"></div>
       </div>
       <div class="kpi amber">
         <div class="val" id="acc-pers-total-all">—</div>
         <div class="lbl">Toplam Hakediş (bu ay)</div>
+        <div class="sub muted" id="acc-pers-total-all-sub"></div>
       </div>
     </section>
 
     <section class="card">
       <div class="card-head"><span>Yeni Personel Ekle</span></div>
-      <form id="acc-pers-form" class="card-body acc-inv-meta-grid">
-        <label>Kategori
+      <form id="acc-pers-form" class="form-row-4">
+        <div><label>Kategori</label>
           <select id="acc-pers-category" required>
             <option value="office">Ofis Personeli</option>
             <option value="turkey">Türkiye Personeli</option>
           </select>
-        </label>
-        <label>İsim
+        </div>
+        <div><label>İsim</label>
           <input type="text" id="acc-pers-name" placeholder="Ad Soyad" required>
-        </label>
-        <label>İşbaşı Tarihi
+        </div>
+        <div><label>Referans</label>
+          <input type="text" id="acc-pers-reference" placeholder="Kim önerdi, not…">
+        </div>
+        <div><label>Departman</label>
+          <select id="acc-pers-dept"></select>
+        </div>
+        <div><label>İşbaşı Tarihi</label>
           <input type="date" id="acc-pers-start" required>
-        </label>
-        <label>Maaş (₺)
-          <input type="number" step="0.01" id="acc-pers-salary" placeholder="0" required>
-        </label>
+        </div>
+        <div><label>Para Birimi</label>
+          <select id="acc-pers-currency" class="acc-currency-select" required>
+            <option value="TRY" selected>₺ TRY</option>
+            <option value="USD">$ USD</option>
+            <option value="EUR">€ EUR</option>
+          </select>
+        </div>
+        <div><label>Maaş</label>
+          <input type="number" step="0.01" min="0" id="acc-pers-salary" placeholder="0" required>
+        </div>
+        <div><label>USD/TL</label><input type="number" id="acc-pers-rate-usd" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
+        <div><label>EUR/TL</label><input type="number" id="acc-pers-rate-eur" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
+        <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-pers-fx-preview"></p></div>
         <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
       </form>
     </section>
@@ -834,16 +854,17 @@
           <table class="acc-inv-table">
             <thead>
               <tr>
-                <th>İsim</th>
-                <th>İşbaşı Tarihi</th>
-                <th>Maaş (₺)</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-office" data-sort="name">İsim</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-office" data-sort="department">Departman</th>
+                <th>Referans</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-office" data-sort="start_date">İşbaşı Tarihi</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-office" data-sort="salary_amount">Maaş</th>
                 <th>Günlük Yevmiye</th>
-                <th>Bu Ay Hakediş</th>
-                <th>Durum</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-office" data-sort="try_accrual">Bu Ay Hakediş</th>
                 <th></th>
               </tr>
             </thead>
-            <tbody id="acc-pers-table-office"><tr><td colspan="7" class="empty">Henüz personel eklenmedi</td></tr></tbody>
+            <tbody id="acc-pers-table-office"><tr><td colspan="8" class="empty">Henüz personel eklenmedi</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -856,16 +877,39 @@
           <table class="acc-inv-table">
             <thead>
               <tr>
-                <th>İsim</th>
-                <th>İşbaşı Tarihi</th>
-                <th>Maaş (₺)</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-turkey" data-sort="name">İsim</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-turkey" data-sort="department">Departman</th>
+                <th>Referans</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-turkey" data-sort="start_date">İşbaşı Tarihi</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-turkey" data-sort="salary_amount">Maaş</th>
                 <th>Günlük Yevmiye</th>
-                <th>Bu Ay Hakediş</th>
-                <th>Durum</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-turkey" data-sort="try_accrual">Bu Ay Hakediş</th>
                 <th></th>
               </tr>
             </thead>
-            <tbody id="acc-pers-table-turkey"><tr><td colspan="7" class="empty">Henüz personel eklenmedi</td></tr></tbody>
+            <tbody id="acc-pers-table-turkey"><tr><td colspan="8" class="empty">Henüz personel eklenmedi</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span>İşten Ayrılanlar</span></div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table class="acc-inv-table">
+            <thead>
+              <tr>
+                <th class="col-sortable" data-acc-sort="acc-pers-left" data-sort="name">İsim</th>
+                <th>Kategori</th>
+                <th>Departman</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-left" data-sort="start_date">İşbaşı Tarihi</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-left" data-sort="end_date">Çıkış Tarihi</th>
+                <th class="col-sortable" data-acc-sort="acc-pers-left" data-sort="salary_amount">Maaş</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="acc-pers-table-left"><tr><td colspan="7" class="empty">İşten ayrılan personel yok</td></tr></tbody>
           </table>
         </div>
       </div>

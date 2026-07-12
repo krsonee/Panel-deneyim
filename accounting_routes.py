@@ -869,7 +869,7 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             employees = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employees")]
             departments, salary_categories = payroll_context(conn)
             expense_categories = expense_category_totals(conn, period)
-            staff_rows = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_staff WHERE status = 'active'")]
+            staff_rows = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_staff")]
             personnel_accrual = {cur: 0.0 for cur in CURRENCIES}
             for r in staff_rows:
                 row_accrual = staff_period_accrual_all(r, month_period)
@@ -2725,10 +2725,9 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
     def enrich_staff_row(row, period):
         row = dict(row)
         row["daily_wage"] = staff_daily_wage_all(row, datetime.now(timezone.utc).date())
-        if row.get("status") == "active":
-            row["period_accrual"] = staff_period_accrual_all(row, period)
-        else:
-            row["period_accrual"] = {cur: 0.0 for cur in CURRENCIES}
+        # employee_active_on zaten 'left' durumundakiler için end_date'e kadarki günleri sayar,
+        # ondan sonrasını otomatik hariç tutar — ayrılan personel de o aydaki çalıştığı günler için hak ediş görür.
+        row["period_accrual"] = staff_period_accrual_all(row, period)
         return row
 
     @bp.route("/personnel", methods=["GET"])
@@ -2747,11 +2746,10 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
         for r in rows:
             row = enrich_staff_row(r, period)
             enriched.append(row)
-            if row["status"] == "active":
-                cat = row["category"] if row["category"] in ("office", "turkey") else "turkey"
-                for cur in CURRENCIES:
-                    totals[cat][cur] = round(totals[cat][cur] + row["period_accrual"][cur], 2)
-                    totals["all"][cur] = round(totals["all"][cur] + row["period_accrual"][cur], 2)
+            cat = row["category"] if row["category"] in ("office", "turkey") else "turkey"
+            for cur in CURRENCIES:
+                totals[cat][cur] = round(totals[cat][cur] + row["period_accrual"][cur], 2)
+                totals["all"][cur] = round(totals["all"][cur] + row["period_accrual"][cur], 2)
         return jsonify({
             "period": period,
             "period_label": period_label(period),

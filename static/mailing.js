@@ -92,10 +92,30 @@
         try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
         resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data: data });
       };
-      xhr.onerror = function () { resolve(null); };
-      xhr.ontimeout = function () { resolve(null); };
+      xhr.onerror = function () {
+        resolve({ ok: false, status: 0, data: { error: "Ağ hatası - yükleme kesildi." } });
+      };
+      xhr.ontimeout = function () {
+        resolve({ ok: false, status: 0, data: { error: "Yükleme zaman aşımına uğradı." } });
+      };
       xhr.send(formData);
     });
+  }
+
+  var MAIL_BULK_MAX_BYTES = 800 * 1024 * 1024;
+
+  function mailBulkSetError(msg) {
+    var progBox = document.getElementById("mail-bulk-progress");
+    var progBar = document.getElementById("mail-bulk-progress-bar");
+    var progText = document.getElementById("mail-bulk-progress-text");
+    if (progBox) progBox.hidden = false;
+    if (progBar) { progBar.style.width = "100%"; progBar.style.background = "#ef4444"; }
+    if (progText) progText.textContent = "Hata: " + msg;
+  }
+
+  function mailBulkResetBar() {
+    var progBar = document.getElementById("mail-bulk-progress-bar");
+    if (progBar) progBar.style.background = "";
   }
 
   function switchMailTab(name) {
@@ -218,17 +238,28 @@
     });
   }
 
-  function mailPollImportJob(jobId) {
+  function mailPollImportJob(jobId, onSettled) {
     var progBox = document.getElementById("mail-bulk-progress");
     var progBar = document.getElementById("mail-bulk-progress-bar");
     var progText = document.getElementById("mail-bulk-progress-text");
+    var failedPolls = 0;
+    function settle() {
+      if (typeof onSettled === "function") onSettled();
+    }
     function poll() {
       mailApi("/api/mailing/contacts/import/status/" + jobId).then(function (res) {
         if (!res || !res.ok || !res.data.job) {
+          failedPolls++;
+          if (failedPolls >= 10) {
+            mailBulkSetError("Durum bilgisi alınamıyor (bağlantı sorunu). Sayfayı yenileyip tekrar dene.");
+            settle();
+            return;
+          }
           if (progText) progText.textContent = "Durum alınamadı, tekrar deneniyor…";
           setTimeout(poll, 3000);
           return;
         }
+        failedPolls = 0;
         var j = res.data.job;
         var pct = j.total_rows > 0 ? Math.min(100, Math.round((j.processed_rows / j.total_rows) * 100)) : 0;
         if (progBar) progBar.style.width = pct + "%";
@@ -241,11 +272,14 @@
           mailToast("İçe aktarma tamam · " + j.upserted_count + " kontak işlendi · " + j.skipped_count + " geçersiz e-posta atlandı");
           mailLoadContacts();
           mailLoadTags();
-          setTimeout(function () { if (progBox) progBox.hidden = true; }, 4000);
+          settle();
+          setTimeout(function () { if (progBox) progBox.hidden = true; mailBulkResetBar(); }, 4000);
           return;
         }
         if (j.status === "error") {
+          mailBulkSetError(j.error || "bilinmeyen hata");
           mailToast("İçe aktarma hata verdi: " + (j.error || "bilinmeyen hata"));
+          settle();
           return;
         }
         setTimeout(poll, 2000);
@@ -576,14 +610,26 @@
     });
     var bulkForm = document.getElementById("mail-bulk-import-form");
     if (bulkForm) {
+      var bulkSubmitBtn = bulkForm.querySelector('button[type="submit"]');
+      var bulkSubmitBtnText = bulkSubmitBtn ? bulkSubmitBtn.textContent : "";
+      var setBulkFormBusy = function (busy) {
+        if (!bulkSubmitBtn) return;
+        bulkSubmitBtn.disabled = busy;
+        bulkSubmitBtn.textContent = busy ? "Yükleniyor…" : bulkSubmitBtnText;
+      };
       bulkForm.addEventListener("submit", function (e) {
         e.preventDefault();
+        if (bulkSubmitBtn && bulkSubmitBtn.disabled) return;
         var fileInput = document.getElementById("mail-bulk-file");
         var file = fileInput && fileInput.files && fileInput.files[0];
         if (!file) { mailToast("Önce bir CSV veya XLSX dosyası seç"); return; }
         var lowerName = file.name.toLowerCase();
         if (!/\.(csv|xlsx|xlsm)$/.test(lowerName)) {
           mailToast("Sadece .csv veya .xlsx dosyası yükleyebilirsin");
+          return;
+        }
+        if (file.size > MAIL_BULK_MAX_BYTES) {
+          mailToast("Dosya çok büyük (800MB üstü). Bölüp tekrar dene.");
           return;
         }
         var tag = (document.getElementById("mail-bulk-tag").value || "").trim();
@@ -593,22 +639,26 @@
         var progBox = document.getElementById("mail-bulk-progress");
         var progBar = document.getElementById("mail-bulk-progress-bar");
         var progText = document.getElementById("mail-bulk-progress-text");
+        mailBulkResetBar();
         if (progBox) progBox.hidden = false;
         if (progBar) progBar.style.width = "0%";
         if (progText) progText.textContent = "Yükleniyor: %0 · 0 B / " + fmtBytes(file.size);
+        setBulkFormBusy(true);
         mailUploadWithProgress("/api/mailing/contacts/import/start", fd, function (loaded, total) {
           var pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
           if (progBar) progBar.style.width = pct + "%";
           if (progText) progText.textContent = "Yükleniyor: %" + pct + " · " + fmtBytes(loaded) + " / " + fmtBytes(total);
         }).then(function (res) {
           if (!res || !res.ok) {
-            mailToast((res && res.data && res.data.error) || "Yükleme başlatılamadı");
-            if (progBox) progBox.hidden = true;
+            var errMsg = (res && res.data && res.data.error) || "Yükleme başlatılamadı";
+            mailToast(errMsg);
+            mailBulkSetError(errMsg);
+            setBulkFormBusy(false);
             return;
           }
           mailToast("Yükleme başladı, arka planda işleniyor…");
           fileInput.value = "";
-          mailPollImportJob(res.data.job_id);
+          mailPollImportJob(res.data.job_id, function () { setBulkFormBusy(false); });
         });
       });
     }

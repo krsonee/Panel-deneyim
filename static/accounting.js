@@ -34,7 +34,10 @@
     "acc-tx": { rows: [], expanded: false, sortKey: "tx_date", sortDir: "desc" },
     "acc-exp": { rows: [], expanded: false, sortKey: "expense_date", sortDir: "desc", filterCat: "", filterQ: "" },
     "acc-vault": { rows: [], expanded: false, sortKey: "tx_date", sortDir: "desc" },
-    "acc-emp": { rows: [], expanded: false, sortKey: "name", sortDir: "asc" }
+    "acc-emp": { rows: [], expanded: false, sortKey: "name", sortDir: "asc" },
+    "acc-pers-office": { rows: [], expanded: false, sortKey: "name", sortDir: "asc" },
+    "acc-pers-turkey": { rows: [], expanded: false, sortKey: "name", sortDir: "asc" },
+    "acc-pers-left": { rows: [], expanded: false, sortKey: "end_date", sortDir: "desc" }
   };
 
   function accSetOfficeSalaryAccess(canView) {
