@@ -26,6 +26,7 @@ from accounting_payroll import (
     validate_office_amounts,
     validate_payment_split,
 )
+from accounting_payroll import period_date_range as accrual_date_range
 from accounting_period import (
     MONTH_PERIOD_RE,
     date_clause,
@@ -486,8 +487,9 @@ def staff_daily_wage_all(staff_row, day):
 
 
 def staff_period_accrual_all(staff_row, period, reference=None):
-    """Personel (Ofis/Türkiye) sekmesi — seçili ay için TRY/USD/EUR toplam hak ediş."""
-    period_start, period_end = period_date_range(period, reference)
+    """Personel (Ofis/Türkiye) sekmesi — seçili ay için TRY/USD/EUR toplam hak ediş.
+    Devam eden/gelecek aylarda bugüne kadarki günlerle sınırlanır (bkz. accounting_payroll.period_date_range)."""
+    period_start, period_end = accrual_date_range(period, reference)
     if not period_start:
         return {cur: 0.0 for cur in CURRENCIES}
     return {

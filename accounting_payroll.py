@@ -55,13 +55,17 @@ def parse_employee_date(value):
 
 
 def period_date_range(period, reference=None):
+    """Hak ediş hesabı için dönem aralığı. Devam eden/gelecekteki aylarda
+    bitiş tarihi bugünle sınırlanır (henüz yaşanmamış günler tahakkuk etmez);
+    tamamlanmış geçmiş aylarda tam ay aralığı döner."""
     start, end, key = parse_period(period, reference)
+    reference = reference or utc_today()
     if key == "all":
-        reference = reference or utc_today()
         return date(reference.year, 1, 1), reference
     if start is None:
-        reference = reference or utc_today()
         return reference.replace(day=1), reference
+    if end and end > reference:
+        end = reference
     return start, end
 
 
