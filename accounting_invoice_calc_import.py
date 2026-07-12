@@ -7,7 +7,7 @@ import unicodedata
 from datetime import date, datetime
 from io import BytesIO
 
-from database import execute, fetchall, fetchone, insert_returning_id, iso, scalar, utcnow
+from database import execute, fetchall, fetchone, insert_returning_id, iso, scalar, utcnow, uses_postgres
 
 SECTION_LABELS_TR = {
     "sport": "Spor Bahisleri",
@@ -52,7 +52,8 @@ def capture_invoice_calc_day_rates(conn, entry_date, rates=None):
             (usd, eur, source, captured, now, entry_date),
         )
     else:
-        insert_returning_id(
+        # Bu tabloda id yok — insert_returning_id(RETURNING id) Postgres'te transaction'ı bozar.
+        execute(
             conn,
             """
             INSERT INTO acc_invoice_calc_day_meta
@@ -62,6 +63,31 @@ def capture_invoice_calc_day_rates(conn, entry_date, rates=None):
             (entry_date, period, usd, eur, source, captured, now),
         )
     return True
+
+
+def _safe_capture_day_rates(conn, entry_date, rates=None):
+    """Kur kaydı opsiyonel; hata upsert transaction'ını abort etmemeli."""
+    sp = "invoice_calc_fx"
+    if uses_postgres():
+        try:
+            execute(conn, f"SAVEPOINT {sp}")
+            capture_invoice_calc_day_rates(conn, entry_date, rates=rates)
+            execute(conn, f"RELEASE SAVEPOINT {sp}")
+            return True
+        except Exception:
+            try:
+                execute(conn, f"ROLLBACK TO SAVEPOINT {sp}")
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            return False
+    try:
+        capture_invoice_calc_day_rates(conn, entry_date, rates=rates)
+        return True
+    except Exception:
+        return False
 
 
 def load_invoice_calc_day_rates(conn, period):
@@ -76,7 +102,12 @@ def load_invoice_calc_day_rates(conn, period):
     )
     out = {}
     for r in rows:
-        out[r["entry_date"]] = {
+        key = r["entry_date"]
+        if hasattr(key, "isoformat") and not isinstance(key, str):
+            key = key.isoformat()
+        else:
+            key = str(key or "").strip()[:10]
+        out[key] = {
             "usd_try": round(float(r["usd_try"] or 0), 6),
             "eur_try": round(float(r["eur_try"] or 0), 6),
             "rate_source": r["rate_source"] or "",
@@ -297,10 +328,7 @@ def upsert_invoice_calc_daily_batch(conn, entry_date, rows, who="", capture_fx=T
             (entry_date,),
         )
         if has_rows and not meta_exists:
-            try:
-                capture_invoice_calc_day_rates(conn, entry_date)
-            except Exception:
-                pass
+            _safe_capture_day_rates(conn, entry_date)
     return {"saved": saved, "deleted": deleted, "skipped": skipped}
 
 
@@ -528,10 +556,7 @@ def import_workbook(conn, file_storage, who=""):
                 (entry_date,),
             )
             if has_rows and not meta_exists:
-                try:
-                    capture_invoice_calc_day_rates(conn, entry_date, rates=bulk_rates)
-                except Exception:
-                    pass
+                _safe_capture_day_rates(conn, entry_date, rates=bulk_rates)
 
         conn.commit()
         unknown_unique = sorted(set(unknown))
