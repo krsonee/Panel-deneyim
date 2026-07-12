@@ -176,6 +176,10 @@
     var lowerName = file.name.toLowerCase();
     if (!/\.(csv|xlsx|xlsm)$/.test(lowerName)) return "sadece .csv veya .xlsx yükleyebilirsin";
     if (file.size > MAIL_BULK_MAX_BYTES) return "5GB üstü, bölüp tekrar dene";
+    if (/\.(xlsx|xlsm)$/.test(lowerName) && file.size > MAIL_AUTO_SPLIT_BYTES) {
+      return "Excel " + fmtBytes(file.size) + " çok büyük — Render timeout yapar. "
+        + "Tekrarsız Mail 20m-merged.csv dosyasını kullan (parçalı yüklenir).";
+    }
     return null;
   }
 
@@ -488,11 +492,7 @@
     if (progBox) progBox.hidden = false;
     if (progBar) progBar.style.width = "2%";
     if (progText) progText.textContent = file.name + " — dosya sunucuya gönderiliyor… %0 · 0 B / " + fmtBytes(file.size);
-    if (cancelBtn) cancelBtn.hidden = true;
-    mailSetImportDashboard({
-      phase: "uploading",
-      title: file.name,
-      sub: "Dosya sunucuya yükleniyor — büyük dosyalarda bu adım uzun sürebilir, sayfayı kapatma.",
+    if (cancelBtn) { cancelBtn.hidden = false; cancelBtn.textContent = "Yüklemeyi iptal"; }
       showProgress: true,
       showError: false
     });
@@ -1272,6 +1272,18 @@
       if (pasteBox) pasteBox.value = "";
     });
     bindClick("mail-bulk-cancel", function () {
+      if (mailImportActiveXhr) {
+        try { mailImportActiveXhr.abort(); } catch (e) { /* ignore */ }
+        mailImportActiveXhr = null;
+        mailImportBusy = false;
+        mailImportCurrentJobId = null;
+        mailClearImportSession();
+        mailBulkSetError("Yükleme iptal edildi.", "");
+        mailUpdateBulkFormState();
+        mailStartNextImport();
+        mailToast("Yükleme iptal edildi");
+        return;
+      }
       if (!mailImportCurrentJobId) return;
       mailApi("/api/mailing/contacts/import/cancel/" + mailImportCurrentJobId, { method: "POST" }).then(function (res) {
         if (!res || !res.ok) {
