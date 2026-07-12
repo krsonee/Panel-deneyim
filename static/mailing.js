@@ -725,8 +725,14 @@
 
   function buildTplPreviewDoc(bodyHtml) {
     return "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
-      "<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:16px;color:#111;line-height:1.5;font-size:15px}a{color:#2563eb}</style>" +
-      "</head><body>" + bodyHtml + "</body></html>";
+      "<meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
+      "<style>" +
+      "body{margin:0;padding:20px 12px;background:#0f172a;}" +
+      ".mail-preview-shell{max-width:600px;margin:0 auto;}" +
+      "img{max-width:100%;height:auto;display:block;}" +
+      ".promo-thumb{max-height:76px;object-fit:cover;}" +
+      "a{color:#2563eb}</style></head><body>" +
+      "<div class='mail-preview-shell'>" + bodyHtml + "</div></body></html>";
   }
 
   function refreshTplPreview() {
