@@ -2395,6 +2395,11 @@ def seed_mailing_defaults(conn):
             """,
             ("IVR cevap sonrası mail", 0, None, None, 0, now),
         )
+    try:
+        from mail_seed_davet_test import ensure_davet_test_template
+        ensure_davet_test_template(conn)
+    except Exception as exc:
+        print(f"⚠️  ensure_davet_test_template hata: {exc}")
 
 
 def init_mailing_schema(conn):
