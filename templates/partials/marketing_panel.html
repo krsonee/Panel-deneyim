@@ -1,0 +1,97 @@
+<div id="module-marketing-panel" class="module-panel" hidden>
+  <div class="topbar">
+    <div>
+      <h2>Marketing <span class="role-badge" id="mkt-role-badge"></span></h2>
+      <p>Kanal / affiliate anlaşmaları — aylık yapılan anlaşmaların manuel takibi</p>
+    </div>
+    <div class="period-bar">
+      <label for="mkt-filter-month" class="muted" style="font-size:0.72rem;">Ay:</label>
+      <input type="month" id="mkt-filter-month" style="width:auto;min-width:140px;">
+      <button type="button" class="btn btn-sm" id="btn-mkt-show-all">Tüm Zamanlar</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btn-mkt-refresh">Yenile</button>
+    </div>
+  </div>
+
+  <section class="kpi-grid acc-kpi-grid">
+    <div class="kpi green">
+      <div class="val" id="mkt-kpi-active-channels">—</div>
+      <div class="lbl">Aktif Kanal Sayısı</div>
+    </div>
+    <div class="kpi">
+      <div class="val" id="mkt-kpi-deal-count">—</div>
+      <div class="lbl">Anlaşma Sayısı</div>
+    </div>
+    <div class="kpi amber">
+      <div class="val" id="mkt-kpi-fee-total">—</div>
+      <div class="lbl">Toplam Sabit Ücret</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><span>Yeni Anlaşma Ekle</span></div>
+    <form id="mkt-deal-form" class="card-body acc-inv-meta-grid">
+      <label>Anlaşma Tarihi
+        <input type="date" id="mkt-agreement-date" required>
+      </label>
+      <label>Kanal Adı
+        <input type="text" id="mkt-channel-name" placeholder="Örn: @kanaladi, site.com" required>
+      </label>
+      <label>Kanal Türü
+        <input type="text" id="mkt-channel-type" placeholder="Influencer, Telegram, Site, YouTube…">
+      </label>
+      <label>Kanal Referans / Kodu <span class="muted" style="font-weight:400;">(ileride Smartico eşleşmesi için)</span>
+        <input type="text" id="mkt-channel-ref" placeholder="Affiliate kodu / ID">
+      </label>
+      <label>Para Birimi
+        <select id="mkt-fee-currency">
+          <option value="TRY">₺ TRY</option>
+          <option value="USD">$ USD</option>
+          <option value="EUR">€ EUR</option>
+        </select>
+      </label>
+      <label>Sabit Ücret
+        <input type="number" step="0.01" id="mkt-fixed-fee" placeholder="0" required>
+      </label>
+      <label>Affiliate Komisyon Oranı (%)
+        <input type="number" step="0.01" id="mkt-comm-rate" placeholder="0" required>
+      </label>
+      <label>Ödeme Durumu
+        <select id="mkt-payment-status">
+          <option value="pending">Bekliyor</option>
+          <option value="paid">Ödendi</option>
+          <option value="cancelled">İptal</option>
+        </select>
+      </label>
+      <label>Notlar
+        <input type="text" id="mkt-notes" placeholder="İsteğe bağlı not">
+      </label>
+      <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><span>Anlaşmalar</span></div>
+    <div class="table-wrap">
+      <div class="scroll-hint">Tabloyu yatay kaydırın</div>
+      <div class="table-scroll">
+        <table class="acc-inv-table">
+          <thead>
+            <tr>
+              <th>Anlaşma Tarihi</th>
+              <th>Kanal Adı</th>
+              <th>Kanal Türü</th>
+              <th>Referans / Kod</th>
+              <th>Sabit Ücret</th>
+              <th>Affiliate Kom. %</th>
+              <th>Ödeme Durumu</th>
+              <th>Durum</th>
+              <th>Notlar</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="mkt-deals-table"><tr><td colspan="10" class="empty">Henüz anlaşma eklenmedi</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
