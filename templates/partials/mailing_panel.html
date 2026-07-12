@@ -59,16 +59,36 @@
             <p class="hint" style="margin-top:0.45rem;">CSV ile tek seferde ~100 milyon e-postaya kadar yükleyebilirsin (dosya boyutu en fazla 5GB). Excel (.xlsx) tek sayfada en fazla ~1 milyon satır tutar — daha büyük listeler için CSV kullan.</p>
           </div>
         </div>
-        <div id="mail-bulk-queue" hidden style="margin-top:0.85rem;">
-          <p class="hint">Sırada bekleyen: <span id="mail-bulk-queue-list">—</span></p>
-        </div>
-        <div id="mail-bulk-progress" hidden style="margin-top:0.85rem;">
-          <div style="background:rgba(148,163,184,0.18);border-radius:999px;height:10px;overflow:hidden;">
-            <div id="mail-bulk-progress-bar" style="background:var(--green,#22c55e);height:100%;width:0%;transition:width .3s;"></div>
+        <div id="mail-import-dashboard" hidden style="margin-top:1rem;padding:1rem 1.1rem;border-radius:12px;border:1px solid rgba(148,163,184,0.22);background:rgba(15,23,42,0.35);">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
+            <div style="min-width:0;flex:1;">
+              <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.35rem;">
+                <span id="mail-import-status-badge" style="display:inline-block;padding:0.2rem 0.55rem;border-radius:999px;font-size:0.68rem;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;background:rgba(59,130,246,0.18);color:#93c5fd;border:1px solid rgba(59,130,246,0.35);">Bekliyor</span>
+                <strong id="mail-import-status-title" style="font-size:0.92rem;">Yükleme durumu</strong>
+              </div>
+              <p class="hint" id="mail-import-status-sub" style="margin:0;">Dosya seçildiğinde veya devam eden bir yükleme varsa burada görünür.</p>
+            </div>
+            <button type="button" class="btn btn-sm" id="mail-import-dismiss" hidden style="flex-shrink:0;">Kapat</button>
           </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;margin-top:0.4rem;">
-            <p class="hint" id="mail-bulk-progress-text" style="margin:0;">—</p>
-            <button type="button" class="btn btn-sm" id="mail-bulk-cancel" hidden>İptal et</button>
+          <div id="mail-import-error-box" hidden style="margin-top:0.75rem;padding:0.75rem 0.85rem;border-radius:8px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.38);">
+            <div style="font-weight:700;color:#fca5a5;font-size:0.82rem;margin-bottom:0.25rem;">Yükleme hatası</div>
+            <p id="mail-import-error-text" class="hint" style="margin:0;color:#fecaca;line-height:1.45;">—</p>
+          </div>
+          <div id="mail-bulk-queue" hidden style="margin-top:0.75rem;">
+            <p class="hint" style="margin:0;">Sırada bekleyen: <span id="mail-bulk-queue-list">—</span></p>
+          </div>
+          <div id="mail-bulk-progress" hidden style="margin-top:0.75rem;">
+            <div style="background:rgba(148,163,184,0.18);border-radius:999px;height:12px;overflow:hidden;">
+              <div id="mail-bulk-progress-bar" style="background:var(--green,#22c55e);height:100%;width:0%;transition:width .35s;"></div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;margin-top:0.45rem;flex-wrap:wrap;">
+              <p class="hint" id="mail-bulk-progress-text" style="margin:0;flex:1;min-width:200px;">—</p>
+              <button type="button" class="btn btn-sm" id="mail-bulk-cancel" hidden>İptal et</button>
+            </div>
+          </div>
+          <div id="mail-import-history" hidden style="margin-top:0.85rem;">
+            <p class="hint" style="margin:0 0 0.4rem;font-weight:600;">Son yüklemeler</p>
+            <div id="mail-import-history-list" class="hint" style="display:grid;gap:0.35rem;">—</div>
           </div>
         </div>
         <details style="margin-top:0.85rem;">

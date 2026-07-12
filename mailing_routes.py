@@ -33,10 +33,68 @@ IMPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mail_impo
 IMPORT_CHUNK_SIZE = 5000
 # Tek seferde ~100M e-posta (yaklaşık 4-5 GB CSV) yüklenebilsin diye üst sınır.
 IMPORT_MAX_BYTES = 5 * 1024 * 1024 * 1024
+# Yükleme isteği yarıda kesilirse (proxy timeout, bağlantı kopması) pending işler
+# panelde "hiçbir şey yok" gibi görünüyordu — bu süre sonra hata olarak işaretlenir.
+IMPORT_STALE_PENDING_SECONDS = 10 * 60
 
 
 def _ensure_import_dir():
     os.makedirs(IMPORT_DIR, exist_ok=True)
+
+
+def _import_job_path(job_id, filename):
+    ext = os.path.splitext(filename or "")[1].lower()
+    if ext not in (".csv", ".xlsx", ".xlsm"):
+        ext = ".csv"
+    return os.path.join(IMPORT_DIR, f"job_{job_id}{ext}")
+
+
+def _import_job_age_seconds(iso_str):
+    if not iso_str:
+        return IMPORT_STALE_PENDING_SECONDS + 1
+    try:
+        from datetime import datetime, timezone
+
+        ref = datetime.fromisoformat(str(iso_str).replace("Z", "+00:00"))
+        if ref.tzinfo is None:
+            ref = ref.replace(tzinfo=timezone.utc)
+        return (utcnow() - ref).total_seconds()
+    except Exception:
+        return IMPORT_STALE_PENDING_SECONDS + 1
+
+
+def _reconcile_stale_import_job(conn, row):
+    """Takılı kalmış pending işleri (yarım yükleme / sunucu restart) hata durumuna çeker."""
+    job = _row(row)
+    if job.get("status") != "pending" or job.get("processed_rows"):
+        return job
+    age_sec = _import_job_age_seconds(job.get("updated_at") or job.get("created_at"))
+    if age_sec < IMPORT_STALE_PENDING_SECONDS:
+        return job
+    path = _import_job_path(job["id"], job.get("filename"))
+    file_ok = os.path.isfile(path) and os.path.getsize(path) > 0
+    if file_ok:
+        return job
+    err = (
+        "Dosya yüklemesi tamamlanamadı veya bağlantı kesildi. "
+        "Büyük dosyalarda ağ/proxy zaman aşımı olabilir — dosyayı parçalara bölüp tekrar dene."
+    )
+    now = iso(utcnow())
+    execute(
+        conn,
+        "UPDATE mail_import_jobs SET status = 'error', error = ?, updated_at = ? WHERE id = ?",
+        (err, now, job["id"]),
+    )
+    conn.commit()
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+    except Exception:
+        pass
+    job["status"] = "error"
+    job["error"] = err
+    job["updated_at"] = now
+    return job
 
 MODULE_ACCESS = ("module.mailing",)
 MAIL_DASH = ("mailing.dashboard", "module.mailing")
@@ -931,8 +989,24 @@ def create_mailing_blueprint(permission_required):
                 (file.filename, tag, now, now),
             )
             conn.commit()
-        path = os.path.join(IMPORT_DIR, f"job_{job_id}{ext}")
-        file.save(path)
+        path = _import_job_path(job_id, file.filename)
+        try:
+            file.save(path)
+        except Exception as exc:
+            err = f"Dosya kaydedilemedi: {str(exc)[:300]}"
+            with closing(get_db()) as conn:
+                execute(
+                    conn,
+                    "UPDATE mail_import_jobs SET status = 'error', error = ?, updated_at = ? WHERE id = ?",
+                    (err, iso(utcnow()), job_id),
+                )
+                conn.commit()
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+            except Exception:
+                pass
+            return jsonify({"error": err}), 500
         threading.Thread(target=_run_import_job, args=(job_id, path, tag), daemon=True).start()
         return jsonify({"job_id": job_id, "status": "pending"}), 202
 
@@ -941,16 +1015,20 @@ def create_mailing_blueprint(permission_required):
     def import_job_status(job_id):
         with closing(get_db()) as conn:
             row = fetchone(conn, "SELECT * FROM mail_import_jobs WHERE id = ?", (job_id,))
-        if not row:
-            return jsonify({"error": "İş bulunamadı."}), 404
-        return jsonify({"job": _row(row)})
+            if not row:
+                return jsonify({"error": "İş bulunamadı."}), 404
+            job = _reconcile_stale_import_job(conn, row)
+        return jsonify({"job": job})
 
     @bp.route("/contacts/import/jobs", methods=["GET"])
     @mail_perm(*MAIL_CRM)
     def list_import_jobs():
         with closing(get_db()) as conn:
-            rows = _rows(fetchall(conn, "SELECT * FROM mail_import_jobs ORDER BY id DESC LIMIT 20"))
-        return jsonify({"jobs": rows})
+            raw = fetchall(conn, "SELECT * FROM mail_import_jobs ORDER BY id DESC LIMIT 30")
+            jobs = []
+            for row in raw:
+                jobs.append(_reconcile_stale_import_job(conn, row))
+        return jsonify({"jobs": jobs})
 
     @bp.route("/contacts/import/cancel/<int:job_id>", methods=["POST"])
     @mail_perm(*MAIL_CRM)
