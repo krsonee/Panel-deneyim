@@ -939,18 +939,47 @@
     if (el) el.textContent = text;
   }
 
+  function accFitKpiValue(el) {
+    if (!el) return;
+    var box = el.closest(".kpi") || el.closest(".acc-profit-card") || el.parentElement;
+    if (!box) return;
+    var isCat = !!el.closest(".acc-kpi-cat-grid");
+    var isNet = el.classList.contains("acc-net-profit");
+    var max = isNet ? 34 : (isCat ? 16 : 26);
+    var min = isCat ? 9 : 11;
+    el.style.fontSize = max + "px";
+    var guard = 0;
+    while (el.scrollWidth > box.clientWidth - 6 && max > min && guard++ < 80) {
+      max -= 0.5;
+      el.style.fontSize = max + "px";
+    }
+  }
+
+  function accFitDashboardKpis() {
+    document.querySelectorAll(".acc-dash-kpi-grid .val, .acc-kpi-cat-grid .val, .acc-net-profit").forEach(accFitKpiValue);
+  }
+
+  var accKpiFitTimer;
+  function accScheduleKpiFit() {
+    clearTimeout(accKpiFitTimer);
+    accKpiFitTimer = setTimeout(accFitDashboardKpis, 50);
+  }
+
   function accRenderExpenseCategoryKpis(list) {
     var box = document.getElementById("acc-kpi-expense-categories");
     if (!box) return;
     if (!list || !list.length) {
-      box.innerHTML = '<div class="kpi"><div class="val">—</div><div class="lbl">Kategori tanımlı değil</div></div>';
+      box.innerHTML = '<div class="kpi"><div class="lbl">Kategori tanımlı değil</div><div class="val">—</div></div>';
       return;
     }
     box.innerHTML = list.map(function (c) {
       var amt = c["amount_" + accDisplayCurrency.toLowerCase()];
       if (amt == null) amt = c.amount_try;
-      return '<div class="kpi"><div class="val">' + accMoney(amt, accDisplayCurrency) + '</div><div class="lbl">' + accEsc(c.name) + '</div></div>';
+      var num = parseFloat(amt) || 0;
+      var zeroCls = num === 0 ? " is-zero" : "";
+      return '<div class="kpi' + zeroCls + '"><div class="lbl">' + accEsc(c.name) + '</div><div class="val">' + accMoney(amt, accDisplayCurrency) + '</div></div>';
     }).join("");
+    accScheduleKpiFit();
   }
 
   function accLoadDashboard() {
@@ -997,6 +1026,7 @@
         }).join(" · ");
       }
       accRenderPayrollDaily(res.data.payroll_daily);
+      accScheduleKpiFit();
       } catch (err) {
         console.error("accLoadDashboard", err);
       }
@@ -3909,6 +3939,7 @@
       });
     }
     accRefreshEmpFilters();
+    window.addEventListener("resize", accScheduleKpiFit);
   }
 
   window.MakroAccounting = {

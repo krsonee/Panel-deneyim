@@ -50,43 +50,43 @@
 
   <!-- Dashboard -->
   <div class="acc-pane active" id="acc-pane-dashboard" data-acc-pane="dashboard" data-perm="accounting.dashboard">
-    <section class="kpi-grid acc-kpi-grid">
+    <section class="kpi-grid acc-kpi-grid acc-dash-kpi-grid">
       <div class="kpi green">
-        <div class="val" id="acc-kpi-deposits">—</div>
         <div class="lbl">Toplam Site Yatırımı</div>
+        <div class="val" id="acc-kpi-deposits">—</div>
       </div>
       <div class="kpi rose">
-        <div class="val" id="acc-kpi-withdrawals">—</div>
         <div class="lbl">Toplam Çekim</div>
+        <div class="val" id="acc-kpi-withdrawals">—</div>
       </div>
       <div class="kpi amber">
-        <div class="val" id="acc-kpi-deposit-commission">—</div>
         <div class="lbl">Toplam Yatırım Komisyonu</div>
+        <div class="val" id="acc-kpi-deposit-commission">—</div>
       </div>
       <div class="kpi amber">
-        <div class="val" id="acc-kpi-withdrawal-commission">—</div>
         <div class="lbl">Toplam Çekim Komisyonu</div>
+        <div class="val" id="acc-kpi-withdrawal-commission">—</div>
       </div>
       <div class="kpi">
-        <div class="val" id="acc-kpi-expenses">—</div>
         <div class="lbl">Toplam Cari Gider</div>
+        <div class="val" id="acc-kpi-expenses">—</div>
         <div class="sub muted" id="acc-kpi-payroll-hint"></div>
       </div>
       <div class="kpi rose">
+        <div class="lbl">Tahmini Fatura <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;">(GGR · ₺)</span></div>
         <div class="val" id="acc-kpi-invoice-estimate">—</div>
-        <div class="lbl">Tahmini Fatura <span class="muted" style="font-weight:400;">(GGR · ₺)</span></div>
       </div>
       <div class="kpi green">
+        <div class="lbl">Personel Hakedişi <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;">(bu ay)</span></div>
         <div class="val" id="acc-kpi-personnel-accrual">—</div>
-        <div class="lbl">Personel Hakedişi <span class="muted" style="font-weight:400;">(bu ay)</span></div>
         <div class="sub muted" id="acc-kpi-personnel-accrual-sub"></div>
       </div>
     </section>
     <section class="card" id="acc-kpi-expense-cat-card">
       <div class="card-head"><span>Cari Gider — Kategori Bazında (Bu Ay)</span></div>
       <div class="card-body">
-        <div class="kpi-grid acc-kpi-grid" id="acc-kpi-expense-categories">
-          <div class="kpi"><div class="val">—</div><div class="lbl">Yükleniyor…</div></div>
+        <div class="kpi-grid acc-kpi-grid acc-kpi-cat-grid" id="acc-kpi-expense-categories">
+          <div class="kpi"><div class="lbl">Yükleniyor…</div><div class="val">—</div></div>
         </div>
       </div>
     </section>
