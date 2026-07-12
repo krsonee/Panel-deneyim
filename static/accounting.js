@@ -2694,7 +2694,7 @@
     if (!tbody) return;
     var providers = (data && data.providers) || [];
     if (!providers.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">Sağlayıcı tanımlı değil</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">Sağlayıcı tanımlı değil</td></tr>';
       return;
     }
     var dateEl = document.getElementById("acc-ic-date");
@@ -2705,19 +2705,16 @@
     providers.forEach(function (p) {
       if (p.section !== lastSection) {
         lastSection = p.section;
-        html += '<tr class="acc-ic-section-row"><td colspan="6">' + accEsc(accIcSectionLabel(p.section)) + '</td></tr>';
+        html += '<tr class="acc-ic-section-row"><td colspan="4">' + accEsc(accIcSectionLabel(p.section)) + '</td></tr>';
       }
       var e = dayEntries[String(p.id)] || {};
-      var stakeVal = e.stake_amount || "";
-      var winVal = e.winning_amount || "";
-      var ggr = (parseFloat(stakeVal) || 0) - (parseFloat(winVal) || 0);
+      var ggrVal = e.ggr_amount != null ? e.ggr_amount : "";
+      var ggr = parseFloat(ggrVal) || 0;
       var comm = ggr > 0 ? ggr * (parseFloat(p.commission_rate) || 0) / 100 : 0;
       html += '<tr data-ic-row="' + p.id + '" data-ic-name="' + accEsc(String(p.name || "").toLowerCase()) + '">' +
         '<td class="acc-inv-name">' + accEsc(p.name) + '</td>' +
         '<td><input type="number" step="0.01" data-ic-rate="' + p.id + '" value="' + (p.commission_rate || 0) + '" style="width:70px;"></td>' +
-        '<td><input type="number" step="0.01" data-ic-field="stake_amount" data-ic-provider="' + p.id + '" value="' + stakeVal + '" placeholder="0"></td>' +
-        '<td><input type="number" step="0.01" data-ic-field="winning_amount" data-ic-provider="' + p.id + '" value="' + winVal + '" placeholder="0"></td>' +
-        '<td class="' + (ggr < 0 ? "acc-ic-neg" : "") + '" data-ic-ggr="' + p.id + '">' + accIcFmt(ggr) + '</td>' +
+        '<td><input type="number" step="0.01" data-ic-field="ggr_amount" data-ic-provider="' + p.id + '" value="' + ggrVal + '" placeholder="0"></td>' +
         '<td class="acc-inv-comm" data-ic-comm="' + p.id + '">' + accIcFmt(comm) + '</td>' +
         '</tr>';
     });
@@ -2726,20 +2723,13 @@
   }
 
   function accIcRecalcRow(providerId) {
-    var stakeEl = document.querySelector('[data-ic-field="stake_amount"][data-ic-provider="' + providerId + '"]');
-    var winEl = document.querySelector('[data-ic-field="winning_amount"][data-ic-provider="' + providerId + '"]');
+    var ggrEl = document.querySelector('[data-ic-field="ggr_amount"][data-ic-provider="' + providerId + '"]');
     var rateEl = document.querySelector('[data-ic-rate="' + providerId + '"]');
-    var stake = parseFloat(stakeEl && stakeEl.value) || 0;
-    var win = parseFloat(winEl && winEl.value) || 0;
+    var ggr = parseFloat(ggrEl && ggrEl.value) || 0;
     var rate = parseFloat(rateEl && rateEl.value) || 0;
-    var ggr = stake - win;
     var comm = ggr > 0 ? ggr * rate / 100 : 0;
-    var ggrCell = document.querySelector('[data-ic-ggr="' + providerId + '"]');
     var commCell = document.querySelector('[data-ic-comm="' + providerId + '"]');
-    if (ggrCell) {
-      ggrCell.textContent = accIcFmt(ggr);
-      ggrCell.classList.toggle("acc-ic-neg", ggr < 0);
-    }
+    if (ggrEl) ggrEl.classList.toggle("acc-ic-neg", ggr < 0);
     if (commCell) commCell.textContent = accIcFmt(comm);
   }
 
@@ -2768,15 +2758,13 @@
     var tbody = document.getElementById("acc-ic-provider-totals-body");
     if (!tbody) return;
     if (!list || !list.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">Henüz veri yok</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">Henüz veri yok</td></tr>';
       return;
     }
     tbody.innerHTML = list.map(function (p) {
       return '<tr>' +
         '<td class="acc-inv-name">' + accEsc(p.name) + '</td>' +
         '<td>' + (parseFloat(p.commission_rate) || 0).toFixed(2) + '%</td>' +
-        '<td>' + accIcFmt(p.stake_amount) + '</td>' +
-        '<td>' + accIcFmt(p.winning_amount) + '</td>' +
         '<td class="' + (p.ggr_amount < 0 ? "acc-ic-neg" : "") + '">' + accIcFmt(p.ggr_amount) + '</td>' +
         '<td class="acc-inv-comm">' + accIcFmt(p.commission_amount) + '</td>' +
         '</tr>';
@@ -2787,15 +2775,13 @@
     var tbody = document.getElementById("acc-ic-daily-totals-body");
     if (!tbody) return;
     if (!list || !list.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz veri yok</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="3" class="empty">Henüz veri yok</td></tr>';
       return;
     }
     var rows = list.slice().reverse();
     tbody.innerHTML = rows.map(function (d) {
       return '<tr>' +
         '<td>' + accEsc(d.entry_date.split("-").reverse().join(".")) + '</td>' +
-        '<td>' + accIcFmt(d.stake_amount) + '</td>' +
-        '<td>' + accIcFmt(d.winning_amount) + '</td>' +
         '<td class="' + (d.ggr_amount < 0 ? "acc-ic-neg" : "") + '">' + accIcFmt(d.ggr_amount) + '</td>' +
         '<td class="acc-inv-comm">' + accIcFmt(d.commission_amount) + '</td>' +
         '</tr>';
@@ -2806,12 +2792,8 @@
     accInvoiceCalcData = data;
     accIcEnsureDate(period);
     var t = data.grand_total || {};
-    accSetText("acc-ic-kpi-stake", accIcFmt(t.stake_amount));
-    accSetText("acc-ic-kpi-winning", accIcFmt(t.winning_amount));
     accSetText("acc-ic-kpi-ggr", accIcFmt(t.ggr_amount));
     accSetText("acc-ic-kpi-commission", accIcFmt(t.commission_amount));
-    accSetText("acc-ic-kpi-stake-fx", accIcKpiFxLine(t, "stake"));
-    accSetText("acc-ic-kpi-winning-fx", accIcKpiFxLine(t, "winning"));
     accSetText("acc-ic-kpi-ggr-fx", accIcKpiFxLine(t, "ggr"));
     accSetText("acc-ic-kpi-commission-fx", accIcKpiFxLine(t, "commission"));
     accIcRenderRateNote(data);
@@ -2832,13 +2814,10 @@
 
   function accIcCollectDayRows() {
     var rows = [];
-    document.querySelectorAll('#acc-ic-table-body [data-ic-field="stake_amount"]').forEach(function (el) {
-      var pid = el.getAttribute("data-ic-provider");
-      var winEl = document.querySelector('[data-ic-field="winning_amount"][data-ic-provider="' + pid + '"]');
+    document.querySelectorAll('#acc-ic-table-body [data-ic-field="ggr_amount"]').forEach(function (el) {
       rows.push({
-        provider_id: parseInt(pid, 10),
-        stake_amount: el.value,
-        winning_amount: winEl ? winEl.value : 0
+        provider_id: parseInt(el.getAttribute("data-ic-provider"), 10),
+        ggr_amount: el.value
       });
     });
     return rows;

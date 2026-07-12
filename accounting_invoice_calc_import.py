@@ -17,6 +17,7 @@ SECTION_LABELS_TR = {
 
 HEADER_DATE = frozenset({"tarih", "entry_date", "date", "gun"})
 HEADER_PROVIDER = frozenset({"saglayici", "provider", "provider_name", "saglayici_adi", "provider adi"})
+HEADER_GGR = frozenset({"ggr", "ggr_amount", "ggr_try", "toplam ggr", "ggr try", "ggr amount"})
 HEADER_STAKE = frozenset({"stake", "stake_amount", "stake_try", "toplam stake", "stake try"})
 HEADER_WINNING = frozenset({"winning", "winning_amount", "winning_try", "toplam winning", "winning try", "kazanc"})
 
@@ -93,8 +94,6 @@ def _apply_fx_amounts(try_amount, usd_try, eur_try):
 def enrich_invoice_calc_fx(daily_totals, day_rates):
     """Günlük toplamlara kilitli kur ile USD/EUR karşılıklarını ekle; ay grand total FX döner."""
     fx_grand = {
-        "stake_usd": 0.0, "stake_eur": 0.0,
-        "winning_usd": 0.0, "winning_eur": 0.0,
         "ggr_usd": 0.0, "ggr_eur": 0.0,
         "commission_usd": 0.0, "commission_eur": 0.0,
     }
@@ -105,7 +104,7 @@ def enrich_invoice_calc_fx(daily_totals, day_rates):
         if rate and rate["usd_try"] and rate["eur_try"]:
             d["usd_try"] = rate["usd_try"]
             d["eur_try"] = rate["eur_try"]
-            for field in ("stake", "winning", "ggr", "commission"):
+            for field in ("ggr", "commission"):
                 usd, eur = _apply_fx_amounts(d.get(field + "_amount"), rate["usd_try"], rate["eur_try"])
                 d[field + "_usd"] = usd
                 d[field + "_eur"] = eur
@@ -115,7 +114,7 @@ def enrich_invoice_calc_fx(daily_totals, day_rates):
                     fx_grand[field + "_eur"] += eur
         else:
             d["usd_try"] = d["eur_try"] = None
-            for field in ("stake", "winning", "ggr", "commission"):
+            for field in ("ggr", "commission"):
                 d[field + "_usd"] = None
                 d[field + "_eur"] = None
         enriched.append(d)
@@ -139,14 +138,23 @@ def _parse_amount(value):
     if isinstance(value, (int, float)):
         amount = float(value)
     else:
-        text = str(value).strip().replace(".", "").replace(",", ".") if re.search(r",\d{1,2}$", str(value).strip()) else str(value).strip().replace(",", "")
+        text = str(value).strip()
+        negative = text.startswith("-")
+        text = text.lstrip("-")
+        text = text.replace(".", "").replace(",", ".") if re.search(r",\d{1,2}$", text) else text.replace(",", "")
         try:
             amount = float(text)
         except (TypeError, ValueError):
             return None
-    if amount < 0:
-        return None
+        if negative:
+            amount = -amount
     return round(amount, 2)
+
+
+def _parse_ggr(value):
+    """GGR negatif olabilir — signed parse."""
+    result = _parse_amount(value)
+    return result if result is not None else None
 
 
 def _parse_entry_date(value):
@@ -178,6 +186,8 @@ def _map_headers(header_row):
             mapping["entry_date"] = idx
         elif key in HEADER_PROVIDER or key.startswith("saglayici"):
             mapping["provider_name"] = idx
+        elif key in HEADER_GGR or key == "ggr" or key.startswith("ggr"):
+            mapping["ggr_amount"] = idx
         elif key in HEADER_STAKE or key.startswith("stake"):
             mapping["stake_amount"] = idx
         elif key in HEADER_WINNING or key.startswith("winning") or key.startswith("kazanc"):
@@ -186,7 +196,7 @@ def _map_headers(header_row):
 
 
 def upsert_invoice_calc_daily_batch(conn, entry_date, rows, who=""):
-    """rows: [{provider_id, stake_amount, winning_amount}, ...]"""
+    """rows: [{provider_id, ggr_amount}, ...]"""
     period = entry_date[:7]
     now = iso(utcnow())
     who = (who or "").strip()
@@ -203,9 +213,8 @@ def upsert_invoice_calc_daily_batch(conn, entry_date, rows, who=""):
         if pid not in valid_ids:
             skipped += 1
             continue
-        stake = _parse_amount(item.get("stake_amount"))
-        winning = _parse_amount(item.get("winning_amount"))
-        if stake is None or winning is None:
+        ggr = _parse_ggr(item.get("ggr_amount"))
+        if ggr is None:
             skipped += 1
             continue
         exists = scalar(
@@ -213,7 +222,7 @@ def upsert_invoice_calc_daily_batch(conn, entry_date, rows, who=""):
             "SELECT COUNT(*) FROM acc_invoice_calc_daily WHERE entry_date = ? AND provider_id = ?",
             (entry_date, pid),
         )
-        if stake == 0 and winning == 0:
+        if ggr == 0:
             if exists:
                 execute(
                     conn,
@@ -227,20 +236,20 @@ def upsert_invoice_calc_daily_batch(conn, entry_date, rows, who=""):
                 conn,
                 """
                 UPDATE acc_invoice_calc_daily
-                SET stake_amount = ?, winning_amount = ?, created_by = ?, updated_at = ?
+                SET ggr_amount = ?, stake_amount = 0, winning_amount = 0, created_by = ?, updated_at = ?
                 WHERE entry_date = ? AND provider_id = ?
                 """,
-                (stake, winning, who, now, entry_date, pid),
+                (ggr, who, now, entry_date, pid),
             )
         else:
             insert_returning_id(
                 conn,
                 """
                 INSERT INTO acc_invoice_calc_daily
-                (period, entry_date, provider_id, stake_amount, winning_amount, created_by, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (period, entry_date, provider_id, ggr_amount, stake_amount, winning_amount, created_by, updated_at)
+                VALUES (?, ?, ?, ?, 0, 0, ?, ?)
                 """,
-                (period, entry_date, pid, stake, winning, who, now),
+                (period, entry_date, pid, ggr, who, now),
             )
         saved += 1
     if saved > 0:
@@ -278,19 +287,19 @@ def generate_template_bytes(conn, entry_date):
     for row in fetchall(
         conn,
         """
-        SELECT provider_id, stake_amount, winning_amount
+        SELECT provider_id, ggr_amount, stake_amount, winning_amount
         FROM acc_invoice_calc_daily
         WHERE entry_date = ?
         """,
         (entry_date,),
     ):
-        existing[row["provider_id"]] = row
+        existing[row["provider_id"]] = dict(row)
 
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Gunluk Veri"
 
-    headers = ["Tarih", "Sağlayıcı", "Bölüm", "Oran %", "Stake (TRY)", "Winning (TRY)"]
+    headers = ["Tarih", "Sağlayıcı", "Bölüm", "Oran %", "GGR (TRY)"]
     header_fill = PatternFill("solid", fgColor="1F2937")
     header_font = Font(bold=True, color="FFFFFF")
     for col, title in enumerate(headers, 1):
@@ -306,13 +315,13 @@ def generate_template_bytes(conn, entry_date):
         ws.cell(row=row_idx, column=2, value=p["name"])
         ws.cell(row=row_idx, column=3, value=SECTION_LABELS_TR.get(p["section"], p["section"]))
         ws.cell(row=row_idx, column=4, value=float(p["commission_rate"] or 0))
-        stake_val = ex.get("stake_amount")
-        win_val = ex.get("winning_amount")
-        ws.cell(row=row_idx, column=5, value=float(stake_val) if stake_val else None)
-        ws.cell(row=row_idx, column=6, value=float(win_val) if win_val else None)
+        ggr_val = ex.get("ggr_amount")
+        if ggr_val is None and ex:
+            ggr_val = float(ex.get("stake_amount") or 0) - float(ex.get("winning_amount") or 0)
+        ws.cell(row=row_idx, column=5, value=float(ggr_val) if ggr_val not in (None, "") else None)
         row_idx += 1
 
-    widths = [12, 42, 18, 10, 16, 16]
+    widths = [12, 42, 18, 10, 16]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = "A2"
@@ -322,11 +331,12 @@ def generate_template_bytes(conn, entry_date):
     info["A1"].font = Font(bold=True, size=14)
     lines = [
         "",
-        "1. 'Gunluk Veri' sekmesindeki Stake / Winning sütunlarını Pronet panelinden doldurun.",
+        "1. 'Gunluk Veri' sekmesindeki GGR (TRY) sütununu Pronet panelinden doldurun.",
         "2. Tarih sütununu değiştirmeyin (tek gün) veya her satırda farklı gün kullanabilirsiniz.",
         "3. Sağlayıcı adlarını değiştirmeyin — paneldeki isimlerle birebir eşleşmelidir.",
-        "4. Boş bırakılan satırlar (Stake=0, Winning=0) yüklenmez / mevcut kayıt silinir.",
-        "5. Panel → Muhasebe → Fatura Hesaplama → Excel Yükle ile dosyayı yükleyin.",
+        "4. Boş bırakılan veya 0 olan satırlar yüklenmez / mevcut kayıt silinir.",
+        "5. GGR negatif olabilir (oyuncu kazancı fazlaysa).",
+        "6. Panel → Muhasebe → Fatura Hesaplama → Excel Yükle ile dosyayı yükleyin.",
         "",
         f"Şablon tarihi: {entry_date}",
         f"Sağlayıcı sayısı: {len(providers)}",
@@ -366,8 +376,10 @@ def import_workbook(conn, file_storage, who=""):
         col_map = _map_headers(header)
         if "provider_name" not in col_map:
             raise ValueError("Excel'de 'Sağlayıcı' sütunu bulunamadı.")
-        if "stake_amount" not in col_map or "winning_amount" not in col_map:
-            raise ValueError("Excel'de 'Stake (TRY)' ve 'Winning (TRY)' sütunları gerekli.")
+        has_ggr = "ggr_amount" in col_map
+        has_stake_win = "stake_amount" in col_map and "winning_amount" in col_map
+        if not has_ggr and not has_stake_win:
+            raise ValueError("Excel'de 'GGR (TRY)' sütunu gerekli.")
 
         provider_rows = fetchall(conn, "SELECT id, name FROM acc_invoice_calc_providers")
         name_to_id = {r["name"].strip().lower(): r["id"] for r in provider_rows}
@@ -404,20 +416,23 @@ def import_workbook(conn, file_storage, who=""):
                 unknown.append(pname)
                 continue
 
-            stake = _parse_amount(cell("stake_amount"))
-            winning = _parse_amount(cell("winning_amount"))
-            if stake is None or winning is None:
+            if has_ggr:
+                ggr = _parse_ggr(cell("ggr_amount"))
+            else:
+                stake = _parse_amount(cell("stake_amount"))
+                winning = _parse_amount(cell("winning_amount"))
+                ggr = round(stake - winning, 2) if stake is not None and winning is not None else None
+            if ggr is None:
                 skipped_rows += 1
                 continue
 
             grouped.setdefault(entry_date, []).append({
                 "provider_id": pid,
-                "stake_amount": stake,
-                "winning_amount": winning,
+                "ggr_amount": ggr,
             })
 
         if not grouped:
-            raise ValueError("İşlenecek satır bulunamadı. Stake/Winning değerlerini kontrol edin.")
+            raise ValueError("İşlenecek satır bulunamadı. GGR değerlerini kontrol edin.")
 
         totals = {"saved": 0, "deleted": 0, "skipped": 0}
         dates = []

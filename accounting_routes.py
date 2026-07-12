@@ -349,12 +349,19 @@ def unique_salary_slug(conn, base_slug):
 
 
 def calc_ggr_commission(ggr_amount, commission_rate):
-    """GGR (Stake - Winning) üzerinden komisyon. Aylık toplamda negatif GGR için komisyon 0 kabul edilir."""
+    """GGR üzerinden komisyon. Negatif veya sıfır GGR için komisyon 0 kabul edilir."""
     ggr = float(ggr_amount or 0)
     rate = float(commission_rate or 0)
     if ggr <= 0:
         return 0.0
     return round(ggr * rate / 100.0, 2)
+
+
+def _invoice_calc_row_ggr(row):
+    keys = row.keys()
+    if "ggr_amount" in keys and row["ggr_amount"] is not None:
+        return float(row["ggr_amount"] or 0)
+    return float(row["stake_amount"] or 0) - float(row["winning_amount"] or 0)
 
 
 def build_invoice_calc_payload(conn, period):
@@ -374,7 +381,7 @@ def build_invoice_calc_payload(conn, period):
     rows = fetchall(
         conn,
         """
-        SELECT entry_date, provider_id, stake_amount, winning_amount
+        SELECT entry_date, provider_id, ggr_amount, stake_amount, winning_amount
         FROM acc_invoice_calc_daily
         WHERE period = ?
         ORDER BY entry_date, provider_id
@@ -392,25 +399,19 @@ def build_invoice_calc_payload(conn, period):
         if not provider:
             continue
         entry_date = r["entry_date"]
-        stake = float(r["stake_amount"] or 0)
-        winning = float(r["winning_amount"] or 0)
-        ggr = stake - winning
+        ggr = _invoice_calc_row_ggr(r)
         row_commission = calc_ggr_commission(ggr, provider["commission_rate"])
 
         entries.setdefault(entry_date, {})[str(pid)] = {
-            "stake_amount": round(stake, 2),
-            "winning_amount": round(winning, 2),
             "ggr_amount": round(ggr, 2),
             "commission_amount": row_commission,
         }
 
-        pa = provider_agg.setdefault(pid, {"stake_amount": 0.0, "winning_amount": 0.0})
-        pa["stake_amount"] += stake
-        pa["winning_amount"] += winning
+        pa = provider_agg.setdefault(pid, {"ggr_amount": 0.0})
+        pa["ggr_amount"] += ggr
 
-        da = daily_agg.setdefault(entry_date, {"stake_amount": 0.0, "winning_amount": 0.0, "commission_amount": 0.0})
-        da["stake_amount"] += stake
-        da["winning_amount"] += winning
+        da = daily_agg.setdefault(entry_date, {"ggr_amount": 0.0, "commission_amount": 0.0})
+        da["ggr_amount"] += ggr
         da["commission_amount"] += row_commission
 
     provider_totals = []
@@ -418,15 +419,13 @@ def build_invoice_calc_payload(conn, period):
         provider = provider_map.get(pid)
         if not provider:
             continue
-        ggr = agg["stake_amount"] - agg["winning_amount"]
+        ggr = agg["ggr_amount"]
         commission = calc_ggr_commission(ggr, provider["commission_rate"])
         provider_totals.append({
             "provider_id": pid,
             "name": provider["name"],
             "section": provider["section"],
             "commission_rate": provider["commission_rate"],
-            "stake_amount": round(agg["stake_amount"], 2),
-            "winning_amount": round(agg["winning_amount"], 2),
             "ggr_amount": round(ggr, 2),
             "commission_amount": commission,
         })
@@ -436,15 +435,11 @@ def build_invoice_calc_payload(conn, period):
     for entry_date, agg in sorted(daily_agg.items()):
         daily_totals.append({
             "entry_date": entry_date,
-            "stake_amount": round(agg["stake_amount"], 2),
-            "winning_amount": round(agg["winning_amount"], 2),
-            "ggr_amount": round(agg["stake_amount"] - agg["winning_amount"], 2),
+            "ggr_amount": round(agg["ggr_amount"], 2),
             "commission_amount": round(agg["commission_amount"], 2),
         })
 
     grand_total = {
-        "stake_amount": round(sum(p["stake_amount"] for p in provider_totals), 2),
-        "winning_amount": round(sum(p["winning_amount"] for p in provider_totals), 2),
         "ggr_amount": round(sum(p["ggr_amount"] for p in provider_totals), 2),
         "commission_amount": round(sum(p["commission_amount"] for p in provider_totals), 2),
     }

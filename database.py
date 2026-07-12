@@ -1449,6 +1449,14 @@ def migrate_invoice_calc(conn):
         conn,
         "CREATE INDEX IF NOT EXISTS idx_acc_invoice_calc_day_meta_period ON acc_invoice_calc_day_meta(period)",
     )
+    cols = _table_columns(conn, "acc_invoice_calc_daily")
+    if cols and "ggr_amount" not in cols:
+        execute(conn, "ALTER TABLE acc_invoice_calc_daily ADD COLUMN ggr_amount DOUBLE PRECISION NOT NULL DEFAULT 0")
+        execute(
+            conn,
+            "UPDATE acc_invoice_calc_daily SET ggr_amount = stake_amount - winning_amount",
+        )
+        conn.commit()
 
     now = iso(utcnow())
     for section, name, rate, sort_order in SEED_PROVIDERS:

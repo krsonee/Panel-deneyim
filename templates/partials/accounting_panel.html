@@ -1060,7 +1060,7 @@
   <div class="acc-pane" id="acc-pane-invoice_calc" data-acc-pane="invoice_calc" data-perm="accounting.invoice_calc" hidden>
     <section class="card">
       <div class="card-head">
-        <span>Fatura Hesaplama <span class="muted" style="font-weight:400;font-size:0.72rem;">(günlük Stake / Winning girişiyle GGR ve komisyon tahmini · Fatura alanıyla bağlantısı yoktur)</span></span>
+        <span>Fatura Hesaplama <span class="muted" style="font-weight:400;font-size:0.72rem;">(günlük GGR girişiyle komisyon tahmini · Fatura alanıyla bağlantısı yoktur)</span></span>
       </div>
       <div class="card-body" style="display:flex;gap:0.65rem;align-items:end;flex-wrap:wrap;">
         <label style="display:flex;flex-direction:column;gap:0.25rem;font-size:0.72rem;color:var(--muted);">Gün
@@ -1077,21 +1077,11 @@
         </label>
         <span class="muted" id="acc-ic-updated" style="font-size:0.72rem;white-space:nowrap;"></span>
       </div>
-      <p class="hint" style="margin:0 1rem 0.85rem;">Formül: <code>Stake − Winning = GGR</code>, komisyon <code>GGR × Oran %</code> üzerinden hesaplanır. Aylık toplamlar, komisyonu tüm ayın GGR'si üzerinden (gerçek fatura mantığıyla) hesaplar. Günlük giriş için <strong>Excel Şablonu</strong> indirip Pronet verilerini doldurun, sonra <strong>Excel Yükle</strong> ile panele aktarın.</p>
+      <p class="hint" style="margin:0 1rem 0.85rem;">Her sağlayıcı için günlük <strong>GGR (TRY)</strong> değerini girin; komisyon otomatik hesaplanır: <code>GGR × Oran %</code>. Aylık toplamlar, komisyonu tüm ayın GGR'si üzerinden (gerçek fatura mantığıyla) hesaplar. Toplu giriş için <strong>Excel Şablonu</strong> indirip GGR sütununu doldurun, sonra <strong>Excel Yükle</strong> ile aktarın.</p>
       <div id="acc-ic-import-result" class="hint" style="display:none;margin:0 1rem 0.85rem;padding:0.55rem 0.75rem;border-radius:8px;border:1px solid var(--border,#333);"></div>
     </section>
 
     <section class="kpi-grid acc-kpi-grid">
-      <div class="kpi green">
-        <div class="val" id="acc-ic-kpi-stake">—</div>
-        <div class="acc-ic-kpi-sub" id="acc-ic-kpi-stake-fx"></div>
-        <div class="lbl">Aylık Toplam Stake</div>
-      </div>
-      <div class="kpi">
-        <div class="val" id="acc-ic-kpi-winning">—</div>
-        <div class="acc-ic-kpi-sub" id="acc-ic-kpi-winning-fx"></div>
-        <div class="lbl">Aylık Toplam Winning</div>
-      </div>
       <div class="kpi amber">
         <div class="val" id="acc-ic-kpi-ggr">—</div>
         <div class="acc-ic-kpi-sub" id="acc-ic-kpi-ggr-fx"></div>
@@ -1118,13 +1108,11 @@
               <tr>
                 <th>Sağlayıcı</th>
                 <th>Oran %</th>
-                <th>Stake (TRY)</th>
-                <th>Winning (TRY)</th>
                 <th>GGR (TRY)</th>
                 <th>Komisyon (gün, TRY)</th>
               </tr>
             </thead>
-            <tbody id="acc-ic-table-body"><tr><td colspan="6" class="empty">Yükleniyor…</td></tr></tbody>
+            <tbody id="acc-ic-table-body"><tr><td colspan="4" class="empty">Yükleniyor…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1139,13 +1127,11 @@
               <tr>
                 <th>Sağlayıcı</th>
                 <th>Oran %</th>
-                <th>Toplam Stake</th>
-                <th>Toplam Winning</th>
                 <th>Toplam GGR</th>
                 <th>Tahmini Komisyon</th>
               </tr>
             </thead>
-            <tbody id="acc-ic-provider-totals-body"><tr><td colspan="6" class="empty">Henüz veri yok</td></tr></tbody>
+            <tbody id="acc-ic-provider-totals-body"><tr><td colspan="4" class="empty">Henüz veri yok</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1159,13 +1145,11 @@
             <thead>
               <tr>
                 <th>Tarih</th>
-                <th>Toplam Stake</th>
-                <th>Toplam Winning</th>
                 <th>GGR</th>
                 <th>Tahmini Komisyon</th>
               </tr>
             </thead>
-            <tbody id="acc-ic-daily-totals-body"><tr><td colspan="5" class="empty">Henüz veri yok</td></tr></tbody>
+            <tbody id="acc-ic-daily-totals-body"><tr><td colspan="3" class="empty">Henüz veri yok</td></tr></tbody>
           </table>
         </div>
       </div>
