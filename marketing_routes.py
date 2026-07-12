@@ -9,7 +9,7 @@ from flask import Blueprint, jsonify, request, session
 from database import execute, fetchall, fetchone, get_db, insert_returning_id, iso, utcnow
 
 MODULE_ACCESS = ("module.marketing",)
-MKT_DEALS = ("marketing.deals", "module.marketing")
+MKT_DEALS = ("marketing.deals",)
 
 CURRENCIES = ("TRY", "USD", "EUR")
 DEAL_STATUSES = ("active", "paused", "ended")

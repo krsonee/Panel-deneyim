@@ -586,7 +586,10 @@ def add_button(conn, page_id, *, button_type="link", label="", url="", icon="",
     button_type, label, url, badge_text = _validate_button(button_type, label, url, badge_text)
     if button_type == "bonus" and not highlight:
         highlight = True
-    icon = (icon or default_icon(button_type)).strip()[:8]
+    if uses_brand_icon(button_type):
+        icon = ""
+    else:
+        icon = (icon or default_icon(button_type)).strip()[:8]
     now = iso(utcnow())
     max_order = scalar(conn, "SELECT COALESCE(MAX(sort_order), -1) FROM biolink_buttons WHERE page_id = ?", (int(page_id),))
     sort_order = int(max_order or -1) + 1
@@ -623,7 +626,12 @@ def update_button(conn, button_id, data):
     else:
         label = label[:200]
         badge_text = (badge_text or "").strip()[:32]
-    icon = (data.get("icon", row["icon"]) or default_icon(button_type)).strip()[:8]
+    if uses_brand_icon(button_type):
+        icon = ""
+    elif "icon" in data:
+        icon = (data.get("icon") or default_icon(button_type)).strip()[:8]
+    else:
+        icon = (row["icon"] or default_icon(button_type)).strip()[:8]
     highlight = int(bool(data["highlight"])) if "highlight" in data else int(row["highlight"] or 0)
     is_active = int(bool(data["is_active"])) if "is_active" in data else int(row["is_active"] or 0)
     now = iso(utcnow())

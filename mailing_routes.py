@@ -206,13 +206,13 @@ def _reconcile_stale_import_job(conn, row):
     return job
 
 MODULE_ACCESS = ("module.mailing",)
-MAIL_DASH = ("mailing.dashboard", "module.mailing")
-MAIL_CRM = ("mailing.crm", "module.mailing")
-MAIL_TPL = ("mailing.templates", "module.mailing")
-MAIL_CAMP = ("mailing.campaigns", "module.mailing")
-MAIL_IVR = ("mailing.ivr", "module.mailing")
-MAIL_REP = ("mailing.reports", "module.mailing")
-MAIL_SET = ("mailing.settings", "module.mailing")
+MAIL_DASH = ("mailing.dashboard",)
+MAIL_CRM = ("mailing.crm",)
+MAIL_TPL = ("mailing.templates",)
+MAIL_CAMP = ("mailing.campaigns",)
+MAIL_IVR = ("mailing.ivr",)
+MAIL_REP = ("mailing.reports",)
+MAIL_SET = ("mailing.settings",)
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 LINK_TOKEN_RE = re.compile(r"\{\{\s*link\s*:\s*([^}]+)\s*\}\}", re.I)

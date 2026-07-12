@@ -28,11 +28,28 @@
     idle: { bg: "rgba(148,163,184,0.12)", color: "#cbd5e1", border: "rgba(148,163,184,0.3)", label: "Hazır" }
   };
 
+  var MAIL_TAB_PERMS = {
+    dashboard: "mailing.dashboard",
+    crm: "mailing.crm",
+    templates: "mailing.templates",
+    campaigns: "mailing.campaigns",
+    ivr: "mailing.ivr",
+    reports: "mailing.reports",
+    settings: "mailing.settings"
+  };
+
   function mailHas(key) {
     if (!mailPerms || !mailPerms.length) return true;
     if (mailPerms.indexOf("*") >= 0) return true;
-    if (mailPerms.indexOf("module.mailing") >= 0) return true;
     return mailPerms.indexOf(key) >= 0;
+  }
+
+  function mailFirstAllowedTab() {
+    var order = ["dashboard", "crm", "templates", "campaigns", "ivr", "reports", "settings"];
+    for (var i = 0; i < order.length; i++) {
+      if (mailHas(MAIL_TAB_PERMS[order[i]])) return order[i];
+    }
+    return "dashboard";
   }
 
   function mailApi(path, opts) {
@@ -446,7 +463,9 @@
   }
 
   function switchMailTab(name) {
-    mailActiveTab = name || "dashboard";
+    name = name || "dashboard";
+    if (!mailHas(MAIL_TAB_PERMS[name])) name = mailFirstAllowedTab();
+    mailActiveTab = name;
     try { localStorage.setItem(MAIL_TAB_STORAGE_KEY, mailActiveTab); } catch (e) { /* ignore */ }
     document.querySelectorAll("#mail-tabs .acc-tab").forEach(function (btn) {
       btn.classList.toggle("active", btn.getAttribute("data-mail-tab") === mailActiveTab);

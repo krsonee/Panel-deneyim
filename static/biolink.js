@@ -112,11 +112,18 @@
     },
   };
 
+  function blSlugify(text) {
+    text = String(text || "").trim().toLowerCase();
+    text = text.replace(/ı/g, "i").replace(/ğ/g, "g").replace(/ü/g, "u")
+      .replace(/ş/g, "s").replace(/ö/g, "o").replace(/ç/g, "c");
+    text = text.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return text.slice(0, 64) || "sayfa";
+  }
+
   function blHas(key) {
     if (!blPerms || !blPerms.length) return true;
     if (blPerms.indexOf("*") >= 0) return true;
-    if (blPerms.indexOf("module.biolink") >= 0) return true;
-    return blPerms.indexOf(key) >= 0;
+    return blPerms.indexOf(key) >= 0 || blPerms.indexOf("module.biolink") >= 0;
   }
 
   function blApi(path, opts) {
@@ -292,9 +299,16 @@
 
   function savePage() {
     if (!blCurrentPage) return;
+    var slugInput = document.getElementById("bl-slug");
+    var rawSlug = slugInput ? slugInput.value.trim() : "";
+    var slug = blSlugify(rawSlug);
+    if (slugInput && rawSlug && slug !== rawSlug) {
+      slugInput.value = slug;
+      blToast("URL slug düzenlendi: " + slug);
+    }
     var payload = {
       title: document.getElementById("bl-title").value.trim(),
-      slug: document.getElementById("bl-slug").value.trim(),
+      slug: slug,
       theme: document.getElementById("bl-theme").value,
       button_shape: document.getElementById("bl-shape").value,
       subtitle: document.getElementById("bl-subtitle").value,
