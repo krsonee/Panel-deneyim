@@ -10,7 +10,7 @@
   var mktCurrentPeriodLabel = "";
 
   var STATUS_LABELS = { active: "Aktif", paused: "Duraklatıldı", ended: "Anlaşma Bitti · Ödeme Bitti" };
-  var PAY_LABELS = { pending: "Bekliyor", paid: "Ödendi", skipped: "—" };
+  var PAY_LABELS = { pending: "Bekliyor", paid: "Ödendi", skipped: "Yapılmayacak" };
   var CUR_SYMBOL = { TRY: "₺", USD: "$", EUR: "€" };
   var MONTH_TR = ["", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 
@@ -122,10 +122,11 @@
       var statusHtml = p.status === "paid"
         ? '<span class="mkt-badge mkt-badge-paid">Ödendi</span>'
         : p.status === "skipped"
-          ? '<span class="muted">Atlandı</span>'
+          ? '<span class="mkt-badge mkt-badge-skipped">Yapılmayacak</span>'
           : '<span class="mkt-badge mkt-badge-pending">Bekliyor</span>';
-      var btn = p.status === "pending" && p.deal_status === "active"
-        ? '<button type="button" class="btn btn-sm btn-primary" data-mkt-pay="' + p.id + '">Ödendi İşaretle</button>'
+      var btn = p.status === "pending"
+        ? '<button type="button" class="btn btn-sm btn-primary" data-mkt-pay="' + p.id + '">Ödendi İşaretle</button> ' +
+          '<button type="button" class="btn btn-sm btn-danger" data-mkt-skip="' + p.id + '">Yapılmayacak</button>'
         : p.status === "paid"
           ? '<button type="button" class="btn btn-sm" data-mkt-unpay="' + p.id + '">Geri Al</button>'
           : "";
@@ -157,10 +158,13 @@
       var statusHtml = p.status === "paid"
         ? '<span class="mkt-badge mkt-badge-paid">Ödendi</span>'
         : p.status === "skipped"
-          ? '<span class="muted">Atlandı</span>'
+          ? '<span class="mkt-badge mkt-badge-skipped">Yapılmayacak</span>'
           : '<span class="mkt-badge mkt-badge-pending">Bekliyor</span>';
       var btn = p.status === "pending" && deal.status === "active"
-        ? '<button type="button" class="btn btn-sm btn-primary" data-mkt-pay="' + p.id + '">Ödendi</button>'
+        ? '<button type="button" class="btn btn-sm btn-primary" data-mkt-pay="' + p.id + '">Ödendi</button> ' +
+          '<button type="button" class="btn btn-sm btn-danger" data-mkt-skip="' + p.id + '">Yapılmayacak</button>'
+        : p.status === "pending"
+          ? '<button type="button" class="btn btn-sm btn-danger" data-mkt-skip="' + p.id + '">Yapılmayacak</button>'
         : "";
       return '<tr class="' + cls + '">' +
         '<td>' + mktPeriodLabel(p.period) + '</td>' +
@@ -233,13 +237,18 @@
   }
 
   function mktMarkPayment(paymentId, status) {
+    if (status === "skipped") {
+      if (!confirm("Bu ödeme yapılmayacak olarak işaretlenecek ve hatırlatmalardan çıkarılacak. Onaylıyor musunuz?")) {
+        return Promise.resolve();
+      }
+    }
     return mktApi("/api/marketing/payments/" + paymentId, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: status })
     }).then(function (r) {
       if (r && r.ok) {
-        mktToast(status === "paid" ? "Ödeme işaretlendi" : "Ödeme bekliyor olarak güncellendi");
+        mktToast(status === "paid" ? "Ödeme işaretlendi" : status === "skipped" ? "Ödeme yapılmayacak olarak işaretlendi" : "Ödeme bekliyor olarak güncellendi");
         mktLoadAll();
         mktCheckReminders(true);
       } else if (r) {
@@ -345,7 +354,10 @@
         '<div><strong>' + mktEsc(r.channel_name) + '</strong> · ' + mktEsc(r.period_label || mktPeriodLabel(r.period)) + '</div>' +
         '<div class="muted" style="font-size:0.82rem;">Vade: ' + mktFmtDate(r.due_date) + ' · ' + mktMoney(r.amount, r.currency) + '</div>' +
         '<div style="font-size:0.82rem;margin-top:0.25rem;">' + msg + '</div>' +
-        '<button type="button" class="btn btn-sm btn-primary" style="margin-top:0.5rem;" data-mkt-reminder-pay="' + r.id + '">Ödendi İşaretle</button>' +
+        '<div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.5rem;">' +
+        '<button type="button" class="btn btn-sm btn-primary" data-mkt-reminder-pay="' + r.id + '">Ödendi İşaretle</button>' +
+        '<button type="button" class="btn btn-sm btn-danger" data-mkt-reminder-skip="' + r.id + '">Ödeme Yapılmayacak</button>' +
+        '</div>' +
         '</div>';
     }).join("");
     modal.classList.add("open");
@@ -358,6 +370,9 @@
     return mktApi("/api/marketing/reminders").then(function (r) {
       if (r && r.ok && r.data.reminders && r.data.reminders.length) {
         mktShowReminderModal(r.data.reminders);
+      } else {
+        var modal = document.getElementById("mkt-reminder-modal");
+        if (modal) modal.classList.remove("open");
       }
     });
   }
@@ -423,6 +438,8 @@
     function payClickHandler(e) {
       var payBtn = e.target.closest ? e.target.closest("[data-mkt-pay]") : null;
       if (payBtn) { mktMarkPayment(payBtn.getAttribute("data-mkt-pay"), "paid"); return; }
+      var skipBtn = e.target.closest ? e.target.closest("[data-mkt-skip]") : null;
+      if (skipBtn) { mktMarkPayment(skipBtn.getAttribute("data-mkt-skip"), "skipped"); return; }
       var unpayBtn = e.target.closest ? e.target.closest("[data-mkt-unpay]") : null;
       if (unpayBtn) { mktMarkPayment(unpayBtn.getAttribute("data-mkt-unpay"), "pending"); return; }
     }
@@ -441,11 +458,14 @@
     var remList = document.getElementById("mkt-reminder-list");
     if (remList) {
       remList.addEventListener("click", function (e) {
-        var btn = e.target.closest ? e.target.closest("[data-mkt-reminder-pay]") : null;
-        if (btn) {
-          mktMarkPayment(btn.getAttribute("data-mkt-reminder-pay"), "paid").then(function () {
-            mktDismissReminderToday();
-          });
+        var payBtn = e.target.closest ? e.target.closest("[data-mkt-reminder-pay]") : null;
+        if (payBtn) {
+          mktMarkPayment(payBtn.getAttribute("data-mkt-reminder-pay"), "paid");
+          return;
+        }
+        var skipBtn = e.target.closest ? e.target.closest("[data-mkt-reminder-skip]") : null;
+        if (skipBtn) {
+          mktMarkPayment(skipBtn.getAttribute("data-mkt-reminder-skip"), "skipped");
         }
       });
     }

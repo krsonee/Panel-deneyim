@@ -14,6 +14,8 @@ MKT_DEALS = ("marketing.deals", "module.marketing")
 CURRENCIES = ("TRY", "USD", "EUR")
 DEAL_STATUSES = ("active", "paused", "ended")
 PAYMENT_STATUSES = ("pending", "paid", "skipped")
+REMINDER_LOOKBACK_DAYS = 20
+REMINDER_AHEAD_DAYS = 3
 
 MONTH_NAMES_TR = (
     "", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
@@ -109,6 +111,7 @@ def payment_summary_for_deal(conn, deal_id):
         (deal_id,),
     )
     today = date.today()
+    lookback_from = today - timedelta(days=REMINDER_LOOKBACK_DAYS)
     paid = pending = overdue = 0
     next_due = None
     for r in rows:
@@ -118,7 +121,7 @@ def payment_summary_for_deal(conn, deal_id):
         elif st == "pending":
             pending += 1
             due = parse_iso_date(r["due_date"])
-            if due and due < today:
+            if due and due < today and due >= lookback_from:
                 overdue += 1
             if due and (next_due is None or due < next_due):
                 next_due = due
@@ -410,8 +413,8 @@ def create_marketing_blueprint(permission_required):
     def update_payment(payment_id):
         data = request.get_json(silent=True) or {}
         status = (data.get("status") or "").strip().lower()
-        if status not in ("pending", "paid"):
-            return jsonify({"error": "Durum 'pending' veya 'paid' olmalı."}), 400
+        if status not in PAYMENT_STATUSES:
+            return jsonify({"error": "Durum 'pending', 'paid' veya 'skipped' olmalı."}), 400
         now = iso(utcnow())
         with closing(get_db()) as conn:
             row = fetchone(conn, "SELECT * FROM mkt_deal_payments WHERE id = ?", (payment_id,))
@@ -439,9 +442,10 @@ def create_marketing_blueprint(permission_required):
     @bp.route("/reminders", methods=["GET"])
     @mkt_perm(*MKT_DEALS)
     def payment_reminders():
-        """Ödeme tarihinden 3 gün önce başlayarak, ödenene kadar günlük hatırlatma listesi."""
+        """Ödeme tarihinden 3 gün önce başlayarak hatırlat; gecikmişlerde en fazla 20 gün geriye bak."""
         today = date.today()
-        remind_from = today + timedelta(days=3)
+        remind_until = today + timedelta(days=REMINDER_AHEAD_DAYS)
+        lookback_from = today - timedelta(days=REMINDER_LOOKBACK_DAYS)
         with closing(get_db()) as conn:
             deals = [dict(r) for r in fetchall(conn, "SELECT * FROM mkt_deals WHERE status = 'active'")]
             for d in deals:
@@ -454,10 +458,10 @@ def create_marketing_blueprint(permission_required):
                 FROM mkt_deal_payments p
                 JOIN mkt_deals d ON d.id = p.deal_id
                 WHERE p.status = 'pending' AND d.status = 'active'
-                  AND p.due_date <= ?
+                  AND p.due_date <= ? AND p.due_date >= ?
                 ORDER BY p.due_date ASC
                 """,
-                (remind_from.isoformat(),),
+                (remind_until.isoformat(), lookback_from.isoformat()),
             )
         reminders = []
         for r in rows:
