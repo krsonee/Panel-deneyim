@@ -2558,6 +2558,8 @@ def init_mailing_schema(conn):
                 total_rows INTEGER NOT NULL DEFAULT 0,
                 processed_rows INTEGER NOT NULL DEFAULT 0,
                 upserted_count INTEGER NOT NULL DEFAULT 0,
+                inserted_count INTEGER NOT NULL DEFAULT 0,
+                updated_count INTEGER NOT NULL DEFAULT 0,
                 skipped_count INTEGER NOT NULL DEFAULT 0,
                 error TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
@@ -2735,6 +2737,8 @@ def init_mailing_schema(conn):
                 total_rows INTEGER NOT NULL DEFAULT 0,
                 processed_rows INTEGER NOT NULL DEFAULT 0,
                 upserted_count INTEGER NOT NULL DEFAULT 0,
+                inserted_count INTEGER NOT NULL DEFAULT 0,
+                updated_count INTEGER NOT NULL DEFAULT 0,
                 skipped_count INTEGER NOT NULL DEFAULT 0,
                 error TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
@@ -2810,6 +2814,8 @@ def ensure_mail_import_jobs_table(conn):
                 total_rows INTEGER NOT NULL DEFAULT 0,
                 processed_rows INTEGER NOT NULL DEFAULT 0,
                 upserted_count INTEGER NOT NULL DEFAULT 0,
+                inserted_count INTEGER NOT NULL DEFAULT 0,
+                updated_count INTEGER NOT NULL DEFAULT 0,
                 skipped_count INTEGER NOT NULL DEFAULT 0,
                 error TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
@@ -2829,6 +2835,8 @@ def ensure_mail_import_jobs_table(conn):
                 total_rows INTEGER NOT NULL DEFAULT 0,
                 processed_rows INTEGER NOT NULL DEFAULT 0,
                 upserted_count INTEGER NOT NULL DEFAULT 0,
+                inserted_count INTEGER NOT NULL DEFAULT 0,
+                updated_count INTEGER NOT NULL DEFAULT 0,
                 skipped_count INTEGER NOT NULL DEFAULT 0,
                 error TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
@@ -2836,6 +2844,11 @@ def ensure_mail_import_jobs_table(conn):
             )
             """,
         )
+    cols = _table_columns(conn, "mail_import_jobs")
+    if cols and "inserted_count" not in cols:
+        execute(conn, "ALTER TABLE mail_import_jobs ADD COLUMN inserted_count INTEGER NOT NULL DEFAULT 0")
+    if cols and "updated_count" not in cols:
+        execute(conn, "ALTER TABLE mail_import_jobs ADD COLUMN updated_count INTEGER NOT NULL DEFAULT 0")
     conn.commit()
 
 

@@ -36,6 +36,16 @@ IMPORT_MAX_BYTES = 5 * 1024 * 1024 * 1024
 # Yükleme isteği yarıda kesilirse (proxy timeout, bağlantı kopması) pending işler
 # panelde "hiçbir şey yok" gibi görünüyordu — bu süre sonra hata olarak işaretlenir.
 IMPORT_STALE_PENDING_SECONDS = 10 * 60
+IMPORT_STALE_RUNNING_SECONDS = 15 * 60
+
+EMAIL_HEADER_ALIASES = frozenset({
+    "email", "e-posta", "eposta", "e-mail", "e_mail", "mail",
+})
+EMAIL_COLUMN_KEYS = (
+    "email", "Email", "EMAIL",
+    "E-posta", "eposta", "Eposta",
+    "mail", "e_mail", "e-posta",
+)
 
 
 def _ensure_import_dir():
@@ -63,50 +73,136 @@ def _import_job_age_seconds(iso_str):
         return IMPORT_STALE_PENDING_SECONDS + 1
 
 
+def _normalize_header_key(key):
+    return (key or "").strip().lower().replace("_", "-")
+
+
+def _find_email_column_index(header):
+    for i, h in enumerate(header):
+        if _normalize_header_key(h) in EMAIL_HEADER_ALIASES:
+            return i
+    return None
+
+
+def _values_look_like_email_column(rows):
+    """İlk sütundaki değerlerin çoğu geçerli e-posta mı (başlıksız tek sütun listesi)."""
+    total = 0
+    emails = 0
+    for row in rows:
+        if not row:
+            continue
+        val = row[0] if len(row) > 0 else None
+        if val is None or str(val).strip() == "":
+            continue
+        total += 1
+        if EMAIL_RE.match(str(val).strip()):
+            emails += 1
+    return total > 0 and emails >= max(1, int(total * 0.8))
+
+
+def _extract_email_from_row(row):
+    """Satırdan e-posta çıkar — bilinen sütun adları ve tek sütunlu listeler."""
+    if not row:
+        return ""
+    for key in EMAIL_COLUMN_KEYS:
+        val = row.get(key)
+        if val:
+            email = str(val).strip().lower()
+            if EMAIL_RE.match(email):
+                return email
+    for key, val in row.items():
+        if _normalize_header_key(key) in EMAIL_HEADER_ALIASES and val:
+            email = str(val).strip().lower()
+            if EMAIL_RE.match(email):
+                return email
+    if len(row) == 1:
+        val = next(iter(row.values()), "")
+        email = str(val).strip().lower()
+        if EMAIL_RE.match(email):
+            return email
+    for val in row.values():
+        if val:
+            email = str(val).strip().lower()
+            if EMAIL_RE.match(email):
+                return email
+    return ""
+
+
 def _reconcile_stale_import_job(conn, row):
-    """Takılı kalmış pending işleri toparlar: yarım yükleme → hata, dosya var ama işlem yok → yeniden başlat."""
+    """Takılı kalmış pending/running işleri toparlar."""
     job = _row(row)
-    if job.get("status") != "pending":
-        return job
-    age_sec = _import_job_age_seconds(job.get("updated_at") or job.get("created_at"))
+    status = job.get("status")
     path = _import_job_path(job["id"], job.get("filename"))
     file_ok = os.path.isfile(path) and os.path.getsize(path) > 0
-    if age_sec < IMPORT_STALE_PENDING_SECONDS:
-        return job
-    if file_ok and not job.get("processed_rows"):
+    age_sec = _import_job_age_seconds(job.get("updated_at") or job.get("created_at"))
+
+    if status == "pending":
+        if age_sec < IMPORT_STALE_PENDING_SECONDS:
+            return job
+        if file_ok and not job.get("processed_rows"):
+            now = iso(utcnow())
+            execute(
+                conn,
+                "UPDATE mail_import_jobs SET status = 'running', updated_at = ? WHERE id = ? AND status = 'pending'",
+                (now, job["id"]),
+            )
+            conn.commit()
+            tag = (job.get("tag") or "").strip()
+            threading.Thread(target=_run_import_job, args=(job["id"], path, tag), daemon=True).start()
+            job["status"] = "running"
+            job["updated_at"] = now
+            return job
+        if file_ok:
+            return job
+        err = (
+            "Dosya yüklemesi tamamlanamadı veya bağlantı kesildi. "
+            "Büyük dosyalarda ağ/proxy zaman aşımı olabilir — dosyayı parçalara bölüp tekrar dene."
+        )
         now = iso(utcnow())
         execute(
             conn,
-            "UPDATE mail_import_jobs SET status = 'running', updated_at = ? WHERE id = ? AND status = 'pending'",
-            (now, job["id"]),
+            "UPDATE mail_import_jobs SET status = 'error', error = ?, updated_at = ? WHERE id = ?",
+            (err, now, job["id"]),
         )
         conn.commit()
-        tag = (job.get("tag") or "").strip()
-        threading.Thread(target=_run_import_job, args=(job["id"], path, tag), daemon=True).start()
-        job["status"] = "running"
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except Exception:
+            pass
+        job["status"] = "error"
+        job["error"] = err
         job["updated_at"] = now
         return job
-    if file_ok:
-        return job
-    err = (
-        "Dosya yüklemesi tamamlanamadı veya bağlantı kesildi. "
-        "Büyük dosyalarda ağ/proxy zaman aşımı olabilir — dosyayı parçalara bölüp tekrar dene."
-    )
-    now = iso(utcnow())
-    execute(
-        conn,
-        "UPDATE mail_import_jobs SET status = 'error', error = ?, updated_at = ? WHERE id = ?",
-        (err, now, job["id"]),
-    )
-    conn.commit()
-    try:
-        if os.path.isfile(path):
-            os.remove(path)
-    except Exception:
-        pass
-    job["status"] = "error"
-    job["error"] = err
-    job["updated_at"] = now
+
+    if status == "running" and age_sec >= IMPORT_STALE_RUNNING_SECONDS:
+        if file_ok:
+            now = iso(utcnow())
+            execute(
+                conn,
+                "UPDATE mail_import_jobs SET updated_at = ? WHERE id = ? AND status = 'running'",
+                (now, job["id"]),
+            )
+            conn.commit()
+            tag = (job.get("tag") or "").strip()
+            threading.Thread(target=_run_import_job, args=(job["id"], path, tag), daemon=True).start()
+            job["updated_at"] = now
+            return job
+        err = (
+            "İçe aktarma sunucu yeniden başlatıldığında kesildi veya ilerleme kayboldu. "
+            "Dosya artık sunucuda yok — lütfen listeyi tekrar yükleyin."
+        )
+        now = iso(utcnow())
+        execute(
+            conn,
+            "UPDATE mail_import_jobs SET status = 'error', error = ?, updated_at = ? WHERE id = ? AND status = 'running'",
+            (err, now, job["id"]),
+        )
+        conn.commit()
+        job["status"] = "error"
+        job["error"] = err
+        job["updated_at"] = now
+
     return job
 
 MODULE_ACCESS = ("module.mailing",)
@@ -401,18 +497,23 @@ def _attach_campaign_recipients(conn, campaign_id, *, tag_filter, max_recipients
 
 
 def _bulk_upsert_contacts(conn, batch, tag, now):
-    """batch: [(email, name), ...]. Tek SQL ifadesiyle toplu insert/upsert —
-    milyonlarca satırı satır-satır sorgu yapmadan işlemek için."""
+    """batch: [(email, name), ...]. Tek SQL ifadesiyle toplu insert/upsert.
+    Döner: (upserted, inserted, updated)"""
     if not batch:
-        return 0
+        return 0, 0, 0
     tag = (tag or "").strip()
     tag_json_single = json.dumps([tag], ensure_ascii=False) if tag else "[]"
-    # Not: '%' işaretini SQL metninin İÇİNE değil, bağlı (bound) parametrenin
-    # içine koyuyoruz. Postgres'te (psycopg2) '%s' dışında kalan her ham '%'
-    # karakteri bir placeholder gibi sayılıp "IndexError: tuple index out of
-    # range" hatasına yol açıyor — bu yüzden LIKE deseni burada Python'da
-    # hazırlanıp parametre olarak veriliyor (SQLite'ta da sorunsuz çalışır).
     tag_like_pattern = f'%"{tag}"%'
+    emails = [email for email, _ in batch]
+    placeholders = ",".join(["?"] * len(emails))
+    existing_rows = fetchall(
+        conn,
+        f"SELECT email FROM mail_contacts WHERE email IN ({placeholders})",
+        tuple(emails),
+    )
+    existing_set = {str(r["email"]).lower() for r in existing_rows}
+    inserted = sum(1 for email, _ in batch if email.lower() not in existing_set)
+    updated = len(batch) - inserted
     values_sql = []
     params = []
     for email, name in batch:
@@ -433,7 +534,8 @@ def _bulk_upsert_contacts(conn, batch, tag, now):
     """
     params += [tag, tag_like_pattern, tag_json_single, tag]
     cur = execute(conn, sql, tuple(params))
-    return cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(batch)
+    upserted = cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(batch)
+    return upserted, inserted, updated
 
 
 def _detect_csv_delimiter(path):
@@ -476,25 +578,39 @@ def _count_xlsx_rows(path):
     import openpyxl
 
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    total = 0
     try:
-        ws = wb.worksheets[0]
-        return max((ws.max_row or 1) - 1, 0)
+        for ws in wb.worksheets:
+            rows_iter = ws.iter_rows(values_only=True)
+            first_row = next(rows_iter, None)
+            if first_row is None:
+                continue
+            header = [(str(h).strip() if h is not None else "") for h in first_row]
+            if _find_email_column_index(header) is not None:
+                total += sum(1 for _ in rows_iter)
+                continue
+            sample = [first_row]
+            for _ in range(4):
+                try:
+                    sample.append(next(rows_iter))
+                except StopIteration:
+                    break
+            if _values_look_like_email_column(sample):
+                total += len(sample)
+                total += sum(1 for _ in rows_iter)
     finally:
         wb.close()
+    return total
 
 
-def _iter_xlsx_rows(path):
-    import openpyxl
-
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    try:
-        ws = wb.worksheets[0]
-        rows_iter = ws.iter_rows(values_only=True)
-        try:
-            header_raw = next(rows_iter)
-        except StopIteration:
-            return
-        header = [(str(h).strip() if h is not None else "") for h in header_raw]
+def _iter_xlsx_sheet_rows(ws):
+    """Tek bir worksheet'ten satır dict'leri veya başlıksız e-posta listesi üretir."""
+    rows_iter = ws.iter_rows(values_only=True)
+    first_row = next(rows_iter, None)
+    if first_row is None:
+        return
+    header = [(str(h).strip() if h is not None else "") for h in first_row]
+    if _find_email_column_index(header) is not None:
         for values in rows_iter:
             row = {}
             for i, key in enumerate(header):
@@ -502,7 +618,40 @@ def _iter_xlsx_rows(path):
                     continue
                 val = values[i] if i < len(values) else None
                 row[key] = "" if val is None else str(val).strip()
-            yield row
+            if any(str(v).strip() for v in row.values()):
+                yield row
+        return
+    sample = [first_row]
+    for _ in range(4):
+        try:
+            sample.append(next(rows_iter))
+        except StopIteration:
+            break
+    if not _values_look_like_email_column(sample):
+        return
+    for values in sample:
+        val = values[0] if values else None
+        if val is None:
+            continue
+        email = str(val).strip()
+        if EMAIL_RE.match(email):
+            yield {"email": email}
+    for values in rows_iter:
+        val = values[0] if values else None
+        if val is None:
+            continue
+        email = str(val).strip()
+        if EMAIL_RE.match(email):
+            yield {"email": email}
+
+
+def _iter_xlsx_rows(path):
+    import openpyxl
+
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        for ws in wb.worksheets:
+            yield from _iter_xlsx_sheet_rows(ws)
     finally:
         wb.close()
 
@@ -529,6 +678,8 @@ def _run_import_job(job_id, path, tag):
             # atlayıp doğrudan işlemeye başlıyoruz — total_rows iş bitince set edilir.
             processed = 0
             upserted = 0
+            inserted = 0
+            updated = 0
             skipped = 0
             batch = []
             cancelled = False
@@ -548,8 +699,8 @@ def _run_import_job(job_id, path, tag):
                     continue
                 processed += 1
                 try:
-                    email = (row.get("email") or row.get("Email") or row.get("EMAIL") or "").strip().lower()
-                    if not email or not EMAIL_RE.match(email):
+                    email = _extract_email_from_row(row)
+                    if not email:
                         skipped += 1
                         continue
                     name = (row.get("name") or row.get("Name") or "").strip()
@@ -559,7 +710,10 @@ def _run_import_job(job_id, path, tag):
                     continue
                 if len(batch) >= IMPORT_CHUNK_SIZE:
                     try:
-                        upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
+                        batch_upserted, batch_inserted, batch_updated = _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
+                        upserted += batch_upserted
+                        inserted += batch_inserted
+                        updated += batch_updated
                         conn.commit()
                     except Exception:
                         conn.rollback()
@@ -569,10 +723,11 @@ def _run_import_job(job_id, path, tag):
                         conn,
                         """
                         UPDATE mail_import_jobs
-                        SET processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
+                        SET processed_rows = ?, upserted_count = ?, inserted_count = ?, updated_count = ?,
+                            skipped_count = ?, updated_at = ?
                         WHERE id = ?
                         """,
-                        (processed, upserted, skipped, iso(utcnow()), job_id),
+                        (processed, upserted, inserted, updated, skipped, iso(utcnow()), job_id),
                     )
                     conn.commit()
                     status_row = fetchone(conn, "SELECT status FROM mail_import_jobs WHERE id = ?", (job_id,))
@@ -584,15 +739,19 @@ def _run_import_job(job_id, path, tag):
                         conn,
                         """
                         UPDATE mail_import_jobs
-                        SET processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
+                        SET processed_rows = ?, upserted_count = ?, inserted_count = ?, updated_count = ?,
+                            skipped_count = ?, updated_at = ?
                         WHERE id = ?
                         """,
-                        (processed, upserted, skipped, iso(utcnow()), job_id),
+                        (processed, upserted, inserted, updated, skipped, iso(utcnow()), job_id),
                     )
                     conn.commit()
             if batch and not cancelled:
                 try:
-                    upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
+                    batch_upserted, batch_inserted, batch_updated = _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
+                    upserted += batch_upserted
+                    inserted += batch_inserted
+                    updated += batch_updated
                     conn.commit()
                 except Exception:
                     conn.rollback()
@@ -604,10 +763,11 @@ def _run_import_job(job_id, path, tag):
                     conn,
                     """
                     UPDATE mail_import_jobs
-                    SET status = 'cancelled', total_rows = ?, processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
+                    SET status = 'cancelled', total_rows = ?, processed_rows = ?, upserted_count = ?,
+                        inserted_count = ?, updated_count = ?, skipped_count = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (processed, processed, upserted, skipped, final_now, job_id),
+                    (processed, processed, upserted, inserted, updated, skipped, final_now, job_id),
                 )
                 conn.commit()
                 return
@@ -617,10 +777,11 @@ def _run_import_job(job_id, path, tag):
                 conn,
                 """
                 UPDATE mail_import_jobs
-                SET status = 'done', total_rows = ?, processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
+                SET status = 'done', total_rows = ?, processed_rows = ?, upserted_count = ?,
+                    inserted_count = ?, updated_count = ?, skipped_count = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (processed, processed, upserted, skipped, final_now, job_id),
+                (processed, processed, upserted, inserted, updated, skipped, final_now, job_id),
             )
             conn.commit()
     except Exception as exc:
@@ -949,8 +1110,8 @@ def create_mailing_blueprint(permission_required):
         skipped = 0
         with closing(get_db()) as conn:
             for row in reader:
-                email = (row.get("email") or row.get("Email") or row.get("EMAIL") or "").strip().lower()
-                if not email or not EMAIL_RE.match(email):
+                email = _extract_email_from_row(row)
+                if not email:
                     skipped += 1
                     continue
                 name = (row.get("name") or row.get("Name") or "").strip()
@@ -1008,8 +1169,8 @@ def create_mailing_blueprint(permission_required):
                 conn,
                 """
                 INSERT INTO mail_import_jobs
-                (filename, tag, status, total_rows, processed_rows, upserted_count, skipped_count, error, created_at, updated_at)
-                VALUES (?, ?, 'pending', 0, 0, 0, 0, '', ?, ?)
+                (filename, tag, status, total_rows, processed_rows, upserted_count, inserted_count, updated_count, skipped_count, error, created_at, updated_at)
+                VALUES (?, ?, 'pending', 0, 0, 0, 0, 0, 0, '', ?, ?)
                 """,
                 (file.filename, tag, now, now),
             )

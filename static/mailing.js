@@ -635,8 +635,11 @@
           var progressLine = hasTotal
             ? "%" + pct + " · " + fmtNum(j.processed_rows) + " / " + fmtNum(j.total_rows) + " satır"
             : fmtNum(j.processed_rows) + " satır işlendi (devam ediyor…)";
+          var statsLine = (j.inserted_count != null && j.updated_count != null)
+            ? fmtNum(j.inserted_count) + " yeni + " + fmtNum(j.updated_count) + " güncellendi"
+            : fmtNum(j.upserted_count) + " eklenen/güncellenen";
           progText.textContent = prefix + (j.status === "pending" ? "Başlıyor… " : "İşleniyor: ") +
-            progressLine + " · eklenen/güncellenen: " + fmtNum(j.upserted_count) +
+            progressLine + " · " + statsLine +
             " · geçersiz: " + fmtNum(j.skipped_count);
         }
         mailSetImportDashboard({
@@ -646,15 +649,21 @@
             (hasTotal
               ? (fmtNum(j.processed_rows) + " / " + fmtNum(j.total_rows) + " satır (%" + pct + ")")
               : (fmtNum(j.processed_rows) + " satır işlendi")) +
-            " · eklenen: " + fmtNum(j.upserted_count) + " · geçersiz: " + fmtNum(j.skipped_count),
+            " · " + ((j.inserted_count != null && j.updated_count != null)
+              ? (fmtNum(j.inserted_count) + " yeni + " + fmtNum(j.updated_count) + " güncellendi")
+              : (fmtNum(j.upserted_count) + " eklenen/güncellenen")) +
+            " · geçersiz: " + fmtNum(j.skipped_count),
           showProgress: true
         });
         if (j.status === "done") {
-          mailToast(prefix + "içe aktarma tamam · " + j.upserted_count + " kontak işlendi · " + j.skipped_count + " geçersiz e-posta atlandı");
+          var doneStats = (j.inserted_count != null && j.updated_count != null)
+            ? (fmtNum(j.inserted_count) + " yeni + " + fmtNum(j.updated_count) + " güncellendi")
+            : (fmtNum(j.upserted_count) + " kontak işlendi");
+          mailToast(prefix + "içe aktarma tamam · " + doneStats + " · " + j.skipped_count + " geçersiz e-posta atlandı");
           mailSetImportDashboard({
             phase: "done",
             title: (fileLabel || j.filename || "Dosya") + " tamamlandı",
-            sub: fmtNum(j.upserted_count) + " kontak eklendi/güncellendi · " + fmtNum(j.skipped_count) + " geçersiz satır atlandı",
+            sub: doneStats + " · " + fmtNum(j.skipped_count) + " geçersiz satır atlandı",
             showProgress: true,
             showDismiss: true
           });
