@@ -2627,6 +2627,48 @@
     return accMoney(n, "TRY");
   }
 
+  function accIcFmtFx(n, currency) {
+    if (n == null || n === "" || isNaN(n)) return "";
+    var sym = currency === "EUR" ? "€" : "$";
+    return "≈ " + sym + parseFloat(n).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function accIcKpiFxLine(gt, prefix) {
+    if (!gt) return "";
+    var usd = gt[prefix + "_usd"];
+    var eur = gt[prefix + "_eur"];
+    if ((usd == null || usd === 0) && (eur == null || eur === 0)) return "";
+    var parts = [];
+    if (usd != null && usd !== 0) parts.push(accIcFmtFx(usd, "USD"));
+    if (eur != null && eur !== 0) parts.push(accIcFmtFx(eur, "EUR"));
+    return parts.join(" · ");
+  }
+
+  function accIcSelectedDayRate(data) {
+    var dateEl = document.getElementById("acc-ic-date");
+    var sel = dateEl && dateEl.value ? dateEl.value : accToday();
+    var rates = (data && data.day_rates) || {};
+    return rates[sel] || null;
+  }
+
+  function accIcRenderRateNote(data) {
+    var note = document.getElementById("acc-ic-kpi-rate-note");
+    if (!note) return;
+    var rate = accIcSelectedDayRate(data);
+    if (!rate || !rate.usd_try) {
+      note.style.display = "none";
+      note.textContent = "";
+      return;
+    }
+    var dateEl = document.getElementById("acc-ic-date");
+    var sel = dateEl && dateEl.value ? dateEl.value : accToday();
+    var label = sel.split("-").reverse().join(".");
+    note.textContent = "Seçili gün kayıt kuru (" + label + "): USD/TL " +
+      parseFloat(rate.usd_try).toFixed(4) + " · EUR/TL " + parseFloat(rate.eur_try).toFixed(4) +
+      " — kayıt anında kilitlenir, sonradan değiştirilmez.";
+    note.style.display = "";
+  }
+
   function accIcSectionLabel(section) {
     if (section === "sport") return "Spor Bahisleri";
     if (section === "special") return "Özel Kalemler";
@@ -2768,6 +2810,11 @@
     accSetText("acc-ic-kpi-winning", accIcFmt(t.winning_amount));
     accSetText("acc-ic-kpi-ggr", accIcFmt(t.ggr_amount));
     accSetText("acc-ic-kpi-commission", accIcFmt(t.commission_amount));
+    accSetText("acc-ic-kpi-stake-fx", accIcKpiFxLine(t, "stake"));
+    accSetText("acc-ic-kpi-winning-fx", accIcKpiFxLine(t, "winning"));
+    accSetText("acc-ic-kpi-ggr-fx", accIcKpiFxLine(t, "ggr"));
+    accSetText("acc-ic-kpi-commission-fx", accIcKpiFxLine(t, "commission"));
+    accIcRenderRateNote(data);
     accRenderIcDayTable(data);
     accRenderIcProviderTotals(data.provider_totals || []);
     accRenderIcDailyTotals(data.daily_totals || []);
@@ -2902,6 +2949,7 @@
       accLoadInvoiceCalc();
     } else {
       accRenderIcDayTable(accInvoiceCalcData || {});
+      accIcRenderRateNote(accInvoiceCalcData || {});
     }
   }
 

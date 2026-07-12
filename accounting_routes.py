@@ -39,7 +39,13 @@ from accounting_period import (
     period_label,
 )
 from accounting_invoices import build_payment_invoices
-from accounting_invoice_calc_import import generate_template_bytes, import_workbook, upsert_invoice_calc_daily_batch
+from accounting_invoice_calc_import import (
+    enrich_invoice_calc_fx,
+    generate_template_bytes,
+    import_workbook,
+    load_invoice_calc_day_rates,
+    upsert_invoice_calc_daily_batch,
+)
 from accounting_pronet import build_invoice_payload, calc_commission, reseed_period_from_history
 from accounting_pl import (
     SECTION_LABELS as PL_SECTION_LABELS,
@@ -443,6 +449,10 @@ def build_invoice_calc_payload(conn, period):
         "commission_amount": round(sum(p["commission_amount"] for p in provider_totals), 2),
     }
 
+    day_rates = load_invoice_calc_day_rates(conn, period)
+    daily_totals, fx_grand = enrich_invoice_calc_fx(daily_totals, day_rates)
+    grand_total.update(fx_grand)
+
     return {
         "period": period,
         "providers": provider_list,
@@ -450,6 +460,7 @@ def build_invoice_calc_payload(conn, period):
         "provider_totals": provider_totals,
         "daily_totals": daily_totals,
         "grand_total": grand_total,
+        "day_rates": day_rates,
     }
 
 

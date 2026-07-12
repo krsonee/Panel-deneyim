@@ -1431,6 +1431,24 @@ def migrate_invoice_calc(conn):
         conn,
         "CREATE INDEX IF NOT EXISTS idx_acc_invoice_calc_daily_period ON acc_invoice_calc_daily(period)",
     )
+    execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS acc_invoice_calc_day_meta (
+            entry_date TEXT PRIMARY KEY,
+            period TEXT NOT NULL,
+            usd_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+            eur_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+            rate_source TEXT NOT NULL DEFAULT '',
+            captured_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+    )
+    execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS idx_acc_invoice_calc_day_meta_period ON acc_invoice_calc_day_meta(period)",
+    )
 
     now = iso(utcnow())
     for section, name, rate, sort_order in SEED_PROVIDERS:

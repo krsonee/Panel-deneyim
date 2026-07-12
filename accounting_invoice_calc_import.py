@@ -21,6 +21,109 @@ HEADER_STAKE = frozenset({"stake", "stake_amount", "stake_try", "toplam stake", 
 HEADER_WINNING = frozenset({"winning", "winning_amount", "winning_try", "toplam winning", "winning try", "kazanc"})
 
 
+def capture_invoice_calc_day_rates(conn, entry_date):
+    """Kayıt anındaki canlı kuru o güne kilitle — önceki günlere dokunmaz."""
+    from accounting_fx import fetch_exchange_rates
+
+    period = entry_date[:7]
+    now = iso(utcnow())
+    rates = fetch_exchange_rates(fresh=True)
+    usd = float(rates.get("usd_try") or 0)
+    eur = float(rates.get("eur_try") or 0)
+    if usd <= 0 or eur <= 0:
+        return False
+    source = (rates.get("source") or "").strip()
+    captured = rates.get("fetched_at")
+    if hasattr(captured, "isoformat"):
+        captured = captured.isoformat()
+    else:
+        captured = str(captured or now)
+    exists = scalar(conn, "SELECT COUNT(*) FROM acc_invoice_calc_day_meta WHERE entry_date = ?", (entry_date,))
+    if exists:
+        execute(
+            conn,
+            """
+            UPDATE acc_invoice_calc_day_meta
+            SET usd_try = ?, eur_try = ?, rate_source = ?, captured_at = ?, updated_at = ?
+            WHERE entry_date = ?
+            """,
+            (usd, eur, source, captured, now, entry_date),
+        )
+    else:
+        insert_returning_id(
+            conn,
+            """
+            INSERT INTO acc_invoice_calc_day_meta
+            (entry_date, period, usd_try, eur_try, rate_source, captured_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (entry_date, period, usd, eur, source, captured, now),
+        )
+    return True
+
+
+def load_invoice_calc_day_rates(conn, period):
+    rows = fetchall(
+        conn,
+        """
+        SELECT entry_date, usd_try, eur_try, rate_source, captured_at
+        FROM acc_invoice_calc_day_meta
+        WHERE period = ?
+        """,
+        (period,),
+    )
+    out = {}
+    for r in rows:
+        out[r["entry_date"]] = {
+            "usd_try": round(float(r["usd_try"] or 0), 6),
+            "eur_try": round(float(r["eur_try"] or 0), 6),
+            "rate_source": r["rate_source"] or "",
+            "captured_at": r["captured_at"] or "",
+        }
+    return out
+
+
+def _apply_fx_amounts(try_amount, usd_try, eur_try):
+    try_amount = float(try_amount or 0)
+    if not usd_try or not eur_try:
+        return None, None
+    return round(try_amount / usd_try, 2), round(try_amount / eur_try, 2)
+
+
+def enrich_invoice_calc_fx(daily_totals, day_rates):
+    """Günlük toplamlara kilitli kur ile USD/EUR karşılıklarını ekle; ay grand total FX döner."""
+    fx_grand = {
+        "stake_usd": 0.0, "stake_eur": 0.0,
+        "winning_usd": 0.0, "winning_eur": 0.0,
+        "ggr_usd": 0.0, "ggr_eur": 0.0,
+        "commission_usd": 0.0, "commission_eur": 0.0,
+    }
+    enriched = []
+    for item in daily_totals:
+        d = dict(item)
+        rate = day_rates.get(d["entry_date"])
+        if rate and rate["usd_try"] and rate["eur_try"]:
+            d["usd_try"] = rate["usd_try"]
+            d["eur_try"] = rate["eur_try"]
+            for field in ("stake", "winning", "ggr", "commission"):
+                usd, eur = _apply_fx_amounts(d.get(field + "_amount"), rate["usd_try"], rate["eur_try"])
+                d[field + "_usd"] = usd
+                d[field + "_eur"] = eur
+                if usd is not None:
+                    fx_grand[field + "_usd"] += usd
+                if eur is not None:
+                    fx_grand[field + "_eur"] += eur
+        else:
+            d["usd_try"] = d["eur_try"] = None
+            for field in ("stake", "winning", "ggr", "commission"):
+                d[field + "_usd"] = None
+                d[field + "_eur"] = None
+        enriched.append(d)
+    for k in fx_grand:
+        fx_grand[k] = round(fx_grand[k], 2)
+    return enriched, fx_grand
+
+
 def _norm_header(value):
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
@@ -140,6 +243,19 @@ def upsert_invoice_calc_daily_batch(conn, entry_date, rows, who=""):
                 (period, entry_date, pid, stake, winning, who, now),
             )
         saved += 1
+    if saved > 0:
+        has_rows = scalar(
+            conn,
+            "SELECT COUNT(*) FROM acc_invoice_calc_daily WHERE entry_date = ?",
+            (entry_date,),
+        )
+        meta_exists = scalar(
+            conn,
+            "SELECT COUNT(*) FROM acc_invoice_calc_day_meta WHERE entry_date = ?",
+            (entry_date,),
+        )
+        if has_rows and not meta_exists:
+            capture_invoice_calc_day_rates(conn, entry_date)
     return {"saved": saved, "deleted": deleted, "skipped": skipped}
 
 
