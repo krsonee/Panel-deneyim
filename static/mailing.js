@@ -12,7 +12,11 @@
   var mailImportBusy = false;
   var mailImportCurrentJobId = null;
   var MAIL_IMPORT_SESSION_KEY = "makro_mail_import_v1";
+  var MAIL_IMPORT_DISMISSED_KEY = "makro_mail_import_dismissed_v1";
+  var MAIL_TAB_STORAGE_KEY = "makro_mail_tab";
   var mailImportPollTimer = null;
+  var mailImportRefreshTimer = null;
+  var mailImportHandledJobs = {};
 
   var MAIL_IMPORT_BADGE = {
     uploading: { bg: "rgba(59,130,246,0.18)", color: "#93c5fd", border: "rgba(59,130,246,0.35)", label: "Yükleniyor" },
@@ -141,6 +145,34 @@
     return { count: tokens.length, error: null };
   }
 
+  function mailReadDismissedImportJobs() {
+    try {
+      var raw = localStorage.getItem(MAIL_IMPORT_DISMISSED_KEY);
+      var arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+  }
+
+  function mailDismissImportJob(jobId) {
+    if (!jobId) return;
+    var ids = mailReadDismissedImportJobs();
+    if (ids.indexOf(jobId) < 0) ids.push(jobId);
+    while (ids.length > 40) ids.shift();
+    try { localStorage.setItem(MAIL_IMPORT_DISMISSED_KEY, JSON.stringify(ids)); } catch (e) { /* ignore */ }
+  }
+
+  function mailIsImportJobDismissed(jobId) {
+    return mailReadDismissedImportJobs().indexOf(jobId) >= 0;
+  }
+
+  function mailMarkImportJobHandled(jobId) {
+    if (jobId) mailImportHandledJobs[jobId] = true;
+  }
+
+  function mailWasImportJobHandled(jobId) {
+    return !!(jobId && mailImportHandledJobs[jobId]);
+  }
+
   function mailReadImportSession() {
     try {
       var raw = sessionStorage.getItem(MAIL_IMPORT_SESSION_KEY);
@@ -223,21 +255,32 @@
   function mailRenderImportHistory(jobs) {
     var box = document.getElementById("mail-import-history");
     var list = document.getElementById("mail-import-history-list");
-    if (!box || !list) return;
-    var rows = (jobs || []).slice(0, 5);
-    if (!rows.length) { box.hidden = true; return; }
+    if (!box || !list) return false;
+    var rows = (jobs || []).slice(0, 8);
+    if (!rows.length) { box.hidden = true; return false; }
     box.hidden = false;
     list.innerHTML = rows.map(function (j) {
+      var isActive = j.status === "pending" || j.status === "running" || j.status === "cancelling";
+      var statusColor = j.status === "error" ? "#fca5a5"
+        : j.status === "done" ? "#86efac"
+        : j.status === "cancelled" ? "#cbd5e1"
+        : isActive ? "#93c5fd" : "#cbd5e1";
+      var progress = isActive || j.status === "done"
+        ? (" · " + fmtNum(j.processed_rows || 0) + " satır")
+        : "";
       var errHint = j.status === "error" && j.error
         ? ' <span style="color:#fca5a5;">— ' + esc(j.error) + "</span>" : "";
-      return '<div style="display:flex;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;padding:0.35rem 0;border-bottom:1px solid rgba(148,163,184,0.12);">' +
-        "<span><strong>" + esc(j.filename || "Dosya") + "</strong> · " + esc(mailStatusLabelTr(j.status)) +
-        (j.tag ? ' · <span class="muted">' + esc(j.tag) + "</span>" : "") + errHint + "</span>" +
+      var activeMark = isActive ? ' <span style="color:#93c5fd;font-weight:700;">● aktif</span>' : "";
+      return '<div style="display:flex;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;padding:0.4rem 0;border-bottom:1px solid rgba(148,163,184,0.12);">' +
+        "<span><strong>" + esc(j.filename || "Dosya") + "</strong>" + activeMark +
+        ' · <span style="color:' + statusColor + ';">' + esc(mailStatusLabelTr(j.status)) + "</span>" +
+        progress + (j.tag ? ' · <span class="muted">' + esc(j.tag) + "</span>" : "") + errHint + "</span>" +
         '<span class="muted">' + esc(fmtTime(j.updated_at || j.created_at)) + "</span></div>";
     }).join("");
+    return true;
   }
 
-  function mailBulkSetError(msg, fileLabel) {
+  function mailBulkSetError(msg, fileLabel, jobId) {
     var progBox = document.getElementById("mail-bulk-progress");
     var progBar = document.getElementById("mail-bulk-progress-bar");
     var progText = document.getElementById("mail-bulk-progress-text");
@@ -253,6 +296,7 @@
       errorText: msg,
       showDismiss: true
     });
+    if (jobId) mailMarkImportJobHandled(jobId);
     mailClearImportSession();
   }
 
@@ -403,6 +447,7 @@
 
   function switchMailTab(name) {
     mailActiveTab = name || "dashboard";
+    try { localStorage.setItem(MAIL_TAB_STORAGE_KEY, mailActiveTab); } catch (e) { /* ignore */ }
     document.querySelectorAll("#mail-tabs .acc-tab").forEach(function (btn) {
       btn.classList.toggle("active", btn.getAttribute("data-mail-tab") === mailActiveTab);
     });
@@ -416,7 +461,7 @@
 
   function mailLoadTab(tab) {
     if (tab === "dashboard") mailLoadDashboard();
-    else if (tab === "crm") { mailLoadTags(); mailLoadContactStats(); mailLoadContacts(); mailRefreshImportStatus(); }
+    else if (tab === "crm") { mailLoadTags(); mailLoadContactStats(); mailLoadContacts(); }
     else if (tab === "templates") mailLoadTemplates();
     else if (tab === "campaigns") { mailLoadSelects().then(mailLoadCampaigns); }
     else if (tab === "ivr") { mailLoadSelects().then(mailLoadIvr); }
@@ -542,14 +587,14 @@
     function settle() {
       if (cancelBtn) cancelBtn.hidden = true;
       if (typeof onSettled === "function") onSettled();
-      mailRefreshImportStatus();
+      mailFetchImportHistoryOnly();
     }
     function poll() {
       mailApi("/api/mailing/contacts/import/status/" + jobId, { timeoutMs: 30000 }).then(function (res) {
         if (!res || !res.ok || !res.data.job) {
           failedPolls++;
           if (failedPolls >= 10) {
-            mailBulkSetError("Durum bilgisi alınamıyor (bağlantı sorunu). Sayfayı yenileyip tekrar dene.", fileLabel);
+            mailBulkSetError("Durum bilgisi alınamıyor (bağlantı sorunu). Sayfayı yenileyip tekrar dene.", fileLabel, jobId);
             settle();
             return;
           }
@@ -638,8 +683,10 @@
           return;
         }
         if (j.status === "error") {
-          mailBulkSetError(j.error || "bilinmeyen hata", fileLabel || j.filename);
-          mailToast(prefix + "içe aktarma hata verdi: " + (j.error || "bilinmeyen hata"));
+          if (!mailWasImportJobHandled(jobId)) {
+            mailBulkSetError(j.error || "bilinmeyen hata", fileLabel || j.filename, jobId);
+            mailToast(prefix + "içe aktarma hata verdi: " + (j.error || "bilinmeyen hata"));
+          }
           settle();
           return;
         }
@@ -1069,13 +1116,24 @@
       });
     });
     bindClick("mail-import-dismiss", function () {
-      mailSetImportDashboard({ phase: "idle" });
-      mailShowImportDashboard(false);
+      if (mailImportCurrentJobId) mailDismissImportJob(mailImportCurrentJobId);
       var errBox = document.getElementById("mail-import-error-box");
       if (errBox) errBox.hidden = true;
-      var progBox = document.getElementById("mail-bulk-progress");
-      if (progBox && !mailImportBusy) progBox.hidden = true;
-      mailBulkResetBar();
+      if (!mailImportBusy) {
+        mailSetImportDashboard({ phase: "idle" });
+        var progBox = document.getElementById("mail-bulk-progress");
+        if (progBox) progBox.hidden = true;
+        mailBulkResetBar();
+        mailFetchImportHistoryOnly();
+      } else {
+        mailSetImportDashboard({
+          phase: mailImportCurrentJobId ? "processing" : "uploading",
+          title: "Yükleme sürüyor",
+          sub: "Hata kutusu kapatıldı — işlem arka planda devam ediyor.",
+          showProgress: true,
+          showError: false
+        });
+      }
     });
     bindClick("mail-contacts-refresh", function () {
       mailLoadContactStats();
@@ -1413,12 +1471,23 @@
     };
   }
 
-  // Sayfa yenilendiğinde sunucuda süren veya hata veren işleri panelde gösterir.
-  var MAIL_STALE_PENDING_MS = 30 * 60 * 1000;
+  // Sayfa yenilendiğinde sunucuda süren işleri panelde gösterir.
+  function mailFetchImportHistoryOnly() {
+    return mailApi("/api/mailing/contacts/import/jobs", { timeoutMs: 30000 }).then(function (res) {
+      if (!res || !res.ok) return;
+      var jobs = res.data.jobs || [];
+      var hasHistory = mailRenderImportHistory(jobs);
+      if (hasHistory) mailShowImportDashboard(true);
+    });
+  }
 
   function mailAttachToImportJob(job, fromResume) {
-    if (!job || !job.id) return;
-    if (mailImportBusy && mailImportCurrentJobId && mailImportCurrentJobId !== job.id) return;
+    if (!job || !job.id) return false;
+    if (mailImportBusy && mailImportCurrentJobId) {
+      if (mailImportCurrentJobId === job.id) return true;
+      return false;
+    }
+    if (job.status === "error" || job.status === "cancelled" || job.status === "done") return false;
     mailImportBusy = true;
     mailImportCurrentJobId = job.id;
     var progBox = document.getElementById("mail-bulk-progress");
@@ -1436,17 +1505,10 @@
     if (fromResume) {
       mailToast((job.filename || "Dosya") + ": devam eden yükleme bulundu, takip ediliyor…");
     }
-    if (job.status === "error") {
-      mailBulkSetError(job.error || "Yükleme başarısız oldu.", job.filename);
-      mailImportBusy = false;
-      mailImportCurrentJobId = null;
-      mailUpdateBulkFormState();
-      return;
-    }
     mailSetImportDashboard({
       phase: job.status === "running" ? "processing" : "pending",
       title: job.filename || "İçe aktarma",
-      sub: "Sunucuda devam eden iş takip ediliyor…",
+      sub: "Sunucuda devam eden iş takip ediliyor — sayfa yenilense de burada kalır.",
       showProgress: true
     });
     mailPollImportJob(job.id, function () {
@@ -1455,24 +1517,28 @@
       mailUpdateBulkFormState();
       mailStartNextImport();
     }, job.filename || "");
+    return true;
   }
 
-  function mailRefreshImportStatus() {
-    if (mailImportBusy) return;
+  function mailRefreshImportStatus(opts) {
+    opts = opts || {};
+    if (mailImportBusy && !opts.force) return Promise.resolve(false);
+    if (mailImportRefreshTimer) {
+      clearTimeout(mailImportRefreshTimer);
+      mailImportRefreshTimer = null;
+    }
     return mailApi("/api/mailing/contacts/import/jobs", { timeoutMs: 30000 }).then(function (res) {
       if (!res || !res.ok) {
         var sess = mailReadImportSession();
         if (sess && sess.jobId && !mailImportBusy) {
           mailShowImportDashboard(true);
-          mailSetImportDashboard({
-            phase: "processing",
-            title: sess.fileName || "İçe aktarma",
-            sub: "İş listesi alınamadı — kayıtlı iş yeniden bağlanıyor…",
-            showProgress: true
-          });
+          switchMailTab("crm");
           mailAttachToImportJob({ id: sess.jobId, filename: sess.fileName, status: "running" }, true);
-        } else if (sess && sess.phase === "upload" && !mailImportBusy) {
+          return true;
+        }
+        if (sess && sess.phase === "upload" && !mailImportBusy) {
           mailShowImportDashboard(true);
+          switchMailTab("crm");
           mailSetImportDashboard({
             phase: "error",
             title: sess.fileName || "Yarım kalan yükleme",
@@ -1482,44 +1548,39 @@
             showDismiss: true
           });
         }
-        return;
+        return false;
       }
       var jobs = res.data.jobs || [];
-      mailRenderImportHistory(jobs);
+      var hasHistory = mailRenderImportHistory(jobs);
       var active = jobs.filter(function (j) {
         return j.status === "pending" || j.status === "running" || j.status === "cancelling";
       });
       if (active.length && !mailImportBusy) {
-        active.sort(function (a, b) { return (a.id || 0) - (b.id || 0); });
+        active.sort(function (a, b) { return (b.id || 0) - (a.id || 0); });
         var job = active[0];
-        var refIso = job.updated_at || job.created_at;
-        var refMs = refIso ? new Date(refIso).getTime() : 0;
-        var staleMs = refMs ? (Date.now() - refMs) : Infinity;
-        if (job.status === "pending" && !job.processed_rows && staleMs > MAIL_STALE_PENDING_MS) {
-          mailShowImportDashboard(true);
-          mailBulkSetError(
-            job.error || "Sunucuda yanıt vermeyen eski bir iş bulundu. Dosyayı yeniden yükle.",
-            job.filename
-          );
-          return;
-        }
-        if (mailActiveTab !== "crm") switchMailTab("crm");
+        switchMailTab("crm");
+        mailShowImportDashboard(true);
         mailAttachToImportJob(job, true);
-        return;
+        return true;
       }
-      var lastErr = jobs.find(function (j) { return j.status === "error"; });
-      if (lastErr && !mailImportBusy) {
-        var recentMs = lastErr.updated_at ? (Date.now() - new Date(lastErr.updated_at).getTime()) : Infinity;
-        if (recentMs < 24 * 60 * 60 * 1000) {
-          mailShowImportDashboard(true);
-          mailBulkSetError(lastErr.error || "Yükleme başarısız oldu.", lastErr.filename);
+      if (hasHistory) {
+        mailShowImportDashboard(true);
+        if (!mailImportBusy) {
+          mailSetImportDashboard({
+            phase: "idle",
+            title: "Yükleme geçmişi",
+            sub: "Aktif iş yok. Devam eden veya bitmiş yüklemeler aşağıda listelenir.",
+            showProgress: false,
+            showDismiss: true
+          });
         }
       }
+      return false;
     });
   }
 
   function mailResumePendingImports() {
-    mailRefreshImportStatus();
+    return mailRefreshImportStatus({ force: true });
   }
 
   window.MakroMailing = {
@@ -1528,12 +1589,15 @@
       mailLoaded = true;
       bindEvents();
       setTplMode("simple");
-      mailResumePendingImports();
     },
     onShow: function () {
       if (!mailLoaded) this.init();
-      switchMailTab(mailActiveTab || "dashboard");
-      mailRefreshImportStatus();
+      mailRefreshImportStatus({ force: true }).then(function (hasActive) {
+        var tab = "dashboard";
+        try { tab = localStorage.getItem(MAIL_TAB_STORAGE_KEY) || "dashboard"; } catch (e) { /* ignore */ }
+        if (hasActive || mailImportBusy) tab = "crm";
+        switchMailTab(tab);
+      });
     },
     setPermissions: function (perms) {
       mailPerms = perms || [];

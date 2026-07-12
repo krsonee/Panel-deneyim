@@ -64,15 +64,28 @@ def _import_job_age_seconds(iso_str):
 
 
 def _reconcile_stale_import_job(conn, row):
-    """Takılı kalmış pending işleri (yarım yükleme / sunucu restart) hata durumuna çeker."""
+    """Takılı kalmış pending işleri toparlar: yarım yükleme → hata, dosya var ama işlem yok → yeniden başlat."""
     job = _row(row)
-    if job.get("status") != "pending" or job.get("processed_rows"):
+    if job.get("status") != "pending":
         return job
     age_sec = _import_job_age_seconds(job.get("updated_at") or job.get("created_at"))
-    if age_sec < IMPORT_STALE_PENDING_SECONDS:
-        return job
     path = _import_job_path(job["id"], job.get("filename"))
     file_ok = os.path.isfile(path) and os.path.getsize(path) > 0
+    if age_sec < IMPORT_STALE_PENDING_SECONDS:
+        return job
+    if file_ok and not job.get("processed_rows"):
+        now = iso(utcnow())
+        execute(
+            conn,
+            "UPDATE mail_import_jobs SET status = 'running', updated_at = ? WHERE id = ? AND status = 'pending'",
+            (now, job["id"]),
+        )
+        conn.commit()
+        tag = (job.get("tag") or "").strip()
+        threading.Thread(target=_run_import_job, args=(job["id"], path, tag), daemon=True).start()
+        job["status"] = "running"
+        job["updated_at"] = now
+        return job
     if file_ok:
         return job
     err = (
