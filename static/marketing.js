@@ -4,13 +4,15 @@
   var mktPerms = [];
   var mktLoaded = false;
   var mktDeals = [];
+  var mktPayments = [];
   var mktEditingId = null;
+  var mktExpandedDealId = null;
+  var mktCurrentPeriodLabel = "";
 
-  var PAYMENT_LABELS = { pending: "Bekliyor", paid: "Ödendi", cancelled: "İptal" };
-  var PAYMENT_CYCLE = { pending: "paid", paid: "cancelled", cancelled: "pending" };
-  var STATUS_LABELS = { active: "Aktif", paused: "Duraklatıldı", ended: "Sona Erdi" };
-  var STATUS_CYCLE = { active: "paused", paused: "ended", ended: "active" };
+  var STATUS_LABELS = { active: "Aktif", paused: "Duraklatıldı", ended: "Anlaşma Bitti · Ödeme Bitti" };
+  var PAY_LABELS = { pending: "Bekliyor", paid: "Ödendi", skipped: "—" };
   var CUR_SYMBOL = { TRY: "₺", USD: "$", EUR: "€" };
+  var MONTH_TR = ["", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 
   function mktApi(url, opts) {
     opts = opts || {};
@@ -55,71 +57,216 @@
     return p.length === 3 ? p[2] + "." + p[1] + "." + p[0] : iso;
   }
 
+  function mktPeriodLabel(period) {
+    if (!period || period.length < 7) return period || "—";
+    var parts = period.split("-");
+    var m = parseInt(parts[1], 10);
+    return (MONTH_TR[m] || parts[1]) + " " + parts[0];
+  }
+
+  function mktCurrentMonth() {
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  }
+
   function mktSelectedMonth() {
     var el = document.getElementById("mkt-filter-month");
-    return el ? el.value : "";
+    return (el && el.value) ? el.value : mktCurrentMonth();
+  }
+
+  function mktEnsureMonthPicker() {
+    var el = document.getElementById("mkt-filter-month");
+    if (el && !el.value) el.value = mktCurrentMonth();
   }
 
   function mktRenderSummary(summary) {
     summary = summary || {};
-    var totals = summary.total_fixed_fee_by_currency || {};
-    var parts = Object.keys(totals).map(function (cur) {
-      return mktMoney(totals[cur], cur);
-    });
-    var el = document.getElementById("mkt-kpi-fee-total");
-    if (el) el.textContent = parts.length ? parts.join(" · ") : "₺0,00";
     var acEl = document.getElementById("mkt-kpi-active-channels");
     if (acEl) acEl.textContent = summary.active_channel_count != null ? summary.active_channel_count : "—";
     var dcEl = document.getElementById("mkt-kpi-deal-count");
     if (dcEl) dcEl.textContent = summary.deal_count != null ? summary.deal_count : "—";
+    var pmEl = document.getElementById("mkt-kpi-pending-month");
+    if (pmEl) pmEl.textContent = summary.pending_this_month != null ? summary.pending_this_month : "—";
+    var odEl = document.getElementById("mkt-kpi-overdue");
+    if (odEl) odEl.textContent = summary.overdue_count != null ? summary.overdue_count : "—";
   }
 
-  function mktRenderTable() {
+  function mktPaymentRowClass(p) {
+    if (p.status === "paid") return "mkt-pay-paid";
+    if (p.status === "skipped") return "mkt-pay-skipped";
+    var due = String(p.due_date || "").slice(0, 10);
+    var today = new Date().toISOString().slice(0, 10);
+    if (p.status === "pending" && due < today) return "mkt-pay-overdue";
+    if (p.status === "pending") {
+      var dueD = new Date(due + "T12:00:00");
+      var todayD = new Date(today + "T12:00:00");
+      var diff = Math.ceil((dueD - todayD) / 86400000);
+      if (diff <= 3 && diff >= 0) return "mkt-pay-soon";
+    }
+    return "";
+  }
+
+  function mktRenderPaymentsTable() {
+    var tbody = document.getElementById("mkt-payments-table");
+    var title = document.getElementById("mkt-plan-title");
+    var sub = document.getElementById("mkt-plan-sub");
+    if (title) title.textContent = "Aylık Ödeme Planı — " + (mktCurrentPeriodLabel || mktPeriodLabel(mktSelectedMonth()));
+    if (sub) sub.textContent = mktPayments.length ? mktPayments.length + " kayıt" : "";
+    if (!tbody) return;
+    if (!mktPayments.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">Bu ay için ödeme planı yok</td></tr>';
+      return;
+    }
+    tbody.innerHTML = mktPayments.map(function (p) {
+      var cls = mktPaymentRowClass(p);
+      var statusHtml = p.status === "paid"
+        ? '<span class="mkt-badge mkt-badge-paid">Ödendi</span>'
+        : p.status === "skipped"
+          ? '<span class="muted">Atlandı</span>'
+          : '<span class="mkt-badge mkt-badge-pending">Bekliyor</span>';
+      var btn = p.status === "pending" && p.deal_status === "active"
+        ? '<button type="button" class="btn btn-sm btn-primary" data-mkt-pay="' + p.id + '">Ödendi İşaretle</button>'
+        : p.status === "paid"
+          ? '<button type="button" class="btn btn-sm" data-mkt-unpay="' + p.id + '">Geri Al</button>'
+          : "";
+      return '<tr class="' + cls + '">' +
+        '<td>' + mktPeriodLabel(p.period) + '</td>' +
+        '<td>' + mktFmtDate(p.due_date) + '</td>' +
+        '<td class="acc-inv-name">' + mktEsc(p.channel_name) + '</td>' +
+        '<td>' + mktMoney(p.amount, p.currency) + '</td>' +
+        '<td>' + statusHtml + '</td>' +
+        '<td>' + btn + '</td>' +
+        '</tr>';
+    }).join("");
+  }
+
+  function mktRenderDealSchedules() {
+    var box = document.getElementById("mkt-deal-schedules");
+    if (!box) return;
+    if (mktExpandedDealId == null) {
+      box.innerHTML = "";
+      return;
+    }
+    var deal = mktDeals.filter(function (d) { return d.id === mktExpandedDealId; })[0];
+    if (!deal || !deal.payments || !deal.payments.length) {
+      box.innerHTML = "";
+      return;
+    }
+    var rows = deal.payments.map(function (p) {
+      var cls = mktPaymentRowClass(p);
+      var statusHtml = p.status === "paid"
+        ? '<span class="mkt-badge mkt-badge-paid">Ödendi</span>'
+        : p.status === "skipped"
+          ? '<span class="muted">Atlandı</span>'
+          : '<span class="mkt-badge mkt-badge-pending">Bekliyor</span>';
+      var btn = p.status === "pending" && deal.status === "active"
+        ? '<button type="button" class="btn btn-sm btn-primary" data-mkt-pay="' + p.id + '">Ödendi</button>'
+        : "";
+      return '<tr class="' + cls + '">' +
+        '<td>' + mktPeriodLabel(p.period) + '</td>' +
+        '<td>' + mktFmtDate(p.due_date) + '</td>' +
+        '<td>' + mktMoney(p.amount, p.currency) + '</td>' +
+        '<td>' + statusHtml + '</td>' +
+        '<td>' + btn + '</td>' +
+        '</tr>';
+    }).join("");
+    box.innerHTML =
+      '<div class="card" style="margin:0 1rem 1rem;border:1px solid var(--border);">' +
+      '<div class="card-head"><span>' + mktEsc(deal.channel_name) + ' — Aylık Ödeme Takvimi</span></div>' +
+      '<div class="table-wrap"><div class="table-scroll"><table class="acc-inv-table">' +
+      '<thead><tr><th>Ay</th><th>Ödeme Tarihi</th><th>Tutar</th><th>Durum</th><th></th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table></div></div></div>';
+  }
+
+  function mktRenderDealsTable() {
     var tbody = document.getElementById("mkt-deals-table");
     if (!tbody) return;
     if (!mktDeals.length) {
-      tbody.innerHTML = '<tr><td colspan="10" class="empty">Henüz anlaşma eklenmedi</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">Henüz anlaşma eklenmedi</td></tr>';
+      mktRenderDealSchedules();
       return;
     }
     tbody.innerHTML = mktDeals.map(function (d) {
       var passiveCls = d.status !== "active" ? " acc-pm-row-passive" : "";
-      return '<tr class="' + passiveCls.trim() + '" data-mkt-id="' + d.id + '">' +
+      var expanded = mktExpandedDealId === d.id ? " mkt-row-expanded" : "";
+      var ps = d.payment_summary || {};
+      var overdueHint = ps.overdue_count > 0 ? ' <span class="mkt-badge mkt-badge-overdue">' + ps.overdue_count + ' gecikmiş</span>' : "";
+      var endBtn = d.status === "active"
+        ? '<button type="button" class="btn btn-sm btn-danger" data-mkt-end="' + d.id + '">Anlaşma Bitti</button> '
+        : "";
+      return '<tr class="mkt-deal-row' + passiveCls + expanded + '" data-mkt-deal-row="' + d.id + '">' +
         '<td>' + mktFmtDate(d.agreement_date) + '</td>' +
-        '<td class="acc-inv-name">' + mktEsc(d.channel_name) + '</td>' +
+        '<td class="acc-inv-name">' + mktEsc(d.channel_name) + overdueHint + '</td>' +
         '<td>' + mktEsc(d.channel_type || "—") + '</td>' +
-        '<td>' + mktEsc(d.channel_ref_code || "—") + '</td>' +
         '<td>' + mktMoney(d.fixed_fee, d.fixed_fee_currency) + '</td>' +
         '<td>%' + (parseFloat(d.affiliate_commission_rate) || 0).toLocaleString("tr-TR") + '</td>' +
-        '<td><span class="acc-pm-status-toggle" data-mkt-payment="' + d.id + '" data-mkt-payment-status="' + d.payment_status + '">' + (PAYMENT_LABELS[d.payment_status] || d.payment_status) + '</span></td>' +
-        '<td><span class="acc-pm-status-toggle" data-mkt-status="' + d.id + '" data-mkt-status-value="' + d.status + '">' + (STATUS_LABELS[d.status] || d.status) + '</span></td>' +
-        '<td>' + mktEsc(d.notes || "—") + '</td>' +
+        '<td><span class="mkt-status-' + d.status + '">' + (STATUS_LABELS[d.status] || d.status) + '</span></td>' +
         '<td>' +
+        endBtn +
         '<button type="button" class="btn btn-sm" data-mkt-edit="' + d.id + '">Düzenle</button> ' +
         '<button type="button" class="btn btn-sm btn-danger" data-mkt-del="' + d.id + '">Sil</button>' +
         '</td>' +
         '</tr>';
     }).join("");
+    mktRenderDealSchedules();
   }
 
-  function mktLoadDeals() {
+  function mktLoadAll() {
+    mktEnsureMonthPicker();
     var month = mktSelectedMonth();
-    var url = "/api/marketing/deals" + (month ? "?month=" + encodeURIComponent(month) : "");
-    return mktApi(url).then(function (r) {
+    return Promise.all([
+      mktApi("/api/marketing/deals").then(function (r) {
+        if (r && r.ok) {
+          mktDeals = r.data.deals || [];
+          mktRenderSummary(r.data.summary);
+          mktRenderDealsTable();
+        }
+      }),
+      mktApi("/api/marketing/payments?month=" + encodeURIComponent(month)).then(function (r) {
+        if (r && r.ok) {
+          mktPayments = r.data.payments || [];
+          mktCurrentPeriodLabel = r.data.period_label || "";
+          mktRenderPaymentsTable();
+        }
+      })
+    ]);
+  }
+
+  function mktMarkPayment(paymentId, status) {
+    return mktApi("/api/marketing/payments/" + paymentId, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: status })
+    }).then(function (r) {
       if (r && r.ok) {
-        mktDeals = r.data.deals || [];
-        mktRenderTable();
-        mktRenderSummary(r.data.summary);
+        mktToast(status === "paid" ? "Ödeme işaretlendi" : "Ödeme bekliyor olarak güncellendi");
+        mktLoadAll();
+        mktCheckReminders(true);
       } else if (r) {
-        console.error("mktLoadDeals", r.data);
+        alert((r.data && r.data.error) || "Güncellenemedi");
+      }
+    });
+  }
+
+  function mktEndDeal(dealId) {
+    if (!confirm("Anlaşmayı bitirmek istediğine emin misin?\n\nAna listede \"Anlaşma Bitti · Ödeme Bitti\" olarak pasife alınır. Gelecek ayların bekleyen ödemeleri iptal edilir.")) return;
+    mktApi("/api/marketing/deals/" + dealId + "/end", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    }).then(function (r) {
+      if (r && r.ok) {
+        mktToast("Anlaşma sonlandırıldı");
+        mktLoadAll();
+      } else if (r) {
+        alert((r.data && r.data.error) || "İşlem başarısız");
       }
     });
   }
 
   function mktDefaultDate() {
     var d = new Date();
-    var mm = String(d.getMonth() + 1).padStart(2, "0");
-    var dd = String(d.getDate()).padStart(2, "0");
-    return d.getFullYear() + "-" + mm + "-" + dd;
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
 
   function mktResetForm() {
@@ -140,7 +287,6 @@
     document.getElementById("mkt-fee-currency").value = deal.fixed_fee_currency || "TRY";
     document.getElementById("mkt-fixed-fee").value = deal.fixed_fee != null ? deal.fixed_fee : "";
     document.getElementById("mkt-comm-rate").value = deal.affiliate_commission_rate != null ? deal.affiliate_commission_rate : "";
-    document.getElementById("mkt-payment-status").value = deal.payment_status || "pending";
     document.getElementById("mkt-notes").value = deal.notes || "";
     mktEditingId = deal.id;
     var form = document.getElementById("mkt-deal-form");
@@ -158,9 +304,62 @@
       fixed_fee_currency: document.getElementById("mkt-fee-currency").value,
       fixed_fee: document.getElementById("mkt-fixed-fee").value,
       affiliate_commission_rate: document.getElementById("mkt-comm-rate").value,
-      payment_status: document.getElementById("mkt-payment-status").value,
       notes: document.getElementById("mkt-notes").value.trim()
     };
+  }
+
+  function mktTodayKey() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function mktReminderDismissedToday() {
+    try {
+      return localStorage.getItem("mkt_reminder_dismiss_" + mktTodayKey()) === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function mktDismissReminderToday() {
+    try {
+      localStorage.setItem("mkt_reminder_dismiss_" + mktTodayKey(), "1");
+    } catch (e) { /* ignore */ }
+    var modal = document.getElementById("mkt-reminder-modal");
+    if (modal) modal.classList.remove("open");
+  }
+
+  function mktShowReminderModal(reminders) {
+    if (!reminders || !reminders.length) return;
+    if (mktReminderDismissedToday()) return;
+    var list = document.getElementById("mkt-reminder-list");
+    var modal = document.getElementById("mkt-reminder-modal");
+    if (!list || !modal) return;
+    list.innerHTML = reminders.map(function (r) {
+      var overdue = r.is_overdue || r.days_until < 0;
+      var msg = overdue
+        ? "<strong>GECİKMİŞ</strong> — " + Math.abs(r.days_until) + " gün geçti"
+        : r.days_until === 0
+          ? "<strong>BUGÜN</strong> ödeme günü"
+          : r.days_until + " gün kaldı";
+      return '<div class="mkt-reminder-item' + (overdue ? " mkt-reminder-overdue" : "") + '">' +
+        '<div><strong>' + mktEsc(r.channel_name) + '</strong> · ' + mktEsc(r.period_label || mktPeriodLabel(r.period)) + '</div>' +
+        '<div class="muted" style="font-size:0.82rem;">Vade: ' + mktFmtDate(r.due_date) + ' · ' + mktMoney(r.amount, r.currency) + '</div>' +
+        '<div style="font-size:0.82rem;margin-top:0.25rem;">' + msg + '</div>' +
+        '<button type="button" class="btn btn-sm btn-primary" style="margin-top:0.5rem;" data-mkt-reminder-pay="' + r.id + '">Ödendi İşaretle</button>' +
+        '</div>';
+    }).join("");
+    modal.classList.add("open");
+  }
+
+  function mktCheckReminders(forceShow) {
+    if (!forceShow && mktReminderDismissedToday()) return Promise.resolve();
+    var hasPerm = mktPerms.indexOf("*") >= 0 || mktPerms.indexOf("module.marketing") >= 0 || mktPerms.indexOf("marketing.deals") >= 0;
+    if (!hasPerm && mktPerms.length) return Promise.resolve();
+    return mktApi("/api/marketing/reminders").then(function (r) {
+      if (r && r.ok && r.data.reminders && r.data.reminders.length) {
+        mktShowReminderModal(r.data.reminders);
+      }
+    });
   }
 
   function mktBindEvents() {
@@ -178,8 +377,8 @@
         }).then(function (r) {
           if (r && r.ok) {
             mktResetForm();
-            mktLoadDeals();
-            mktToast(isEdit ? "Anlaşma güncellendi" : "Anlaşma eklendi");
+            mktLoadAll();
+            mktToast(isEdit ? "Anlaşma güncellendi" : "Anlaşma eklendi — aylık plan oluşturuldu");
           } else if (r) {
             alert((r.data && r.data.error) || "İşlem başarısız");
           }
@@ -188,42 +387,23 @@
     }
 
     var monthEl = document.getElementById("mkt-filter-month");
-    if (monthEl) monthEl.addEventListener("change", mktLoadDeals);
-
-    var showAllBtn = document.getElementById("btn-mkt-show-all");
-    if (showAllBtn) showAllBtn.addEventListener("click", function () {
-      if (monthEl) monthEl.value = "";
-      mktLoadDeals();
-    });
+    if (monthEl) monthEl.addEventListener("change", mktLoadAll);
 
     var refreshBtn = document.getElementById("btn-mkt-refresh");
-    if (refreshBtn) refreshBtn.addEventListener("click", mktLoadDeals);
+    if (refreshBtn) refreshBtn.addEventListener("click", mktLoadAll);
 
-    var tbody = document.getElementById("mkt-deals-table");
-    if (tbody) {
-      tbody.addEventListener("click", function (e) {
-        var payBadge = e.target.closest ? e.target.closest("[data-mkt-payment]") : null;
-        if (payBadge) {
-          var pid = payBadge.getAttribute("data-mkt-payment");
-          var next = PAYMENT_CYCLE[payBadge.getAttribute("data-mkt-payment-status")] || "pending";
-          mktApi("/api/marketing/deals/" + pid, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ payment_status: next })
-          }).then(function (r) { if (r && r.ok) mktLoadDeals(); });
+    var dealsTbody = document.getElementById("mkt-deals-table");
+    if (dealsTbody) {
+      dealsTbody.addEventListener("click", function (e) {
+        var row = e.target.closest ? e.target.closest("[data-mkt-deal-row]") : null;
+        if (row && !e.target.closest("button")) {
+          var id = parseInt(row.getAttribute("data-mkt-deal-row"), 10);
+          mktExpandedDealId = mktExpandedDealId === id ? null : id;
+          mktRenderDealsTable();
           return;
         }
-        var statBadge = e.target.closest ? e.target.closest("[data-mkt-status]") : null;
-        if (statBadge) {
-          var sid = statBadge.getAttribute("data-mkt-status");
-          var nextS = STATUS_CYCLE[statBadge.getAttribute("data-mkt-status-value")] || "active";
-          mktApi("/api/marketing/deals/" + sid, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: nextS })
-          }).then(function (r) { if (r && r.ok) mktLoadDeals(); });
-          return;
-        }
+        var endBtn = e.target.closest ? e.target.closest("[data-mkt-end]") : null;
+        if (endBtn) { mktEndDeal(endBtn.getAttribute("data-mkt-end")); return; }
         var editBtn = e.target.closest ? e.target.closest("[data-mkt-edit]") : null;
         if (editBtn) {
           var deal = mktDeals.filter(function (d) { return String(d.id) === editBtn.getAttribute("data-mkt-edit"); })[0];
@@ -232,11 +412,48 @@
         }
         var delBtn = e.target.closest ? e.target.closest("[data-mkt-del]") : null;
         if (delBtn) {
-          if (!confirm("Bu anlaşma silinsin mi?")) return;
+          if (!confirm("Bu anlaşma ve tüm ödeme planı silinsin mi?")) return;
           mktApi("/api/marketing/deals/" + delBtn.getAttribute("data-mkt-del"), { method: "DELETE" }).then(function (r) {
-            if (r && r.ok) { mktLoadDeals(); mktToast("Anlaşma silindi"); }
+            if (r && r.ok) { mktExpandedDealId = null; mktLoadAll(); mktToast("Silindi"); }
           });
         }
+      });
+    }
+
+    function payClickHandler(e) {
+      var payBtn = e.target.closest ? e.target.closest("[data-mkt-pay]") : null;
+      if (payBtn) { mktMarkPayment(payBtn.getAttribute("data-mkt-pay"), "paid"); return; }
+      var unpayBtn = e.target.closest ? e.target.closest("[data-mkt-unpay]") : null;
+      if (unpayBtn) { mktMarkPayment(unpayBtn.getAttribute("data-mkt-unpay"), "pending"); return; }
+    }
+
+    var payTbody = document.getElementById("mkt-payments-table");
+    if (payTbody) payTbody.addEventListener("click", payClickHandler);
+
+    var schedules = document.getElementById("mkt-deal-schedules");
+    if (schedules) schedules.addEventListener("click", payClickHandler);
+
+    var remClose = document.getElementById("mkt-reminder-close");
+    if (remClose) remClose.addEventListener("click", mktDismissReminderToday);
+    var remOk = document.getElementById("mkt-reminder-ok");
+    if (remOk) remOk.addEventListener("click", mktDismissReminderToday);
+
+    var remList = document.getElementById("mkt-reminder-list");
+    if (remList) {
+      remList.addEventListener("click", function (e) {
+        var btn = e.target.closest ? e.target.closest("[data-mkt-reminder-pay]") : null;
+        if (btn) {
+          mktMarkPayment(btn.getAttribute("data-mkt-reminder-pay"), "paid").then(function () {
+            mktDismissReminderToday();
+          });
+        }
+      });
+    }
+
+    var remModal = document.getElementById("mkt-reminder-modal");
+    if (remModal) {
+      remModal.addEventListener("click", function (e) {
+        if (e.target === remModal) mktDismissReminderToday();
       });
     }
   }
@@ -247,14 +464,20 @@
       mktLoaded = true;
       mktBindEvents();
       mktResetForm();
+      mktEnsureMonthPicker();
     },
     onShow: function () {
       if (!mktLoaded) this.init();
-      mktLoadDeals();
+      mktLoadAll().then(function () {
+        mktCheckReminders(false);
+      });
     },
     setPermissions: function (perms) {
       mktPerms = perms || [];
     },
-    refresh: mktLoadDeals
+    refresh: mktLoadAll,
+    checkReminders: function () {
+      return mktCheckReminders(false);
+    }
   };
 })();

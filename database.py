@@ -2920,7 +2920,57 @@ def init_marketing_schema(conn):
             """,
         )
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_mkt_deals_date ON mkt_deals(agreement_date)")
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mkt_deal_payments (
+                id SERIAL PRIMARY KEY,
+                deal_id INTEGER NOT NULL,
+                period TEXT NOT NULL,
+                due_date TEXT NOT NULL,
+                amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'TRY',
+                status TEXT NOT NULL DEFAULT 'pending',
+                paid_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(deal_id, period)
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mkt_deal_payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                deal_id INTEGER NOT NULL,
+                period TEXT NOT NULL,
+                due_date TEXT NOT NULL,
+                amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'TRY',
+                status TEXT NOT NULL DEFAULT 'pending',
+                paid_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(deal_id, period)
+            )
+            """,
+        )
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_mkt_payments_deal ON mkt_deal_payments(deal_id)")
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_mkt_payments_period ON mkt_deal_payments(period)")
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_mkt_payments_due ON mkt_deal_payments(due_date)")
+    migrate_marketing_deals_columns(conn)
     conn.commit()
+
+
+def migrate_marketing_deals_columns(conn):
+    """Mevcut mkt_deals tablosuna end_date kolonu ekle."""
+    cols = _table_columns(conn, "mkt_deals")
+    if cols and "end_date" not in cols:
+        execute(conn, "ALTER TABLE mkt_deals ADD COLUMN end_date TEXT")
+        conn.commit()
 
 
 def init_db():

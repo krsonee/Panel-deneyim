@@ -2,12 +2,11 @@
   <div class="topbar">
     <div>
       <h2>Marketing <span class="role-badge" id="mkt-role-badge"></span></h2>
-      <p>Kanal / affiliate anlaşmaları — aylık yapılan anlaşmaların manuel takibi</p>
+      <p>Kanal anlaşmaları — aylık ödeme planı ve hatırlatmalar</p>
     </div>
     <div class="period-bar">
-      <label for="mkt-filter-month" class="muted" style="font-size:0.72rem;">Ay:</label>
+      <label for="mkt-filter-month" class="muted" style="font-size:0.72rem;">Plan Ayı:</label>
       <input type="month" id="mkt-filter-month" style="width:auto;min-width:140px;">
-      <button type="button" class="btn btn-sm" id="btn-mkt-show-all">Tüm Zamanlar</button>
       <button type="button" class="btn btn-sm btn-primary" id="btn-mkt-refresh">Yenile</button>
     </div>
   </div>
@@ -15,32 +14,39 @@
   <section class="kpi-grid acc-kpi-grid">
     <div class="kpi green">
       <div class="val" id="mkt-kpi-active-channels">—</div>
-      <div class="lbl">Aktif Kanal Sayısı</div>
+      <div class="lbl">Aktif Kanal</div>
     </div>
     <div class="kpi">
       <div class="val" id="mkt-kpi-deal-count">—</div>
-      <div class="lbl">Anlaşma Sayısı</div>
+      <div class="lbl">Toplam Anlaşma</div>
     </div>
     <div class="kpi amber">
-      <div class="val" id="mkt-kpi-fee-total">—</div>
-      <div class="lbl">Toplam Sabit Ücret</div>
+      <div class="val" id="mkt-kpi-pending-month">—</div>
+      <div class="lbl">Bu Ay Bekleyen Ödeme</div>
+    </div>
+    <div class="kpi rose">
+      <div class="val" id="mkt-kpi-overdue">—</div>
+      <div class="lbl">Gecikmiş Ödeme</div>
     </div>
   </section>
 
   <section class="card">
-    <div class="card-head"><span>Yeni Anlaşma Ekle</span></div>
+    <div class="card-head"><span>Yeni Anlaşma / Ödeme Listesi Ekle</span></div>
+    <p class="hint" style="margin:0 1rem 0.85rem;">
+      İlk ödeme tarihini gir (ör. 12.06.2026). Sistem otomatik olarak her ay aynı gün için ödeme satırı oluşturur.
+    </p>
     <form id="mkt-deal-form" class="card-body acc-inv-meta-grid">
-      <label>Anlaşma Tarihi
+      <label>İlk Ödeme / Anlaşma Tarihi
         <input type="date" id="mkt-agreement-date" required>
       </label>
       <label>Kanal Adı
         <input type="text" id="mkt-channel-name" placeholder="Örn: @kanaladi, site.com" required>
       </label>
       <label>Kanal Türü
-        <input type="text" id="mkt-channel-type" placeholder="Influencer, Telegram, Site, YouTube…">
+        <input type="text" id="mkt-channel-type" placeholder="Influencer, Telegram, Site…">
       </label>
-      <label>Kanal Referans / Kodu <span class="muted" style="font-weight:400;">(ileride Smartico eşleşmesi için)</span>
-        <input type="text" id="mkt-channel-ref" placeholder="Affiliate kodu / ID">
+      <label>Kanal Referans / Kodu
+        <input type="text" id="mkt-channel-ref" placeholder="Affiliate kodu (ileride Smartico)">
       </label>
       <label>Para Birimi
         <select id="mkt-fee-currency">
@@ -49,49 +55,83 @@
           <option value="EUR">€ EUR</option>
         </select>
       </label>
-      <label>Sabit Ücret
+      <label>Aylık Sabit Ücret
         <input type="number" step="0.01" id="mkt-fixed-fee" placeholder="0" required>
       </label>
       <label>Affiliate Komisyon Oranı (%)
         <input type="number" step="0.01" id="mkt-comm-rate" placeholder="0" required>
       </label>
-      <label>Ödeme Durumu
-        <select id="mkt-payment-status">
-          <option value="pending">Bekliyor</option>
-          <option value="paid">Ödendi</option>
-          <option value="cancelled">İptal</option>
-        </select>
-      </label>
       <label>Notlar
-        <input type="text" id="mkt-notes" placeholder="İsteğe bağlı not">
+        <input type="text" id="mkt-notes" placeholder="İsteğe bağlı">
       </label>
       <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
     </form>
   </section>
 
   <section class="card">
-    <div class="card-head"><span>Anlaşmalar</span></div>
+    <div class="card-head">
+      <span id="mkt-plan-title">Aylık Ödeme Planı</span>
+      <span class="muted" id="mkt-plan-sub" style="font-size:0.72rem;font-weight:400;"></span>
+    </div>
     <div class="table-wrap">
-      <div class="scroll-hint">Tabloyu yatay kaydırın</div>
       <div class="table-scroll">
         <table class="acc-inv-table">
           <thead>
             <tr>
-              <th>Anlaşma Tarihi</th>
-              <th>Kanal Adı</th>
-              <th>Kanal Türü</th>
-              <th>Referans / Kod</th>
-              <th>Sabit Ücret</th>
-              <th>Affiliate Kom. %</th>
-              <th>Ödeme Durumu</th>
+              <th>Ay</th>
+              <th>Ödeme Tarihi</th>
+              <th>Kanal</th>
+              <th>Tutar</th>
               <th>Durum</th>
-              <th>Notlar</th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="mkt-deals-table"><tr><td colspan="10" class="empty">Henüz anlaşma eklenmedi</td></tr></tbody>
+          <tbody id="mkt-payments-table"><tr><td colspan="6" class="empty">Bu ay için ödeme yok</td></tr></tbody>
         </table>
       </div>
     </div>
   </section>
+
+  <section class="card">
+    <div class="card-head"><span>Ana Anlaşma Listesi</span></div>
+    <div class="table-wrap">
+      <div class="scroll-hint">Tabloyu yatay kaydırın — satıra tıklayınca aylık plan açılır</div>
+      <div class="table-scroll">
+        <table class="acc-inv-table">
+          <thead>
+            <tr>
+              <th>İlk Ödeme Tarihi</th>
+              <th>Kanal Adı</th>
+              <th>Kanal Türü</th>
+              <th>Aylık Ücret</th>
+              <th>Aff. Kom. %</th>
+              <th>Durum</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="mkt-deals-table"><tr><td colspan="7" class="empty">Henüz anlaşma eklenmedi</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="mkt-deal-schedules"></div>
+  </section>
+</div>
+
+<!-- Marketing ödeme hatırlatma popup -->
+<div class="modal-overlay" id="mkt-reminder-modal" style="z-index:10050;">
+  <div class="modal modal-settings" style="max-width:520px;">
+    <div class="modal-head">
+      <h3>⚠️ Marketing Ödeme Hatırlatması</h3>
+      <button type="button" class="modal-close" id="mkt-reminder-close">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:1.25rem;">
+      <p class="muted" style="font-size:0.85rem;margin-bottom:1rem;">
+        Ödeme tarihinden 3 gün önce başlayarak, ödendi işaretlenene kadar her gün hatırlatılır.
+      </p>
+      <div id="mkt-reminder-list"></div>
+      <div style="margin-top:1rem;text-align:right;">
+        <button type="button" class="btn btn-primary" id="mkt-reminder-ok">Tamam, bugün için kapattım</button>
+      </div>
+    </div>
+  </div>
 </div>
