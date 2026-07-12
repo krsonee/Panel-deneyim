@@ -13,7 +13,7 @@
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: {{ theme.bg }};
@@ -23,85 +23,178 @@
     --card-border: {{ theme.card_border }};
     --card-hover: {{ theme.card_hover }};
     --accent: {{ theme.accent }};
-    --radius: {% if page.button_shape == 'pill' %}999px{% elif page.button_shape == 'square' %}6px{% else %}16px{% endif %};
+    --radius: {% if page.button_shape == 'pill' %}999px{% elif page.button_shape == 'square' %}8px{% else %}18px{% endif %};
+    --wa: #25D366;
+    --tg: #229ED9;
+    --ig: #E4405F;
+    --x: #e7e9ea;
+    --tt: #fe2c55;
+    --yt: #FF0000;
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; min-height: 100%;
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
     background: var(--bg);
     color: var(--text);
   }
   body {
     display: flex; justify-content: center;
-    padding: 3rem 1.1rem 3.5rem;
+    padding: 2.5rem 1rem 3rem;
     background-attachment: fixed;
+    position: relative;
+    overflow-x: hidden;
   }
-  .wrap { width: 100%; max-width: 460px; display: flex; flex-direction: column; align-items: center; }
+  body::before {
+    content: "";
+    position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(600px 400px at 50% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%);
+  }
+  .wrap {
+    width: 100%; max-width: 420px;
+    display: flex; flex-direction: column; align-items: center;
+    position: relative; z-index: 1;
+    animation: fadeUp 0.55s ease-out;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: none; }
+  }
+  .avatar-ring {
+    padding: 3px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 30%, #fff));
+    margin-bottom: 1rem;
+    box-shadow: 0 12px 40px -12px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
   .avatar {
-    width: 92px; height: 92px; border-radius: 50%; overflow: hidden;
-    background: var(--card-bg); border: 2px solid var(--card-border);
+    width: 96px; height: 96px; border-radius: 50%; overflow: hidden;
+    background: var(--card-bg); border: 2px solid rgba(255,255,255,0.08);
     display: flex; align-items: center; justify-content: center;
-    font-size: 2rem; font-weight: 700; color: var(--accent);
-    margin-bottom: 1.1rem; box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+    font-size: 2.1rem; font-weight: 800; color: var(--accent);
   }
   .avatar img { width: 100%; height: 100%; object-fit: cover; }
   h1 {
-    font-size: 1.32rem; font-weight: 800; text-align: center; margin: 0 0 0.35rem;
-    letter-spacing: -0.01em;
+    font-size: 1.45rem; font-weight: 800; text-align: center; margin: 0 0 0.4rem;
+    letter-spacing: -0.02em; line-height: 1.2;
   }
   .subtitle {
-    font-size: 0.9rem; color: var(--muted); text-align: center; margin: 0 0 1.6rem;
-    max-width: 340px; line-height: 1.45;
+    font-size: 0.88rem; color: var(--muted); text-align: center; margin: 0 0 1.75rem;
+    max-width: 340px; line-height: 1.5;
   }
-  .links { width: 100%; display: flex; flex-direction: column; gap: 0.65rem; }
+  .links { width: 100%; display: flex; flex-direction: column; gap: 0.7rem; }
   .heading {
-    text-align: center; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em;
-    color: var(--muted); text-transform: uppercase; margin: 0.9rem 0 0.15rem;
+    text-align: center; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em;
+    color: var(--muted); text-transform: uppercase; margin: 1rem 0 0.1rem;
+    position: relative;
+  }
+  .heading::before, .heading::after {
+    content: ""; display: inline-block; width: 28px; height: 1px;
+    background: color-mix(in srgb, var(--accent) 40%, transparent);
+    vertical-align: middle; margin: 0 0.5rem;
   }
   .heading:first-child { margin-top: 0; }
+
   a.link-btn {
-    display: flex; align-items: center; gap: 0.6rem;
-    padding: 0.95rem 1.15rem; border-radius: var(--radius);
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.95rem 1.05rem; border-radius: var(--radius);
     background: var(--card-bg); border: 1px solid var(--card-border);
-    color: var(--text); text-decoration: none; font-weight: 600; font-size: 0.95rem;
-    transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+    color: var(--text); text-decoration: none; font-weight: 600; font-size: 0.92rem;
+    transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, border-color 0.18s;
     position: relative; overflow: hidden;
+    backdrop-filter: blur(8px);
   }
-  a.link-btn:hover { background: var(--card-hover); transform: translateY(-1px); }
+  a.link-btn::after {
+    content: "→"; margin-left: auto; opacity: 0.35; font-size: 0.9rem; flex-shrink: 0;
+  }
+  a.link-btn:hover {
+    background: var(--card-hover); transform: translateY(-2px);
+    box-shadow: 0 14px 36px -18px rgba(0,0,0,0.55);
+  }
   a.link-btn:active { transform: translateY(0); }
+
+  .link-icon {
+    width: 38px; height: 38px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; flex-shrink: 0;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+  .link-label { flex: 1; line-height: 1.25; }
+  .link-badge {
+    font-size: 0.62rem; font-weight: 800; text-transform: uppercase;
+    padding: 0.22rem 0.55rem; border-radius: 999px; letter-spacing: 0.04em;
+    background: var(--accent); color: #0a0a0a; flex-shrink: 0;
+    margin-right: 0.25rem;
+  }
+
+  /* Platform stilleri */
+  a.platform-whatsapp { border-left: 3px solid var(--wa); }
+  a.platform-whatsapp .link-icon { background: color-mix(in srgb, var(--wa) 22%, transparent); }
+  a.platform-telegram { border-left: 3px solid var(--tg); }
+  a.platform-telegram .link-icon { background: color-mix(in srgb, var(--tg) 22%, transparent); }
+  a.platform-instagram { border-left: 3px solid var(--ig); }
+  a.platform-instagram .link-icon { background: color-mix(in srgb, var(--ig) 22%, transparent); }
+  a.platform-twitter { border-left: 3px solid #657786; }
+  a.platform-twitter .link-icon { background: rgba(255,255,255,0.08); }
+  a.platform-tiktok { border-left: 3px solid var(--tt); }
+  a.platform-tiktok .link-icon { background: color-mix(in srgb, var(--tt) 22%, transparent); }
+  a.platform-youtube { border-left: 3px solid var(--yt); }
+  a.platform-youtube .link-icon { background: color-mix(in srgb, var(--yt) 22%, transparent); }
+
   a.link-btn.highlight {
     border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent), 0 10px 30px -8px var(--accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent),
+                0 12px 32px -14px color-mix(in srgb, var(--accent) 45%, transparent);
   }
-  .link-icon { font-size: 1.15rem; flex-shrink: 0; line-height: 1; }
-  .link-label { flex: 1; }
-  .link-badge {
-    font-size: 0.65rem; font-weight: 800; text-transform: uppercase;
-    padding: 0.18rem 0.5rem; border-radius: 999px; letter-spacing: 0.03em;
-    background: var(--accent); color: #0a0a0a; flex-shrink: 0;
+
+  a.bonus-card {
+    flex-direction: column; align-items: stretch; gap: 0.55rem;
+    padding: 1rem 1.05rem;
+    background: linear-gradient(145deg,
+      color-mix(in srgb, var(--accent) 12%, var(--card-bg)),
+      var(--card-bg));
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--card-border));
   }
-  .link-arrow { opacity: 0.45; flex-shrink: 0; font-size: 0.85rem; }
+  a.bonus-card::after { display: none; }
+  a.bonus-card .bonus-top {
+    display: flex; align-items: center; gap: 0.65rem;
+  }
+  a.bonus-card .bonus-amount {
+    font-size: 0.72rem; font-weight: 800; letter-spacing: 0.03em;
+    padding: 0.25rem 0.6rem; border-radius: 999px;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #fff));
+    color: #0c0c0c;
+    margin-left: auto;
+  }
+  a.bonus-card .bonus-cta {
+    font-size: 0.72rem; color: var(--muted); display: flex; align-items: center; gap: 0.35rem;
+  }
+  a.bonus-card .bonus-cta span { color: var(--accent); font-weight: 700; }
+
   .footer {
-    margin-top: 2.2rem; display: flex; flex-direction: column; align-items: center; gap: 0.6rem;
+    margin-top: 2rem; display: flex; flex-direction: column; align-items: center; gap: 0.55rem;
   }
   .share-btn {
     display: inline-flex; align-items: center; gap: 0.4rem;
-    background: transparent; border: 1px solid var(--card-border); color: var(--muted);
-    font-size: 0.78rem; padding: 0.4rem 0.9rem; border-radius: 999px; cursor: pointer;
-    font-family: inherit;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--card-border); color: var(--muted);
+    font-size: 0.76rem; padding: 0.45rem 1rem; border-radius: 999px; cursor: pointer;
+    font-family: inherit; font-weight: 600;
+    transition: color 0.15s, border-color 0.15s;
   }
   .share-btn:hover { color: var(--text); border-color: var(--accent); }
-  .powered { font-size: 0.68rem; color: var(--muted); opacity: 0.6; letter-spacing: 0.02em; }
+  .powered { font-size: 0.65rem; color: var(--muted); opacity: 0.55; }
   @media (max-width: 380px) {
-    a.link-btn { padding: 0.85rem 1rem; font-size: 0.9rem; }
+    a.link-btn { padding: 0.85rem 0.95rem; font-size: 0.88rem; }
+    h1 { font-size: 1.28rem; }
   }
 </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="avatar">
-      {% if page.avatar_url %}<img src="{{ page.avatar_url }}" alt="{{ page.title }}">{% else %}{{ page.title[:1]|upper }}{% endif %}
+    <div class="avatar-ring">
+      <div class="avatar">
+        {% if page.avatar_url %}<img src="{{ page.avatar_url }}" alt="{{ page.title }}">{% else %}{{ page.title[:1]|upper }}{% endif %}
+      </div>
     </div>
     <h1>{{ page.title }}</h1>
     {% if page.subtitle %}<p class="subtitle">{{ page.subtitle }}</p>{% endif %}
@@ -109,18 +202,26 @@
       {% for b in page.buttons %}
         {% if b.button_type == 'heading' %}
           <div class="heading">{{ b.label }}</div>
+        {% elif b.button_type == 'bonus' %}
+          <a class="link-btn bonus-card highlight platform-bonus" href="/p/{{ page.slug }}/go/{{ b.id }}">
+            <div class="bonus-top">
+              <span class="link-icon">{{ b.display_icon or b.icon or '🎁' }}</span>
+              <span class="link-label">{{ b.label }}</span>
+              {% if b.badge_text %}<span class="bonus-amount">{{ b.badge_text }}</span>{% endif %}
+            </div>
+            <div class="bonus-cta"><span>Katıl →</span> Promosyonu görüntüle</div>
+          </a>
         {% else %}
-          <a class="link-btn{% if b.highlight %} highlight{% endif %}" href="/p/{{ page.slug }}/go/{{ b.id }}">
-            {% if b.icon %}<span class="link-icon">{{ b.icon }}</span>{% endif %}
+          <a class="link-btn platform-{{ b.button_type }}{% if b.highlight %} highlight{% endif %}" href="/p/{{ page.slug }}/go/{{ b.id }}">
+            <span class="link-icon">{{ b.display_icon or b.icon or '🔗' }}</span>
             <span class="link-label">{{ b.label }}</span>
-            {% if b.badge_text %}<span class="link-badge">{{ b.badge_text }}</span>{% endif %}
-            <span class="link-arrow">→</span>
+            {% if b.badge_text and b.button_type != 'whatsapp' %}<span class="link-badge">{{ b.badge_text }}</span>{% endif %}
           </a>
         {% endif %}
       {% endfor %}
     </div>
     <div class="footer">
-      <button type="button" class="share-btn" onclick="biolinkShare()">🔗 Sayfayı Paylaş</button>
+      <button type="button" class="share-btn" onclick="biolinkShare()">Paylaş</button>
       <span class="powered">{{ page.title }}</span>
     </div>
   </div>
@@ -132,7 +233,7 @@
       } else if (navigator.clipboard) {
         navigator.clipboard.writeText(url).then(function() {
           var btn = document.querySelector(".share-btn");
-          if (btn) { var t = btn.textContent; btn.textContent = "✅ Kopyalandı"; setTimeout(function(){ btn.textContent = t; }, 1500); }
+          if (btn) { var t = btn.textContent; btn.textContent = "Kopyalandı ✓"; setTimeout(function(){ btn.textContent = t; }, 1500); }
         });
       }
     }

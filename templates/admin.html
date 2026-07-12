@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#060a10">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>MakroPanel — Link Takip & Analiz</title>
+  <link rel="stylesheet" href="/static/biolink-admin.css?v=20260712f">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1430,52 +1430,7 @@
       .acc-options-row { flex-wrap: wrap; }
       .acc-options-row .btn { width: 100%; min-height: 44px; }
       .form-row-4 { grid-template-columns: 1fr; }
-      .biolink-editor-grid { grid-template-columns: 1fr !important; }
-      .biolink-preview-frame-wrap { margin: 1rem auto 0; }
     }
-
-    /* Bio Sayfa Oluşturucu */
-    .biolink-editor-grid { display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 1.5rem; align-items: start; }
-    .biolink-editor-form h4 { margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--text, #eee); }
-    .biolink-btn-row {
-      display: grid; grid-template-columns: 34px 44px 1fr 1fr auto auto auto; gap: 0.4rem; align-items: center;
-      padding: 0.4rem 0.3rem; border-bottom: 1px solid var(--border, #2a2a2a);
-    }
-    .biolink-btn-row.heading-row { grid-template-columns: 34px 1fr auto auto; opacity: 0.85; }
-    .biolink-btn-row input { padding: 0.35rem 0.5rem; font-size: 0.8rem; }
-    .biolink-btn-row .drag-order { display: flex; flex-direction: column; gap: 1px; }
-    .biolink-btn-row .drag-order button {
-      background: none; border: none; color: var(--muted, #888); cursor: pointer; font-size: 0.7rem; padding: 0;
-      line-height: 1;
-    }
-    .biolink-btn-row .drag-order button:hover { color: var(--text, #eee); }
-    .biolink-add-btn-row {
-      display: grid; grid-template-columns: 90px 60px 1fr 1fr auto; gap: 0.4rem; margin-top: 0.6rem;
-    }
-    @media (max-width: 640px) {
-      .biolink-btn-row { grid-template-columns: 24px 36px 1fr auto; grid-template-rows: auto auto; }
-      .biolink-btn-row input[placeholder*="https"] { grid-column: 1 / -1; }
-      .biolink-add-btn-row { grid-template-columns: 1fr; }
-    }
-    .biolink-preview-frame-wrap {
-      width: 100%; max-width: 320px; margin: 0 auto;
-      border: 10px solid #1b1f27; border-radius: 32px; overflow: hidden;
-      box-shadow: 0 20px 50px -20px rgba(0,0,0,0.6); background: #000;
-    }
-    .biolink-preview-frame-wrap iframe {
-      width: 100%; height: 600px; border: none; display: block; background: #0b0f14;
-    }
-    .biolink-stat-row {
-      display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.35rem 0;
-      border-bottom: 1px solid var(--border, #222); font-size: 0.8rem;
-    }
-    .biolink-stat-row .val { font-weight: 700; color: var(--accent, #6cf); }
-    .biolink-theme-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 50%; margin-right: 0.35rem; vertical-align: -2px; }
-    .biolink-status-pill {
-      font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px;
-    }
-    .biolink-status-pill.active { background: rgba(34,211,168,0.15); color: #22d3a8; }
-    .biolink-status-pill.inactive { background: rgba(255,255,255,0.08); color: #999; }
   </style>
 </head>
 <body>
@@ -2215,7 +2170,7 @@
 
   <script src="/static/accounting.js?v=20260712i"></script>
   <script src="/static/mailing.js?v=20260712d"></script>
-  <script src="/static/biolink.js?v=20260712e"></script>
+  <script src="/static/biolink.js?v=20260712f"></script>
   <script src="/static/marketing.js?v=20260712d"></script>
   <script>
     (function () {

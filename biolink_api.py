@@ -93,10 +93,37 @@ THEMES = {
         "card_hover": "#f4f6f9",
         "accent": "#2563eb",
     },
+    "makrovip": {
+        "name": "MakroVIP (Lacivert-Altın)",
+        "bg": "radial-gradient(1200px 600px at 50% -10%, #1a3a6e 0%, #061c3d 45%, #030912 100%)",
+        "text": "#f5f8ff",
+        "muted": "#8fa8cc",
+        "card_bg": "rgba(255,255,255,0.07)",
+        "card_border": "rgba(212,175,55,0.28)",
+        "card_hover": "rgba(255,255,255,0.12)",
+        "accent": "#d4af37",
+    },
 }
 
 DEFAULT_THEME = "carbon"
 BUTTON_SHAPES = ("pill", "rounded", "square")
+
+HEADING_TYPE = "heading"
+CLICKABLE_TYPE_LIST = ("link", "whatsapp", "telegram", "instagram", "twitter", "tiktok", "youtube", "bonus")
+CLICKABLE_TYPES = frozenset(CLICKABLE_TYPE_LIST)
+BUTTON_TYPES = CLICKABLE_TYPES | {HEADING_TYPE}
+
+BUTTON_TYPE_META = {
+    "link": {"label": "Özel Link", "icon": "🔗", "color": "#6366f1", "group": "Genel"},
+    "whatsapp": {"label": "WhatsApp", "icon": "💬", "color": "#25D366", "group": "Sosyal"},
+    "telegram": {"label": "Telegram", "icon": "✈️", "color": "#229ED9", "group": "Sosyal"},
+    "instagram": {"label": "Instagram", "icon": "📸", "color": "#E4405F", "group": "Sosyal"},
+    "twitter": {"label": "X (Twitter)", "icon": "𝕏", "color": "#e7e9ea", "group": "Sosyal"},
+    "tiktok": {"label": "TikTok", "icon": "🎵", "color": "#fe2c55", "group": "Sosyal"},
+    "youtube": {"label": "YouTube", "icon": "▶️", "color": "#FF0000", "group": "Sosyal"},
+    "bonus": {"label": "Bonus / Promo", "icon": "🎁", "color": "#f5c451", "group": "Promo"},
+    "heading": {"label": "Bölüm Başlığı", "icon": "📌", "color": "#94a3b8", "group": "Düzen"},
+}
 
 
 def theme_list():
@@ -109,6 +136,106 @@ def theme_vars(theme_key, accent_override=""):
     if (accent_override or "").strip():
         out["accent"] = accent_override.strip()
     return out
+
+
+def button_type_catalog():
+    return [
+        {"key": k, **v}
+        for k, v in BUTTON_TYPE_META.items()
+    ]
+
+
+def is_clickable(button_type):
+    return button_type in CLICKABLE_TYPES
+
+
+def default_icon(button_type):
+    meta = BUTTON_TYPE_META.get(button_type) or {}
+    return meta.get("icon") or "🔗"
+
+
+def resolve_button_url(button_type, url, badge_text=""):
+    """Ham alandan tıklanabilir hedef URL üret."""
+    button_type = (button_type or "link").strip().lower()
+    url = (url or "").strip()
+    badge_text = (badge_text or "").strip()
+
+    if button_type == HEADING_TYPE:
+        return ""
+
+    if button_type in ("link", "bonus"):
+        if _valid_url(url):
+            return _normalize_url(url)
+        return ""
+
+    if button_type == "whatsapp":
+        phone = re.sub(r"\D", "", url)
+        if len(phone) < 10:
+            return ""
+        dest = f"https://wa.me/{phone}"
+        if badge_text:
+            dest += "?" + urllib.parse.urlencode({"text": badge_text})
+        return dest
+
+    if button_type == "telegram":
+        user = url.lstrip("@").strip().split("/")[-1]
+        if not user:
+            return ""
+        return f"https://t.me/{user}"
+
+    if button_type == "instagram":
+        user = url.lstrip("@").strip().split("/")[-1]
+        if not user:
+            return ""
+        return f"https://instagram.com/{user}"
+
+    if button_type == "twitter":
+        user = url.lstrip("@").strip().split("/")[-1]
+        if not user:
+            return ""
+        return f"https://x.com/{user}"
+
+    if button_type == "tiktok":
+        user = url.lstrip("@").strip().split("/")[-1]
+        if not user:
+            return ""
+        return f"https://www.tiktok.com/@{user}"
+
+    if button_type == "youtube":
+        if _valid_url(url):
+            return _normalize_url(url)
+        handle = url.lstrip("@").strip()
+        if not handle:
+            return ""
+        if handle.startswith("UC") and len(handle) >= 20:
+            return f"https://www.youtube.com/channel/{handle}"
+        return f"https://www.youtube.com/@{handle}"
+
+    return ""
+
+
+def _validate_button(button_type, label, url, badge_text=""):
+    button_type = button_type if button_type in BUTTON_TYPES else "link"
+    label = (label or "").strip()
+    if not label:
+        raise ValueError("Başlık / etiket gerekli.")
+    if button_type == HEADING_TYPE:
+        return button_type, label, "", (badge_text or "").strip()[:32]
+    dest = resolve_button_url(button_type, url, badge_text)
+    if not dest:
+        hints = {
+            "whatsapp": "Geçerli telefon numarası girin (ülke kodu ile, örn. 905551234567).",
+            "telegram": "Telegram kullanıcı adı girin (örn. makrovip).",
+            "instagram": "Instagram kullanıcı adı girin.",
+            "twitter": "X kullanıcı adı girin.",
+            "tiktok": "TikTok kullanıcı adı girin.",
+            "youtube": "YouTube kanal linki veya @kullanıcı adı girin.",
+            "bonus": "Promosyon linki girin (https://…).",
+            "link": "Geçerli bir URL girin.",
+        }
+        raise ValueError(hints.get(button_type, "Geçerli bir hedef girin."))
+    stored_url = (url or "").strip()[:500]
+    return button_type, label[:200], stored_url, (badge_text or "").strip()[:32]
 
 
 def _slugify(text):
@@ -180,7 +307,17 @@ def _button_row(row):
     d["is_active"] = bool(int(d.get("is_active") or 0))
     d["highlight"] = bool(int(d.get("highlight") or 0))
     d["click_count"] = int(d.get("click_count") or 0)
+    bt = d.get("button_type") or "link"
+    d["resolved_url"] = resolve_button_url(bt, d.get("url") or "", d.get("badge_text") or "")
+    if not (d.get("icon") or "").strip():
+        d["display_icon"] = default_icon(bt)
+    else:
+        d["display_icon"] = d["icon"]
     return d
+
+
+def _clickable_types_sql():
+    return ",".join(["?"] * len(CLICKABLE_TYPE_LIST))
 
 
 def list_pages(conn):
@@ -193,8 +330,9 @@ def list_pages(conn):
     btn_rows = fetchall(
         conn,
         f"SELECT page_id, COUNT(*) AS cnt, COALESCE(SUM(click_count),0) AS clicks "
-        f"FROM biolink_buttons WHERE page_id IN ({placeholders}) AND button_type = 'link' GROUP BY page_id",
-        tuple(page_ids),
+        f"FROM biolink_buttons WHERE page_id IN ({placeholders}) "
+        f"AND button_type IN ({_clickable_types_sql()}) GROUP BY page_id",
+        tuple(page_ids) + tuple(CLICKABLE_TYPE_LIST),
     )
     stats = {int(r["page_id"]): r for r in btn_rows}
     for p in pages:
@@ -360,13 +498,10 @@ def duplicate_page(conn, page_id, created_by=""):
 
 def add_button(conn, page_id, *, button_type="link", label="", url="", icon="",
                 highlight=False, badge_text="", is_active=True):
-    button_type = button_type if button_type in ("link", "heading") else "link"
-    label = (label or "").strip()[:200]
-    url = _normalize_url(url) if button_type == "link" else ""
-    if button_type == "link" and not _valid_url(url):
-        raise ValueError("Geçerli bir URL girin.")
-    icon = (icon or "").strip()[:8]
-    badge_text = (badge_text or "").strip()[:32]
+    button_type, label, url, badge_text = _validate_button(button_type, label, url, badge_text)
+    if button_type == "bonus" and not highlight:
+        highlight = True
+    icon = (icon or default_icon(button_type)).strip()[:8]
     now = iso(utcnow())
     max_order = scalar(conn, "SELECT COALESCE(MAX(sort_order), -1) FROM biolink_buttons WHERE page_id = ?", (int(page_id),))
     sort_order = int(max_order or -1) + 1
@@ -393,18 +528,18 @@ def update_button(conn, button_id, data):
     row = dict(row)
 
     button_type = data.get("button_type", row["button_type"])
-    if button_type not in ("link", "heading"):
+    if button_type not in BUTTON_TYPES:
         button_type = row["button_type"]
-    label = (data.get("label", row["label"]) or "").strip()[:200]
-    if "url" in data:
-        url = _normalize_url(data.get("url")) if button_type == "link" else ""
-        if button_type == "link" and not _valid_url(url):
-            raise ValueError("Geçerli bir URL girin.")
+    label = (data.get("label", row["label"]) or "").strip()
+    url = data.get("url", row["url"]) if "url" in data else row["url"]
+    badge_text = data.get("badge_text", row["badge_text"]) if "badge_text" in data else row["badge_text"]
+    if "url" in data or "label" in data or "badge_text" in data or "button_type" in data:
+        button_type, label, url, badge_text = _validate_button(button_type, label, url, badge_text)
     else:
-        url = row["url"]
-    icon = (data.get("icon", row["icon"]) or "").strip()[:8]
+        label = label[:200]
+        badge_text = (badge_text or "").strip()[:32]
+    icon = (data.get("icon", row["icon"]) or default_icon(button_type)).strip()[:8]
     highlight = int(bool(data["highlight"])) if "highlight" in data else int(row["highlight"] or 0)
-    badge_text = (data.get("badge_text", row["badge_text"]) or "").strip()[:32]
     is_active = int(bool(data["is_active"])) if "is_active" in data else int(row["is_active"] or 0)
     now = iso(utcnow())
     execute(
@@ -448,10 +583,14 @@ def record_view(conn, slug):
 def record_click_and_resolve(conn, page_id, button_id, *, ip="", user_agent="", referer=""):
     row = fetchone(
         conn,
-        "SELECT * FROM biolink_buttons WHERE id = ? AND page_id = ? AND button_type = 'link' AND COALESCE(is_active,1) = 1",
-        (int(button_id), int(page_id)),
+        f"SELECT * FROM biolink_buttons WHERE id = ? AND page_id = ? "
+        f"AND button_type IN ({_clickable_types_sql()}) AND COALESCE(is_active,1) = 1",
+        (int(button_id), int(page_id), *CLICKABLE_TYPE_LIST),
     )
     if not row:
+        return None
+    dest = resolve_button_url(row["button_type"], row["url"], row.get("badge_text") or "")
+    if not dest:
         return None
     now = iso(utcnow())
     execute(
@@ -464,14 +603,14 @@ def record_click_and_resolve(conn, page_id, button_id, *, ip="", user_agent="", 
     )
     execute(conn, "UPDATE biolink_buttons SET click_count = COALESCE(click_count,0) + 1, updated_at = ? WHERE id = ?", (now, int(button_id)))
     conn.commit()
-    return row["url"]
+    return dest
 
 
 def get_stats(conn, page_id):
     page = get_page(conn, page_id, with_buttons=True)
     if not page:
         return None
-    buttons = [b for b in page["buttons"] if b["button_type"] == "link"]
+    buttons = [b for b in page["buttons"] if is_clickable(b["button_type"])]
     buttons.sort(key=lambda b: -b["click_count"])
     total_clicks = sum(b["click_count"] for b in buttons)
     return {

@@ -1,8 +1,8 @@
 <div id="module-biolink-panel" class="module-panel" hidden>
   <div class="topbar">
     <div>
-      <h2>Bio Sayfa <span class="role-badge" id="bl-role-badge"></span></h2>
-      <p>Link-in-bio sayfaları — tema, buton, promo ve tıklama analitiği (HeyLink alternatifi)</p>
+      <h2>Bio Sayfa Studio <span class="role-badge" id="bl-role-badge"></span></h2>
+      <p>Link-in-bio sayfaları — WhatsApp, Telegram, sosyal, bonus promo ve özel linkler</p>
     </div>
     <div class="period-bar">
       <span class="muted" id="biolink-updated" style="font-size:0.72rem;"></span>
@@ -12,17 +12,15 @@
   </div>
 
   <section class="card" data-perm="biolink.pages">
-    <div class="card-head">
-      <span>Sayfalarım</span>
-    </div>
+    <div class="card-head"><span>Sayfalarım</span></div>
     <div class="card-body">
-      <p class="hint">Sayfa adresi: <code>panel-alan-adiniz/p/&lt;slug&gt;</code> — <code>vipmakro.com</code> gibi bir domaini bu panele CNAME ile yönlendirip aynı sayfayı o adreste de açabilirsiniz.</p>
+      <p class="hint">Canlı adres: <code>/p/&lt;slug&gt;</code> — <code>vipmakro.com</code> domainini panele CNAME ile bağlayınca kök adreste de açılır.</p>
       <div class="table-wrap">
         <div class="scroll-hint">Tabloyu yatay kaydırın</div>
         <div class="table-scroll">
           <table>
             <thead><tr>
-              <th>Başlık</th><th>Adres</th><th>Tema</th><th>Görüntülenme</th><th>Buton / Tıklama</th><th>Durum</th><th></th>
+              <th>Başlık</th><th>Adres</th><th>Tema</th><th>Görüntülenme</th><th>Blok / Tıklama</th><th>Durum</th><th></th>
             </tr></thead>
             <tbody id="biolink-pages-table"><tr><td colspan="7" class="empty">Henüz sayfa yok</td></tr></tbody>
           </table>
@@ -34,52 +32,62 @@
       <div class="biolink-editor-grid">
         <div class="biolink-editor-form">
           <h4 id="biolink-editor-title">Sayfa Düzenle</h4>
-          <div class="form-row-4">
-            <div><label for="bl-title">Başlık</label><input id="bl-title" placeholder="MAKROVIP DESTEK HATTI" autocomplete="off"></div>
-            <div><label for="bl-slug">Slug (adres)</label><input id="bl-slug" placeholder="vipmakro" autocomplete="off"></div>
+
+          <div class="biolink-page-meta">
+            <div><label for="bl-title">Sayfa Başlığı</label><input id="bl-title" placeholder="MAKROVIP DESTEK HATTI" autocomplete="off"></div>
+            <div><label for="bl-slug">Slug (URL)</label><input id="bl-slug" placeholder="vipmakro" autocomplete="off"></div>
             <div><label for="bl-theme">Tema</label><select id="bl-theme"></select></div>
-            <div><label for="bl-shape">Buton Şekli</label>
+            <div><label for="bl-shape">Buton Stili</label>
               <select id="bl-shape">
-                <option value="pill">Pill (yuvarlak)</option>
+                <option value="pill">Pill — yuvarlak</option>
                 <option value="rounded">Rounded</option>
                 <option value="square">Köşeli</option>
               </select>
             </div>
+            <div class="full"><label for="bl-subtitle">Alt Başlık / Açıklama</label><textarea id="bl-subtitle" rows="2" placeholder="Kısa tanıtım metni…"></textarea></div>
+            <div><label for="bl-avatar">Logo / Avatar URL</label><input id="bl-avatar" placeholder="https://…" autocomplete="off"></div>
+            <div><label for="bl-accent">Vurgu Rengi</label><input id="bl-accent" type="color" style="height:38px;padding:2px;width:100%;"></div>
+            <div><label for="bl-ga4-id">GA4 ID (ops.)</label><input id="bl-ga4-id" placeholder="G-XXXXXXXX" autocomplete="off"></div>
+            <div><label for="bl-ga4-secret">GA4 Secret (ops.)</label><input id="bl-ga4-secret" type="password" placeholder="boş = değiştirme" autocomplete="off"></div>
           </div>
-          <div style="margin-top:0.6rem;"><label for="bl-subtitle">Alt Başlık / Açıklama</label><textarea id="bl-subtitle" rows="2" style="width:100%;" placeholder="Kısa açıklama…"></textarea></div>
-          <div class="form-row-4" style="margin-top:0.6rem;">
-            <div><label for="bl-avatar">Avatar/Logo URL (ops.)</label><input id="bl-avatar" placeholder="https://…" autocomplete="off"></div>
-            <div><label for="bl-accent">Vurgu Rengi (ops.)</label><input id="bl-accent" type="color" style="height:36px;padding:2px;"></div>
-            <div><label for="bl-ga4-id">GA4 Measurement ID (ops.)</label><input id="bl-ga4-id" placeholder="G-XXXXXXXX" autocomplete="off"></div>
-            <div><label for="bl-ga4-secret">GA4 API Secret (ops.)</label><input id="bl-ga4-secret" type="password" placeholder="boş = değiştirme" autocomplete="off"></div>
-          </div>
-          <div class="acc-options-row" style="margin-top:0.85rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <div class="biolink-save-row">
             <button type="button" class="btn btn-primary" id="btn-biolink-save">Kaydet</button>
-            <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.8rem;"><input type="checkbox" id="bl-is-active" checked> Aktif (yayında)</label>
-            <a id="biolink-preview-link" href="#" target="_blank" class="btn btn-sm">🔗 Canlı sayfayı aç</a>
+            <label class="bl-live-toggle"><input type="checkbox" id="bl-is-active" checked> Yayında</label>
+            <a id="biolink-preview-link" href="#" target="_blank" class="btn btn-sm">Canlı sayfa ↗</a>
             <button type="button" class="btn btn-sm" id="btn-biolink-close">Kapat</button>
           </div>
 
-          <h4 style="margin-top:1.3rem;">Butonlar / Linkler</h4>
-          <div id="biolink-buttons-list"><p class="muted-sm">Önce sayfayı kaydedin.</p></div>
-          <div class="biolink-add-btn-row">
-            <select id="bl-new-btn-type"><option value="link">Buton (link)</option><option value="heading">Başlık / Ayraç</option></select>
-            <input id="bl-new-btn-icon" placeholder="🎁" maxlength="4">
-            <input id="bl-new-btn-label" placeholder="Buton yazısı">
-            <input id="bl-new-btn-url" placeholder="https://…">
-            <button type="button" class="btn btn-sm" id="btn-biolink-add-button">+ Ekle</button>
+          <div class="biolink-studio-section">
+            <div class="biolink-studio-section-title">Blok Ekle</div>
+            <div class="bl-quick-palette" id="bl-quick-palette"></div>
+            <div class="bl-composer" id="bl-composer">
+              <div class="bl-composer-head">
+                <strong id="bl-composer-type-label">Özel Link</strong>
+                <span class="muted-sm" id="bl-composer-hint">URL ile yönlendirme</span>
+              </div>
+              <div class="bl-composer-fields" id="bl-composer-fields"></div>
+              <div class="bl-composer-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="btn-biolink-add-button">Blok Ekle</button>
+              </div>
+            </div>
+            <div class="bl-blocks-list" id="biolink-buttons-list"><p class="muted-sm">Henüz blok eklenmedi.</p></div>
           </div>
 
-          <h4 style="margin-top:1.3rem;">İstatistikler</h4>
-          <div id="biolink-stats"><p class="muted-sm">Henüz veri yok.</p></div>
+          <div class="biolink-studio-section">
+            <div class="biolink-studio-section-title">Performans</div>
+            <div id="biolink-stats"><p class="muted-sm">Henüz veri yok.</p></div>
+          </div>
         </div>
+
         <div class="biolink-editor-preview">
           <div class="biolink-preview-frame-wrap">
             <iframe id="biolink-preview-frame" title="Önizleme"></iframe>
           </div>
-          <p class="muted-sm" style="text-align:center;margin-top:0.5rem;">Canlı önizleme — kaydettikçe güncellenir</p>
+          <p class="biolink-preview-label">Canlı önizleme — değişiklikler kaydedilince güncellenir</p>
         </div>
       </div>
     </div>
   </section>
 </div>
+
+<div class="bl-emoji-popover" id="bl-emoji-popover" hidden></div>

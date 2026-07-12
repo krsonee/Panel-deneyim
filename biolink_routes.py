@@ -19,6 +19,11 @@ def create_biolink_blueprint(permission_required):
     # ── Admin API ──────────────────────────────────────────────
     api = Blueprint("biolink_api_bp", __name__, url_prefix="/api/biolink")
 
+    @api.route("/button-types", methods=["GET"])
+    @perm(*MODULE_ACCESS)
+    def button_types():
+        return jsonify({"types": biolink_api.button_type_catalog()})
+
     @api.route("/themes", methods=["GET"])
     @perm(*MODULE_ACCESS)
     def themes():
