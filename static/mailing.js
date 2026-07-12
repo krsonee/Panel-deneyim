@@ -17,6 +17,10 @@
   var mailImportPollTimer = null;
   var mailImportRefreshTimer = null;
   var mailImportHandledJobs = {};
+  var mailImportActiveXhr = null;
+  var MAIL_AUTO_SPLIT_BYTES = 20 * 1024 * 1024;
+  var MAIL_CHUNK_TARGET_BYTES = 10 * 1024 * 1024;
+  var MAIL_UPLOAD_STALL_MS = 120 * 1000;
 
   var MAIL_IMPORT_BADGE = {
     uploading: { bg: "rgba(59,130,246,0.18)", color: "#93c5fd", border: "rgba(59,130,246,0.35)", label: "Yükleniyor" },
@@ -112,27 +116,55 @@
     return (i === 0 ? n : n.toFixed(1)) + " " + units[i];
   }
 
-  function mailUploadWithProgress(url, formData, onProgress) {
+  function mailUploadWithProgress(url, formData, onProgress, opts) {
+    opts = opts || {};
     return new Promise(function (resolve) {
       var xhr = new XMLHttpRequest();
+      mailImportActiveXhr = xhr;
+      var lastAt = Date.now();
+      var lastLoaded = 0;
+      var stallIv = setInterval(function () {
+        if (Date.now() - lastAt > (opts.stallMs || MAIL_UPLOAD_STALL_MS)) {
+          clearInterval(stallIv);
+          mailImportActiveXhr = null;
+          try { xhr.abort(); } catch (e) { /* ignore */ }
+          resolve({
+            ok: false,
+            status: 0,
+            data: {
+              error: "Yükleme durdu (bağlantı kesildi veya sunucu yanıt vermiyor). Dosya otomatik parçalara bölünerek tekrar denenecek.",
+              stalled: true
+            }
+          });
+        }
+      }, 4000);
+      function done(res) {
+        clearInterval(stallIv);
+        mailImportActiveXhr = null;
+        resolve(res);
+      }
       xhr.open("POST", url, true);
       xhr.timeout = 6 * 60 * 60 * 1000;
       if (xhr.upload) {
         xhr.upload.addEventListener("progress", function (e) {
-          if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total);
+          if (e.loaded > lastLoaded) {
+            lastLoaded = e.loaded;
+            lastAt = Date.now();
+          }
+          if (onProgress) onProgress(e.loaded, e.lengthComputable ? e.total : 0);
         });
       }
       xhr.onload = function () {
-        if (xhr.status === 401) { location.href = "/admin/login"; resolve(null); return; }
+        if (xhr.status === 401) { location.href = "/admin/login"; done(null); return; }
         var data = null;
         try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
-        resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data: data });
+        done({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data: data });
       };
       xhr.onerror = function () {
-        resolve({ ok: false, status: 0, data: { error: "Ağ hatası - yükleme kesildi." } });
+        done({ ok: false, status: 0, data: { error: "Ağ hatası - yükleme kesildi." } });
       };
       xhr.ontimeout = function () {
-        resolve({ ok: false, status: 0, data: { error: "Yükleme zaman aşımına uğradı." } });
+        done({ ok: false, status: 0, data: { error: "Yükleme zaman aşımına uğradı." } });
       };
       xhr.send(formData);
     });
@@ -345,8 +377,76 @@
     }
   }
 
-  function mailEnqueueImport(file, tag) {
+  function mailSplitCsvIntoChunks(file, targetBytes) {
+    targetBytes = targetBytes || MAIL_CHUNK_TARGET_BYTES;
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onerror = function () { reject(new Error("Dosya okunamadı")); };
+      reader.onload = function () {
+        try {
+          var text = String(reader.result || "");
+          var lines = text.split(/\r?\n/).filter(function (ln) { return ln.trim(); });
+          if (!lines.length) { resolve([]); return; }
+          var hasHeader = /^email$/i.test(lines[0].trim());
+          var header = "email";
+          var dataLines = hasHeader ? lines.slice(1) : lines;
+          var chunks = [];
+          var buf = [header];
+          var size = header.length + 1;
+          var base = file.name.replace(/\.csv$/i, "");
+          function flush(partNo) {
+            if (buf.length <= 1) return;
+            var body = buf.join("\n");
+            var fname = base + "-part" + partNo + ".csv";
+            chunks.push(new File([body], fname, { type: "text/csv" }));
+            buf = [header];
+            size = header.length + 1;
+          }
+          var partNo = 1;
+          dataLines.forEach(function (line) {
+            var add = line.length + 1;
+            if (size + add > targetBytes && buf.length > 1) {
+              flush(partNo++);
+            }
+            buf.push(line);
+            size += add;
+          });
+          flush(partNo);
+          resolve(chunks);
+        } catch (e) {
+          reject(e);
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  function mailEnqueueImport(file, tag, opts) {
+    opts = opts || {};
     if (mailActiveTab !== "crm") switchMailTab("crm");
+    if (!opts.skipSplit && /\.csv$/i.test(file.name) && file.size > MAIL_AUTO_SPLIT_BYTES) {
+      mailShowImportDashboard(true);
+      mailSetImportDashboard({
+        phase: "pending",
+        title: file.name,
+        sub: "Büyük CSV parçalara bölünüyor… (Render timeout'u önlemek için ~10MB parçalar)",
+        showProgress: false
+      });
+      mailSplitCsvIntoChunks(file, MAIL_CHUNK_TARGET_BYTES).then(function (parts) {
+        if (!parts.length) {
+          mailBulkSetError("CSV boş veya bölünemedi.", file.name);
+          return;
+        }
+        mailToast(file.name + ": " + parts.length + " parçaya bölündü, sırayla yükleniyor");
+        parts.forEach(function (p) { mailImportQueue.push({ file: p, tag: tag }); });
+        mailRenderImportQueue();
+        mailUpdateBulkFormState();
+        if (!mailImportBusy) mailStartNextImport();
+      }).catch(function () {
+        mailBulkSetError("Dosya okunurken hata oluştu. Daha küçük parçalara bölüp tekrar dene.", file.name);
+      });
+      return;
+    }
     mailImportQueue.push({ file: file, tag: tag });
     mailRenderImportQueue();
     mailUpdateBulkFormState();
@@ -417,13 +517,30 @@
     }
 
     var uploadStarted = Date.now();
+    var lastPct = 0;
     mailUploadWithProgress("/api/mailing/contacts/import/start", fd, function (loaded, total) {
-      var pct = total > 0 ? Math.max(2, Math.round((loaded / total) * 100)) : 0;
-      if (progBar) progBar.style.width = pct + "%";
+      var pct = total > 0 ? Math.max(2, Math.round((loaded / total) * 100)) : lastPct;
+      if (total > 0) lastPct = pct;
+      if (progBar) {
+        progBar.style.width = pct + "%";
+        progBar.style.background = "var(--green,#22c55e)";
+        progBar.style.minWidth = pct > 0 ? "4px" : "0";
+      }
       var line = file.name + " — yükleniyor: %" + pct;
       if (total > 0) line += " · " + fmtBytes(loaded) + " / " + fmtBytes(total);
       else line += " · " + fmtBytes(loaded) + " gönderildi";
       if (progText) progText.textContent = line;
+      mailSaveImportSession({
+        phase: "upload",
+        fileName: file.name,
+        fileSize: file.size,
+        tag: tag || "",
+        jobId: null,
+        loaded: loaded,
+        total: total || file.size,
+        pct: pct,
+        ts: Date.now()
+      });
       mailSetImportDashboard({
         phase: "uploading",
         title: file.name,
@@ -432,9 +549,15 @@
           : (fmtBytes(loaded) + " gönderildi — bağlantı devam ediyor…"),
         showProgress: true
       });
-    }).then(function (res) {
+    }, { stallMs: MAIL_UPLOAD_STALL_MS }).then(function (res) {
       if (!res || !res.ok) {
         var errMsg = mailFormatUploadError(res);
+        if (res && res.data && res.data.stalled && /\.csv$/i.test(file.name) && file.size > MAIL_AUTO_SPLIT_BYTES && !file.name.match(/-part\d+\.csv$/i)) {
+          mailToast(file.name + ": takıldı — parçalara bölünüp yeniden deneniyor…");
+          mailImportBusy = false;
+          mailEnqueueImport(file, tag, { skipSplit: false });
+          return;
+        }
         mailToast(file.name + ": " + errMsg);
         mailBulkSetError(errMsg, file.name);
         finishItem();
@@ -1034,6 +1157,14 @@
   }
 
   function bindEvents() {
+    window.addEventListener("beforeunload", function (e) {
+      var sess = mailReadImportSession();
+      if (mailImportBusy && sess && sess.phase === "upload") {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    });
+
     var tabs = document.getElementById("mail-tabs");
     if (tabs) {
       tabs.addEventListener("click", function (e) {
@@ -1574,12 +1705,13 @@
         if (sess && sess.phase === "upload" && !mailImportBusy) {
           mailShowImportDashboard(true);
           switchMailTab("crm");
+          var progHint = sess.pct ? ("Son ilerleme: %" + sess.pct + " · ") : "";
           mailSetImportDashboard({
             phase: "error",
             title: sess.fileName || "Yarım kalan yükleme",
-            sub: "Tarayıcı yenilendiği için dosya aktarımı kesilmiş olabilir.",
+            sub: progHint + "Tarayıcı yenilendi — aktarım kesildi.",
             showError: true,
-            errorText: "Yükleme yarıda kaldı. Aynı dosyayı tekrar seçip yüklemeyi başlat.",
+            errorText: "Aynı dosyayı tekrar seç. 20MB üstü CSV otomatik ~10MB parçalara bölünerek yüklenir.",
             showDismiss: true
           });
         }
@@ -1601,13 +1733,26 @@
       if (hasHistory) {
         mailShowImportDashboard(true);
         if (!mailImportBusy) {
-          mailSetImportDashboard({
-            phase: "idle",
-            title: "Yükleme geçmişi",
-            sub: "Aktif iş yok. Devam eden veya bitmiş yüklemeler aşağıda listelenir.",
-            showProgress: false,
-            showDismiss: true
-          });
+          var sessUp = mailReadImportSession();
+          if (sessUp && sessUp.phase === "upload") {
+            var progHint = sessUp.pct ? ("Son ilerleme: %" + sessUp.pct + " · ") : "";
+            mailSetImportDashboard({
+              phase: "error",
+              title: sessUp.fileName || "Yarım kalan yükleme",
+              sub: progHint + "Dosyayı tekrar seç — büyük CSV parçalı yüklenecek.",
+              showError: true,
+              errorText: "Yükleme tamamlanmadan sayfa kapatıldı veya bağlantı kesildi.",
+              showDismiss: true
+            });
+          } else {
+            mailSetImportDashboard({
+              phase: "idle",
+              title: "Yükleme geçmişi",
+              sub: "Aktif iş yok. Devam eden veya bitmiş yüklemeler aşağıda listelenir.",
+              showProgress: false,
+              showDismiss: true
+            });
+          }
         }
       }
       return false;
