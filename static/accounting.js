@@ -2779,6 +2779,63 @@
     }
   }
 
+  // ---- Personel (sade Ofis / Türkiye listesi) — Maaş Ödemeleri alanından bağımsız ----
+
+  function accPersFmt(n) {
+    return accMoney(n, "TRY");
+  }
+
+  function accPersStatusLabel(status) {
+    return status === "left" ? "Ayrıldı" : "Aktif";
+  }
+
+  function accRenderPersonnelTable(tbodyId, rows) {
+    var tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    if (!rows || !rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">Henüz personel eklenmedi</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function (p) {
+      var passiveCls = p.status === "left" ? " acc-pm-row-passive" : "";
+      return '<tr class="' + passiveCls.trim() + '" data-pers-id="' + p.id + '">' +
+        '<td class="acc-inv-name">' + accEsc(p.name) + '</td>' +
+        '<td>' + accEsc((p.start_date || "").split("-").reverse().join(".")) + '</td>' +
+        '<td>' + accPersFmt(p.salary_amount) + '</td>' +
+        '<td>' + accPersFmt(p.daily_wage) + '</td>' +
+        '<td class="acc-inv-comm">' + accPersFmt(p.period_accrual) + '</td>' +
+        '<td><span class="acc-pm-status-toggle" data-pers-toggle="' + p.id + '" data-pers-status="' + p.status + '">' + accPersStatusLabel(p.status) + '</span></td>' +
+        '<td><button type="button" class="btn btn-danger btn-sm" data-pers-del="' + p.id + '">Sil</button></td>' +
+        '</tr>';
+    }).join("");
+  }
+
+  function accRenderPersonnel(data) {
+    var staff = data.staff || [];
+    var office = staff.filter(function (p) { return p.category === "office"; });
+    var turkey = staff.filter(function (p) { return p.category !== "office"; });
+    accRenderPersonnelTable("acc-pers-table-office", office);
+    accRenderPersonnelTable("acc-pers-table-turkey", turkey);
+    var t = data.totals || {};
+    accSetText("acc-pers-total-office", accPersFmt(t.office));
+    accSetText("acc-pers-total-turkey", accPersFmt(t.turkey));
+    accSetText("acc-pers-total-all", accPersFmt(t.all));
+  }
+
+  function accLoadPersonnel() {
+    var period = accSelectedMonthPeriod() || accResolvePeriod();
+    if (!period || period === "all") period = accCurrentMonth();
+    return accApi("/api/accounting/personnel?period=" + encodeURIComponent(period)).then(function (r) {
+      if (r && r.ok) accRenderPersonnel(r.data);
+      else if (r) console.error("accLoadPersonnel", r.data);
+    });
+  }
+
+  function accPersResetForm() {
+    var form = document.getElementById("acc-pers-form");
+    if (form) form.reset();
+  }
+
   // ---- PL Raporu (merkeze iletilen aylık kâr/zarar raporu) ----
 
   var accPlLastResult = null;
@@ -2999,6 +3056,7 @@
     else if (tab === "payroll") { accLoadEmpOptions(); accLoadEmployees(); }
     else if (tab === "invoices") accLoadInvoice();
     else if (tab === "invoice_calc") accLoadInvoiceCalc();
+    else if (tab === "personnel") accLoadPersonnel();
     else if (tab === "pl") accLoadPlReport();
   }
 
@@ -3012,6 +3070,7 @@
     else if (accActiveTab === "payroll") { accLoadEmpOptions(); accLoadEmployees(); }
     else if (accActiveTab === "invoices") accLoadInvoice();
     else if (accActiveTab === "invoice_calc") accLoadInvoiceCalc();
+    else if (accActiveTab === "personnel") accLoadPersonnel();
     else if (accActiveTab === "pl") accLoadPlReport();
   }
 
@@ -3021,7 +3080,7 @@
   }
 
   function accInitForms() {
-    ["acc-tx-date", "acc-exp-date", "acc-vault-date", "acc-emp-start"].forEach(function (id) {
+    ["acc-tx-date", "acc-exp-date", "acc-vault-date", "acc-emp-start", "acc-pers-start"].forEach(function (id) {
       var el = document.getElementById(id);
       if (el && !el.value) el.value = accToday();
     });
@@ -3494,6 +3553,55 @@
         }
       });
     }
+
+    accBindForm("acc-pers-form", function (e) {
+      e.preventDefault();
+      var payload = {
+        category: document.getElementById("acc-pers-category").value,
+        name: document.getElementById("acc-pers-name").value.trim(),
+        start_date: document.getElementById("acc-pers-start").value,
+        salary_amount: document.getElementById("acc-pers-salary").value
+      };
+      accApi("/api/accounting/personnel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then(function (r) {
+        if (r && r.ok) {
+          accPersResetForm();
+          accLoadPersonnel();
+          accToast("Personel eklendi");
+        } else if (r) alert((r.data && r.data.error) || "Eklenemedi");
+      });
+    });
+
+    ["acc-pers-table-office", "acc-pers-table-turkey"].forEach(function (tbodyId) {
+      var tbody = document.getElementById(tbodyId);
+      if (!tbody) return;
+      tbody.addEventListener("click", function (e) {
+        var toggle = e.target.closest ? e.target.closest("[data-pers-toggle]") : null;
+        if (toggle) {
+          var newStatus = toggle.getAttribute("data-pers-status") === "left" ? "active" : "left";
+          accApi("/api/accounting/personnel/" + toggle.getAttribute("data-pers-toggle"), {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: newStatus })
+          }).then(function (r) {
+            if (r && r.ok) accLoadPersonnel();
+            else if (r) alert((r.data && r.data.error) || "Güncellenemedi");
+          });
+          return;
+        }
+        var del = e.target.closest ? e.target.closest("[data-pers-del]") : null;
+        if (del) {
+          if (!confirm("Bu personel silinsin mi?")) return;
+          accApi("/api/accounting/personnel/" + del.getAttribute("data-pers-del"), { method: "DELETE" })
+            .then(function (r) {
+              if (r && r.ok) { accLoadPersonnel(); accToast("Personel silindi"); }
+            });
+        }
+      });
+    });
     var hidePassiveBtn = document.getElementById("acc-pm-hide-passive");
     if (hidePassiveBtn) {
       accUpdateHidePassivePmUi();
