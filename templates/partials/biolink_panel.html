@@ -45,7 +45,16 @@
               </select>
             </div>
             <div class="full"><label for="bl-subtitle">Alt Başlık / Açıklama</label><textarea id="bl-subtitle" rows="2" placeholder="Kısa tanıtım metni…"></textarea></div>
-            <div><label for="bl-avatar">Logo / Avatar URL</label><input id="bl-avatar" placeholder="https://…" autocomplete="off"></div>
+            <div class="full">
+              <label>Makrobet Logo</label>
+              <div class="bl-asset-picks" id="bl-logo-picks"></div>
+              <input id="bl-avatar" placeholder="veya özel logo URL…" autocomplete="off" style="margin-top:0.45rem;">
+            </div>
+            <div class="full">
+              <label>Banner GIF</label>
+              <div class="bl-asset-picks bl-banner-picks" id="bl-banner-picks"></div>
+              <input id="bl-banner" placeholder="veya özel banner URL…" autocomplete="off" style="margin-top:0.45rem;">
+            </div>
             <div><label for="bl-accent">Vurgu Rengi</label><input id="bl-accent" type="color" style="height:38px;padding:2px;width:100%;"></div>
             <div><label for="bl-ga4-id">GA4 ID (ops.)</label><input id="bl-ga4-id" placeholder="G-XXXXXXXX" autocomplete="off"></div>
             <div><label for="bl-ga4-secret">GA4 Secret (ops.)</label><input id="bl-ga4-secret" type="password" placeholder="boş = değiştirme" autocomplete="off"></div>

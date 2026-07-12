@@ -6,6 +6,7 @@
   var blPages = [];
   var blThemes = [];
   var blTypes = [];
+  var blAssets = { logos: [], banners: [], default_logo: "/static/biolink/logo/logo-400.png", default_banner: "/static/biolink/banners/banner-468x60.gif" };
   var blCurrentPage = null;
   var blComposerType = "link";
   var blEmojiTarget = null;
@@ -182,6 +183,51 @@
     });
   }
 
+  function loadAssets() {
+    return blApi("/api/biolink/assets").then(function (r) {
+      if (!r || !r.ok) return;
+      blAssets = r.data || blAssets;
+      renderAssetPickers();
+    });
+  }
+
+  function renderAssetPickers() {
+    var logoBox = document.getElementById("bl-logo-picks");
+    var bannerBox = document.getElementById("bl-banner-picks");
+    var logoVal = (document.getElementById("bl-avatar") || {}).value || "";
+    var bannerVal = (document.getElementById("bl-banner") || {}).value || "";
+
+    if (logoBox) {
+      logoBox.innerHTML = (blAssets.logos || []).map(function (a) {
+        var active = logoVal === a.url ? " active" : "";
+        return '<button type="button" class="bl-asset-chip' + active + '" data-bl-logo="' + blEsc(a.url) + '" title="' + blEsc(a.label) + '">' +
+          '<img src="' + blEsc(a.url) + '" alt="">' +
+          '<span>' + blEsc(a.label) + "</span></button>";
+      }).join("");
+      logoBox.querySelectorAll("[data-bl-logo]").forEach(function (btn) {
+        btn.onclick = function () {
+          document.getElementById("bl-avatar").value = btn.getAttribute("data-bl-logo");
+          renderAssetPickers();
+        };
+      });
+    }
+
+    if (bannerBox) {
+      bannerBox.innerHTML = (blAssets.banners || []).map(function (a) {
+        var active = bannerVal === a.url ? " active" : "";
+        return '<button type="button" class="bl-asset-chip banner' + active + '" data-bl-banner="' + blEsc(a.url) + '" title="' + blEsc(a.label) + '">' +
+          '<img src="' + blEsc(a.url) + '" alt="">' +
+          '<span>' + blEsc(a.label) + "</span></button>";
+      }).join("");
+      bannerBox.querySelectorAll("[data-bl-banner]").forEach(function (btn) {
+        btn.onclick = function () {
+          document.getElementById("bl-banner").value = btn.getAttribute("data-bl-banner");
+          renderAssetPickers();
+        };
+      });
+    }
+  }
+
   function loadPages() {
     if (!blHas("biolink.pages")) return Promise.resolve();
     return blApi("/api/biolink/pages").then(function (r) {
@@ -259,13 +305,16 @@
     document.getElementById("bl-theme").value = page.theme || "makrobet";
     document.getElementById("bl-shape").value = page.button_shape || "pill";
     document.getElementById("bl-subtitle").value = page.subtitle || "";
-    document.getElementById("bl-avatar").value = page.avatar_url || "";
+    document.getElementById("bl-avatar").value = page.avatar_url || page.logo_url || blAssets.default_logo || "";
+    var bannerEl = document.getElementById("bl-banner");
+    if (bannerEl) bannerEl.value = page.banner_url || blAssets.default_banner || "";
     document.getElementById("bl-accent").value = page.accent_color || "#ffd53e";
     document.getElementById("bl-ga4-id").value = page.ga4_measurement_id || "";
     document.getElementById("bl-ga4-secret").value = "";
     document.getElementById("bl-is-active").checked = !!page.is_active;
     var link = document.getElementById("biolink-preview-link");
     if (link) link.href = "/p/" + page.slug;
+    renderAssetPickers();
     renderQuickPalette();
     setComposerType(blComposerType);
     renderButtonsList(page.buttons || []);
@@ -313,6 +362,7 @@
       button_shape: document.getElementById("bl-shape").value,
       subtitle: document.getElementById("bl-subtitle").value,
       avatar_url: document.getElementById("bl-avatar").value.trim(),
+      banner_url: (document.getElementById("bl-banner") || {}).value ? document.getElementById("bl-banner").value.trim() : "",
       accent_color: document.getElementById("bl-accent").value,
       ga4_measurement_id: document.getElementById("bl-ga4-id").value.trim(),
       is_active: document.getElementById("bl-is-active").checked,
@@ -660,6 +710,7 @@
       renderQuickPalette();
       setComposerType("whatsapp");
       loadThemes();
+      loadAssets();
     },
     onShow: function () {
       if (!blLoaded) this.init();

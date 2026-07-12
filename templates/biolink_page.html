@@ -8,7 +8,7 @@
 <meta name="robots" content="index, follow">
 <meta property="og:title" content="{{ page.title }}">
 <meta property="og:description" content="{{ page.subtitle }}">
-{% if page.avatar_url %}<meta property="og:image" content="{{ page.avatar_url }}">{% elif theme.brand_logo_src %}<meta property="og:image" content="{{ theme.brand_logo_src }}">{% endif %}
+{% if page.banner_url %}<meta property="og:image" content="{{ page.banner_url }}">{% elif page.logo_url %}<meta property="og:image" content="{{ page.logo_url }}">{% elif theme.brand_logo_src %}<meta property="og:image" content="{{ theme.brand_logo_src }}">{% endif %}
 <meta property="og:type" content="website">
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -145,9 +145,20 @@
   }
 
   .brand-logo-top {
-    width: min(180px, 55vw); height: auto; margin-bottom: 1.1rem;
+    width: min(180px, 55vw); height: auto; margin-bottom: 0.85rem;
     filter: drop-shadow(0 8px 24px rgba(0,0,0,0.35));
   }
+  .banner-wrap {
+    width: 100%; margin: 0 0 1.15rem;
+    border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--card-border);
+    background: rgba(0,0,0,0.25);
+    box-shadow: 0 10px 28px -16px rgba(0,0,0,0.55);
+  }
+  .banner-wrap img {
+    display: block; width: 100%; height: auto; max-height: 140px; object-fit: cover;
+  }
+  .banner-wrap.square img { max-height: none; aspect-ratio: 1; object-fit: cover; }
   .avatar-ring {
     padding: 3px; border-radius: 50%;
     background: linear-gradient(135deg, var(--accent), var(--accent2));
@@ -266,13 +277,11 @@
   </div>
 
   <div class="wrap">
-    {% if theme.brand_logo_src and not page.avatar_url %}
-    <img class="brand-logo-top" src="{{ theme.brand_logo_src }}" alt="{{ page.title }}">
-    {% else %}
-    <div class="avatar-ring">
-      <div class="avatar">
-        {% if page.avatar_url %}<img src="{{ page.avatar_url }}" alt="{{ page.title }}">{% else %}{{ page.title[:1]|upper }}{% endif %}
-      </div>
+    <img class="brand-logo-top" src="{{ page.logo_url or theme.brand_logo_src }}" alt="Makrobet">
+
+    {% if page.banner_url %}
+    <div class="banner-wrap{% if '1080' in page.banner_url %} square{% endif %}">
+      <img src="{{ page.banner_url }}" alt="Makrobet Banner" width="468" height="60">
     </div>
     {% endif %}
 

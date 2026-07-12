@@ -27,151 +27,24 @@ from database import (
     utcnow,
 )
 
+from biolink_themes import (
+    DEFAULT_BANNER,
+    DEFAULT_BRAND_LOGO,
+    DEFAULT_HEADING_STYLE,
+    DEFAULT_THEME,
+    HEADING_STYLE_KEYS,
+    HEADING_STYLES,
+    THEMES,
+    heading_style_list,
+    normalize_heading_style,
+    theme_list as _theme_list_catalog,
+)
+
 RESERVED_SLUGS = frozenset({
     "", "admin", "api", "static", "demo", "r", "p", "health", "favicon.ico",
     "robots.txt", "sitemap.xml", "login", "logout", "mail", "mailing", "go", "new",
 })
 
-THEMES = {
-    "carbon": {
-        "name": "Karbon (Siyah)",
-        "bg": "linear-gradient(160deg, #05070a 0%, #0d1117 45%, #111827 100%)",
-        "text": "#f5f7fa",
-        "muted": "#9aa4b2",
-        "card_bg": "rgba(255,255,255,0.06)",
-        "card_border": "rgba(255,255,255,0.12)",
-        "card_hover": "rgba(255,255,255,0.11)",
-        "accent": "#22d3a8",
-    },
-    "midnight": {
-        "name": "Gece Mavisi",
-        "bg": "linear-gradient(160deg, #060b18 0%, #0b1a3a 50%, #10265c 100%)",
-        "text": "#f2f6ff",
-        "muted": "#9db3d9",
-        "card_bg": "rgba(255,255,255,0.07)",
-        "card_border": "rgba(120,170,255,0.25)",
-        "card_hover": "rgba(255,255,255,0.13)",
-        "accent": "#38bdf8",
-    },
-    "emerald": {
-        "name": "Zümrüt",
-        "bg": "linear-gradient(160deg, #04140f 0%, #0b2e22 50%, #114b36 100%)",
-        "text": "#f1fbf6",
-        "muted": "#9ecbb3",
-        "card_bg": "rgba(255,255,255,0.06)",
-        "card_border": "rgba(180,255,210,0.2)",
-        "card_hover": "rgba(255,255,255,0.12)",
-        "accent": "#f5c451",
-    },
-    "royal": {
-        "name": "Kraliyet Moru",
-        "bg": "linear-gradient(160deg, #140a24 0%, #2c1250 50%, #451a72 100%)",
-        "text": "#f8f3ff",
-        "muted": "#c6aee3",
-        "card_bg": "rgba(255,255,255,0.08)",
-        "card_border": "rgba(230,180,255,0.25)",
-        "card_hover": "rgba(255,255,255,0.14)",
-        "accent": "#f472b6",
-    },
-    "sunset": {
-        "name": "Gün Batımı",
-        "bg": "linear-gradient(160deg, #2b0f1e 0%, #7a1e3d 45%, #d9622f 100%)",
-        "text": "#fff8f2",
-        "muted": "#f3c7ae",
-        "card_bg": "rgba(255,255,255,0.10)",
-        "card_border": "rgba(255,230,210,0.28)",
-        "card_hover": "rgba(255,255,255,0.16)",
-        "accent": "#ffd166",
-    },
-    "minimal": {
-        "name": "Minimal Beyaz",
-        "bg": "linear-gradient(160deg, #ffffff 0%, #f3f5f8 100%)",
-        "text": "#12151b",
-        "muted": "#5b6472",
-        "card_bg": "#ffffff",
-        "card_border": "rgba(15,20,30,0.10)",
-        "card_hover": "#f4f6f9",
-        "accent": "#2563eb",
-    },
-    "makrovip": {
-        "name": "MakroVIP (Lacivert-Altın)",
-        "bg": "radial-gradient(1200px 600px at 50% -10%, #1a3a6e 0%, #061c3d 45%, #030912 100%)",
-        "text": "#f5f8ff",
-        "muted": "#8fa8cc",
-        "card_bg": "rgba(255,255,255,0.07)",
-        "card_border": "rgba(212,175,55,0.28)",
-        "card_hover": "rgba(255,255,255,0.12)",
-        "accent": "#d4af37",
-    },
-    "makrobet": {
-        "name": "★ Makrobet (Marka · Animasyonlu)",
-        "bg": "#061c3d",
-        "text": "#e8efff",
-        "muted": "#8fa3cc",
-        "card_bg": "rgba(11, 35, 71, 0.88)",
-        "card_border": "rgba(255, 213, 62, 0.38)",
-        "card_hover": "rgba(15, 45, 85, 0.95)",
-        "accent": "#ffd53e",
-        "accent2": "#4a8fe7",
-        "animated": True,
-        "animation": "makrobet",
-        "brand_logo": True,
-    },
-    "aurora": {
-        "name": "★ Aurora (Animasyonlu)",
-        "bg": "#050810",
-        "text": "#eef4ff",
-        "muted": "#8ba4c9",
-        "card_bg": "rgba(255,255,255,0.06)",
-        "card_border": "rgba(120,200,255,0.22)",
-        "card_hover": "rgba(255,255,255,0.11)",
-        "accent": "#6ee7ff",
-        "accent2": "#a78bfa",
-        "animated": True,
-        "animation": "aurora",
-    },
-    "neon_pulse": {
-        "name": "★ Neon Pulse (Animasyonlu)",
-        "bg": "#07050f",
-        "text": "#f5f0ff",
-        "muted": "#b8a8d9",
-        "card_bg": "rgba(255,255,255,0.05)",
-        "card_border": "rgba(168,85,247,0.35)",
-        "card_hover": "rgba(255,255,255,0.10)",
-        "accent": "#c084fc",
-        "accent2": "#22d3ee",
-        "animated": True,
-        "animation": "neon",
-    },
-    "gold_shimmer": {
-        "name": "★ Altın Akış (Animasyonlu)",
-        "bg": "#0a0806",
-        "text": "#fff8eb",
-        "muted": "#c4a574",
-        "card_bg": "rgba(255,255,255,0.06)",
-        "card_border": "rgba(255,213,62,0.32)",
-        "card_hover": "rgba(255,255,255,0.11)",
-        "accent": "#ffd53e",
-        "accent2": "#f59e0b",
-        "animated": True,
-        "animation": "gold",
-    },
-    "ocean_wave": {
-        "name": "★ Okyanus Dalgası (Animasyonlu)",
-        "bg": "#031018",
-        "text": "#e6f4ff",
-        "muted": "#7eb8d4",
-        "card_bg": "rgba(255,255,255,0.06)",
-        "card_border": "rgba(56,189,248,0.28)",
-        "card_hover": "rgba(255,255,255,0.11)",
-        "accent": "#38bdf8",
-        "accent2": "#0ea5e9",
-        "animated": True,
-        "animation": "ocean",
-    },
-}
-
-DEFAULT_THEME = "carbon"
 BUTTON_SHAPES = ("pill", "rounded", "square")
 
 HEADING_TYPE = "heading"
@@ -195,7 +68,7 @@ BUTTON_TYPE_META = {
 
 
 def theme_list():
-    return [{"key": k, **{kk: vv for kk, vv in v.items() if kk == "name"}} for k, v in THEMES.items()]
+    return _theme_list_catalog()
 
 
 def theme_vars(theme_key, accent_override=""):
@@ -206,14 +79,12 @@ def theme_vars(theme_key, accent_override=""):
     out["animated"] = bool(t.get("animated"))
     out["animation"] = t.get("animation") or ""
     out["accent2"] = t.get("accent2") or out["accent"]
-    if t.get("brand_logo"):
-        try:
-            from mail_logo_embed import LOGO_DATA_URI
-            out["brand_logo_src"] = LOGO_DATA_URI
-        except Exception:
-            out["brand_logo_src"] = ""
-    else:
-        out["brand_logo_src"] = ""
+    out["style"] = t.get("style") or "classic"
+    out["category"] = t.get("category") or ""
+    # Tüm temalarda Makrobet marka logosu
+    out["brand_logo"] = True
+    out["brand_logo_src"] = DEFAULT_BRAND_LOGO
+    out["default_banner"] = DEFAULT_BANNER
     return out
 
 
@@ -381,6 +252,9 @@ def _page_row(row):
     d["view_count"] = int(d.get("view_count") or 0)
     d["theme"] = d.get("theme") or DEFAULT_THEME
     d["button_shape"] = d.get("button_shape") or "pill"
+    d["avatar_url"] = (d.get("avatar_url") or "").strip()
+    d["banner_url"] = (d.get("banner_url") or "").strip() or DEFAULT_BANNER
+    d["logo_url"] = d["avatar_url"] or DEFAULT_BRAND_LOGO
     d["public_path"] = f"/p/{d['slug']}"
     return d
 
@@ -398,6 +272,10 @@ def _button_row(row):
         d["display_icon"] = default_icon(bt)
     else:
         d["display_icon"] = d["icon"]
+    if bt == HEADING_TYPE:
+        d["heading_style"] = normalize_heading_style(d.get("heading_style"))
+    else:
+        d["heading_style"] = d.get("heading_style") or DEFAULT_HEADING_STYLE
     return d
 
 
@@ -464,11 +342,12 @@ def get_public_page(conn, slug):
 
 
 def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_color="",
-                 avatar_url="", button_shape="pill", ga4_measurement_id="", ga4_api_secret="",
+                 avatar_url="", banner_url="", button_shape="pill", ga4_measurement_id="", ga4_api_secret="",
                  created_by=""):
     title = (title or "").strip()[:200] or "Yeni Sayfa"
     subtitle = (subtitle or "").strip()[:400]
-    avatar_url = (avatar_url or "").strip()[:500]
+    avatar_url = (avatar_url or "").strip()[:500] or DEFAULT_BRAND_LOGO
+    banner_url = (banner_url or "").strip()[:500] or DEFAULT_BANNER
     theme = theme if theme in THEMES else DEFAULT_THEME
     accent_color = (accent_color or "").strip()[:32]
     button_shape = button_shape if button_shape in BUTTON_SHAPES else "pill"
@@ -484,11 +363,11 @@ def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_co
         conn,
         """
         INSERT INTO biolink_pages
-          (slug, title, subtitle, avatar_url, theme, accent_color, button_shape,
+          (slug, title, subtitle, avatar_url, banner_url, theme, accent_color, button_shape,
            is_active, view_count, ga4_measurement_id, ga4_api_secret, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?)
         """,
-        (final_slug, title, subtitle, avatar_url, theme, accent_color, button_shape,
+        (final_slug, title, subtitle, avatar_url, banner_url, theme, accent_color, button_shape,
          ga4_measurement_id, ga4_api_secret, created_by, now, now),
     )
     conn.commit()
@@ -515,7 +394,8 @@ def update_page(conn, page_id, data):
 
     title = pick("title", row["title"], 200) or "Sayfa"
     subtitle = pick("subtitle", row["subtitle"], 400)
-    avatar_url = pick("avatar_url", row["avatar_url"], 500)
+    avatar_url = pick("avatar_url", row.get("avatar_url") or "", 500)
+    banner_url = pick("banner_url", row.get("banner_url") or DEFAULT_BANNER, 500)
     theme = pick("theme", row["theme"], choices=set(THEMES.keys()))
     accent_color = pick("accent_color", row["accent_color"], 32)
     button_shape = pick("button_shape", row["button_shape"], choices=set(BUTTON_SHAPES))
@@ -538,11 +418,12 @@ def update_page(conn, page_id, data):
         conn,
         """
         UPDATE biolink_pages
-        SET slug = ?, title = ?, subtitle = ?, avatar_url = ?, theme = ?, accent_color = ?,
+        SET slug = ?, title = ?, subtitle = ?, avatar_url = ?, banner_url = ?, theme = ?, accent_color = ?,
             button_shape = ?, is_active = ?, ga4_measurement_id = ?, ga4_api_secret = ?, updated_at = ?
         WHERE id = ?
         """,
-        (new_slug, title, subtitle, avatar_url, theme, accent_color, button_shape,
+        (new_slug, title, subtitle, avatar_url or DEFAULT_BRAND_LOGO, banner_url or DEFAULT_BANNER,
+         theme, accent_color, button_shape,
          is_active, ga4_measurement_id, ga4_api_secret, now, int(page_id)),
     )
     conn.commit()
@@ -568,7 +449,8 @@ def duplicate_page(conn, page_id, created_by=""):
         subtitle=src["subtitle"],
         theme=src["theme"],
         accent_color=src["accent_color"],
-        avatar_url=src["avatar_url"],
+        avatar_url=src.get("avatar_url") or DEFAULT_BRAND_LOGO,
+        banner_url=src.get("banner_url") or DEFAULT_BANNER,
         button_shape=src["button_shape"],
         created_by=created_by,
     )
@@ -582,7 +464,7 @@ def duplicate_page(conn, page_id, created_by=""):
 
 
 def add_button(conn, page_id, *, button_type="link", label="", url="", icon="",
-                highlight=False, badge_text="", is_active=True):
+                highlight=False, badge_text="", is_active=True, heading_style=""):
     button_type, label, url, badge_text = _validate_button(button_type, label, url, badge_text)
     if button_type == "bonus" and not highlight:
         highlight = True
@@ -590,6 +472,7 @@ def add_button(conn, page_id, *, button_type="link", label="", url="", icon="",
         icon = ""
     else:
         icon = (icon or default_icon(button_type)).strip()[:8]
+    hs = normalize_heading_style(heading_style) if button_type == HEADING_TYPE else DEFAULT_HEADING_STYLE
     now = iso(utcnow())
     max_order = scalar(conn, "SELECT COALESCE(MAX(sort_order), -1) FROM biolink_buttons WHERE page_id = ?", (int(page_id),))
     sort_order = int(max_order or -1) + 1
@@ -598,11 +481,11 @@ def add_button(conn, page_id, *, button_type="link", label="", url="", icon="",
         """
         INSERT INTO biolink_buttons
           (page_id, button_type, label, url, icon, highlight, badge_text, is_active,
-           sort_order, click_count, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+           sort_order, click_count, heading_style, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
         """,
         (int(page_id), button_type, label, url, icon, int(bool(highlight)), badge_text,
-         int(bool(is_active)), sort_order, now, now),
+         int(bool(is_active)), sort_order, hs, now, now),
     )
     execute(conn, "UPDATE biolink_pages SET updated_at = ? WHERE id = ?", (now, int(page_id)))
     conn.commit()
@@ -634,16 +517,23 @@ def update_button(conn, button_id, data):
         icon = (row["icon"] or default_icon(button_type)).strip()[:8]
     highlight = int(bool(data["highlight"])) if "highlight" in data else int(row["highlight"] or 0)
     is_active = int(bool(data["is_active"])) if "is_active" in data else int(row["is_active"] or 0)
+    if button_type == HEADING_TYPE:
+        if "heading_style" in data:
+            hs = normalize_heading_style(data.get("heading_style"))
+        else:
+            hs = normalize_heading_style(row.get("heading_style"))
+    else:
+        hs = DEFAULT_HEADING_STYLE
     now = iso(utcnow())
     execute(
         conn,
         """
         UPDATE biolink_buttons
         SET button_type = ?, label = ?, url = ?, icon = ?, highlight = ?, badge_text = ?,
-            is_active = ?, updated_at = ?
+            is_active = ?, heading_style = ?, updated_at = ?
         WHERE id = ?
         """,
-        (button_type, label, url, icon, highlight, badge_text, is_active, now, int(button_id)),
+        (button_type, label, url, icon, highlight, badge_text, is_active, hs, now, int(button_id)),
     )
     execute(conn, "UPDATE biolink_pages SET updated_at = ? WHERE id = ?", (now, int(row["page_id"])))
     conn.commit()

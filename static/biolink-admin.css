@@ -46,6 +46,48 @@
   font-size: 0.84rem;
 }
 .biolink-page-meta textarea { min-height: 72px; resize: vertical; }
+
+.bl-asset-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.bl-asset-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  width: 92px;
+  padding: 0.4rem 0.35rem;
+  border-radius: 10px;
+  border: 1px solid var(--border, #243044);
+  background: var(--surface-2, #151e2e);
+  color: var(--muted, #94a3b8);
+  cursor: pointer;
+  font-size: 0.62rem;
+  line-height: 1.25;
+  text-align: center;
+}
+.bl-asset-chip img {
+  width: 100%;
+  height: 28px;
+  object-fit: contain;
+  border-radius: 4px;
+  background: #000;
+}
+.bl-asset-chip.banner {
+  width: 140px;
+}
+.bl-asset-chip.banner img {
+  height: 36px;
+  object-fit: cover;
+}
+.bl-asset-chip.active {
+  border-color: rgba(255, 213, 62, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 213, 62, 0.25);
+  color: var(--text, #e8edf5);
+}
+.bl-asset-chip:hover { border-color: rgba(99, 102, 241, 0.45); }
 .biolink-save-row {
   display: flex;
   flex-wrap: wrap;

@@ -29,6 +29,12 @@ def create_biolink_blueprint(permission_required):
     def themes():
         return jsonify({"themes": [{"key": k, "name": v["name"], **v} for k, v in biolink_api.THEMES.items()]})
 
+    @api.route("/assets", methods=["GET"])
+    @perm(*MODULE_ACCESS)
+    def assets():
+        from biolink_themes import brand_assets
+        return jsonify(brand_assets())
+
     @api.route("/pages", methods=["GET"])
     @perm(*MODULE_ACCESS)
     def list_pages():
@@ -51,6 +57,7 @@ def create_biolink_blueprint(permission_required):
                     theme=data.get("theme"),
                     accent_color=data.get("accent_color") or "",
                     avatar_url=data.get("avatar_url") or "",
+                    banner_url=data.get("banner_url") or "",
                     button_shape=data.get("button_shape") or "pill",
                     ga4_measurement_id=data.get("ga4_measurement_id") or "",
                     ga4_api_secret=data.get("ga4_api_secret") or "",
