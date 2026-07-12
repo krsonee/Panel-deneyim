@@ -7,21 +7,24 @@
     <div class="period-bar">
       <label for="acc-filter-month" class="muted" style="font-size:0.72rem;">Ay:</label>
       <input type="month" id="acc-filter-month" style="width:auto;min-width:140px;">
-      <label for="acc-filter-period" class="muted" style="font-size:0.72rem;">Görünüm:</label>
-      <select id="acc-filter-period">
-        <option value="pick" selected>Seçili Ay</option>
-        <option value="all">Tüm Zamanlar</option>
-        <option value="30days">Son 30 Gün</option>
-        <option value="today">Bugün</option>
-        <option value="custom">Özel Aralık</option>
-      </select>
-      <span id="acc-custom-range" class="custom-range-inline" style="display:none;">
-        <input type="date" id="acc-filter-date-from">
-        <span class="muted" style="font-size:0.72rem;">–</span>
-        <input type="date" id="acc-filter-date-to">
-        <button type="button" class="btn btn-sm btn-primary" id="btn-acc-custom-apply">Uygula</button>
+      <span id="acc-view-mode-group">
+        <label for="acc-filter-period" class="muted" style="font-size:0.72rem;">Görünüm:</label>
+        <select id="acc-filter-period">
+          <option value="pick" selected>Seçili Ay</option>
+          <option value="all">Tüm Zamanlar</option>
+          <option value="30days">Son 30 Gün</option>
+          <option value="today">Bugün</option>
+          <option value="custom">Özel Aralık</option>
+        </select>
+        <span id="acc-custom-range" class="custom-range-inline" style="display:none;">
+          <input type="date" id="acc-filter-date-from">
+          <span class="muted" style="font-size:0.72rem;">–</span>
+          <input type="date" id="acc-filter-date-to">
+          <button type="button" class="btn btn-sm btn-primary" id="btn-acc-custom-apply">Uygula</button>
+        </span>
       </span>
       <span class="muted" id="acc-period-label" style="font-size:0.72rem;"></span>
+      <span class="muted" id="acc-month-locked-hint" style="font-size:0.72rem;display:none;">(bu sekme her zaman seçili aya göre çalışır)</span>
       <label for="acc-display-currency" class="muted" style="font-size:0.72rem;">Gösterim:</label>
       <select id="acc-display-currency">
         <option value="TRY">₺ TRY</option>

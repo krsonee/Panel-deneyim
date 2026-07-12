@@ -2910,6 +2910,23 @@
     });
   }
 
+  var ACC_MONTH_LOCKED_TABS = ["invoices", "invoice_calc", "pl"];
+
+  function accApplyTabPeriodMode(tab) {
+    var isMonthLocked = ACC_MONTH_LOCKED_TABS.indexOf(tab) !== -1;
+    var viewGroup = document.getElementById("acc-view-mode-group");
+    var hint = document.getElementById("acc-month-locked-hint");
+    if (viewGroup) viewGroup.style.display = isMonthLocked ? "none" : "";
+    if (hint) hint.style.display = isMonthLocked ? "" : "none";
+    if (isMonthLocked) {
+      var modeEl = document.getElementById("acc-filter-period");
+      if (modeEl && modeEl.value !== "pick") modeEl.value = "pick";
+      var box = document.getElementById("acc-custom-range");
+      if (box) box.style.display = "none";
+      accResolvePeriod();
+    }
+  }
+
   function accSwitchTab(tab) {
     accActiveTab = tab;
     document.querySelectorAll(".acc-tab").forEach(function (el) {
@@ -2920,6 +2937,7 @@
       el.classList.toggle("active", show);
       el.hidden = !show;
     });
+    accApplyTabPeriodMode(tab);
     if (tab === "dashboard") accLoadDashboard();
     else if (tab === "transactions") { accSyncTxDateToPeriod(); accLoadPaymentMethods(); accLoadTransactions(); }
     else if (tab === "commissions") accLoadPaymentMethods();
