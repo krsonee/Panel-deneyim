@@ -1,4 +1,6 @@
 analytics.db
+analytics.db-*
+*.db-journal
 __pycache__/
 *.pyc
 .env
