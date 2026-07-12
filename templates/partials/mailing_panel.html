@@ -39,10 +39,9 @@
     <section class="card" style="margin-bottom:1rem;">
       <div class="card-head"><span>Yeni kontak</span></div>
       <div class="card-body">
-        <form id="mail-contact-form" class="form-row-4">
+        <form id="mail-contact-form" class="form-row-4" style="grid-template-columns:1fr 1.2fr 1fr;">
           <div><label>E-posta</label><input type="email" id="mail-c-email" required placeholder="ornek@mail.com"></div>
           <div><label>Ad</label><input type="text" id="mail-c-name" placeholder="Ad Soyad"></div>
-          <div><label>Telefon</label><input type="text" id="mail-c-phone" placeholder="+90…"></div>
           <div><label>Etiketler</label><input type="text" id="mail-c-tags" placeholder="vip, ivr"></div>
           <div style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;">
             <button type="submit" class="btn btn-primary">Ekle</button>
@@ -50,8 +49,8 @@
           </div>
         </form>
         <div id="mail-csv-box" hidden style="margin-top:0.85rem;">
-          <label>CSV (email, name, phone, tags)</label>
-          <textarea id="mail-csv-input" rows="5" placeholder="email,name,phone,tags&#10;a@b.com,Ali,+90555,vip"></textarea>
+          <label>CSV (email, name, tags)</label>
+          <textarea id="mail-csv-input" rows="5" placeholder="email,name,tags&#10;a@b.com,Ali,vip"></textarea>
           <div style="margin-top:0.5rem;display:flex;gap:0.5rem;">
             <input type="text" id="mail-csv-tag" placeholder="Varsayılan etiket (opsiyonel)" style="max-width:220px;">
             <button type="button" class="btn btn-primary" id="mail-csv-submit">İçe aktar</button>
@@ -82,8 +81,8 @@
       <div class="table-wrap">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>E-posta</th><th>Ad</th><th>Telefon</th><th>Etiket</th><th>Kaynak</th><th></th></tr></thead>
-            <tbody id="mail-contacts-table"><tr><td colspan="6" class="empty">Veri yok</td></tr></tbody>
+            <thead><tr><th>E-posta</th><th>Ad</th><th>Etiket</th><th>Kaynak</th><th></th></tr></thead>
+            <tbody id="mail-contacts-table"><tr><td colspan="5" class="empty">Veri yok</td></tr></tbody>
           </table>
         </div>
       </div>

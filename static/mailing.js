@@ -165,7 +165,7 @@
       }
       var rows = res.data.contacts || [];
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty">Kontak yok</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">Kontak yok</td></tr>';
         return;
       }
       tbody.innerHTML = rows.map(function (c) {
@@ -175,7 +175,6 @@
         return "<tr>" +
           "<td>" + esc(c.email) + (c.unsubscribed ? ' <span class="muted">(unsub)</span>' : "") + "</td>" +
           "<td>" + esc(c.name) + "</td>" +
-          "<td>" + esc(c.phone) + "</td>" +
           "<td>" + (tags || "—") + "</td>" +
           "<td>" + esc(c.source) + "</td>" +
           '<td><button type="button" class="btn btn-sm mail-del-contact" data-id="' + c.id + '">Sil</button></td>' +
@@ -468,7 +467,6 @@
           body: {
             email: document.getElementById("mail-c-email").value.trim(),
             name: document.getElementById("mail-c-name").value.trim(),
-            phone: document.getElementById("mail-c-phone").value.trim(),
             tags: tags
           }
         }).then(function (res) {
