@@ -2654,7 +2654,24 @@
   // ---- Fatura Hesaplama (günlük GGR takip) — Fatura alanından bağımsız ----
 
   function accIcFmt(n) {
-    return accMoney(n, "TRY");
+    n = parseFloat(n) || 0;
+    return "₺ " + n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function accIcParseMoney(str) {
+    if (str == null || str === "") return null;
+    if (typeof str === "number") return isNaN(str) ? null : str;
+    var s = String(str).trim().replace(/₺/g, "").replace(/\s/g, "");
+    if (!s || s === "-" || s === "," || s === ".") return null;
+    if (s.indexOf(",") >= 0) s = s.replace(/\./g, "").replace(",", ".");
+    else if ((s.match(/\./g) || []).length > 1) s = s.replace(/\./g, "");
+    var n = parseFloat(s);
+    return isNaN(n) ? null : n;
+  }
+
+  function accIcFmtInput(n) {
+    if (n == null || n === "" || isNaN(n)) return "";
+    return accIcFmt(n);
   }
 
   function accIcFmtFx(n, currency) {
@@ -2738,13 +2755,14 @@
         html += '<tr class="acc-ic-section-row"><td colspan="4">' + accEsc(accIcSectionLabel(p.section)) + '</td></tr>';
       }
       var e = dayEntries[String(p.id)] || {};
-      var ggrVal = e.ggr_amount != null ? e.ggr_amount : "";
-      var ggr = parseFloat(ggrVal) || 0;
+      var ggrNum = e.ggr_amount != null && e.ggr_amount !== "" ? parseFloat(e.ggr_amount) : null;
+      var ggrDisplay = ggrNum != null && !isNaN(ggrNum) ? accIcFmt(ggrNum) : "";
+      var ggr = ggrNum != null && !isNaN(ggrNum) ? ggrNum : 0;
       var comm = ggr > 0 ? ggr * (parseFloat(p.commission_rate) || 0) / 100 : 0;
       html += '<tr data-ic-row="' + p.id + '" data-ic-name="' + accEsc(String(p.name || "").toLowerCase()) + '">' +
         '<td class="acc-inv-name">' + accEsc(p.name) + '</td>' +
         '<td><input type="number" step="0.01" data-ic-rate="' + p.id + '" value="' + (p.commission_rate || 0) + '" style="width:70px;"></td>' +
-        '<td><input type="number" step="0.01" data-ic-field="ggr_amount" data-ic-provider="' + p.id + '" value="' + ggrVal + '" placeholder="0"></td>' +
+        '<td><input type="text" inputmode="decimal" class="acc-ic-money-inp" data-ic-field="ggr_amount" data-ic-provider="' + p.id + '" value="' + accEsc(ggrDisplay) + '" placeholder="₺ 0,00"></td>' +
         '<td class="acc-inv-comm" data-ic-comm="' + p.id + '">' + accIcFmt(comm) + '</td>' +
         '</tr>';
     });
@@ -2755,7 +2773,7 @@
   function accIcRecalcRow(providerId) {
     var ggrEl = document.querySelector('[data-ic-field="ggr_amount"][data-ic-provider="' + providerId + '"]');
     var rateEl = document.querySelector('[data-ic-rate="' + providerId + '"]');
-    var ggr = parseFloat(ggrEl && ggrEl.value) || 0;
+    var ggr = accIcParseMoney(ggrEl && ggrEl.value) || 0;
     var rate = parseFloat(rateEl && rateEl.value) || 0;
     var comm = ggr > 0 ? ggr * rate / 100 : 0;
     var commCell = document.querySelector('[data-ic-comm="' + providerId + '"]');
@@ -2845,9 +2863,10 @@
   function accIcCollectDayRows() {
     var rows = [];
     document.querySelectorAll('#acc-ic-table-body [data-ic-field="ggr_amount"]').forEach(function (el) {
+      var ggr = accIcParseMoney(el.value);
       rows.push({
         provider_id: parseInt(el.getAttribute("data-ic-provider"), 10),
-        ggr_amount: el.value
+        ggr_amount: ggr == null ? "" : ggr
       });
     });
     return rows;
@@ -3856,10 +3875,24 @@
     }
     var icTableBody = document.getElementById("acc-ic-table-body");
     if (icTableBody) {
+      icTableBody.addEventListener("focusin", function (e) {
+        var el = e.target;
+        if (!el || !el.matches || !el.matches('[data-ic-field="ggr_amount"]')) return;
+        var n = accIcParseMoney(el.value);
+        el.value = n != null ? String(n) : "";
+        el.select();
+      });
+      icTableBody.addEventListener("focusout", function (e) {
+        var el = e.target;
+        if (!el || !el.matches || !el.matches('[data-ic-field="ggr_amount"]')) return;
+        var n = accIcParseMoney(el.value);
+        el.value = n != null ? accIcFmt(n) : "";
+        accIcRecalcRow(el.getAttribute("data-ic-provider"));
+      });
       icTableBody.addEventListener("input", function (e) {
         var el = e.target;
         if (!el || !el.matches) return;
-        if (el.matches("[data-ic-field]")) accIcRecalcRow(el.getAttribute("data-ic-provider"));
+        if (el.matches('[data-ic-field="ggr_amount"]')) accIcRecalcRow(el.getAttribute("data-ic-provider"));
         else if (el.matches("[data-ic-rate]")) accIcRecalcRow(el.getAttribute("data-ic-rate"));
       });
       icTableBody.addEventListener("change", function (e) {

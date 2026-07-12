@@ -275,8 +275,8 @@ def generate_template_bytes(conn, entry_date):
 
     entry_dt = datetime.strptime(entry_date, "%Y-%m-%d")
     fmt_date = "DD.MM.YYYY"
-    fmt_ggr = "#.##0,00"
-    fmt_rate = "0,00"
+    fmt_ggr = '"₺" #.##0,00'
+    fmt_rate = "0"
 
     providers = fetchall(
         conn,
