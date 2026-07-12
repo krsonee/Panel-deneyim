@@ -459,6 +459,7 @@ def duplicate_page(conn, page_id, created_by=""):
             conn, new_page["id"],
             button_type=b["button_type"], label=b["label"], url=b["url"], icon=b["icon"],
             highlight=b["highlight"], badge_text=b["badge_text"], is_active=b["is_active"],
+            heading_style=b.get("heading_style") or "",
         )
     return get_page(conn, new_page["id"])
 

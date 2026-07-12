@@ -27,7 +27,10 @@ def create_biolink_blueprint(permission_required):
     @api.route("/themes", methods=["GET"])
     @perm(*MODULE_ACCESS)
     def themes():
-        return jsonify({"themes": [{"key": k, "name": v["name"], **v} for k, v in biolink_api.THEMES.items()]})
+        return jsonify({
+            "themes": biolink_api.theme_list(),
+            "heading_styles": biolink_api.heading_style_list(),
+        })
 
     @api.route("/assets", methods=["GET"])
     @perm(*MODULE_ACCESS)
@@ -133,6 +136,7 @@ def create_biolink_blueprint(permission_required):
                     highlight=bool(data.get("highlight")),
                     badge_text=data.get("badge_text") or "",
                     is_active=data.get("is_active", True),
+                    heading_style=data.get("heading_style") or "",
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
