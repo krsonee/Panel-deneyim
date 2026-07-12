@@ -6,6 +6,7 @@
   var mailTemplates = [];
   var mailDomains = [];
   var mailTags = [];
+  var mailTagCounts = [];
   var mailLoaded = false;
   var mailTplMode = "simple";
   var mailImportQueue = [];
@@ -670,24 +671,63 @@
     return mailApi("/api/mailing/tags").then(function (res) {
       if (!res || !res.ok) return;
       mailTags = res.data.tags || [];
-      var sel = document.getElementById("mail-contact-tag-filter");
-      if (!sel) return;
-      var cur = sel.value;
-      sel.innerHTML = '<option value="">Tüm etiketler</option>' +
-        mailTags.map(function (t) {
-          return '<option value="' + esc(t.name) + '">' + esc(t.name) + "</option>";
-        }).join("");
-      sel.value = cur;
+      mailRenderTagFilterOptions();
     });
   }
 
+  function mailRenderTagFilterOptions() {
+    var sel = document.getElementById("mail-contact-tag-filter");
+    if (!sel) return;
+    var cur = sel.value;
+    var countMap = {};
+    (mailTagCounts || []).forEach(function (t) {
+      countMap[t.name] = t.count;
+    });
+    var names = {};
+    mailTags.forEach(function (t) { names[t.name] = true; });
+    (mailTagCounts || []).forEach(function (t) { names[t.name] = true; });
+    var list = Object.keys(names).sort(function (a, b) {
+      return a.localeCompare(b, "tr");
+    });
+    sel.innerHTML = '<option value="">Tüm etiketler</option>' +
+      list.map(function (name) {
+        var c = countMap[name];
+        var label = (c == null) ? name : (name + " (" + fmtNum(c) + ")");
+        return '<option value="' + esc(name) + '">' + esc(label) + "</option>";
+      }).join("");
+    sel.value = cur;
+  }
+
+  function mailRenderTagStats(byTag) {
+    mailTagCounts = byTag || [];
+    var wrap = document.getElementById("mail-crm-tag-stats");
+    var list = document.getElementById("mail-crm-tag-stats-list");
+    if (!wrap || !list) return;
+    mailRenderTagFilterOptions();
+    if (!mailTagCounts.length) {
+      wrap.hidden = true;
+      list.innerHTML = "";
+      return;
+    }
+    wrap.hidden = false;
+    var active = (document.getElementById("mail-contact-tag-filter") || {}).value || "";
+    list.innerHTML = mailTagCounts.map(function (t) {
+      var isActive = active && active === t.name;
+      return '<button type="button" class="mail-tag-stat' + (isActive ? " is-active" : "") + '" data-mail-tag-filter="' + esc(t.name) + '" title="Bu etikete göre filtrele">' +
+        '<span class="mail-tag-stat-name">' + esc(t.name) + "</span>" +
+        '<span class="mail-tag-stat-count">' + fmtNum(t.count) + "</span>" +
+        "</button>";
+    }).join("");
+  }
+
   function mailLoadContactStats() {
-    return mailApi("/api/mailing/contacts/stats").then(function (res) {
+    return mailApi("/api/mailing/contacts/stats", { timeoutMs: 120000 }).then(function (res) {
       if (!res || !res.ok) return;
       var s = res.data || {};
       setText("mail-crm-stat-total", fmtNum(s.total));
       setText("mail-crm-stat-mailed", fmtNum(s.mailed));
       setText("mail-crm-stat-never", fmtNum(s.never_mailed));
+      mailRenderTagStats(s.by_tag || []);
     });
   }
 
@@ -1326,9 +1366,23 @@
     var qEl = document.getElementById("mail-contact-q");
     if (qEl) qEl.addEventListener("input", debounce(mailLoadContacts, 300));
     var tagEl = document.getElementById("mail-contact-tag-filter");
-    if (tagEl) tagEl.addEventListener("change", mailLoadContacts);
+    if (tagEl) tagEl.addEventListener("change", function () {
+      mailRenderTagStats(mailTagCounts);
+      mailLoadContacts();
+    });
 
     document.addEventListener("click", function (e) {
+      var tagBtn = e.target.closest("[data-mail-tag-filter]");
+      if (tagBtn) {
+        var tagName = tagBtn.getAttribute("data-mail-tag-filter") || "";
+        var filterEl = document.getElementById("mail-contact-tag-filter");
+        if (filterEl) {
+          filterEl.value = (filterEl.value === tagName) ? "" : tagName;
+        }
+        mailRenderTagStats(mailTagCounts);
+        mailLoadContacts();
+        return;
+      }
       var delC = e.target.closest(".mail-del-contact");
       if (delC) {
         if (!confirm("Kontak silinsin mi?")) return;

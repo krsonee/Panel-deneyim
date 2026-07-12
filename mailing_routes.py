@@ -27,6 +27,7 @@ from database import (
     scalar,
     upsert_mail_setting,
     utcnow,
+    uses_postgres,
 )
 
 IMPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mail_imports")
@@ -815,6 +816,76 @@ def _ensure_tag(conn, name, now):
         )
 
 
+def _contact_tag_counts(conn):
+    """Her etiketteki kontak sayısı. Aynı kontak birden fazla etikette sayılır."""
+    registry = {
+        (r["name"] or "").strip(): 0
+        for r in fetchall(conn, "SELECT name FROM mail_contact_tags ORDER BY name ASC")
+        if (r["name"] or "").strip()
+    }
+    counts = dict(registry)
+
+    def _apply_rows(rows):
+        for r in rows or []:
+            name = (r["name"] or "").strip()
+            if not name:
+                continue
+            counts[name] = int(r["count"] or 0)
+
+    def _like_fallback():
+        for name in list(counts.keys()):
+            n = scalar(
+                conn,
+                "SELECT COUNT(*) FROM mail_contacts WHERE tags LIKE ?",
+                (f'%"{name}"%',),
+            )
+            counts[name] = int(n or 0)
+
+    if uses_postgres():
+        try:
+            rows = fetchall(
+                conn,
+                """
+                SELECT elem AS name, COUNT(*)::bigint AS count
+                FROM mail_contacts c
+                CROSS JOIN LATERAL jsonb_array_elements_text(
+                    CASE
+                        WHEN c.tags IS NULL OR btrim(c.tags) IN ('', '[]') THEN '[]'::jsonb
+                        WHEN left(btrim(c.tags), 1) = '[' THEN c.tags::jsonb
+                        ELSE '[]'::jsonb
+                    END
+                ) AS elem
+                GROUP BY elem
+                """,
+            )
+            _apply_rows(rows)
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            _like_fallback()
+    else:
+        try:
+            rows = fetchall(
+                conn,
+                """
+                SELECT je.value AS name, COUNT(*) AS count
+                FROM mail_contacts c, json_each(c.tags) AS je
+                WHERE c.tags IS NOT NULL AND c.tags NOT IN ('', '[]')
+                GROUP BY je.value
+                """,
+            )
+            _apply_rows(rows)
+        except Exception:
+            _like_fallback()
+
+    return sorted(
+        [{"name": name, "count": int(counts[name] or 0)} for name in counts],
+        key=lambda item: (-item["count"], item["name"].lower()),
+    )
+
+
 def _stub_send(conn, *, channel, to_email, subject, contact=None, campaign_id=None,
                contact_id=None, template_id=None, domain_id=None, to_phone="",
                html_body="", text_body=""):
@@ -968,7 +1039,7 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/contacts/stats", methods=["GET"])
     @mail_perm(*MAIL_CRM)
     def contact_stats():
-        """CRM özet sayaçları: toplam kontak, en az 1 kez mail atılmış, hiç mail atılmamış."""
+        """CRM özet sayaçları: toplam kontak, mail durumu ve etiket bazlı sayılar."""
         with closing(get_db()) as conn:
             total = scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0
             mailed = scalar(
@@ -979,10 +1050,13 @@ def create_mailing_blueprint(permission_required):
                 """,
             ) or 0
             never_mailed = max(total - mailed, 0)
+            by_tag = _contact_tag_counts(conn)
         return jsonify({
             "total": total,
             "mailed": mailed,
             "never_mailed": never_mailed,
+            "by_tag": by_tag,
+            "tag_count": len(by_tag),
         })
 
     @bp.route("/contacts", methods=["GET"])
