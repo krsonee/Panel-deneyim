@@ -30,7 +30,9 @@ from database import (
 )
 
 IMPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mail_imports")
-IMPORT_CHUNK_SIZE = 2000
+IMPORT_CHUNK_SIZE = 5000
+# Tek seferde ~100M e-posta (yaklaşık 4-5 GB CSV) yüklenebilsin diye üst sınır.
+IMPORT_MAX_BYTES = 5 * 1024 * 1024 * 1024
 
 
 def _ensure_import_dir():
@@ -428,7 +430,6 @@ def _run_import_job(job_id, path, tag):
     timeout'a düşmez. CSV ve XLSX (.xlsx) destekler."""
     now = iso(utcnow())
     is_xlsx = os.path.splitext(path)[1].lower() in (".xlsx", ".xlsm")
-    count_fn = _count_xlsx_rows if is_xlsx else _count_csv_rows
     iter_fn = _iter_xlsx_rows if is_xlsx else _iter_csv_rows
     try:
         with closing(get_db()) as conn:
@@ -440,10 +441,9 @@ def _run_import_job(job_id, path, tag):
             execute(conn, "UPDATE mail_import_jobs SET status = 'running', updated_at = ? WHERE id = ?", (now, job_id))
             conn.commit()
 
-            total = count_fn(path)
-            execute(conn, "UPDATE mail_import_jobs SET total_rows = ? WHERE id = ?", (total, job_id))
-            conn.commit()
-
+            # 20M+ satırlı dosyalarda önce tüm dosyayı saymak (count_fn) dakikalarca
+            # sürüp updated_at'i donduruyordu; panel "kayboldu" sanıyordu. Satır sayımını
+            # atlayıp doğrudan işlemeye başlıyoruz — total_rows iş bitince set edilir.
             processed = 0
             upserted = 0
             skipped = 0
@@ -496,6 +496,17 @@ def _run_import_job(job_id, path, tag):
                     if status_row and status_row["status"] == "cancelling":
                         cancelled = True
                         break
+                elif processed % 5000 == 0:
+                    execute(
+                        conn,
+                        """
+                        UPDATE mail_import_jobs
+                        SET processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (processed, upserted, skipped, iso(utcnow()), job_id),
+                    )
+                    conn.commit()
             if batch and not cancelled:
                 try:
                     upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
@@ -510,10 +521,10 @@ def _run_import_job(job_id, path, tag):
                     conn,
                     """
                     UPDATE mail_import_jobs
-                    SET status = 'cancelled', processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
+                    SET status = 'cancelled', total_rows = ?, processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (processed, upserted, skipped, final_now, job_id),
+                    (processed, processed, upserted, skipped, final_now, job_id),
                 )
                 conn.commit()
                 return
@@ -523,10 +534,10 @@ def _run_import_job(job_id, path, tag):
                 conn,
                 """
                 UPDATE mail_import_jobs
-                SET status = 'done', processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
+                SET status = 'done', total_rows = ?, processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (processed, upserted, skipped, final_now, job_id),
+                (processed, processed, upserted, skipped, final_now, job_id),
             )
             conn.commit()
     except Exception as exc:
@@ -904,8 +915,8 @@ def create_mailing_blueprint(permission_required):
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in (".csv", ".xlsx", ".xlsm"):
             return jsonify({"error": "Sadece .csv veya .xlsx dosyası yükleyebilirsin."}), 400
-        if request.content_length and request.content_length > 800 * 1024 * 1024:
-            return jsonify({"error": "Dosya çok büyük (800MB üstü). Bölüp tekrar dene."}), 400
+        if request.content_length and request.content_length > IMPORT_MAX_BYTES:
+            return jsonify({"error": "Dosya çok büyük (5GB üstü). Bölüp tekrar dene."}), 400
         tag = (request.form.get("tag") or "").strip()
         _ensure_import_dir()
         now = iso(utcnow())

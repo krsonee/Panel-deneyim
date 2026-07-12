@@ -83,7 +83,7 @@
     return new Promise(function (resolve) {
       var xhr = new XMLHttpRequest();
       xhr.open("POST", url, true);
-      xhr.timeout = 60 * 60 * 1000;
+      xhr.timeout = 6 * 60 * 60 * 1000;
       if (xhr.upload) {
         xhr.upload.addEventListener("progress", function (e) {
           if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total);
@@ -105,12 +105,12 @@
     });
   }
 
-  var MAIL_BULK_MAX_BYTES = 800 * 1024 * 1024;
+  var MAIL_BULK_MAX_BYTES = 5 * 1024 * 1024 * 1024;
 
   function mailValidateImportFile(file) {
     var lowerName = file.name.toLowerCase();
     if (!/\.(csv|xlsx|xlsm)$/.test(lowerName)) return "sadece .csv veya .xlsx yükleyebilirsin";
-    if (file.size > MAIL_BULK_MAX_BYTES) return "800MB üstü, bölüp tekrar dene";
+    if (file.size > MAIL_BULK_MAX_BYTES) return "5GB üstü, bölüp tekrar dene";
     return null;
   }
 
@@ -390,17 +390,25 @@
         }
         failedPolls = 0;
         var j = res.data.job;
-        var pct = j.total_rows > 0 ? Math.min(100, Math.round((j.processed_rows / j.total_rows) * 100)) : 0;
-        if (progBar) progBar.style.width = pct + "%";
+        var hasTotal = j.total_rows > 0;
+        var pct = hasTotal ? Math.min(100, Math.round((j.processed_rows / j.total_rows) * 100)) : 0;
+        if (progBar) {
+          if (hasTotal) progBar.style.width = pct + "%";
+          else if (j.processed_rows > 0) progBar.style.width = "35%";
+          else progBar.style.width = "8%";
+        }
         if (j.status === "cancelling") {
           if (progText) progText.textContent = prefix + "İptal ediliyor…";
           setTimeout(poll, 1500);
           return;
         }
         if (progText) {
+          var progressLine = hasTotal
+            ? "%" + pct + " · " + fmtNum(j.processed_rows) + " / " + fmtNum(j.total_rows) + " satır"
+            : fmtNum(j.processed_rows) + " satır işlendi (devam ediyor…)";
           progText.textContent = prefix + (j.status === "pending" ? "Başlıyor… " : "İşleniyor: ") +
-            "%" + pct + " · " + fmtNum(j.processed_rows) + " / " + fmtNum(j.total_rows) + " satır · " +
-            "eklenen/güncellenen: " + fmtNum(j.upserted_count) + " · geçersiz: " + fmtNum(j.skipped_count);
+            progressLine + " · eklenen/güncellenen: " + fmtNum(j.upserted_count) +
+            " · geçersiz: " + fmtNum(j.skipped_count);
         }
         if (j.status === "done") {
           mailToast(prefix + "içe aktarma tamam · " + j.upserted_count + " kontak işlendi · " + j.skipped_count + " geçersiz e-posta atlandı");
@@ -1137,7 +1145,9 @@
   // varsa onu bulup takibe geri bağlanır — böylece "yenileyince kayboldu" sorunu
   // çözülür. Uzun süredir güncellenmemiş (stale) işler sunucu yeniden başlamış
   // olabileceğinden sonsuza kadar beklenmez, kullanıcı bilgilendirilir.
-  var MAIL_STALE_JOB_MS = 90 * 1000;
+  // Büyük importlar saatler sürebilir; kısa stale eşiği panelde işi "kaybolmuş"
+  // gibi gösteriyordu. Sadece hiç ilerlememiş ve çok uzun süredir bekleyen işleri atla.
+  var MAIL_STALE_PENDING_MS = 30 * 60 * 1000;
   function mailResumePendingImports() {
     mailApi("/api/mailing/contacts/import/jobs").then(function (res) {
       if (!res || !res.ok) return;
@@ -1151,8 +1161,8 @@
       var refIso = job.updated_at || job.created_at;
       var refMs = refIso ? new Date(refIso).getTime() : 0;
       var staleMs = refMs ? (Date.now() - refMs) : Infinity;
-      if (!refMs || staleMs > MAIL_STALE_JOB_MS) {
-        mailToast((job.filename || "Önceki bir dosya") + ": sunucuda yanıt vermeyen eski bir iş bulundu (sunucu yeniden başlamış olabilir). Gerekirse yeniden yükle.");
+      if (job.status === "pending" && !job.processed_rows && staleMs > MAIL_STALE_PENDING_MS) {
+        mailToast((job.filename || "Önceki bir dosya") + ": sunucuda yanıt vermeyen eski bir iş bulundu. Gerekirse yeniden yükle.");
         return;
       }
       mailImportBusy = true;
