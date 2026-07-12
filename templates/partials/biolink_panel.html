@@ -55,11 +55,21 @@
             <div class="full"><label for="bl-subtitle">Alt Başlık / Açıklama</label><textarea id="bl-subtitle" rows="2" placeholder="Kısa tanıtım metni…"></textarea></div>
             <div class="full">
               <label>Makrobet Logo</label>
+              <div class="bl-asset-toolbar">
+                <button type="button" class="btn btn-sm" id="btn-bl-upload-logo">+ Logo yükle</button>
+                <input type="file" id="bl-logo-file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden>
+                <span class="muted-sm bl-upload-status" id="bl-logo-upload-status"></span>
+              </div>
               <div class="bl-asset-picks" id="bl-logo-picks"></div>
               <input id="bl-avatar" placeholder="veya özel logo URL…" autocomplete="off" style="margin-top:0.45rem;">
             </div>
             <div class="full">
               <label>Banner GIF</label>
+              <div class="bl-asset-toolbar">
+                <button type="button" class="btn btn-sm" id="btn-bl-upload-banner">+ Banner yükle</button>
+                <input type="file" id="bl-banner-file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+                <span class="muted-sm bl-upload-status" id="bl-banner-upload-status"></span>
+              </div>
               <div class="bl-asset-picks bl-banner-picks" id="bl-banner-picks"></div>
               <input id="bl-banner" placeholder="veya özel banner URL…" autocomplete="off" style="margin-top:0.45rem;">
             </div>

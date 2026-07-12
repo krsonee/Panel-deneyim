@@ -800,6 +800,41 @@ def migrate_biolink(conn):
     btn_cols = _table_columns(conn, "biolink_buttons")
     if "heading_style" not in btn_cols:
         execute(conn, "ALTER TABLE biolink_buttons ADD COLUMN heading_style TEXT NOT NULL DEFAULT 'classic'")
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS biolink_assets (
+                id SERIAL PRIMARY KEY,
+                kind TEXT NOT NULL,
+                label TEXT NOT NULL,
+                stored_name TEXT NOT NULL UNIQUE,
+                public_url TEXT NOT NULL,
+                mime_type TEXT NOT NULL DEFAULT '',
+                file_size INTEGER NOT NULL DEFAULT 0,
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS biolink_assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                label TEXT NOT NULL,
+                stored_name TEXT NOT NULL UNIQUE,
+                public_url TEXT NOT NULL,
+                mime_type TEXT NOT NULL DEFAULT '',
+                file_size INTEGER NOT NULL DEFAULT 0,
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_biolink_assets_kind ON biolink_assets(kind)")
     conn.commit()
 
 

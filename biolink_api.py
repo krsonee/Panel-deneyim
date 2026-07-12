@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import secrets
 import threading
@@ -15,6 +16,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from urllib.parse import urlparse
+
+from werkzeug.utils import secure_filename
 
 from database import (
     execute,
@@ -28,6 +31,8 @@ from database import (
 )
 
 from biolink_themes import (
+    BRAND_BANNERS,
+    BRAND_LOGOS,
     DEFAULT_BANNER,
     DEFAULT_BRAND_LOGO,
     DEFAULT_HEADING_STYLE,
@@ -39,6 +44,14 @@ from biolink_themes import (
     normalize_heading_style,
     theme_list as _theme_list_catalog,
 )
+
+APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+BIOLINK_UPLOAD_DIR = os.path.join(APP_ROOT, "uploads", "biolink")
+BIOLINK_UPLOAD_URL_PREFIX = "/uploads/biolink"
+LOGO_UPLOAD_EXTS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"})
+BANNER_UPLOAD_EXTS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif"})
+LOGO_UPLOAD_MAX_BYTES = 2 * 1024 * 1024
+BANNER_UPLOAD_MAX_BYTES = 6 * 1024 * 1024
 
 RESERVED_SLUGS = frozenset({
     "", "admin", "api", "static", "demo", "r", "p", "health", "favicon.ico",
@@ -689,3 +702,129 @@ def send_ga4_event(page, *, event_name, button_label="", destination_url="", cli
             pass
 
     threading.Thread(target=_run, daemon=True).start()
+
+
+def _ensure_biolink_upload_dir():
+    os.makedirs(BIOLINK_UPLOAD_DIR, exist_ok=True)
+
+
+def _custom_asset_row(row):
+    if not row:
+        return None
+    d = dict(row)
+    return {
+        "key": f"custom-{d['id']}",
+        "id": int(d["id"]),
+        "label": d.get("label") or "Yüklediğim",
+        "url": d.get("public_url") or "",
+        "w": 0,
+        "h": 0,
+        "custom": True,
+        "kind": d.get("kind") or "",
+    }
+
+
+def list_custom_assets(conn, kind=None):
+    kind = (kind or "").strip().lower()
+    if kind in ("logo", "banner"):
+        rows = fetchall(
+            conn,
+            "SELECT * FROM biolink_assets WHERE kind = ? ORDER BY created_at DESC, id DESC",
+            (kind,),
+        )
+    else:
+        rows = fetchall(conn, "SELECT * FROM biolink_assets ORDER BY created_at DESC, id DESC")
+    return [_custom_asset_row(r) for r in rows]
+
+
+def list_brand_assets(conn):
+    custom = list_custom_assets(conn)
+    logos = list(BRAND_LOGOS) + [a for a in custom if a["kind"] == "logo"]
+    banners = list(BRAND_BANNERS) + [a for a in custom if a["kind"] == "banner"]
+    return {
+        "logos": logos,
+        "banners": banners,
+        "default_logo": DEFAULT_BRAND_LOGO,
+        "default_banner": DEFAULT_BANNER,
+    }
+
+
+def upload_asset(conn, kind, file_storage, *, label="", created_by=""):
+    kind = (kind or "").strip().lower()
+    if kind not in ("logo", "banner"):
+        raise ValueError("Tür logo veya banner olmalı.")
+    if not file_storage or not (file_storage.filename or "").strip():
+        raise ValueError("Dosya seçilmedi.")
+
+    orig = secure_filename(file_storage.filename.strip())
+    if not orig:
+        raise ValueError("Geçersiz dosya adı.")
+    ext = os.path.splitext(orig)[1].lower()
+    allowed = LOGO_UPLOAD_EXTS if kind == "logo" else BANNER_UPLOAD_EXTS
+    if ext not in allowed:
+        raise ValueError("Desteklenmeyen format: " + ", ".join(sorted(allowed)))
+
+    file_storage.stream.seek(0, os.SEEK_END)
+    size = int(file_storage.stream.tell() or 0)
+    file_storage.stream.seek(0)
+    max_size = LOGO_UPLOAD_MAX_BYTES if kind == "logo" else BANNER_UPLOAD_MAX_BYTES
+    if size <= 0:
+        raise ValueError("Boş dosya yüklenemez.")
+    if size > max_size:
+        raise ValueError(f"Dosya çok büyük (max {max_size // (1024 * 1024)} MB).")
+
+    _ensure_biolink_upload_dir()
+    stored = f"{kind}_{utcnow().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}{ext}"
+    path = os.path.join(BIOLINK_UPLOAD_DIR, stored)
+    file_storage.save(path)
+
+    public_url = f"{BIOLINK_UPLOAD_URL_PREFIX}/{stored}"
+    label = (label or os.path.splitext(orig)[0] or "Yüklediğim").strip()[:120]
+    now = iso(utcnow())
+    asset_id = insert_returning_id(
+        conn,
+        """
+        INSERT INTO biolink_assets
+          (kind, label, stored_name, public_url, mime_type, file_size, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            kind,
+            label,
+            stored,
+            public_url,
+            (file_storage.mimetype or "")[:120],
+            size,
+            (created_by or "")[:64],
+            now,
+        ),
+    )
+    conn.commit()
+    return _custom_asset_row(fetchone(conn, "SELECT * FROM biolink_assets WHERE id = ?", (asset_id,)))
+
+
+def delete_asset(conn, asset_id):
+    row = fetchone(conn, "SELECT * FROM biolink_assets WHERE id = ?", (int(asset_id),))
+    if not row:
+        return False
+    stored = os.path.basename(dict(row).get("stored_name") or "")
+    if stored:
+        path = os.path.join(BIOLINK_UPLOAD_DIR, stored)
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    execute(conn, "DELETE FROM biolink_assets WHERE id = ?", (int(asset_id),))
+    conn.commit()
+    return True
+
+
+def biolink_upload_path(filename):
+    safe = os.path.basename(filename or "")
+    if not safe or safe != filename:
+        return None
+    path = os.path.join(BIOLINK_UPLOAD_DIR, safe)
+    if not os.path.isfile(path):
+        return None
+    return path

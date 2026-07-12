@@ -2,7 +2,7 @@
 
 from contextlib import closing
 
-from flask import Blueprint, jsonify, redirect, render_template, request, session
+from flask import Blueprint, jsonify, redirect, render_template, request, send_file, session
 
 import biolink_api
 from database import get_db
@@ -35,8 +35,33 @@ def create_biolink_blueprint(permission_required):
     @api.route("/assets", methods=["GET"])
     @perm(*MODULE_ACCESS)
     def assets():
-        from biolink_themes import brand_assets
-        return jsonify(brand_assets())
+        with closing(get_db()) as conn:
+            return jsonify(biolink_api.list_brand_assets(conn))
+
+    @api.route("/assets/upload", methods=["POST"])
+    @perm(*MODULE_ACCESS)
+    def upload_asset():
+        kind = (request.form.get("kind") or "").strip().lower()
+        label = (request.form.get("label") or "").strip()
+        upload = request.files.get("file")
+        username = (session.get("admin_username") or "").strip()
+        try:
+            with closing(get_db()) as conn:
+                asset = biolink_api.upload_asset(
+                    conn, kind, upload, label=label, created_by=username,
+                )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"asset": asset}), 201
+
+    @api.route("/assets/<int:asset_id>", methods=["DELETE"])
+    @perm(*MODULE_ACCESS)
+    def delete_asset(asset_id):
+        with closing(get_db()) as conn:
+            ok = biolink_api.delete_asset(conn, asset_id)
+        if not ok:
+            return jsonify({"error": "Dosya bulunamadı."}), 404
+        return jsonify({"ok": True})
 
     @api.route("/pages", methods=["GET"])
     @perm(*MODULE_ACCESS)
@@ -172,6 +197,13 @@ def create_biolink_blueprint(permission_required):
         return jsonify({"ok": True})
 
     # ── Public sayfa + tıklama ─────────────────────────────────
+    @bp.route("/uploads/biolink/<path:filename>")
+    def biolink_upload_file(filename):
+        path = biolink_api.biolink_upload_path(filename)
+        if not path:
+            return ("Dosya bulunamadı.", 404)
+        return send_file(path)
+
     @bp.route("/p/<slug>")
     def public_page(slug):
         preview = request.args.get("preview") == "1"

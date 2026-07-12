@@ -133,7 +133,9 @@
   function blApi(path, opts) {
     opts = opts || {};
     var fetchOpts = Object.assign({ headers: {} }, opts);
-    if (fetchOpts.body && typeof fetchOpts.body === "object") {
+    if (fetchOpts.body instanceof FormData) {
+      /* multipart — Content-Type tarayıcı ayarlar */
+    } else if (fetchOpts.body && typeof fetchOpts.body === "object") {
       fetchOpts.headers["Content-Type"] = "application/json";
       fetchOpts.body = JSON.stringify(fetchOpts.body);
     }
@@ -252,19 +254,26 @@
     });
   }
 
-  function renderAssetPickers() {
-    var logoBox = document.getElementById("bl-logo-picks");
-    var bannerBox = document.getElementById("bl-banner-picks");
-    var logoVal = (document.getElementById("bl-avatar") || {}).value || "";
-    var bannerVal = (document.getElementById("bl-banner") || {}).value || "";
+  function blAssetChipHtml(a, type) {
+    var isBanner = type === "banner";
+    var val = isBanner
+      ? ((document.getElementById("bl-banner") || {}).value || "")
+      : ((document.getElementById("bl-avatar") || {}).value || "");
+    var active = val === a.url ? " active" : "";
+    var customCls = a.custom ? " custom" : "";
+    var dataAttr = isBanner ? "data-bl-banner" : "data-bl-logo";
+    var delBtn = a.custom
+      ? '<button type="button" class="bl-asset-del" data-bl-asset-del="' + a.id + '" title="Sil">×</button>'
+      : "";
+    return '<div class="bl-asset-chip-wrap">' +
+      '<button type="button" class="bl-asset-chip' + (isBanner ? " banner" : "") + active + customCls + '" ' +
+      dataAttr + '="' + blEsc(a.url) + '" title="' + blEsc(a.label) + '">' +
+      '<img src="' + blEsc(a.url) + '" alt="">' +
+      '<span>' + blEsc(a.label) + "</span></button>" + delBtn + "</div>";
+  }
 
+  function blBindAssetPickers(logoBox, bannerBox) {
     if (logoBox) {
-      logoBox.innerHTML = (blAssets.logos || []).map(function (a) {
-        var active = logoVal === a.url ? " active" : "";
-        return '<button type="button" class="bl-asset-chip' + active + '" data-bl-logo="' + blEsc(a.url) + '" title="' + blEsc(a.label) + '">' +
-          '<img src="' + blEsc(a.url) + '" alt="">' +
-          '<span>' + blEsc(a.label) + "</span></button>";
-      }).join("");
       logoBox.querySelectorAll("[data-bl-logo]").forEach(function (btn) {
         btn.onclick = function () {
           document.getElementById("bl-avatar").value = btn.getAttribute("data-bl-logo");
@@ -272,15 +281,14 @@
           schedulePreviewRefresh();
         };
       });
+      logoBox.querySelectorAll("[data-bl-asset-del]").forEach(function (btn) {
+        btn.onclick = function (e) {
+          e.stopPropagation();
+          blDeleteAsset(btn.getAttribute("data-bl-asset-del"), "logo");
+        };
+      });
     }
-
     if (bannerBox) {
-      bannerBox.innerHTML = (blAssets.banners || []).map(function (a) {
-        var active = bannerVal === a.url ? " active" : "";
-        return '<button type="button" class="bl-asset-chip banner' + active + '" data-bl-banner="' + blEsc(a.url) + '" title="' + blEsc(a.label) + '">' +
-          '<img src="' + blEsc(a.url) + '" alt="">' +
-          '<span>' + blEsc(a.label) + "</span></button>";
-      }).join("");
       bannerBox.querySelectorAll("[data-bl-banner]").forEach(function (btn) {
         btn.onclick = function () {
           document.getElementById("bl-banner").value = btn.getAttribute("data-bl-banner");
@@ -288,7 +296,75 @@
           schedulePreviewRefresh();
         };
       });
+      bannerBox.querySelectorAll("[data-bl-asset-del]").forEach(function (btn) {
+        btn.onclick = function (e) {
+          e.stopPropagation();
+          blDeleteAsset(btn.getAttribute("data-bl-asset-del"), "banner");
+        };
+      });
     }
+  }
+
+  function blUploadAsset(kind, file) {
+    if (!file) return;
+    var statusEl = document.getElementById(kind === "logo" ? "bl-logo-upload-status" : "bl-banner-upload-status");
+    if (statusEl) statusEl.textContent = "Yükleniyor…";
+    var fd = new FormData();
+    fd.append("kind", kind);
+    fd.append("file", file);
+    fd.append("label", file.name || "Yüklediğim");
+    blApi("/api/biolink/assets/upload", { method: "POST", body: fd }).then(function (r) {
+      if (statusEl) statusEl.textContent = "";
+      if (r && r.ok && r.data && r.data.asset) {
+        blToast("Dosya yüklendi");
+        var asset = r.data.asset;
+        if (kind === "logo") document.getElementById("bl-avatar").value = asset.url;
+        else document.getElementById("bl-banner").value = asset.url;
+        return loadAssets().then(function () { schedulePreviewRefresh(); });
+      }
+      if (r) alert((r.data && r.data.error) || "Yüklenemedi");
+    });
+  }
+
+  function blDeleteAsset(assetId, kind) {
+    if (!assetId) return;
+    if (!confirm("Bu yüklediğin dosya silinsin mi?")) return;
+    blApi("/api/biolink/assets/" + assetId, { method: "DELETE" }).then(function (r) {
+      if (!r || !r.ok) {
+        if (r) alert((r.data && r.data.error) || "Silinemedi");
+        return;
+      }
+      blToast("Silindi");
+      var fieldId = kind === "logo" ? "bl-avatar" : "bl-banner";
+      var field = document.getElementById(fieldId);
+      var deletedUrl = "";
+      (blAssets.logos || []).concat(blAssets.banners || []).forEach(function (a) {
+        if (a.custom && String(a.id) === String(assetId)) deletedUrl = a.url;
+      });
+      if (field && field.value === deletedUrl) {
+        field.value = kind === "logo" ? (blAssets.default_logo || "") : (blAssets.default_banner || "");
+      }
+      loadAssets().then(function () { schedulePreviewRefresh(); });
+    });
+  }
+
+  function renderAssetPickers() {
+    var logoBox = document.getElementById("bl-logo-picks");
+    var bannerBox = document.getElementById("bl-banner-picks");
+
+    if (logoBox) {
+      logoBox.innerHTML = (blAssets.logos || []).map(function (a) {
+        return blAssetChipHtml(a, "logo");
+      }).join("");
+    }
+
+    if (bannerBox) {
+      bannerBox.innerHTML = (blAssets.banners || []).map(function (a) {
+        return blAssetChipHtml(a, "banner");
+      }).join("");
+    }
+
+    blBindAssetPickers(logoBox, bannerBox);
   }
 
   function loadPages() {
@@ -822,9 +898,31 @@
     document.getElementById("btn-biolink-save").onclick = savePage;
     document.getElementById("btn-biolink-close").onclick = closeEditor;
     document.getElementById("btn-biolink-add-button").onclick = addButton;
+    var logoFile = document.getElementById("bl-logo-file");
+    var bannerFile = document.getElementById("bl-banner-file");
+    var btnLogoUp = document.getElementById("btn-bl-upload-logo");
+    var btnBannerUp = document.getElementById("btn-bl-upload-banner");
+    if (btnLogoUp && logoFile) btnLogoUp.onclick = function () { logoFile.click(); };
+    if (btnBannerUp && bannerFile) btnBannerUp.onclick = function () { bannerFile.click(); };
+    if (logoFile) {
+      logoFile.addEventListener("change", function () {
+        if (logoFile.files && logoFile.files[0]) blUploadAsset("logo", logoFile.files[0]);
+        logoFile.value = "";
+      });
+    }
+    if (bannerFile) {
+      bannerFile.addEventListener("change", function () {
+        if (bannerFile.files && bannerFile.files[0]) blUploadAsset("banner", bannerFile.files[0]);
+        bannerFile.value = "";
+      });
+    }
     ["bl-title", "bl-subtitle", "bl-avatar", "bl-banner", "bl-accent"].forEach(function (id) {
       var el = document.getElementById(id);
-      if (el) el.addEventListener("input", schedulePreviewRefresh);
+      if (!el) return;
+      el.addEventListener("input", function () {
+        if (id === "bl-avatar" || id === "bl-banner") renderAssetPickers();
+        schedulePreviewRefresh();
+      });
     });
     var shapeEl = document.getElementById("bl-shape");
     if (shapeEl) shapeEl.addEventListener("change", schedulePreviewRefresh);
