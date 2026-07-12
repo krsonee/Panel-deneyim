@@ -1275,14 +1275,19 @@ def create_mailing_blueprint(permission_required):
                 like = f"%{q}%"
                 params.extend([like, like, like])
             where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-            params.append(limit)
+            total = int(scalar(conn, f"SELECT COUNT(*) FROM mail_contacts{where}", tuple(params)) or 0)
             rows = _rows(fetchall(
                 conn,
                 f"SELECT * FROM mail_contacts{where} ORDER BY id DESC LIMIT ?",
-                tuple(params),
+                tuple(params) + (limit,),
             ))
         out = [_contact_out(r) for r in rows]
-        return jsonify({"contacts": out, "count": len(out)})
+        return jsonify({
+            "contacts": out,
+            "count": len(out),
+            "total": total,
+            "limit": limit,
+        })
 
     @bp.route("/contacts", methods=["POST"])
     @mail_perm(*MAIL_CRM)

@@ -781,6 +781,17 @@
     });
   }
 
+  var mailContactsPageTotal = 0;
+  var mailContactsFilterTotal = 0;
+
+  function mailUpdateContactSelectionCount() {
+    var selected = document.querySelectorAll(".mail-contact-check:checked").length;
+    var page = document.querySelectorAll(".mail-contact-check").length;
+    setText("mail-contacts-selected", fmtNum(selected));
+    setText("mail-contacts-page", fmtNum(page || mailContactsPageTotal));
+    setText("mail-contacts-total", fmtNum(mailContactsFilterTotal));
+  }
+
   function mailLoadContacts() {
     var q = (document.getElementById("mail-contact-q") || {}).value || "";
     var tag = (document.getElementById("mail-contact-tag-filter") || {}).value || "";
@@ -792,11 +803,17 @@
       if (!tbody) return;
       if (!res || !res.ok) {
         tbody.innerHTML = '<tr><td colspan="6" class="empty">Yüklenemedi</td></tr>';
+        mailContactsPageTotal = 0;
+        mailContactsFilterTotal = 0;
+        mailUpdateContactSelectionCount();
         return;
       }
       var rows = res.data.contacts || [];
+      mailContactsPageTotal = rows.length;
+      mailContactsFilterTotal = Number(res.data.total != null ? res.data.total : rows.length) || 0;
       if (!rows.length) {
         tbody.innerHTML = '<tr><td colspan="6" class="empty">Kontak yok</td></tr>';
+        mailUpdateContactSelectionCount();
         return;
       }
       tbody.innerHTML = rows.map(function (c) {
@@ -812,6 +829,7 @@
           '<td><button type="button" class="btn btn-sm mail-del-contact" data-id="' + c.id + '">Sil</button></td>' +
           "</tr>";
       }).join("");
+      mailUpdateContactSelectionCount();
     });
   }
 
@@ -1505,9 +1523,19 @@
     });
     bindClick("mail-contacts-select-page", function () {
       document.querySelectorAll(".mail-contact-check").forEach(function (el) { el.checked = true; });
+      mailUpdateContactSelectionCount();
       var n = document.querySelectorAll(".mail-contact-check:checked").length;
       mailToast(n ? (n + " kontak seçildi") : "Seçilecek kontak yok");
     });
+
+    var contactsTable = document.getElementById("mail-contacts-table");
+    if (contactsTable) {
+      contactsTable.addEventListener("change", function (e) {
+        if (e.target && e.target.classList && e.target.classList.contains("mail-contact-check")) {
+          mailUpdateContactSelectionCount();
+        }
+      });
+    }
 
     function mailSelectedContactIds() {
       return Array.prototype.map.call(

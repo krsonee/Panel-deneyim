@@ -1235,6 +1235,25 @@
       opacity: 0.65;
       border-style: dashed;
     }
+    .mail-contacts-footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.65rem;
+      align-items: center;
+      padding: 0.65rem 1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.78rem;
+      color: var(--muted);
+      background: rgba(15,23,42,0.25);
+    }
+    .mail-contacts-footer strong {
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .mail-contacts-footer-sep { opacity: 0.5; }
+    [data-theme="light"] .mail-contacts-footer {
+      background: rgba(248,250,252,0.9);
+    }
     [data-theme="light"] .mail-tag-stats {
       background: linear-gradient(180deg, rgba(99,102,241,0.06), rgba(248,250,252,0.9));
     }
@@ -2414,7 +2433,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="/static/accounting.js?v=20260712m"></script>
-  <script src="/static/mailing.js?v=20260712s"></script>
+  <script src="/static/mailing.js?v=20260712t"></script>
   <script src="/static/biolink.js?v=20260712g"></script>
   <script src="/static/marketing.js?v=20260712d"></script>
   <script>
