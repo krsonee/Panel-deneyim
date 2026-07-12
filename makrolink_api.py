@@ -397,12 +397,19 @@ def create_link(
         raise ValueError("Geçerli Smartico go.aff URL gerekli.")
 
     label = (label or "").strip()[:200]
+    if not label:
+        raise ValueError("Etiket gerekli.")
+    code = (code or "").strip()
+    if not code:
+        raise ValueError("Özel kod gerekli.")
+    if not _valid_code(code):
+        raise ValueError("Kod geçersiz (harf/rakam/_/- , reserved değil).")
     affiliate_id = (affiliate_id or "").strip()[:64]
     smartico_link_id = (smartico_link_id or "").strip()[:64]
     ref_code = (ref_code or "").strip()[:128]
     created_by = (created_by or "").strip()[:64]
     target_domain = _normalize_domain(target_domain) if target_domain else ""
-    category = normalize_category(category, allow_empty=True)
+    category = normalize_category(category, allow_empty=False)
     now = iso(utcnow())
 
     slug = urlparse(destination_url).path.strip("/").split("/")[0]
@@ -410,27 +417,12 @@ def create_link(
         smartico_link_id = slug[:64]
 
     revive_id = None
-    if code:
-        code = code.strip()
-        if not _valid_code(code):
-            raise ValueError("Kod geçersiz (harf/rakam/_/- , reserved değil).")
-        existing = fetchone(conn, "SELECT id, is_active FROM makrolink_links WHERE code = ?", (code,))
-        if existing:
-            if int(existing["is_active"] or 0) == 1:
-                raise ValueError("Bu kısa kod zaten kullanılıyor.")
-            # Pasif (silinmiş) linkin kodu — yeniden canlandır, yeni verilerle güncelle.
-            revive_id = existing["id"]
-    else:
-        for _ in range(12):
-            code = _gen_code()
-            row = fetchone(conn, "SELECT id, is_active FROM makrolink_links WHERE code = ?", (code,))
-            if not row:
-                break
-            if int(row["is_active"] or 0) == 0:
-                revive_id = row["id"]
-                break
-        else:
-            raise ValueError("Kısa kod üretilemedi, tekrar dene.")
+    existing = fetchone(conn, "SELECT id, is_active FROM makrolink_links WHERE code = ?", (code,))
+    if existing:
+        if int(existing["is_active"] or 0) == 1:
+            raise ValueError("Bu kısa kod zaten kullanılıyor.")
+        # Pasif (silinmiş) linkin kodu — yeniden canlandır, yeni verilerle güncelle.
+        revive_id = existing["id"]
 
     if revive_id is not None:
         execute(

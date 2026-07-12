@@ -1942,15 +1942,15 @@
                 <div class="form-span-2"><label for="makrolink-dest">Smartico go.aff linki</label>
                   <input id="makrolink-dest" placeholder="https://go.aff.makroaffi.com/46ix1iwv  veya  46ix1iwv" required autocomplete="off">
                 </div>
-                <div><label for="makrolink-label">Etiket</label><input id="makrolink-label" placeholder="örn. slotbuse FTD" autocomplete="off"></div>
-                <div><label for="makrolink-code">Özel kod (ops.)</label><input id="makrolink-code" placeholder="boş = otomatik" autocomplete="off"></div>
+                <div><label for="makrolink-label">Etiket</label><input id="makrolink-label" placeholder="örn. slotbuse FTD" required autocomplete="off"></div>
+                <div><label for="makrolink-code">Özel kod</label><input id="makrolink-code" placeholder="örn. slotbuse-ftd" required autocomplete="off"></div>
               </div>
               <div class="form-row-4" style="margin-top:0.5rem;">
                 <div><label for="makrolink-affid">Affiliate ID (not)</label><input id="makrolink-affid" placeholder="opsiyonel not" autocomplete="off"></div>
                 <div><label for="makrolink-ref">Ref notu</label><input id="makrolink-ref" placeholder="opsiyonel" autocomplete="off"></div>
                 <div><label for="makrolink-category">Kategori</label>
-                  <select id="makrolink-category">
-                    <option value="">— Seçin (opsiyonel) —</option>
+                  <select id="makrolink-category" required>
+                    <option value="">— Seçin —</option>
                     <option value="Marketing">Marketing</option>
                     <option value="Call Center">Call Center</option>
                     <option value="Sosyal Medya">Sosyal Medya</option>
@@ -4584,18 +4584,24 @@
       bindOptional("makrolink-create-form", "submit", function(e) {
         e.preventDefault();
         var dest = document.getElementById("makrolink-dest").value.trim();
-        if (!dest) { alert("Hedef URL gir."); return; }
+        var label = document.getElementById("makrolink-label").value.trim();
+        var code = document.getElementById("makrolink-code").value.trim();
+        var category = ((document.getElementById("makrolink-category") || {}).value || "").trim();
+        if (!dest) { alert("Smartico go.aff linki gerekli."); return; }
+        if (!label) { alert("Etiket gerekli."); return; }
+        if (!code) { alert("Özel kod gerekli."); return; }
+        if (!category) { alert("Kategori seç."); return; }
         var btn = document.getElementById("btn-makrolink-create");
         if (btn) { btn.disabled = true; btn.textContent = "Oluşturuluyor…"; }
         fetch(API + "/api/makrolink/links", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             destination_url: dest,
-            label: document.getElementById("makrolink-label").value.trim(),
-            code: document.getElementById("makrolink-code").value.trim() || null,
+            label: label,
+            code: code,
             affiliate_id: document.getElementById("makrolink-affid").value.trim(),
             ref_code: document.getElementById("makrolink-ref").value.trim(),
-            category: (document.getElementById("makrolink-category") || {}).value || "",
+            category: category,
             target_domain: document.getElementById("makrolink-target-domain").value
           })
         }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
