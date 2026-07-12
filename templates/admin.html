@@ -1154,6 +1154,20 @@
       letter-spacing: 0.06em; color: var(--text); margin-bottom: 0.25rem; opacity: 0.85; }
 
     .role-badge { display: inline-block; font-size: 0.65rem; padding: 0.15rem 0.45rem; border-radius: 999px; background: var(--accent-soft); color: #a5b4fc; margin-left: 0.35rem; }
+    .ml-link, .ml-link:link, .ml-link:visited {
+      color: #8fa3ff; text-decoration: none; font-weight: 600;
+      word-break: break-all; font-size: 0.85rem;
+    }
+    .ml-link:hover { color: #b3c0ff; text-decoration: underline; }
+    .icon-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; padding: 0; border-radius: 7px;
+      background: var(--surface-2, #151e2e); border: 1px solid var(--border);
+      color: var(--muted); cursor: pointer; flex-shrink: 0; transition: color .15s, border-color .15s;
+    }
+    .icon-btn:hover { color: var(--text); border-color: var(--accent); }
+    .icon-btn svg { width: 15px; height: 15px; pointer-events: none; }
+    .icon-btn.copied { color: #22c55e; border-color: #22c55e; }
     .pw-field-wrap { position: relative; }
     .pw-field-wrap input { padding-right: 2.4rem !important; }
     .pw-toggle-btn {
@@ -1375,8 +1389,8 @@
             <div id="makrolink-created-box" style="display:none;margin-top:0.75rem;padding:0.65rem 0.75rem;border:1px solid var(--border, #333);border-radius:8px;">
               <div class="muted" style="font-size:0.72rem;margin-bottom:0.25rem;">Son oluşturulan kısa link</div>
               <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                <a id="makrolink-created-url" href="#" target="_blank" rel="noopener" style="font-weight:600;word-break:break-all;"></a>
-                <button type="button" class="btn btn-sm" id="btn-makrolink-created-copy">Kopyala</button>
+                <a id="makrolink-created-url" class="ml-link" href="#" target="_blank" rel="noopener"></a>
+                <button type="button" class="icon-btn" id="btn-makrolink-created-copy" title="Kopyala"></button>
                 <span class="muted" style="font-size:0.72rem;">DNS yokken test: <code id="makrolink-created-test"></code></span>
               </div>
             </div>
@@ -1998,6 +2012,15 @@
       var flashIds = new Set();
       var charts = { domain: null, affiliate: null, games: null };
       var COLORS = ["#6366f1","#22c55e","#f59e0b","#f43f5e","#06b6d4","#a855f7"];
+      var COPY_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+      var CHECK_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+      function flashCopiedIcon(btn) {
+        if (!btn) return;
+        var original = btn.innerHTML;
+        btn.innerHTML = CHECK_ICON_SVG;
+        btn.classList.add("copied");
+        setTimeout(function() { btn.innerHTML = original; btn.classList.remove("copied"); }, 1200);
+      }
       var currentPeriod = "all";
       var TABLE_PAGE_SIZE = 10;
       var cachedLinks = [];
@@ -3522,8 +3545,10 @@
             var destShort = dest.length > 48 ? dest.slice(0, 46) + "…" : dest;
             var aff = [l.affiliate_id, l.ref_code].filter(Boolean).join(" / ") || "—";
             return '<tr data-ml-id="' + l.id + '">' +
-              '<td><a href="' + esc(l.short_url) + '" target="_blank" rel="noopener">' + esc(l.short_url) + '</a>' +
-              ' <button type="button" class="btn btn-ghost btn-sm makrolink-copy" data-url="' + esc(l.short_url) + '" title="Kopyala">📋</button></td>' +
+              '<td><div style="display:flex;align-items:center;gap:0.4rem;">' +
+              '<a class="ml-link" href="' + esc(l.short_url) + '" target="_blank" rel="noopener">' + esc(l.short_url) + '</a>' +
+              '<button type="button" class="icon-btn makrolink-copy" data-url="' + esc(l.short_url) + '" title="Kopyala">' + COPY_ICON_SVG + '</button>' +
+              '</div></td>' +
               '<td>' + esc(l.label || "—") + '</td>' +
               '<td title="' + esc(dest) + '"><code style="font-size:0.72rem;">' + esc(destShort) + '</code></td>' +
               '<td>' + esc(aff) + '</td>' +
@@ -3988,9 +4013,14 @@
           });
       });
 
+      (function() {
+        var b = document.getElementById("btn-makrolink-created-copy");
+        if (b) b.innerHTML = COPY_ICON_SVG;
+      })();
       bindOptional("btn-makrolink-created-copy", "click", function() {
         var url = (document.getElementById("makrolink-created-url").textContent || "").trim();
         if (!url) return;
+        flashCopiedIcon(this);
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(url).then(function() { toast("Kopyalandı"); });
         } else {
@@ -4002,6 +4032,7 @@
         var copyBtn = e.target.closest ? e.target.closest(".makrolink-copy") : null;
         if (copyBtn) {
           var url = copyBtn.getAttribute("data-url") || "";
+          flashCopiedIcon(copyBtn);
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(url).then(function() { toast("Kopyalandı"); });
           } else {
