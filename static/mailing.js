@@ -493,6 +493,12 @@
     if (progBar) progBar.style.width = "2%";
     if (progText) progText.textContent = file.name + " — dosya sunucuya gönderiliyor… %0 · 0 B / " + fmtBytes(file.size);
     if (cancelBtn) { cancelBtn.hidden = false; cancelBtn.textContent = "Yüklemeyi iptal"; }
+    mailSetImportDashboard({
+      phase: "uploading",
+      title: file.name,
+      sub: (/\.(xlsx|xlsm)$/i.test(file.name) && file.size > MAIL_AUTO_SPLIT_BYTES)
+        ? "UYARI: Büyük Excel Render'da takılır — Tekrarsız Mail 20m-merged.csv kullan."
+        : "Dosya sunucuya yükleniyor — büyük dosyalarda bu adım uzun sürebilir, sayfayı kapatma.",
       showProgress: true,
       showError: false
     });
