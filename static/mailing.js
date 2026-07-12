@@ -63,6 +63,41 @@
     }
   }
 
+  function fmtNum(n) {
+    n = Number(n) || 0;
+    try { return n.toLocaleString("tr-TR"); } catch (e) { return String(n); }
+  }
+
+  function fmtBytes(n) {
+    n = Number(n) || 0;
+    var units = ["B", "KB", "MB", "GB"];
+    var i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? n : n.toFixed(1)) + " " + units[i];
+  }
+
+  function mailUploadWithProgress(url, formData, onProgress) {
+    return new Promise(function (resolve) {
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", url, true);
+      xhr.timeout = 60 * 60 * 1000;
+      if (xhr.upload) {
+        xhr.upload.addEventListener("progress", function (e) {
+          if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total);
+        });
+      }
+      xhr.onload = function () {
+        if (xhr.status === 401) { location.href = "/admin/login"; resolve(null); return; }
+        var data = null;
+        try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
+        resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data: data });
+      };
+      xhr.onerror = function () { resolve(null); };
+      xhr.ontimeout = function () { resolve(null); };
+      xhr.send(formData);
+    });
+  }
+
   function switchMailTab(name) {
     mailActiveTab = name || "dashboard";
     document.querySelectorAll("#mail-tabs .acc-tab").forEach(function (btn) {
@@ -198,9 +233,9 @@
         var pct = j.total_rows > 0 ? Math.min(100, Math.round((j.processed_rows / j.total_rows) * 100)) : 0;
         if (progBar) progBar.style.width = pct + "%";
         if (progText) {
-          progText.textContent = (j.status === "pending" ? "Başlıyor… " : "") +
-            j.processed_rows + " / " + j.total_rows + " satır (" + pct + "%) · " +
-            "işlenen: " + j.upserted_count + " · geçersiz: " + j.skipped_count;
+          progText.textContent = (j.status === "pending" ? "Başlıyor… " : "İşleniyor: ") +
+            "%" + pct + " · " + fmtNum(j.processed_rows) + " / " + fmtNum(j.total_rows) + " satır · " +
+            "eklenen/güncellenen: " + fmtNum(j.upserted_count) + " · geçersiz: " + fmtNum(j.skipped_count);
         }
         if (j.status === "done") {
           mailToast("İçe aktarma tamam · " + j.upserted_count + " kontak işlendi · " + j.skipped_count + " geçersiz e-posta atlandı");
@@ -560,18 +595,21 @@
         var progText = document.getElementById("mail-bulk-progress-text");
         if (progBox) progBox.hidden = false;
         if (progBar) progBar.style.width = "0%";
-        if (progText) progText.textContent = "Dosya yükleniyor…";
-        mailApi("/api/mailing/contacts/import/start", { method: "POST", body: fd, timeoutMs: 20 * 60 * 1000 })
-          .then(function (res) {
-            if (!res || !res.ok) {
-              mailToast((res && res.data && res.data.error) || "Yükleme başlatılamadı");
-              if (progBox) progBox.hidden = true;
-              return;
-            }
-            mailToast("Yükleme başladı, arka planda işleniyor…");
-            fileInput.value = "";
-            mailPollImportJob(res.data.job_id);
-          });
+        if (progText) progText.textContent = "Yükleniyor: %0 · 0 B / " + fmtBytes(file.size);
+        mailUploadWithProgress("/api/mailing/contacts/import/start", fd, function (loaded, total) {
+          var pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+          if (progBar) progBar.style.width = pct + "%";
+          if (progText) progText.textContent = "Yükleniyor: %" + pct + " · " + fmtBytes(loaded) + " / " + fmtBytes(total);
+        }).then(function (res) {
+          if (!res || !res.ok) {
+            mailToast((res && res.data && res.data.error) || "Yükleme başlatılamadı");
+            if (progBox) progBox.hidden = true;
+            return;
+          }
+          mailToast("Yükleme başladı, arka planda işleniyor…");
+          fileInput.value = "";
+          mailPollImportJob(res.data.job_id);
+        });
       });
     }
     bindClick("mail-contacts-refresh", mailLoadContacts);

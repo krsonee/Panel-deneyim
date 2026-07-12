@@ -1,6 +1,5 @@
 """Muhasebe modülü API rotaları — Link Takip altyapısından bağımsız."""
 
-import calendar
 import re
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -16,7 +15,9 @@ from accounting_fx import (
 from accounting_payroll import (
     category_lookup,
     compute_payroll_daily,
+    employee_accrual_for_range,
     employee_active_in_period,
+    employee_daily_amount,
     enrich_employee_row,
     filter_payroll_employees,
     is_executive_salary_employee,
@@ -479,35 +480,20 @@ def expense_category_totals(conn, period):
     ]
 
 
-def staff_daily_wage(salary_amount, day):
-    salary = float(salary_amount or 0)
-    if salary <= 0:
-        return 0.0
-    days_in_month = calendar.monthrange(day.year, day.month)[1]
-    return round(salary / days_in_month, 2)
+def staff_daily_wage_all(staff_row, day):
+    """Personel (Ofis/Türkiye) sekmesi — TRY/USD/EUR günlük yevmiye (Maaş Ödemeleri ile aynı mantık)."""
+    return {cur: employee_daily_amount(staff_row, day, cur) for cur in CURRENCIES}
 
 
-def staff_accrual_for_period(start_date, salary_amount, period, reference=None):
-    """Personel (Ofis/Türkiye) sekmesi için: işbaşı tarihinden bugüne (veya dönem sonuna) kadarki günlük yevmiye toplamı."""
+def staff_period_accrual_all(staff_row, period, reference=None):
+    """Personel (Ofis/Türkiye) sekmesi — seçili ay için TRY/USD/EUR toplam hak ediş."""
     period_start, period_end = period_date_range(period, reference)
     if not period_start:
-        return 0.0
-    today = reference or datetime.now(timezone.utc).date()
-    if period_end > today:
-        period_end = today
-    try:
-        start = datetime.strptime(str(start_date)[:10], "%Y-%m-%d").date()
-    except (ValueError, TypeError):
-        return 0.0
-    range_start = max(period_start, start)
-    if range_start > period_end:
-        return 0.0
-    total = 0.0
-    day = range_start
-    while day <= period_end:
-        total += staff_daily_wage(salary_amount, day)
-        day += timedelta(days=1)
-    return round(total, 2)
+        return {cur: 0.0 for cur in CURRENCIES}
+    return {
+        cur: employee_accrual_for_range(staff_row, period_start, period_end, cur)
+        for cur in CURRENCIES
+    }
 
 
 def create_accounting_blueprint(permission_required, superadmin_required=None):
@@ -883,14 +869,12 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             employees = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employees")]
             departments, salary_categories = payroll_context(conn)
             expense_categories = expense_category_totals(conn, period)
-            staff_rows = fetchall(conn, "SELECT * FROM acc_staff WHERE status = 'active'")
-            personnel_accrual_try = round(
-                sum(
-                    staff_accrual_for_period(r["start_date"], r["salary_amount"], month_period)
-                    for r in staff_rows
-                ),
-                2,
-            )
+            staff_rows = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_staff WHERE status = 'active'")]
+            personnel_accrual = {cur: 0.0 for cur in CURRENCIES}
+            for r in staff_rows:
+                row_accrual = staff_period_accrual_all(r, month_period)
+                for cur in CURRENCIES:
+                    personnel_accrual[cur] = round(personnel_accrual[cur] + row_accrual[cur], 2)
             invoice_calc_payload = build_invoice_calc_payload(conn, month_period)
         payroll_daily = compute_payroll_daily(
             payroll_source_rows(employees, salary_categories),
@@ -910,7 +894,7 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             "departments": departments,
             "salary_categories": salary_categories,
             "expense_categories": expense_categories,
-            "personnel_accrual_try": personnel_accrual_try,
+            "personnel_accrual": personnel_accrual,
             "invoice_calc_estimate_try": invoice_calc_payload["grand_total"]["commission_amount"],
             **permissions_meta(),
         })
@@ -2693,6 +2677,60 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
 
     # --- Personel (Ofis / Türkiye listesi) — Maaş Ödemeleri (acc_employees) alanından bağımsız ---
 
+    def staff_payload(data, existing=None):
+        existing = existing or {}
+        category = (data.get("category", existing.get("category")) or "").strip().lower()
+        if category not in ("office", "turkey"):
+            return None, "Kategori 'Ofis Personeli' veya 'Türkiye Personeli' olmalı."
+        name = (data.get("name", existing.get("name")) or "").strip()
+        if not name:
+            return None, "İsim girin."
+        start_date = parse_date(data.get("start_date")) if "start_date" in data else existing.get("start_date")
+        if not start_date:
+            return None, "Geçerli işbaşı tarihi girin."
+        currency = parse_currency(data.get("currency", existing.get("currency")) or "TRY")
+        if not currency:
+            return None, "Para birimi seçin: TRY, USD veya EUR."
+        salary_key = "salary_amount" if "salary_amount" in data else "salary"
+        if salary_key in data:
+            salary = parse_amount(data.get(salary_key))
+            if salary is None:
+                return None, "Geçerli maaş tutarı girin."
+        else:
+            salary = float(existing.get(f"salary_{currency.lower()}") or existing.get("salary_try") or 0)
+        status = (data.get("status", existing.get("status")) or "active").strip().lower()
+        if status not in ("active", "left"):
+            return None, "Durum 'active' veya 'left' olmalı."
+        end_date = existing.get("end_date")
+        if "end_date" in data:
+            end_date = parse_date(data.get("end_date")) if data.get("end_date") else None
+        if status == "left" and not end_date:
+            end_date = datetime.now(timezone.utc).date().isoformat()
+        department = data.get("department", existing.get("department", "")) or ""
+        location = data.get("location", existing.get("location", "")) or ""
+        notes = data.get("notes", existing.get("notes", "")) or ""
+        return {
+            "category": category,
+            "name": name,
+            "start_date": start_date,
+            "end_date": end_date,
+            "currency": currency,
+            "salary": salary,
+            "status": status,
+            "department": department.strip(),
+            "location": location.strip(),
+            "notes": notes.strip(),
+        }, None
+
+    def enrich_staff_row(row, period):
+        row = dict(row)
+        row["daily_wage"] = staff_daily_wage_all(row, datetime.now(timezone.utc).date())
+        if row.get("status") == "active":
+            row["period_accrual"] = staff_period_accrual_all(row, period)
+        else:
+            row["period_accrual"] = {cur: 0.0 for cur in CURRENCIES}
+        return row
+
     @bp.route("/personnel", methods=["GET"])
     @acc_perm("accounting.personnel", *ACC_READ)
     def list_personnel():
@@ -2700,23 +2738,24 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
         period = valid_month_period(period) or default_accounting_period()
         with closing(get_db()) as conn:
             rows = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_staff ORDER BY category, name")]
-        today = datetime.now(timezone.utc).date()
-        totals = {"office": 0.0, "turkey": 0.0, "all": 0.0}
+        totals = {
+            "office": {cur: 0.0 for cur in CURRENCIES},
+            "turkey": {cur: 0.0 for cur in CURRENCIES},
+            "all": {cur: 0.0 for cur in CURRENCIES},
+        }
+        enriched = []
         for r in rows:
-            r["daily_wage"] = staff_daily_wage(r["salary_amount"], today)
-            if r["status"] == "active":
-                accrual = staff_accrual_for_period(r["start_date"], r["salary_amount"], period)
-            else:
-                accrual = 0.0
-            r["period_accrual"] = accrual
-            if r["status"] == "active":
-                cat = r["category"] if r["category"] in ("office", "turkey") else "turkey"
-                totals[cat] = round(totals[cat] + accrual, 2)
-                totals["all"] = round(totals["all"] + accrual, 2)
+            row = enrich_staff_row(r, period)
+            enriched.append(row)
+            if row["status"] == "active":
+                cat = row["category"] if row["category"] in ("office", "turkey") else "turkey"
+                for cur in CURRENCIES:
+                    totals[cat][cur] = round(totals[cat][cur] + row["period_accrual"][cur], 2)
+                    totals["all"][cur] = round(totals["all"][cur] + row["period_accrual"][cur], 2)
         return jsonify({
             "period": period,
             "period_label": period_label(period),
-            "staff": rows,
+            "staff": enriched,
             "totals": totals,
         })
 
@@ -2724,19 +2763,15 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
     @acc_perm("accounting.personnel", *MODULE_ACCESS)
     def create_personnel():
         data = request.get_json(silent=True) or {}
-        category = (data.get("category") or "").strip().lower()
-        if category not in ("office", "turkey"):
-            return jsonify({"error": "Kategori 'Ofis Personeli' veya 'Türkiye Personeli' olmalı."}), 400
-        name = (data.get("name") or "").strip()
-        if not name:
-            return jsonify({"error": "İsim girin."}), 400
-        start_date = parse_date(data.get("start_date"))
-        if not start_date:
-            return jsonify({"error": "Geçerli işbaşı tarihi girin."}), 400
-        salary = parse_amount(data.get("salary_amount"))
-        if salary is None:
-            return jsonify({"error": "Geçerli maaş tutarı girin."}), 400
-        notes = (data.get("notes") or "").strip()
+        payload, err = staff_payload(data)
+        if err:
+            return jsonify({"error": err}), 400
+        rates, rate_err = rates_from_request(data)
+        if rate_err:
+            return jsonify({"error": rate_err}), 400
+        fx, err = build_money(payload["salary"], payload["currency"], rates)
+        if err:
+            return jsonify({"error": err}), 400
         now = iso(utcnow())
         who = (session.get("admin_display_name") or session.get("admin_username") or "").strip()
         with closing(get_db()) as conn:
@@ -2744,14 +2779,26 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
                 conn,
                 """
                 INSERT INTO acc_staff
-                (category, name, start_date, salary_amount, status, notes, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)
+                (category, name, start_date, end_date, currency, salary_amount,
+                 salary_try, salary_usd, salary_eur, rate_usd_try, rate_eur_try,
+                 department, location, status, notes, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (category, name, start_date, salary, notes, who, now, now),
+                (
+                    payload["category"], payload["name"], payload["start_date"], payload["end_date"],
+                    fx["currency"], fx["amount"], fx["TRY"], fx["USD"], fx["EUR"],
+                    fx["rate_usd_try"], fx["rate_eur_try"],
+                    payload["department"], payload["location"], payload["status"], payload["notes"],
+                    who, now, now,
+                ),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_staff WHERE id = ?", (new_id,))
-        return jsonify({"staff": dict(row)}), 201
+        period = valid_month_period(request.args.get("period")) or default_accounting_period()
+        return jsonify({
+            "staff": enrich_staff_row(dict(row), period),
+            "rates": used_rates_payload(fx),
+        }), 201
 
     @bp.route("/personnel/<int:staff_id>", methods=["PUT"])
     @acc_perm("accounting.personnel", *MODULE_ACCESS)
@@ -2761,54 +2808,48 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             row = fetchone(conn, "SELECT * FROM acc_staff WHERE id = ?", (staff_id,))
             if not row:
                 return jsonify({"error": "Personel bulunamadı."}), 404
-            fields = []
-            params = []
-            if "category" in data:
-                category = (data.get("category") or "").strip().lower()
-                if category not in ("office", "turkey"):
-                    return jsonify({"error": "Kategori 'Ofis Personeli' veya 'Türkiye Personeli' olmalı."}), 400
-                fields.append("category = ?")
-                params.append(category)
-            if "name" in data:
-                name = (data.get("name") or "").strip()
-                if not name:
-                    return jsonify({"error": "İsim girin."}), 400
-                fields.append("name = ?")
-                params.append(name)
-            if "start_date" in data:
-                start_date = parse_date(data.get("start_date"))
-                if not start_date:
-                    return jsonify({"error": "Geçerli işbaşı tarihi girin."}), 400
-                fields.append("start_date = ?")
-                params.append(start_date)
-            if "end_date" in data:
-                end_date = parse_date(data.get("end_date")) if data.get("end_date") else None
-                fields.append("end_date = ?")
-                params.append(end_date)
-            if "salary_amount" in data:
-                salary = parse_amount(data.get("salary_amount"))
-                if salary is None:
-                    return jsonify({"error": "Geçerli maaş tutarı girin."}), 400
-                fields.append("salary_amount = ?")
-                params.append(salary)
-            if "status" in data:
-                status = (data.get("status") or "active").strip().lower()
-                if status not in ("active", "left"):
-                    return jsonify({"error": "Durum 'active' veya 'left' olmalı."}), 400
-                fields.append("status = ?")
-                params.append(status)
-            if "notes" in data:
-                fields.append("notes = ?")
-                params.append((data.get("notes") or "").strip())
-            if not fields:
-                return jsonify({"error": "Güncellenecek alan yok."}), 400
-            fields.append("updated_at = ?")
-            params.append(iso(utcnow()))
-            params.append(staff_id)
-            execute(conn, f"UPDATE acc_staff SET {', '.join(fields)} WHERE id = ?", params)
+            existing = dict(row)
+            payload, err = staff_payload(data, existing)
+            if err:
+                return jsonify({"error": err}), 400
+            fx_fields = {"currency", "salary_amount", "salary", "rate_usd_try", "rate_eur_try"}
+            if fx_fields & set(data.keys()):
+                rates, rate_err = rates_from_request(data, stored=existing)
+                if rate_err:
+                    return jsonify({"error": rate_err}), 400
+                fx, err = build_money(payload["salary"], payload["currency"], rates)
+                if err:
+                    return jsonify({"error": err}), 400
+            else:
+                fx = {
+                    "amount": payload["salary"], "currency": payload["currency"],
+                    "TRY": float(existing.get("salary_try") or 0),
+                    "USD": float(existing.get("salary_usd") or 0),
+                    "EUR": float(existing.get("salary_eur") or 0),
+                    "rate_usd_try": float(existing.get("rate_usd_try") or 0),
+                    "rate_eur_try": float(existing.get("rate_eur_try") or 0),
+                }
+            execute(
+                conn,
+                """
+                UPDATE acc_staff SET
+                    category = ?, name = ?, start_date = ?, end_date = ?,
+                    currency = ?, salary_amount = ?, salary_try = ?, salary_usd = ?, salary_eur = ?,
+                    rate_usd_try = ?, rate_eur_try = ?, department = ?, location = ?,
+                    status = ?, notes = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    payload["category"], payload["name"], payload["start_date"], payload["end_date"],
+                    fx["currency"], fx["amount"], fx["TRY"], fx["USD"], fx["EUR"],
+                    fx["rate_usd_try"], fx["rate_eur_try"], payload["department"], payload["location"],
+                    payload["status"], payload["notes"], iso(utcnow()), staff_id,
+                ),
+            )
             conn.commit()
             updated = fetchone(conn, "SELECT * FROM acc_staff WHERE id = ?", (staff_id,))
-        return jsonify({"staff": dict(updated)})
+        period = valid_month_period(request.args.get("period")) or default_accounting_period()
+        return jsonify({"staff": enrich_staff_row(dict(updated), period)})
 
     @bp.route("/personnel/<int:staff_id>", methods=["DELETE"])
     @acc_perm("accounting.personnel", *MODULE_ACCESS)

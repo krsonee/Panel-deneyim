@@ -2307,30 +2307,76 @@
     var tbodyLeft = document.getElementById("acc-emp-table-left");
     var tbodyRight = document.getElementById("acc-emp-table-right");
     var filtered = accFilteredEmployees();
-    var leftRows = filtered.filter(function (r) { return accEmpPanelSide(r) === "left"; });
-    var rightRows = filtered.filter(function (r) { return accEmpPanelSide(r) === "right"; });
+    var activeFiltered = filtered.filter(function (r) { return (r.status || "active") !== "left"; });
+    var leftRows = activeFiltered.filter(function (r) { return accEmpPanelSide(r) === "left"; });
+    var rightRows = activeFiltered.filter(function (r) { return accEmpPanelSide(r) === "right"; });
 
-    if (!filtered.length) {
+    if (!activeFiltered.length) {
       if (tbodyLeft) tbodyLeft.innerHTML = '<tr><td colspan="13" class="empty acc-emp-empty">Personel yok</td></tr>';
       if (tbodyRight) tbodyRight.innerHTML = '<tr><td colspan="12" class="empty acc-emp-empty">Personel yok</td></tr>';
       accUpdateFoot("acc-emp", 0, "personel");
-      accUpdateEmpPayrollTotals([]);
-      return;
+    } else {
+      accRenderEmployeesPanel(tbodyLeft, leftRows, "left", 13);
+      accRenderEmployeesPanel(tbodyRight, rightRows, "right", 12);
+
+      accBindEmployeeTable(tbodyLeft);
+      accBindEmployeeTable(tbodyRight);
+
+      var leftCount = document.getElementById("acc-emp-left-count");
+      var rightCount = document.getElementById("acc-emp-right-count");
+      if (leftCount) leftCount.textContent = leftRows.length + " kişi";
+      if (rightCount) rightCount.textContent = rightRows.length + " kişi";
+
+      accUpdateFoot("acc-emp", activeFiltered.length, "personel");
     }
 
-    accRenderEmployeesPanel(tbodyLeft, leftRows, "left", 13);
-    accRenderEmployeesPanel(tbodyRight, rightRows, "right", 12);
-
-    accBindEmployeeTable(tbodyLeft);
-    accBindEmployeeTable(tbodyRight);
-
-    var leftCount = document.getElementById("acc-emp-left-count");
-    var rightCount = document.getElementById("acc-emp-right-count");
-    if (leftCount) leftCount.textContent = leftRows.length + " kişi";
-    if (rightCount) rightCount.textContent = rightRows.length + " kişi";
-
-    accUpdateFoot("acc-emp", filtered.length, "personel");
     accUpdateEmpPayrollTotals(filtered);
+    accRenderEmployeeLeavers(filtered);
+  }
+
+  function accOrderLeavers(rows) {
+    return (rows || []).slice().sort(function (a, b) {
+      var ad = a.end_date || a.start_date || "";
+      var bd = b.end_date || b.start_date || "";
+      return String(bd).localeCompare(String(ad));
+    });
+  }
+
+  function accEmpLeaverRowHtml(r) {
+    var cur = r.currency || "TRY";
+    var moneyHidden = accSalaryRedacted(r);
+    var salaryCell = moneyHidden
+      ? accHiddenMoney()
+      : ('<span class="acc-emp-money-cell">' + accMoney(r.salary, cur) + "</span>");
+    return '<tr class="acc-emp-row acc-emp-row-left">' +
+      '<td class="acc-emp-td-name">' + accEsc(r.name || "") + "</td>" +
+      '<td class="acc-emp-td-dept">' + accEsc(r.department || "") + "</td>" +
+      '<td class="acc-emp-td-loc">' + accEsc(r.location || "") + "</td>" +
+      '<td class="acc-emp-td-date mono">' + accEsc(r.start_date || "") + "</td>" +
+      '<td class="acc-emp-td-date mono">' + accEsc(r.end_date || "") + "</td>" +
+      '<td class="acc-emp-td-money">' + salaryCell + "</td>" +
+      '<td class="acc-emp-td-status"><span class="acc-emp-status-select left-status acc-emp-status-pill">Ayrıldı</span></td>' +
+      '<td class="acc-emp-td-action"><button type="button" class="btn btn-sm" data-reactivate-emp="' + r.id + '" title="Aktif personele geri al">Geri Al</button></td>' +
+      "</tr>";
+  }
+
+  function accRenderEmployeeLeavers(rows) {
+    var tbody = document.getElementById("acc-emp-leavers-table");
+    if (!tbody) return;
+    var leavers = accOrderLeavers((rows || []).filter(function (r) { return (r.status || "") === "left"; }));
+    var countEl = document.getElementById("acc-emp-leavers-count");
+    if (countEl) countEl.textContent = leavers.length + " kişi";
+    if (!leavers.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty acc-emp-empty">Ayrılan personel yok</td></tr>';
+      return;
+    }
+    tbody.innerHTML = leavers.map(accEmpLeaverRowHtml).join("");
+    tbody.querySelectorAll("[data-reactivate-emp]").forEach(function (btn) {
+      btn.onclick = function () {
+        if (!confirm("Bu personel yeniden aktif personel listesine alınsın mı?")) return;
+        accSaveEmployeeField(btn.getAttribute("data-reactivate-emp"), { status: "active", end_date: null });
+      };
+    });
   }
 
   var accInvoiceData = null;

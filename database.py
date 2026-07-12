@@ -1353,6 +1353,29 @@ def migrate_staff_roster(conn):
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_acc_staff_category ON acc_staff(category)")
     conn.commit()
 
+    cols = _table_columns(conn, "acc_staff")
+    if cols and "currency" not in cols:
+        extra_cols = [
+            ("currency", "TEXT NOT NULL DEFAULT 'TRY'"),
+            ("salary_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+            ("salary_usd", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+            ("salary_eur", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+            ("rate_usd_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+            ("rate_eur_try", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+            ("department", "TEXT NOT NULL DEFAULT ''"),
+            ("location", "TEXT NOT NULL DEFAULT ''"),
+        ]
+        for name, typedef in extra_cols:
+            execute(conn, f"ALTER TABLE acc_staff ADD COLUMN {name} {typedef}")
+        conn.commit()
+        # Var olan (salary_amount ile eklenmiş) kayıtları TRY olarak geri doldur.
+        execute(
+            conn,
+            "UPDATE acc_staff SET salary_try = salary_amount, currency = 'TRY' "
+            "WHERE salary_try = 0 AND salary_amount > 0",
+        )
+        conn.commit()
+
 
 def _table_columns(conn, table_name):
     if uses_postgres():
