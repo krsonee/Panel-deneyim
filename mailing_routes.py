@@ -84,10 +84,16 @@ def _contact_out(row):
     return d
 
 
+DEFAULT_GREETING_NAME = "değerli üye"
+
+
 def _render_template(text, contact):
+    """{{name}} boşsa 'Merhaba ,' gibi bozuk bir selamlama çıkmasın —
+    isim yoksa nazik bir varsayılan ('değerli üye') kullanılır."""
     text = text or ""
+    name = ((contact or {}).get("name") or "").strip()
     mapping = {
-        "name": (contact or {}).get("name") or "",
+        "name": name or DEFAULT_GREETING_NAME,
         "email": (contact or {}).get("email") or "",
         "phone": (contact or {}).get("phone") or "",
     }
