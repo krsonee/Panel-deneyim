@@ -710,6 +710,26 @@ def create_mailing_blueprint(permission_required):
         })
 
     # ── Contacts / CRM ─────────────────────────────────────────
+    @bp.route("/contacts/stats", methods=["GET"])
+    @mail_perm(*MAIL_CRM)
+    def contact_stats():
+        """CRM özet sayaçları: toplam kontak, en az 1 kez mail atılmış, hiç mail atılmamış."""
+        with closing(get_db()) as conn:
+            total = scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0
+            mailed = scalar(
+                conn,
+                """
+                SELECT COUNT(*) FROM mail_contacts c
+                WHERE EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = c.id)
+                """,
+            ) or 0
+            never_mailed = max(total - mailed, 0)
+        return jsonify({
+            "total": total,
+            "mailed": mailed,
+            "never_mailed": never_mailed,
+        })
+
     @bp.route("/contacts", methods=["GET"])
     @mail_perm(*MAIL_CRM)
     def list_contacts():

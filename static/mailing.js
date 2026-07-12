@@ -249,7 +249,7 @@
 
   function mailLoadTab(tab) {
     if (tab === "dashboard") mailLoadDashboard();
-    else if (tab === "crm") { mailLoadTags(); mailLoadContacts(); }
+    else if (tab === "crm") { mailLoadTags(); mailLoadContactStats(); mailLoadContacts(); }
     else if (tab === "templates") mailLoadTemplates();
     else if (tab === "campaigns") { mailLoadSelects().then(mailLoadCampaigns); }
     else if (tab === "ivr") { mailLoadSelects().then(mailLoadIvr); }
@@ -318,6 +318,16 @@
           return '<option value="' + esc(t.name) + '">' + esc(t.name) + "</option>";
         }).join("");
       sel.value = cur;
+    });
+  }
+
+  function mailLoadContactStats() {
+    return mailApi("/api/mailing/contacts/stats").then(function (res) {
+      if (!res || !res.ok) return;
+      var s = res.data || {};
+      setText("mail-crm-stat-total", fmtNum(s.total));
+      setText("mail-crm-stat-mailed", fmtNum(s.mailed));
+      setText("mail-crm-stat-never", fmtNum(s.never_mailed));
     });
   }
 
@@ -394,6 +404,7 @@
         }
         if (j.status === "done") {
           mailToast(prefix + "içe aktarma tamam · " + j.upserted_count + " kontak işlendi · " + j.skipped_count + " geçersiz e-posta atlandı");
+          mailLoadContactStats();
           mailLoadContacts();
           mailLoadTags();
           settle();
@@ -402,6 +413,7 @@
         }
         if (j.status === "cancelled") {
           mailToast(prefix + "iptal edildi · " + fmtNum(j.processed_rows) + " satır işlenmişti");
+          mailLoadContactStats();
           mailLoadContacts();
           mailLoadTags();
           settle();
@@ -713,6 +725,7 @@
           }
           cForm.reset();
           mailToast("Kontak eklendi");
+          mailLoadContactStats();
           mailLoadContacts();
           mailLoadTags();
         });
@@ -736,6 +749,7 @@
           return;
         }
         mailToast("Yeni: " + res.data.created + " · Güncellenen: " + res.data.updated + " · Atlanan: " + res.data.skipped);
+        mailLoadContactStats();
         mailLoadContacts();
         mailLoadTags();
       });
@@ -801,7 +815,10 @@
         mailToast("İptal isteği gönderildi, kısa süre içinde duracak…");
       });
     });
-    bindClick("mail-contacts-refresh", mailLoadContacts);
+    bindClick("mail-contacts-refresh", function () {
+      mailLoadContactStats();
+      mailLoadContacts();
+    });
     var qEl = document.getElementById("mail-contact-q");
     if (qEl) qEl.addEventListener("input", debounce(mailLoadContacts, 300));
     var tagEl = document.getElementById("mail-contact-tag-filter");
@@ -812,7 +829,7 @@
       if (delC) {
         if (!confirm("Kontak silinsin mi?")) return;
         mailApi("/api/mailing/contacts/" + delC.getAttribute("data-id"), { method: "DELETE" })
-          .then(function () { mailLoadContacts(); });
+          .then(function () { mailLoadContactStats(); mailLoadContacts(); });
         return;
       }
       var editT = e.target.closest(".mail-edit-tpl");
