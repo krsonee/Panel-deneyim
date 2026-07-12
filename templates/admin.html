@@ -1335,6 +1335,68 @@
           </div>
         </div>
 
+        <!-- KPI Widgets -->
+        <section class="kpi-grid" data-perm="tracking.dashboard">
+          <div class="kpi green">
+            <div class="val" id="kpi-online">0</div>
+            <div class="lbl">Şu An Aktif Oyuncu</div>
+            <div class="sub">Son 90 saniye</div>
+          </div>
+          <div class="kpi">
+            <div class="val" id="kpi-unique">0</div>
+            <div class="lbl">Toplam Benzersiz Ziyaretçi</div>
+            <div class="sub">Tekil oturum ID</div>
+          </div>
+          <div class="kpi amber">
+            <div class="val" id="kpi-top-domain" style="font-size:1.35rem;">—</div>
+            <div class="lbl">En Çok Trafik Çeken Domain</div>
+            <div class="sub" id="kpi-top-domain-sub">—</div>
+          </div>
+          <div class="kpi cyan">
+            <div class="val" id="kpi-top-channel" style="font-size:1.35rem;">—</div>
+            <div class="lbl">En Aktif Affiliate Kanalı</div>
+            <div class="sub" id="kpi-top-channel-sub">—</div>
+          </div>
+        </section>
+
+        <!-- Top 5 Kanallar -->
+        <section class="top5-grid" data-perm="tracking.smartico">
+          <div class="top5-card">
+            <h3>🚀 Top 5 Trafik</h3>
+            <p class="sub">En çok ziyaret getiren kanallar</p>
+            <ol class="top5-list" id="top5-traffic"><li class="muted">Veri yok</li></ol>
+          </div>
+          <div class="top5-card">
+            <h3>📝 Top 5 Kayıt</h3>
+            <p class="sub">En çok üye kazandıran kanallar</p>
+            <ol class="top5-list" id="top5-reg"><li class="muted">Veri yok</li></ol>
+          </div>
+          <div class="top5-card">
+            <h3>💳 Top 5 FTD</h3>
+            <p class="sub">En çok ilk yatırım getiren kanallar</p>
+            <ol class="top5-list" id="top5-ftd"><li class="muted">Veri yok</li></ol>
+          </div>
+          <div class="top5-card">
+            <h3>💰 Top 5 Yatırım</h3>
+            <p class="sub">En çok toplam yatırım getiren kanallar</p>
+            <ol class="top5-list" id="top5-deposit"><li class="muted">Veri yok</li></ol>
+          </div>
+        </section>
+
+        <!-- Grafikler -->
+        <section class="charts-grid" data-perm="tracking.dashboard">
+          <div class="chart-card">
+            <h3>Affiliate Kanalları</h3>
+            <p class="sub">Hangi ref linki kaç üye getirdi</p>
+            <div class="chart-wrap"><canvas id="chart-affiliate"></canvas><div class="chart-empty" id="empty-affiliate">Veri yok</div></div>
+          </div>
+          <div class="chart-card">
+            <h3>Tıklanan Linkler</h3>
+            <p class="sub">Ziyaretçilerin sitede tıkladığı bağlantılar</p>
+            <div class="chart-wrap"><canvas id="chart-games"></canvas><div class="chart-empty" id="empty-games">Veri yok</div></div>
+          </div>
+        </section>
+
         <section class="card" data-perm="tracking.makrolink">
           <div class="card-head">
             <span>MakroLink <span class="muted" style="font-weight:400;font-size:0.72rem;">(makrovip.com · kısa link · tıklama)</span></span>
@@ -1414,68 +1476,6 @@
             <div class="table-foot">
               <span class="table-count" id="makrolink-table-count"></span>
             </div>
-          </div>
-        </section>
-
-        <!-- KPI Widgets -->
-        <section class="kpi-grid" data-perm="tracking.dashboard">
-          <div class="kpi green">
-            <div class="val" id="kpi-online">0</div>
-            <div class="lbl">Şu An Aktif Oyuncu</div>
-            <div class="sub">Son 90 saniye</div>
-          </div>
-          <div class="kpi">
-            <div class="val" id="kpi-unique">0</div>
-            <div class="lbl">Toplam Benzersiz Ziyaretçi</div>
-            <div class="sub">Tekil oturum ID</div>
-          </div>
-          <div class="kpi amber">
-            <div class="val" id="kpi-top-domain" style="font-size:1.35rem;">—</div>
-            <div class="lbl">En Çok Trafik Çeken Domain</div>
-            <div class="sub" id="kpi-top-domain-sub">—</div>
-          </div>
-          <div class="kpi cyan">
-            <div class="val" id="kpi-top-channel" style="font-size:1.35rem;">—</div>
-            <div class="lbl">En Aktif Affiliate Kanalı</div>
-            <div class="sub" id="kpi-top-channel-sub">—</div>
-          </div>
-        </section>
-
-        <!-- Top 5 Kanallar -->
-        <section class="top5-grid" data-perm="tracking.smartico">
-          <div class="top5-card">
-            <h3>🚀 Top 5 Trafik</h3>
-            <p class="sub">En çok ziyaret getiren kanallar</p>
-            <ol class="top5-list" id="top5-traffic"><li class="muted">Veri yok</li></ol>
-          </div>
-          <div class="top5-card">
-            <h3>📝 Top 5 Kayıt</h3>
-            <p class="sub">En çok üye kazandıran kanallar</p>
-            <ol class="top5-list" id="top5-reg"><li class="muted">Veri yok</li></ol>
-          </div>
-          <div class="top5-card">
-            <h3>💳 Top 5 FTD</h3>
-            <p class="sub">En çok ilk yatırım getiren kanallar</p>
-            <ol class="top5-list" id="top5-ftd"><li class="muted">Veri yok</li></ol>
-          </div>
-          <div class="top5-card">
-            <h3>💰 Top 5 Yatırım</h3>
-            <p class="sub">En çok toplam yatırım getiren kanallar</p>
-            <ol class="top5-list" id="top5-deposit"><li class="muted">Veri yok</li></ol>
-          </div>
-        </section>
-
-        <!-- Grafikler -->
-        <section class="charts-grid" data-perm="tracking.dashboard">
-          <div class="chart-card">
-            <h3>Affiliate Kanalları</h3>
-            <p class="sub">Hangi ref linki kaç üye getirdi</p>
-            <div class="chart-wrap"><canvas id="chart-affiliate"></canvas><div class="chart-empty" id="empty-affiliate">Veri yok</div></div>
-          </div>
-          <div class="chart-card">
-            <h3>Tıklanan Linkler</h3>
-            <p class="sub">Ziyaretçilerin sitede tıkladığı bağlantılar</p>
-            <div class="chart-wrap"><canvas id="chart-games"></canvas><div class="chart-empty" id="empty-games">Veri yok</div></div>
           </div>
         </section>
 
