@@ -1193,9 +1193,26 @@ def _maybe_sync_missing_tags_async(*, force=False, interval_sec=21600):
                 except Exception:
                     pass
                 _TAG_SYNC_STATE["last_added"] = int(result.get("added") or 0) + int(added2 or 0)
+                # Yeni eklenenler + contact_count=0 kalanlar (stale 0 bug'ı)
+                zero_rows = fetchall(
+                    conn,
+                    "SELECT name, contact_count FROM mail_contact_tags",
+                ) or []
+                need_recount = set()
+                for r in zero_rows:
+                    nm = (r["name"] or "").strip()
+                    if not nm:
+                        continue
+                    try:
+                        cc = int(r["contact_count"] or 0) if "contact_count" in (r.keys() if hasattr(r, "keys") else []) else 0
+                    except Exception:
+                        cc = 0
+                    if cc <= 0:
+                        need_recount.add(nm)
                 if _TAG_SYNC_STATE["last_added"]:
-                    # Yeni etiketler için sayım arka planda
-                    _refresh_tag_counts_async(list(names) if names else None)
+                    need_recount.update(names or [])
+                if need_recount:
+                    _refresh_tag_counts_async(list(need_recount))
             _TAG_SYNC_STATE["ts"] = time.time()
             _invalidate_mail_stats_cache()
             print(
@@ -1277,15 +1294,22 @@ def _invalidate_mail_stats_cache():
     _TAG_COUNT_CACHE["rows"] = None
 
 
+_TAG_RECOUNT_STATE = {"running": False, "queued": set()}
+
+
 def _refresh_tag_counts_async(tag_names=None):
     """Ağır sayımı arka planda yap — CRM'i kilitlemesin."""
     names = list(tag_names) if tag_names else None
 
     def _job():
+        _TAG_RECOUNT_STATE["running"] = True
         try:
             with closing(get_db()) as conn:
                 if names:
                     for name in names:
+                        name = (name or "").strip()
+                        if not name:
+                            continue
                         exists = scalar(
                             conn,
                             "SELECT COUNT(*) FROM mail_contact_tags WHERE name = ?",
@@ -1293,7 +1317,9 @@ def _refresh_tag_counts_async(tag_names=None):
                         )
                         if not exists:
                             continue
-                        _recount_tag(conn, name)
+                        n = _recount_tag(conn, name)
+                        print(f"🏷️  recount «{name}» → {n}")
+                    # Sadece gerçekten 0 kalanları temizle (canlı doğrulamalı)
                     cleaned = _cleanup_empty_tags(conn, names)
                 else:
                     _contact_tag_counts(conn, live=True)
@@ -1304,6 +1330,18 @@ def _refresh_tag_counts_async(tag_names=None):
                 print(f"🧹 boş etiket silindi: {', '.join(cleaned)}")
         except Exception as exc:
             print(f"⚠️  tag count refresh: {exc}")
+        finally:
+            _TAG_RECOUNT_STATE["running"] = False
+            _TAG_RECOUNT_STATE["queued"].clear()
+
+    # Aynı etiketler için paralel job üretme
+    if names:
+        key = frozenset((n or "").strip() for n in names if (n or "").strip())
+        if key and key <= _TAG_RECOUNT_STATE["queued"] and _TAG_RECOUNT_STATE["running"]:
+            return
+        _TAG_RECOUNT_STATE["queued"].update(key)
+    elif _TAG_RECOUNT_STATE["running"]:
+        return
 
     threading.Thread(target=_job, daemon=True, name="mail-tag-count-refresh").start()
 
@@ -1449,7 +1487,17 @@ def create_mailing_blueprint(permission_required):
         if not refresh and not sync_tags and _STATS_CACHE["payload"] and (now - _STATS_CACHE["ts"]) < 60:
             # Arka planda eksik etiket senkronu (throttle) — yanıtı bloklama
             _maybe_sync_missing_tags_async(force=False)
-            return jsonify(_STATS_CACHE["payload"])
+            cached = _STATS_CACHE["payload"]
+            zeros = [
+                t["name"] for t in (cached.get("by_tag") or [])
+                if int(t.get("count") or 0) <= 0 and (t.get("name") or "").strip()
+            ]
+            if zeros and int(cached.get("total") or 0) > 0:
+                _refresh_tag_counts_async(zeros)
+                out = dict(cached)
+                out["pending_tag_recount"] = zeros
+                return jsonify(out)
+            return jsonify(cached)
 
         with closing(get_db()) as conn:
             total, total_approx = _approx_contact_total(conn)
@@ -1463,9 +1511,17 @@ def create_mailing_blueprint(permission_required):
             # Sayfa açılışında registry dışı etiketleri yakala (throttle / force)
             _maybe_sync_missing_tags_async(force=sync_tags or refresh)
             by_tag = _contact_tag_counts(conn, live=refresh)
-            # İlk kurulumda sayılar 0 ise arka planda bir kez doldur
-            if not refresh and by_tag and sum(t["count"] for t in by_tag) == 0 and total > 0:
-                _refresh_tag_counts_async()
+            # Stale 0: bir etiket dolu diğerleri 0 kalabiliyordu — sadece 0'ları yeniden say
+            pending_recount = []
+            if total > 0 and by_tag:
+                pending_recount = [
+                    t["name"] for t in by_tag
+                    if int(t.get("count") or 0) <= 0 and (t.get("name") or "").strip()
+                ]
+                if pending_recount and not refresh:
+                    _refresh_tag_counts_async(pending_recount)
+                elif not refresh and sum(t["count"] for t in by_tag) == 0:
+                    _refresh_tag_counts_async()
         payload = {
             "total": total,
             "total_approx": bool(total_approx),
@@ -1473,10 +1529,12 @@ def create_mailing_blueprint(permission_required):
             "never_mailed": never_mailed,
             "by_tag": by_tag,
             "tag_count": len(by_tag),
+            "pending_tag_recount": pending_recount,
             "cached": not refresh,
         }
         with _STATS_LOCK:
-            _STATS_CACHE["ts"] = time.time()
+            # 0'lı etiketler sayılırken cache'i kısa tut
+            _STATS_CACHE["ts"] = time.time() - (55 if pending_recount else 0)
             _STATS_CACHE["payload"] = payload
         return jsonify(payload)
 

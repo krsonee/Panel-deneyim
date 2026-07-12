@@ -1064,6 +1064,89 @@
       border-radius: 12px;
       background: linear-gradient(180deg, rgba(99,102,241,0.08), rgba(15,23,42,0.2));
     }
+    .mail-tag-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.65rem;
+      margin: 0 1rem 0.95rem;
+      padding: 0;
+    }
+    .mail-tag-kpi {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(148,163,184,0.22);
+      border-radius: 14px;
+      padding: 0.85rem 0.95rem 0.8rem;
+      background:
+        linear-gradient(145deg, rgba(30,41,59,0.92), rgba(15,23,42,0.88));
+      cursor: pointer;
+      text-align: left;
+      color: inherit;
+      font: inherit;
+      transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+      box-shadow: 0 8px 24px rgba(2,6,23,0.18);
+    }
+    .mail-tag-kpi::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 3px;
+      background: var(--mail-tag-accent, #38bdf8);
+      border-radius: 14px 0 0 14px;
+    }
+    .mail-tag-kpi:hover {
+      transform: translateY(-2px);
+      border-color: rgba(148,163,184,0.4);
+      box-shadow: 0 12px 28px rgba(2,6,23,0.28);
+    }
+    .mail-tag-kpi.is-active {
+      border-color: rgba(56,189,248,0.55);
+      box-shadow: 0 0 0 1px rgba(56,189,248,0.28), 0 12px 28px rgba(2,6,23,0.28);
+    }
+    .mail-tag-kpi.is-pending .mail-tag-kpi-val {
+      opacity: 0.55;
+    }
+    .mail-tag-kpi-val {
+      font-size: 1.35rem;
+      font-weight: 750;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.15;
+      color: var(--text);
+    }
+    .mail-tag-kpi-lbl {
+      margin-top: 0.35rem;
+      font-size: 0.72rem;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+      text-transform: none;
+      color: var(--muted);
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .mail-tag-kpi-sub {
+      margin-top: 0.2rem;
+      font-size: 0.65rem;
+      color: rgba(148,163,184,0.9);
+    }
+    .mail-tag-kpi[data-accent="0"] { --mail-tag-accent: #38bdf8; }
+    .mail-tag-kpi[data-accent="1"] { --mail-tag-accent: #34d399; }
+    .mail-tag-kpi[data-accent="2"] { --mail-tag-accent: #fbbf24; }
+    .mail-tag-kpi[data-accent="3"] { --mail-tag-accent: #fb7185; }
+    .mail-tag-kpi[data-accent="4"] { --mail-tag-accent: #a78bfa; }
+    .mail-tag-kpi[data-accent="5"] { --mail-tag-accent: #2dd4bf; }
+    [data-theme="light"] .mail-tag-kpi {
+      background: linear-gradient(145deg, #fff, #f8fafc);
+      border-color: rgba(148,163,184,0.28);
+      box-shadow: 0 6px 18px rgba(15,23,42,0.06);
+    }
+    [data-theme="light"] .mail-tag-kpi-val { color: #0f172a; }
+    [data-theme="light"] .mail-tag-kpi.is-active {
+      border-color: rgba(14,165,233,0.45);
+    }
+
     .mail-tag-stats-head {
       display: flex;
       flex-wrap: wrap;
@@ -2433,7 +2516,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="/static/accounting.js?v=20260712m"></script>
-  <script src="/static/mailing.js?v=20260712u"></script>
+  <script src="/static/mailing.js?v=20260712v"></script>
   <script src="/static/biolink.js?v=20260712g"></script>
   <script src="/static/marketing.js?v=20260712d"></script>
   <script>
