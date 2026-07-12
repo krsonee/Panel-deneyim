@@ -111,9 +111,11 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
                 item = makrolink_api.update_link(
                     conn,
                     link_id,
-                    destination_url=data.get("destination_url"),
-                    label=data.get("label"),
-                    ref_code=data.get("ref_code"),
+                    destination_url=data.get("destination_url") if "destination_url" in data else None,
+                    label=data.get("label") if "label" in data else None,
+                    code=data.get("code") if "code" in data else None,
+                    affiliate_id=data.get("affiliate_id") if "affiliate_id" in data else None,
+                    ref_code=data.get("ref_code") if "ref_code" in data else None,
                     target_domain=data.get("target_domain") if "target_domain" in data else None,
                     category=data.get("category") if "category" in data else None,
                 )

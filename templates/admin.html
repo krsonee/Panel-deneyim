@@ -2567,6 +2567,38 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="makrolink-edit-modal">
+    <div class="modal" style="max-width:720px;">
+      <div class="modal-head">
+        <h3 id="makrolink-edit-title">Linki Düzenle</h3>
+        <button class="modal-close" id="makrolink-edit-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="makrolink-edit-id">
+        <p class="muted-sm" id="makrolink-edit-short-preview" style="margin-bottom:0.35rem;"></p>
+        <p class="hint" style="margin-bottom:0.75rem;font-size:0.72rem;">Özel kod değişirse eski kısa link adresi çalışmaz; yeni kodla paylaşım yap.</p>
+        <div class="form-row-4">
+          <div><label for="makrolink-edit-label">Etiket</label><input id="makrolink-edit-label" autocomplete="off"></div>
+          <div><label for="makrolink-edit-code">Özel kod</label><input id="makrolink-edit-code" autocomplete="off" placeholder="gencmarketingmakro"></div>
+          <div><label for="makrolink-edit-category">Kategori</label><select id="makrolink-edit-category"></select></div>
+          <div><label for="makrolink-edit-target-domain">Hedef domain</label><select id="makrolink-edit-target-domain"><option value="">— Seçin —</option></select></div>
+        </div>
+        <div style="margin-top:0.65rem;">
+          <label for="makrolink-edit-dest">Smartico go.aff linki</label>
+          <input id="makrolink-edit-dest" autocomplete="off" placeholder="https://go.aff.makroaffi.com/…">
+        </div>
+        <div class="form-row-4" style="margin-top:0.65rem;">
+          <div><label for="makrolink-edit-affid">Affiliate ID (not)</label><input id="makrolink-edit-affid" autocomplete="off"></div>
+          <div><label for="makrolink-edit-ref">Ref notu</label><input id="makrolink-edit-ref" autocomplete="off"></div>
+        </div>
+        <div style="margin-top:1rem;display:flex;gap:0.5rem;justify-content:flex-end;">
+          <button type="button" class="btn btn-sm" id="makrolink-edit-cancel">İptal</button>
+          <button type="button" class="btn btn-primary btn-sm" id="makrolink-edit-save">Kaydet</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="blink-bind-modal">
     <div class="modal">
       <div class="modal-head">
@@ -4275,6 +4307,7 @@
       var makrolinkUserScrolling = false;
       var makrolinkScrollTimer = null;
       var makrolinkPendingRender = null;
+      var makrolinkTargetDomains = [];
       var makrolinkCategories = [
         "Marketing", "Call Center", "Sosyal Medya", "Mailing", "Sms",
         "Seo&Meta", "Twitter", "Instagram", "IVR"
@@ -4348,6 +4381,93 @@
         sel.innerHTML = opts;
       }
 
+      function makrolinkFindLink(id) {
+        return (makrolinkLast || []).find(function(l) { return String(l.id) === String(id); });
+      }
+
+      function makrolinkFillTargetDomainSelect(selId, selected) {
+        var sel = document.getElementById(selId);
+        if (!sel) return;
+        var cur = selected != null ? selected : sel.value;
+        var opts = selId === "makrolink-target-domain"
+          ? '<option value="">— Seçin (opsiyonel) —</option>'
+          : '<option value="">— Seçin —</option>';
+        opts += (makrolinkTargetDomains || []).map(function(dom) {
+          return '<option value="' + esc(dom) + '"' + (dom === cur ? " selected" : "") + ">" + esc(dom) + "</option>";
+        }).join("");
+        sel.innerHTML = opts;
+        if (cur) sel.value = cur;
+      }
+
+      function makrolinkSyncEditCategorySelect(cur) {
+        var sel = document.getElementById("makrolink-edit-category");
+        if (!sel) return;
+        var opts = '<option value="">— Kategori yok —</option>';
+        makrolinkCategories.forEach(function(c) {
+          opts += '<option value="' + esc(c) + '"' + (c === cur ? " selected" : "") + ">" + esc(c) + "</option>";
+        });
+        sel.innerHTML = opts;
+      }
+
+      function openMakrolinkEdit(id) {
+        var link = makrolinkFindLink(id);
+        if (!link) { toast("Link bulunamadı"); return; }
+        document.getElementById("makrolink-edit-id").value = link.id;
+        document.getElementById("makrolink-edit-title").textContent = "Linki Düzenle — " + (link.label || link.code);
+        document.getElementById("makrolink-edit-short-preview").textContent =
+          (link.short_url || "") + " · " + (link.clicks || link.click_count || 0) + " tıklama";
+        document.getElementById("makrolink-edit-label").value = link.label || "";
+        document.getElementById("makrolink-edit-code").value = link.code || "";
+        document.getElementById("makrolink-edit-dest").value = link.destination_url || "";
+        document.getElementById("makrolink-edit-affid").value = link.affiliate_id || "";
+        document.getElementById("makrolink-edit-ref").value = link.ref_code || "";
+        makrolinkSyncEditCategorySelect((link.category || "").trim());
+        makrolinkFillTargetDomainSelect("makrolink-edit-target-domain", link.target_domain || "");
+        document.getElementById("makrolink-edit-modal").classList.add("open");
+      }
+
+      function closeMakrolinkEdit() {
+        document.getElementById("makrolink-edit-modal").classList.remove("open");
+      }
+
+      function saveMakrolinkEdit() {
+        var id = document.getElementById("makrolink-edit-id").value;
+        var label = document.getElementById("makrolink-edit-label").value.trim();
+        var code = document.getElementById("makrolink-edit-code").value.trim();
+        var dest = document.getElementById("makrolink-edit-dest").value.trim();
+        var category = (document.getElementById("makrolink-edit-category") || {}).value || "";
+        if (!label) { alert("Etiket gerekli."); return; }
+        if (!code) { alert("Özel kod gerekli."); return; }
+        if (!dest) { alert("Smartico go.aff linki gerekli."); return; }
+        var btn = document.getElementById("makrolink-edit-save");
+        if (btn) { btn.disabled = true; btn.textContent = "Kaydediliyor…"; }
+        fetch(API + "/api/makrolink/links/" + id, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            label: label,
+            code: code,
+            destination_url: dest,
+            category: category,
+            affiliate_id: document.getElementById("makrolink-edit-affid").value.trim(),
+            ref_code: document.getElementById("makrolink-edit-ref").value.trim(),
+            target_domain: document.getElementById("makrolink-edit-target-domain").value
+          })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (btn) { btn.disabled = false; btn.textContent = "Kaydet"; }
+            if (!res.ok) { alert(res.data.error || "Kaydedilemedi."); return; }
+            toast("Link güncellendi");
+            closeMakrolinkEdit();
+            lastMakrolinkSig = "";
+            loadMakroLinks();
+          })
+          .catch(function() {
+            if (btn) { btn.disabled = false; btn.textContent = "Kaydet"; }
+            alert("Kaydedilemedi.");
+          });
+      }
+
       function makrolinkSyncCreateCategorySelect() {
         var sel = document.getElementById("makrolink-category");
         if (!sel) return;
@@ -4406,7 +4526,9 @@
               '<td title="' + esc(dest) + '"><code style="font-size:0.72rem;">' + esc(destShort) + '</code></td>' +
               '<td>' + esc(aff) + '</td>' +
               '<td><strong class="ml-click-count">' + (l.clicks || l.click_count || 0) + '</strong></td>' +
-              '<td><button type="button" class="btn btn-danger btn-sm makrolink-del" data-id="' + l.id + '">Sil</button></td></tr>';
+              '<td style="white-space:nowrap;">' +
+              '<button type="button" class="btn btn-sm makrolink-edit" data-id="' + l.id + '">Düzenle</button> ' +
+              '<button type="button" class="btn btn-danger btn-sm makrolink-del" data-id="' + l.id + '">Sil</button></td></tr>';
           }).join("");
         }
         if (scrollEl && !opts.skipScrollRestore) scrollEl.scrollTop = scrollTop;
@@ -4482,15 +4604,12 @@
 
       function loadMakrolinkTargetDomains() {
         if (!hasPerm("tracking.makrolink")) return;
-        var sel = document.getElementById("makrolink-target-domain");
-        if (!sel) return;
         fetch(API + "/api/makrolink/target-domains").then(function(r) { return r.status === 401 ? null : r.json(); })
           .then(function(d) {
             if (!d) return;
-            var current = sel.value;
-            sel.innerHTML = '<option value="">— Seçin (opsiyonel) —</option>' +
-              (d.domains || []).map(function(dom) { return '<option value="' + esc(dom) + '">' + esc(dom) + '</option>'; }).join("");
-            sel.value = current;
+            makrolinkTargetDomains = d.domains || [];
+            makrolinkFillTargetDomainSelect("makrolink-target-domain");
+            makrolinkFillTargetDomainSelect("makrolink-edit-target-domain");
           }).catch(function() {});
       }
 
@@ -5063,7 +5182,16 @@
           });
       });
 
+      bindOptional("makrolink-edit-close", "click", closeMakrolinkEdit);
+      bindOptional("makrolink-edit-cancel", "click", closeMakrolinkEdit);
+      bindOptional("makrolink-edit-save", "click", saveMakrolinkEdit);
+
       bindOptional("makrolink-table", "click", function(e) {
+        var editBtn = e.target.closest ? e.target.closest(".makrolink-edit") : null;
+        if (editBtn) {
+          openMakrolinkEdit(editBtn.getAttribute("data-id"));
+          return;
+        }
         var badge = e.target.closest ? e.target.closest(".ml-cat-badge") : null;
         if (badge && !badge.querySelector("select")) {
           e.stopPropagation();

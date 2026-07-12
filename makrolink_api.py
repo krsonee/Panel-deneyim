@@ -496,6 +496,8 @@ def update_link(
     link_id,
     destination_url=None,
     label=None,
+    code=None,
+    affiliate_id=None,
     ref_code=None,
     target_domain=None,
     category=None,
@@ -504,37 +506,74 @@ def update_link(
     if not row:
         raise ValueError("Link bulunamadı.")
     row = dict(row)
+    if int(row.get("is_active") or 0) != 1:
+        raise ValueError("Pasif link düzenlenemez.")
+
     if destination_url is not None:
         dest = normalize_smartico_aff_url(conn, destination_url)
     else:
         dest = row["destination_url"]
     if not _valid_url(dest):
         raise ValueError("Geçerli hedef URL gerekli.")
-    lab = label if label is not None else row["label"]
-    ref = ref_code if ref_code is not None else row["ref_code"]
-    lab = (lab or "").strip()[:200]
+
+    if label is not None:
+        lab = (label or "").strip()[:200]
+        if not lab:
+            raise ValueError("Etiket gerekli.")
+    else:
+        lab = row.get("label") or ""
+
+    if code is not None:
+        new_code = (code or "").strip()
+        if not new_code:
+            raise ValueError("Özel kod gerekli.")
+        if not _valid_code(new_code):
+            raise ValueError("Kod geçersiz (harf/rakam/_/- , reserved değil).")
+        if new_code != row.get("code"):
+            other = fetchone(
+                conn,
+                """
+                SELECT id FROM makrolink_links
+                WHERE code = ? AND id != ? AND COALESCE(is_active, 1) = 1
+                """,
+                (new_code, int(link_id)),
+            )
+            if other:
+                raise ValueError("Bu kısa kod zaten kullanılıyor.")
+    else:
+        new_code = row.get("code") or ""
+
+    if affiliate_id is not None:
+        aff = (affiliate_id or "").strip()[:64]
+    else:
+        aff = row.get("affiliate_id") or ""
+
+    ref = ref_code if ref_code is not None else row.get("ref_code")
     ref = (ref or "").strip()[:128]
+
     if target_domain is not None:
         new_target_domain = _normalize_domain(target_domain)
     else:
         new_target_domain = row.get("target_domain") or ""
+
     if category is not None:
         new_category = normalize_category(category, allow_empty=True)
     else:
         new_category = row.get("category") or ""
+
     now = iso(utcnow())
     execute(
         conn,
         """
         UPDATE makrolink_links
-        SET destination_url = ?, label = ?, ref_code = ?, target_domain = ?,
-            category = ?, updated_at = ?
+        SET destination_url = ?, label = ?, code = ?, affiliate_id = ?, ref_code = ?,
+            target_domain = ?, category = ?, updated_at = ?
         WHERE id = ?
         """,
-        (dest, lab, ref, new_target_domain, new_category, now, int(link_id)),
+        (dest, lab, new_code, aff, ref, new_target_domain, new_category, now, int(link_id)),
     )
     if new_target_domain:
-        _sync_tracked_link(conn, new_target_domain, row["code"], lab)
+        _sync_tracked_link(conn, new_target_domain, new_code, lab)
     conn.commit()
     return _row_to_dict(conn, fetchone(conn, "SELECT * FROM makrolink_links WHERE id = ?", (int(link_id),)))
 
