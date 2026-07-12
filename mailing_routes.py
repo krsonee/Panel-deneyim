@@ -402,6 +402,11 @@ def _run_import_job(job_id, path, tag):
     iter_fn = _iter_xlsx_rows if is_xlsx else _iter_csv_rows
     try:
         with closing(get_db()) as conn:
+            existing = fetchone(conn, "SELECT status FROM mail_import_jobs WHERE id = ?", (job_id,))
+            if existing and existing["status"] == "cancelling":
+                execute(conn, "UPDATE mail_import_jobs SET status = 'cancelled', updated_at = ? WHERE id = ?", (now, job_id))
+                conn.commit()
+                return
             execute(conn, "UPDATE mail_import_jobs SET status = 'running', updated_at = ? WHERE id = ?", (now, job_id))
             conn.commit()
 
@@ -413,6 +418,7 @@ def _run_import_job(job_id, path, tag):
             upserted = 0
             skipped = 0
             batch = []
+            cancelled = False
             for row in iter_fn(path):
                 email = (row.get("email") or row.get("Email") or row.get("EMAIL") or "").strip().lower()
                 processed += 1
@@ -435,11 +441,27 @@ def _run_import_job(job_id, path, tag):
                         (processed, upserted, skipped, iso(utcnow()), job_id),
                     )
                     conn.commit()
-            if batch:
+                    status_row = fetchone(conn, "SELECT status FROM mail_import_jobs WHERE id = ?", (job_id,))
+                    if status_row and status_row["status"] == "cancelling":
+                        cancelled = True
+                        break
+            if batch and not cancelled:
                 upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
                 conn.commit()
 
             final_now = iso(utcnow())
+            if cancelled:
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_import_jobs
+                    SET status = 'cancelled', processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (processed, upserted, skipped, final_now, job_id),
+                )
+                conn.commit()
+                return
             if tag:
                 _ensure_tag(conn, tag, final_now)
             execute(
@@ -843,6 +865,24 @@ def create_mailing_blueprint(permission_required):
         with closing(get_db()) as conn:
             rows = _rows(fetchall(conn, "SELECT * FROM mail_import_jobs ORDER BY id DESC LIMIT 20"))
         return jsonify({"jobs": rows})
+
+    @bp.route("/contacts/import/cancel/<int:job_id>", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def cancel_import_job(job_id):
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT status FROM mail_import_jobs WHERE id = ?", (job_id,))
+            if not row:
+                return jsonify({"error": "İş bulunamadı."}), 404
+            status = row["status"]
+            if status in ("done", "error", "cancelled", "cancelling"):
+                return jsonify({"error": f"İş zaten sonlanmış ya da iptal ediliyor ({status})."}), 400
+            execute(
+                conn,
+                "UPDATE mail_import_jobs SET status = 'cancelling', updated_at = ? WHERE id = ?",
+                (iso(utcnow()), job_id),
+            )
+            conn.commit()
+        return jsonify({"ok": True, "status": "cancelling"})
 
     @bp.route("/tags", methods=["GET"])
     @mail_perm(*MAIL_CRM)

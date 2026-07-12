@@ -63,16 +63,22 @@
       <div class="card-head"><span>Büyük liste yükle (dosya — sınırsız satır)</span></div>
       <div class="card-body">
         <form id="mail-bulk-import-form" class="form-row-4" style="grid-template-columns:1.4fr 1fr auto;">
-          <div><label>CSV veya XLSX dosyası (email, name sütunları)</label><input type="file" id="mail-bulk-file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
+          <div><label>CSV veya XLSX dosyası (email, name sütunları) — birden fazla seçebilirsin</label><input type="file" id="mail-bulk-file" multiple accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
           <div><label>Etiket (opsiyonel)</label><input type="text" id="mail-bulk-tag" placeholder="örn. eski_liste"></div>
           <div style="display:flex;align-items:flex-end;"><button type="submit" class="btn btn-primary">Yüklemeyi başlat</button></div>
         </form>
-        <p class="hint" style="margin-top:0.5rem;">.csv veya .xlsx (Excel) yükleyebilirsin. İlk satır başlık olmalı, sütun adları "email" ve "name" (büyük/küçük harf önemsiz). Dosya arka planda parça parça işlenir, sayfayı kapatsan da devam eder. Not: Excel dosyası tek sayfada en fazla ~1.048.576 satır tutabilir, daha büyük listelerde CSV kullan ya da dosyayı bölüp ayrı ayrı yükle.</p>
+        <p class="hint" style="margin-top:0.5rem;">.csv veya .xlsx (Excel) yükleyebilirsin. İlk satır başlık olmalı, sütun adları "email" ve "name" (büyük/küçük harf önemsiz). Birden fazla dosya seçersen veya bir yükleme sürerken yeni dosya eklersen, sıraya girer ve öncekiler bitince otomatik başlar — sayfada beklemene gerek yok. Not: Excel dosyası tek sayfada en fazla ~1.048.576 satır tutabilir, daha büyük listelerde CSV kullan ya da dosyayı bölüp ayrı ayrı yükle.</p>
+        <div id="mail-bulk-queue" hidden style="margin-top:0.6rem;">
+          <p class="hint">Sırada bekleyen: <span id="mail-bulk-queue-list">—</span></p>
+        </div>
         <div id="mail-bulk-progress" hidden style="margin-top:0.85rem;">
           <div style="background:rgba(148,163,184,0.18);border-radius:999px;height:10px;overflow:hidden;">
             <div id="mail-bulk-progress-bar" style="background:var(--green,#22c55e);height:100%;width:0%;transition:width .3s;"></div>
           </div>
-          <p class="hint" id="mail-bulk-progress-text" style="margin-top:0.4rem;">—</p>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;margin-top:0.4rem;">
+            <p class="hint" id="mail-bulk-progress-text" style="margin:0;">—</p>
+            <button type="button" class="btn btn-sm" id="mail-bulk-cancel" hidden>İptal et</button>
+          </div>
         </div>
       </div>
     </section>
