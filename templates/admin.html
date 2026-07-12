@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#060a10">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/static/biolink-admin.css?v=20260712g">
+  <link rel="stylesheet" href="/static/biolink-admin.css?v=20260712h">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1947,12 +1947,28 @@
               <div class="form-row-4" style="margin-top:0.5rem;">
                 <div><label for="makrolink-affid">Affiliate ID (not)</label><input id="makrolink-affid" placeholder="opsiyonel not" autocomplete="off"></div>
                 <div><label for="makrolink-ref">Ref notu</label><input id="makrolink-ref" placeholder="opsiyonel" autocomplete="off"></div>
+                <div><label for="makrolink-category">Kategori</label>
+                  <select id="makrolink-category">
+                    <option value="">— Seçin (opsiyonel) —</option>
+                    <option value="Marketing">Marketing</option>
+                    <option value="Call Center">Call Center</option>
+                    <option value="Sosyal Medya">Sosyal Medya</option>
+                    <option value="Mailing">Mailing</option>
+                    <option value="Sms">Sms</option>
+                    <option value="Seo&Meta">Seo&amp;Meta</option>
+                    <option value="Twitter">Twitter</option>
+                    <option value="Instagram">Instagram</option>
+                    <option value="IVR">IVR</option>
+                  </select>
+                </div>
                 <div><label for="makrolink-target-domain">Hedef Domain (takip için)</label>
                   <select id="makrolink-target-domain"><option value="">— Seçin (opsiyonel) —</option></select>
                 </div>
-                <div style="align-self:end"><button type="submit" class="btn btn-primary" id="btn-makrolink-create">Kısalt &amp; kopyala</button></div>
               </div>
-              <p class="muted-sm" style="margin-top:0.4rem;">Seçersen, bu linkten gelen ziyaretçiler takip listesinde bu etiketle görünür.</p>
+              <div style="margin-top:0.55rem;display:flex;justify-content:flex-end;">
+                <button type="submit" class="btn btn-primary" id="btn-makrolink-create">Kısalt &amp; kopyala</button>
+              </div>
+              <p class="muted-sm" style="margin-top:0.4rem;">Kategori sonradan tablodan da değiştirilebilir. Hedef domain seçersen, bu linkten gelen ziyaretçiler takip listesinde bu etiketle görünür.</p>
             </form>
             <div id="makrolink-created-box" style="display:none;margin-top:0.75rem;padding:0.65rem 0.75rem;border:1px solid var(--border, #333);border-radius:8px;">
               <div class="muted" style="font-size:0.72rem;margin-bottom:0.25rem;">Son oluşturulan kısa link</div>
@@ -1971,12 +1987,13 @@
                 <thead><tr>
                   <th>Kısa Link</th>
                   <th>Etiket</th>
+                  <th>Kategori</th>
                   <th>Hedef</th>
                   <th>Aff / Ref</th>
                   <th>Tıklama</th>
                   <th></th>
                 </tr></thead>
-                <tbody id="makrolink-table"><tr><td colspan="6" class="empty">Henüz link yok</td></tr></tbody>
+                <tbody id="makrolink-table"><tr><td colspan="7" class="empty">Henüz link yok</td></tr></tbody>
               </table>
             </div>
             <div class="table-foot">
@@ -2517,7 +2534,7 @@
 
   <script src="/static/accounting.js?v=20260712m"></script>
   <script src="/static/mailing.js?v=20260712v"></script>
-  <script src="/static/biolink.js?v=20260712g"></script>
+  <script src="/static/biolink.js?v=20260712h"></script>
   <script src="/static/marketing.js?v=20260712d"></script>
   <script>
     (function () {
@@ -4078,18 +4095,31 @@
 
       var makrolinkLast = null;
       var makrolinkInFlight = false;
+      var makrolinkCategories = [
+        "Marketing", "Call Center", "Sosyal Medya", "Mailing", "Sms",
+        "Seo&Meta", "Twitter", "Instagram", "IVR"
+      ];
+
+      function makrolinkCategoryOptions(selected) {
+        var cur = selected || "";
+        var opts = '<option value="">— Kategori yok —</option>';
+        makrolinkCategories.forEach(function(c) {
+          opts += '<option value="' + esc(c) + '"' + (c === cur ? " selected" : "") + ">" + esc(c) + "</option>";
+        });
+        return opts;
+      }
 
       function renderMakroLinkTable(links) {
         makrolinkLast = links || [];
         var q = (document.getElementById("makrolink-search").value || "").trim().toLowerCase();
         var rows = makrolinkLast.filter(function(l) {
           if (!q) return true;
-          return [l.code, l.label, l.destination_url, l.affiliate_id, l.ref_code, l.short_url]
+          return [l.code, l.label, l.destination_url, l.affiliate_id, l.ref_code, l.short_url, l.category]
             .join(" ").toLowerCase().indexOf(q) >= 0;
         });
         var tb = document.getElementById("makrolink-table");
         if (!rows.length) {
-          tb.innerHTML = '<tr><td colspan="6" class="empty">Henüz link yok</td></tr>';
+          tb.innerHTML = '<tr><td colspan="7" class="empty">Henüz link yok</td></tr>';
         } else {
           tb.innerHTML = rows.map(function(l) {
             var dest = l.destination_url || "";
@@ -4101,6 +4131,9 @@
               '<button type="button" class="icon-btn makrolink-copy" data-url="' + esc(l.short_url) + '" title="Kopyala">' + COPY_ICON_SVG + '</button>' +
               '</div></td>' +
               '<td>' + esc(l.label || "—") + '</td>' +
+              '<td><select class="makrolink-cat-select" data-id="' + l.id + '" title="Kategori değiştir" style="min-width:130px;max-width:160px;font-size:0.78rem;">' +
+              makrolinkCategoryOptions(l.category || "") +
+              '</select></td>' +
               '<td title="' + esc(dest) + '"><code style="font-size:0.72rem;">' + esc(destShort) + '</code></td>' +
               '<td>' + esc(aff) + '</td>' +
               '<td><strong>' + (l.clicks || l.click_count || 0) + '</strong></td>' +
@@ -4119,6 +4152,7 @@
           return r.json();
         }).then(function(d) {
           if (!d) return;
+          if (d.categories && d.categories.length) makrolinkCategories = d.categories;
           renderMakroLinkTable(d.links || []);
         }).catch(function() {}).finally(function() { makrolinkInFlight = false; });
       }
@@ -4560,6 +4594,7 @@
             code: document.getElementById("makrolink-code").value.trim() || null,
             affiliate_id: document.getElementById("makrolink-affid").value.trim(),
             ref_code: document.getElementById("makrolink-ref").value.trim(),
+            category: (document.getElementById("makrolink-category") || {}).value || "",
             target_domain: document.getElementById("makrolink-target-domain").value
           })
         }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
@@ -4571,6 +4606,8 @@
             document.getElementById("makrolink-code").value = "";
             document.getElementById("makrolink-affid").value = "";
             document.getElementById("makrolink-ref").value = "";
+            var catEl = document.getElementById("makrolink-category");
+            if (catEl) catEl.value = "";
             document.getElementById("makrolink-target-domain").value = "";
             var link = res.data.link || {};
             var shortUrl = link.short_url || "";
@@ -4608,6 +4645,39 @@
         } else {
           prompt("Kopyala:", url);
         }
+      });
+
+      bindOptional("makrolink-table", "change", function(e) {
+        var catSel = e.target && e.target.classList && e.target.classList.contains("makrolink-cat-select")
+          ? e.target : null;
+        if (!catSel) return;
+        var id = catSel.getAttribute("data-id");
+        var category = catSel.value || "";
+        catSel.disabled = true;
+        fetch(API + "/api/makrolink/links/" + id, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ category: category })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            catSel.disabled = false;
+            if (!res.ok) {
+              toast(res.data.error || "Kategori güncellenemedi");
+              loadMakroLinks();
+              return;
+            }
+            toast(category ? ("Kategori: " + category) : "Kategori kaldırıldı");
+            if (makrolinkLast) {
+              makrolinkLast.forEach(function(l) {
+                if (String(l.id) === String(id)) l.category = category;
+              });
+            }
+          })
+          .catch(function() {
+            catSel.disabled = false;
+            toast("Kategori güncellenemedi");
+            loadMakroLinks();
+          });
       });
 
       bindOptional("makrolink-table", "click", function(e) {

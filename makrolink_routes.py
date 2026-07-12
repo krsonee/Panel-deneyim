@@ -53,13 +53,18 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @api.route("/categories", methods=["GET"])
+    @perm(*MODULE_ACCESS)
+    def get_categories():
+        return jsonify({"categories": makrolink_api.list_categories()})
+
     @api.route("/links", methods=["GET"])
     @perm(*MODULE_ACCESS)
     def list_links():
         q = request.args.get("q") or ""
         with closing(get_db()) as conn:
             items = makrolink_api.list_links(conn, q_text=q)
-        return jsonify({"links": items})
+        return jsonify({"links": items, "categories": makrolink_api.list_categories()})
 
     @api.route("/target-domains", methods=["GET"])
     @perm(*MODULE_ACCESS)
@@ -91,6 +96,7 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
                     ref_code=data.get("ref_code") or "",
                     created_by=username,
                     target_domain=data.get("target_domain") or None,
+                    category=data.get("category") or "",
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -109,6 +115,7 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
                     label=data.get("label"),
                     ref_code=data.get("ref_code"),
                     target_domain=data.get("target_domain") if "target_domain" in data else None,
+                    category=data.get("category") if "category" in data else None,
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400

@@ -547,7 +547,8 @@ def migrate_makrolink(conn):
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_by TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT ''
             )
             """,
         )
@@ -581,7 +582,8 @@ def migrate_makrolink(conn):
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_by TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT ''
             )
             """,
         )
@@ -660,6 +662,9 @@ def migrate_makrolink(conn):
     cols = _table_columns(conn, "makrolink_links")
     if cols and "target_domain" not in cols:
         execute(conn, "ALTER TABLE makrolink_links ADD COLUMN target_domain TEXT NOT NULL DEFAULT ''")
+        cols = _table_columns(conn, "makrolink_links")
+    if cols and "category" not in cols:
+        execute(conn, "ALTER TABLE makrolink_links ADD COLUMN category TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
 
@@ -675,7 +680,8 @@ def migrate_biolink(conn):
                 title TEXT NOT NULL DEFAULT '',
                 subtitle TEXT NOT NULL DEFAULT '',
                 avatar_url TEXT NOT NULL DEFAULT '',
-                theme TEXT NOT NULL DEFAULT 'carbon',
+                banner_url TEXT NOT NULL DEFAULT '',
+                theme TEXT NOT NULL DEFAULT 'makrobet',
                 accent_color TEXT NOT NULL DEFAULT '',
                 button_shape TEXT NOT NULL DEFAULT 'pill',
                 is_active INTEGER NOT NULL DEFAULT 1,
@@ -732,7 +738,8 @@ def migrate_biolink(conn):
                 title TEXT NOT NULL DEFAULT '',
                 subtitle TEXT NOT NULL DEFAULT '',
                 avatar_url TEXT NOT NULL DEFAULT '',
-                theme TEXT NOT NULL DEFAULT 'carbon',
+                banner_url TEXT NOT NULL DEFAULT '',
+                theme TEXT NOT NULL DEFAULT 'makrobet',
                 accent_color TEXT NOT NULL DEFAULT '',
                 button_shape TEXT NOT NULL DEFAULT 'pill',
                 is_active INTEGER NOT NULL DEFAULT 1,
@@ -785,6 +792,9 @@ def migrate_biolink(conn):
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_biolink_buttons_page ON biolink_buttons(page_id)")
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_biolink_clicks_button ON biolink_clicks(button_id)")
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_biolink_clicks_page ON biolink_clicks(page_id)")
+    cols = _table_columns(conn, "biolink_pages")
+    if "banner_url" not in cols:
+        execute(conn, "ALTER TABLE biolink_pages ADD COLUMN banner_url TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
 

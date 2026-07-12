@@ -36,6 +36,49 @@ DEFAULT_AFF_BASE = "https://go.aff.makroaffi.com"
 CODE_ALPHABET = string.ascii_letters + string.digits
 CODE_LEN = 7
 
+# MakroLink kategori listesi (oluşturma + manuel atama)
+LINK_CATEGORIES = (
+    "Marketing",
+    "Call Center",
+    "Sosyal Medya",
+    "Mailing",
+    "Sms",
+    "Seo&Meta",
+    "Twitter",
+    "Instagram",
+    "IVR",
+)
+_LINK_CATEGORY_MAP = {c.lower(): c for c in LINK_CATEGORIES}
+
+
+def normalize_category(value, *, allow_empty=True):
+    raw = (value or "").strip()
+    if not raw:
+        if allow_empty:
+            return ""
+        raise ValueError("Kategori gerekli.")
+    canon = _LINK_CATEGORY_MAP.get(raw.lower())
+    if not canon:
+        # Yaygın yazım hataları
+        aliases = {
+            "twiter": "Twitter",
+            "seo & meta": "Seo&Meta",
+            "seo and meta": "Seo&Meta",
+            "callcenter": "Call Center",
+            "call-center": "Call Center",
+            "sosyalmedya": "Sosyal Medya",
+        }
+        canon = aliases.get(raw.lower())
+    if not canon:
+        raise ValueError(
+            "Geçersiz kategori. Seçenekler: " + ", ".join(LINK_CATEGORIES)
+        )
+    return canon
+
+
+def list_categories():
+    return list(LINK_CATEGORIES)
+
 RESERVED_PATHS = frozenset({
     "", "admin", "api", "static", "demo", "r", "health", "favicon.ico",
     "robots.txt", "sitemap.xml", "login", "logout", "mail", "mailing",
@@ -317,6 +360,7 @@ def list_links(conn, q_text=None, limit=200):
             or q_text in (x.get("destination_url") or "").lower()
             or q_text in (x.get("affiliate_id") or "").lower()
             or q_text in (x.get("ref_code") or "").lower()
+            or q_text in (x.get("category") or "").lower()
         ]
     return items
 
@@ -346,6 +390,7 @@ def create_link(
     ref_code="",
     created_by="",
     target_domain=None,
+    category="",
 ):
     destination_url = normalize_smartico_aff_url(conn, destination_url)
     if not _valid_url(destination_url):
@@ -357,6 +402,7 @@ def create_link(
     ref_code = (ref_code or "").strip()[:128]
     created_by = (created_by or "").strip()[:64]
     target_domain = _normalize_domain(target_domain) if target_domain else ""
+    category = normalize_category(category, allow_empty=True)
     now = iso(utcnow())
 
     slug = urlparse(destination_url).path.strip("/").split("/")[0]
@@ -393,10 +439,13 @@ def create_link(
             UPDATE makrolink_links
             SET destination_url = ?, label = ?, affiliate_id = ?, smartico_link_id = ?,
                 ref_code = ?, click_count = 0, is_active = 1, created_by = ?,
-                created_at = ?, updated_at = ?, target_domain = ?
+                created_at = ?, updated_at = ?, target_domain = ?, category = ?
             WHERE id = ?
             """,
-            (destination_url, label, affiliate_id, smartico_link_id, ref_code, created_by, now, now, target_domain, revive_id),
+            (
+                destination_url, label, affiliate_id, smartico_link_id, ref_code,
+                created_by, now, now, target_domain, category, revive_id,
+            ),
         )
         link_id = revive_id
     elif uses_postgres():
@@ -405,11 +454,14 @@ def create_link(
             """
             INSERT INTO makrolink_links
               (code, destination_url, label, affiliate_id, smartico_link_id, ref_code,
-               click_count, is_active, created_by, created_at, updated_at, target_domain)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?)
+               click_count, is_active, created_by, created_at, updated_at, target_domain, category)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?)
             RETURNING id
             """,
-            (code, destination_url, label, affiliate_id, smartico_link_id, ref_code, created_by, now, now, target_domain),
+            (
+                code, destination_url, label, affiliate_id, smartico_link_id, ref_code,
+                created_by, now, now, target_domain, category,
+            ),
         )
         link_id = cur.fetchone()["id"]
     else:
@@ -418,10 +470,13 @@ def create_link(
             """
             INSERT INTO makrolink_links
               (code, destination_url, label, affiliate_id, smartico_link_id, ref_code,
-               click_count, is_active, created_by, created_at, updated_at, target_domain)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?)
+               click_count, is_active, created_by, created_at, updated_at, target_domain, category)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?)
             """,
-            (code, destination_url, label, affiliate_id, smartico_link_id, ref_code, created_by, now, now, target_domain),
+            (
+                code, destination_url, label, affiliate_id, smartico_link_id, ref_code,
+                created_by, now, now, target_domain, category,
+            ),
         )
         link_id = cur.lastrowid
 
@@ -444,7 +499,15 @@ def deactivate_link(conn, link_id):
     return cur.rowcount > 0
 
 
-def update_link(conn, link_id, destination_url=None, label=None, ref_code=None, target_domain=None):
+def update_link(
+    conn,
+    link_id,
+    destination_url=None,
+    label=None,
+    ref_code=None,
+    target_domain=None,
+    category=None,
+):
     row = fetchone(conn, "SELECT * FROM makrolink_links WHERE id = ?", (int(link_id),))
     if not row:
         raise ValueError("Link bulunamadı.")
@@ -463,15 +526,20 @@ def update_link(conn, link_id, destination_url=None, label=None, ref_code=None, 
         new_target_domain = _normalize_domain(target_domain)
     else:
         new_target_domain = row.get("target_domain") or ""
+    if category is not None:
+        new_category = normalize_category(category, allow_empty=True)
+    else:
+        new_category = row.get("category") or ""
     now = iso(utcnow())
     execute(
         conn,
         """
         UPDATE makrolink_links
-        SET destination_url = ?, label = ?, ref_code = ?, target_domain = ?, updated_at = ?
+        SET destination_url = ?, label = ?, ref_code = ?, target_domain = ?,
+            category = ?, updated_at = ?
         WHERE id = ?
         """,
-        (dest, lab, ref, new_target_domain, now, int(link_id)),
+        (dest, lab, ref, new_target_domain, new_category, now, int(link_id)),
     )
     if new_target_domain:
         _sync_tracked_link(conn, new_target_domain, row["code"], lab)
