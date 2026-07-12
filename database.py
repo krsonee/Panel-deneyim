@@ -2809,6 +2809,38 @@ def ensure_mail_click_links_table(conn):
     if cols and "is_smartico" not in cols:
         execute(conn, "ALTER TABLE mail_click_links ADD COLUMN is_smartico INTEGER NOT NULL DEFAULT 0")
     conn.commit()
+    migrate_mail_campaigns_pro(conn)
+
+
+def migrate_mail_campaigns_pro(conn):
+    """Kampanya profesyonel gönderim alanları: zamanlama, hız, ilerleme, iptal."""
+    cols = _table_columns(conn, "mail_campaigns") or set()
+    if not cols:
+        return
+    extras = [
+        ("scheduled_at", "TEXT"),
+        ("started_at", "TEXT"),
+        ("rate_per_minute", "INTEGER NOT NULL DEFAULT 120"),
+        ("max_recipients", "INTEGER"),
+        ("exclude_previously_sent", "INTEGER NOT NULL DEFAULT 1"),
+        ("total_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("sent_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("failed_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("skipped_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("error", "TEXT NOT NULL DEFAULT ''"),
+    ]
+    for name, typedef in extras:
+        if name not in cols:
+            try:
+                execute(conn, f"ALTER TABLE mail_campaigns ADD COLUMN {name} {typedef}")
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_campaigns_status ON mail_campaigns(status)")
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_camp_recip_camp_status ON mail_campaign_recipients(campaign_id, status)")
+    conn.commit()
 
 
 def ensure_mail_import_jobs_table(conn):

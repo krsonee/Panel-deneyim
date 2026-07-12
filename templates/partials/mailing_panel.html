@@ -229,7 +229,7 @@
             <button type="button" class="btn btn-success" id="mail-tpl-test-send">Test mail gönder</button>
             <input type="email" id="mail-tpl-test-email" class="mail-tpl-test-email" placeholder="test@mail.com">
           </div>
-          <p class="hint" id="mail-tpl-send-hint">Gönderim: şablonu kaydet → Kampanyalar’dan kitle seçip “Kuyruğa al”. Test mail stub modunda kayıt üretir; Alibaba bağlanınca gerçek iletir.</p>
+          <p class="hint" id="mail-tpl-send-hint">Gönderim: şablonu kaydet → Kampanyalar’dan etiket/limit/saat seç → “Şimdi gönder” veya zamanla. Ayarlar’da SMTP (DirectMail) doluysa gerçek mail gider; stub modunda simülasyon kaydı oluşur.</p>
         </form>
       </div>
     </section>
@@ -252,31 +252,46 @@
       <div class="card-head"><span>Yeni toplu kampanya</span></div>
       <div class="card-body">
         <form id="mail-camp-form" class="form-row-4">
-          <div><label>Kampanya adı</label><input type="text" id="mail-camp-name" required placeholder="Mart VIP"></div>
+          <div><label>Kampanya adı</label><input type="text" id="mail-camp-name" required placeholder="Mart VIP / Davet batch 1"></div>
           <div><label>Şablon</label><select id="mail-camp-tpl" required></select></div>
-          <div><label>Domain</label><select id="mail-camp-domain" required></select></div>
-          <div><label>Etiket filtresi</label><input type="text" id="mail-camp-tag" placeholder="boş = tüm aktif"></div>
-          <div><label>Maks alıcı sayısı</label><input type="number" id="mail-camp-max" min="1" placeholder="örn. 150000"></div>
+          <div><label>Gönderen domain</label><select id="mail-camp-domain" required></select></div>
+          <div>
+            <label>Hedef etiket</label>
+            <select id="mail-camp-tag">
+              <option value="">Tüm aktif kontaklar</option>
+            </select>
+          </div>
+          <div><label>Maks alıcı</label><input type="number" id="mail-camp-max" min="1" placeholder="örn. 150000 — boş = hepsi"></div>
+          <div><label>Saatlik hız (mail/dk)</label><input type="number" id="mail-camp-rate" min="1" max="6000" value="120" title="SMTP için önerilen 60–180"></div>
+          <div><label>Zamanla (opsiyonel)</label><input type="datetime-local" id="mail-camp-schedule"></div>
           <div style="display:flex;align-items:flex-end;">
             <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
               <input type="checkbox" id="mail-camp-exclude-sent" checked> Önceden mail atılmışları hariç tut
             </label>
           </div>
-          <div style="display:flex;align-items:flex-end;"><button type="button" class="btn btn-sm" id="mail-camp-preview">Kaç kişi eşleşiyor?</button></div>
-          <div style="grid-column:1/-1;"><label>Not</label><input type="text" id="mail-camp-notes" placeholder="opsiyonel"></div>
-          <div style="grid-column:1/-1;"><button type="submit" class="btn btn-primary">Oluştur (taslak)</button></div>
+          <div style="display:flex;align-items:flex-end;gap:0.5rem;flex-wrap:wrap;">
+            <button type="button" class="btn btn-sm" id="mail-camp-preview">Kaç kişi?</button>
+            <button type="submit" class="btn btn-primary">Taslak oluştur</button>
+          </div>
+          <div style="grid-column:1/-1;"><label>Not</label><input type="text" id="mail-camp-notes" placeholder="opsiyonel — örn. Davet datasi batch #2"></div>
         </form>
-        <p class="hint" id="mail-camp-preview-hint" style="margin-top:0.5rem;"></p>
-        <p class="hint">Oluşturunca alıcılar CRM’den eklenir. Maks alıcı boşsa filtreye uyan herkes eklenir; doldurursan en fazla o kadarı (ilk eklenenden başlayarak) eklenir — tek domainden aynı anda gönderebileceğin miktarı aşmamak için kullan (örn. 100-200k). “Önceden mail atılmışları hariç tut” işaretliyse, sistemden herhangi bir kanaldan daha önce mail almış kişiler yeni kampanyaya bir daha eklenmez; böylece sıradaki batch otomatik olarak bir sonraki grubu seçer. “Kuyruğa al” ile stub gönderim kayıtları üretilir.</p>
+        <p class="hint" id="mail-camp-preview-hint" style="margin-top:0.65rem;"></p>
+        <p class="hint" style="margin-top:0.35rem;">
+          Akış: etiket + limit seç → taslak oluştur → listeden <strong>Şimdi gönder</strong> veya zamanı dolunca otomatik başlar.
+          Ayarlar’da mod <code>smtp</code> + DirectMail bilgileri doluysa gerçek mail gider; <code>stub</code> ise simülasyon kaydı üretir.
+        </p>
       </div>
     </section>
     <section class="card">
-      <div class="card-head"><span>Kampanyalar</span><button type="button" class="btn btn-sm" id="mail-camp-refresh">Yenile</button></div>
+      <div class="card-head">
+        <span>Kampanyalar</span>
+        <button type="button" class="btn btn-sm" id="mail-camp-refresh">Yenile</button>
+      </div>
       <div class="table-wrap">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Ad</th><th>Durum</th><th>Alıcı</th><th>Oluşturma</th><th></th></tr></thead>
-            <tbody id="mail-camp-table"><tr><td colspan="5" class="empty">Veri yok</td></tr></tbody>
+            <thead><tr><th>Ad</th><th>Durum</th><th>İlerleme</th><th>Etiket / hız</th><th>Zaman</th><th></th></tr></thead>
+            <tbody id="mail-camp-table"><tr><td colspan="6" class="empty">Veri yok</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -382,6 +397,10 @@
             <span class="muted" id="mail-set-pass-hint" style="font-size:0.72rem;"></span>
           </div>
         </form>
+        <p class="hint" style="margin-top:0.75rem;">
+          <strong>Stub:</strong> gerçek mail gitmez, Raporlar’da <code>simulated</code> kayıt oluşur (test için).
+          <strong>SMTP:</strong> Alibaba DirectMail bilgilerini gir → Kampanyalar’dan gönderim gerçek mail atar (465 SSL önerilir).
+        </p>
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">

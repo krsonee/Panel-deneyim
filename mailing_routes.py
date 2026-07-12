@@ -889,49 +889,24 @@ def _contact_tag_counts(conn):
 def _stub_send(conn, *, channel, to_email, subject, contact=None, campaign_id=None,
                contact_id=None, template_id=None, domain_id=None, to_phone="",
                html_body="", text_body=""):
-    """Alibaba bağlanana kadar simüle gönderim kaydı + takip linkleri oluşturur."""
-    now = iso(utcnow())
-    mode = (get_mail_setting(conn, "provider_mode", "stub") or "stub").strip().lower()
-    status = "simulated" if mode == "stub" else "queued"
-    msg_id = f"stub-{secrets.token_hex(8)}" if status == "simulated" else ""
-    send_id = insert_returning_id(
+    """Geriye uyumlu sarmalayıcı — gerçek gönderim mail_delivery.deliver_mail."""
+    from mail_delivery import deliver_mail
+
+    send_id, status, _err = deliver_mail(
         conn,
-        """
-        INSERT INTO mail_sends (
-            channel, campaign_id, contact_id, template_id, domain_id,
-            to_email, to_phone, subject, status, provider_msg_id, error,
-            opened_at, clicked_at, sent_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            channel,
-            campaign_id,
-            contact_id,
-            template_id,
-            domain_id,
-            to_email,
-            to_phone or "",
-            subject or "",
-            status,
-            msg_id,
-            "" if status == "simulated" else "Provider henüz bağlanmadı (stub kuyruk)",
-            None,
-            None,
-            now if status == "simulated" else None,
-            now,
-        ),
+        channel=channel,
+        to_email=to_email,
+        subject=subject,
+        contact=contact,
+        campaign_id=campaign_id,
+        contact_id=contact_id,
+        template_id=template_id,
+        domain_id=domain_id,
+        to_phone=to_phone,
+        html_body=html_body,
+        text_body=text_body,
+        inject_tracking=_inject_tracking,
     )
-    # Inject tracking — HTML öncelikli (çift token üretmesin)
-    if html_body:
-        _inject_tracking(
-            conn, html_body, send_id=send_id, contact_id=contact_id,
-            campaign_id=campaign_id, as_html=True,
-        )
-    elif text_body:
-        _inject_tracking(
-            conn, text_body, send_id=send_id, contact_id=contact_id,
-            campaign_id=campaign_id, as_html=False,
-        )
     return send_id, status
 
 
@@ -981,6 +956,9 @@ def create_mailing_click_blueprint():
 
 
 def create_mailing_blueprint(permission_required):
+    from mail_campaign_worker import ensure_campaign_scheduler
+
+    ensure_campaign_scheduler()
     bp = Blueprint("mailing", __name__, url_prefix="/api/mailing")
 
     def mail_perm(*keys):
@@ -1540,14 +1518,26 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/campaigns", methods=["GET"])
     @mail_perm(*MAIL_CAMP)
     def list_campaigns():
+        from mail_campaign_worker import is_campaign_running, start_campaign_send
+
         with closing(get_db()) as conn:
-            rows = _rows(fetchall(conn, "SELECT * FROM mail_campaigns ORDER BY id DESC"))
+            rows = _rows(fetchall(conn, "SELECT * FROM mail_campaigns ORDER BY id DESC LIMIT 100"))
             for r in rows:
-                r["recipient_count"] = scalar(
+                r["recipient_count"] = r.get("total_count") or scalar(
                     conn,
                     "SELECT COUNT(*) FROM mail_campaign_recipients WHERE campaign_id = ?",
                     (r["id"],),
                 ) or 0
+                r["pending_count"] = scalar(
+                    conn,
+                    "SELECT COUNT(*) FROM mail_campaign_recipients WHERE campaign_id = ? AND status = 'pending'",
+                    (r["id"],),
+                ) or 0
+                r["is_running"] = is_campaign_running(r["id"])
+                # Worker düştüyse queued/sending'i yeniden başlat
+                if r["status"] in ("queued", "sending") and not r["is_running"] and r["pending_count"] > 0:
+                    start_campaign_send(r["id"])
+                    r["is_running"] = True
         return jsonify({"campaigns": rows})
 
     @bp.route("/campaigns", methods=["POST"])
@@ -1574,6 +1564,15 @@ def create_mailing_blueprint(permission_required):
             max_recipients = None
         exclude_sent = data.get("exclude_previously_sent")
         exclude_sent = True if exclude_sent is None else bool(exclude_sent)
+        try:
+            rate = int(data.get("rate_per_minute") or 120)
+        except (TypeError, ValueError):
+            rate = 120
+        rate = max(1, min(rate, 6000))
+        scheduled_raw = (data.get("scheduled_at") or "").strip() or None
+        # datetime-local → ISO
+        if scheduled_raw and "T" in scheduled_raw and len(scheduled_raw) == 16:
+            scheduled_raw = scheduled_raw + ":00"
         with closing(get_db()) as conn:
             if not fetchone(conn, "SELECT id FROM mail_templates WHERE id = ?", (template_id,)):
                 return jsonify({"error": "Şablon bulunamadı."}), 404
@@ -1583,14 +1582,26 @@ def create_mailing_blueprint(permission_required):
                 conn,
                 """
                 INSERT INTO mail_campaigns
-                (name, campaign_type, template_id, domain_id, status, tag_filter, notes, created_at, updated_at)
-                VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?)
+                (name, campaign_type, template_id, domain_id, status, tag_filter, notes,
+                 scheduled_at, rate_per_minute, max_recipients, exclude_previously_sent,
+                 total_count, sent_count, failed_count, skipped_count, error,
+                 created_at, updated_at)
+                VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?)
                 """,
-                (name, template_id, domain_id, tag_filter, (data.get("notes") or "").strip(), now, now),
+                (
+                    name, template_id, domain_id, tag_filter, (data.get("notes") or "").strip(),
+                    scheduled_raw, rate, max_recipients, 1 if exclude_sent else 0,
+                    now, now,
+                ),
             )
             attached = _attach_campaign_recipients(
                 conn, cid, tag_filter=tag_filter, max_recipients=max_recipients,
                 exclude_previously_sent=exclude_sent, now=now,
+            )
+            execute(
+                conn,
+                "UPDATE mail_campaigns SET total_count = ?, updated_at = ? WHERE id = ?",
+                (attached, now, cid),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (cid,))
@@ -1606,10 +1617,22 @@ def create_mailing_blueprint(permission_required):
         tag_filter = (data.get("tag_filter") or "").strip()
         exclude_sent = data.get("exclude_previously_sent")
         exclude_sent = True if exclude_sent is None else bool(exclude_sent)
+        max_recipients = data.get("max_recipients")
+        try:
+            max_recipients = int(max_recipients)
+            if max_recipients <= 0:
+                max_recipients = None
+        except (TypeError, ValueError):
+            max_recipients = None
         with closing(get_db()) as conn:
             where_sql, params = _campaign_selection_where(tag_filter, exclude_sent)
             total = scalar(conn, f"SELECT COUNT(*) FROM mail_contacts WHERE {where_sql}", tuple(params)) or 0
-        return jsonify({"matching_count": total})
+        will_attach = min(total, max_recipients) if max_recipients else total
+        return jsonify({
+            "matching_count": total,
+            "will_attach": will_attach,
+            "max_recipients": max_recipients,
+        })
 
     @bp.route("/campaigns/<int:campaign_id>", methods=["PATCH"])
     @mail_perm(*MAIL_CAMP)
@@ -1620,13 +1643,24 @@ def create_mailing_blueprint(permission_required):
             row = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (campaign_id,))
             if not row:
                 return jsonify({"error": "Kampanya bulunamadı."}), 404
-            if row["status"] not in ("draft",):
-                return jsonify({"error": "Sadece taslak kampanyalar düzenlenebilir."}), 400
+            row = _row(row)
+            if row["status"] not in ("draft", "scheduled"):
+                return jsonify({"error": "Sadece taslak / zamanlanmış kampanyalar düzenlenebilir."}), 400
+            scheduled_raw = data.get("scheduled_at") if "scheduled_at" in data else row.get("scheduled_at")
+            if isinstance(scheduled_raw, str):
+                scheduled_raw = scheduled_raw.strip() or None
+                if scheduled_raw and "T" in scheduled_raw and len(scheduled_raw) == 16:
+                    scheduled_raw = scheduled_raw + ":00"
+            try:
+                rate = int(data.get("rate_per_minute") if "rate_per_minute" in data else (row.get("rate_per_minute") or 120))
+            except (TypeError, ValueError):
+                rate = 120
+            rate = max(1, min(rate, 6000))
             execute(
                 conn,
                 """
                 UPDATE mail_campaigns SET name = ?, template_id = ?, domain_id = ?,
-                    tag_filter = ?, notes = ?, updated_at = ?
+                    tag_filter = ?, notes = ?, scheduled_at = ?, rate_per_minute = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -1635,6 +1669,8 @@ def create_mailing_blueprint(permission_required):
                     data.get("domain_id") if "domain_id" in data else row["domain_id"],
                     (data.get("tag_filter") if "tag_filter" in data else row["tag_filter"] or "").strip(),
                     (data.get("notes") if "notes" in data else row["notes"] or "").strip(),
+                    scheduled_raw,
+                    rate,
                     now,
                     campaign_id,
                 ),
@@ -1647,6 +1683,9 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_CAMP)
     def delete_campaign(campaign_id):
         with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT status FROM mail_campaigns WHERE id = ?", (campaign_id,))
+            if row and row["status"] in ("sending", "queued"):
+                return jsonify({"error": "Gönderimdeki kampanya silinemez — önce iptal edin."}), 400
             execute(conn, "DELETE FROM mail_campaign_recipients WHERE campaign_id = ?", (campaign_id,))
             execute(conn, "DELETE FROM mail_campaigns WHERE id = ?", (campaign_id,))
             conn.commit()
@@ -1655,75 +1694,107 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/campaigns/<int:campaign_id>/queue", methods=["POST"])
     @mail_perm(*MAIL_CAMP)
     def queue_campaign(campaign_id):
+        """Kampanyayı hemen veya zamanlanmış olarak kuyruğa alır (arka plan worker)."""
+        from mail_campaign_worker import start_campaign_send
+
+        data = request.get_json(silent=True) or {}
+        now_dt = utcnow()
+        now = iso(now_dt)
+        force_now = bool(data.get("send_now"))
+        with closing(get_db()) as conn:
+            camp = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (campaign_id,))
+            if not camp:
+                return jsonify({"error": "Kampanya bulunamadı."}), 404
+            camp = _row(camp)
+            if camp["status"] not in ("draft", "scheduled", "queued"):
+                return jsonify({"error": f"Kampanya durumu uygun değil: {camp['status']}"}), 400
+            pending = scalar(
+                conn,
+                "SELECT COUNT(*) FROM mail_campaign_recipients WHERE campaign_id = ? AND status = 'pending'",
+                (campaign_id,),
+            ) or 0
+            if pending <= 0:
+                return jsonify({"error": "Gönderilecek alıcı yok. Kampanyayı yeniden oluşturun."}), 400
+            if not fetchone(conn, "SELECT id FROM mail_templates WHERE id = ?", (camp["template_id"],)):
+                return jsonify({"error": "Şablon bulunamadı."}), 400
+
+            scheduled_at = camp.get("scheduled_at")
+            start_immediately = force_now
+            if not start_immediately and scheduled_at:
+                from mail_campaign_worker import _parse_iso
+                sched = _parse_iso(scheduled_at)
+                if sched and sched > now_dt:
+                    execute(
+                        conn,
+                        """
+                        UPDATE mail_campaigns
+                        SET status = 'scheduled', total_count = COALESCE(NULLIF(total_count, 0), ?),
+                            updated_at = ?, error = ''
+                        WHERE id = ?
+                        """,
+                        (pending, now, campaign_id),
+                    )
+                    conn.commit()
+                    mode = (get_mail_setting(conn, "provider_mode", "stub") or "stub").strip().lower()
+                    return jsonify({
+                        "ok": True,
+                        "status": "scheduled",
+                        "scheduled_at": scheduled_at,
+                        "pending": pending,
+                        "mode": mode,
+                        "message": f"Kampanya zamanlandı · {pending} alıcı · {scheduled_at}",
+                    })
+
+            execute(
+                conn,
+                """
+                UPDATE mail_campaigns
+                SET status = 'queued', queued_at = ?, total_count = COALESCE(NULLIF(total_count, 0), ?),
+                    updated_at = ?, error = ''
+                WHERE id = ?
+                """,
+                (now, pending, now, campaign_id),
+            )
+            conn.commit()
+            mode = (get_mail_setting(conn, "provider_mode", "stub") or "stub").strip().lower()
+
+        start_campaign_send(campaign_id)
+        return jsonify({
+            "ok": True,
+            "status": "queued",
+            "pending": pending,
+            "mode": mode,
+            "message": (
+                f"{pending} alıcı kuyruğa alındı — arka planda gönderiliyor."
+                + (" (stub simülasyon)" if mode != "smtp" else " (SMTP)")
+            ),
+        })
+
+    @bp.route("/campaigns/<int:campaign_id>/cancel", methods=["POST"])
+    @mail_perm(*MAIL_CAMP)
+    def cancel_campaign(campaign_id):
         now = iso(utcnow())
         with closing(get_db()) as conn:
             camp = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (campaign_id,))
             if not camp:
                 return jsonify({"error": "Kampanya bulunamadı."}), 404
-            if camp["status"] not in ("draft", "queued"):
-                return jsonify({"error": f"Kampanya durumu uygun değil: {camp['status']}"}), 400
-            tpl = fetchone(conn, "SELECT * FROM mail_templates WHERE id = ?", (camp["template_id"],))
-            if not tpl:
-                return jsonify({"error": "Şablon bulunamadı."}), 400
-            recipients = _rows(fetchall(
-                conn,
-                """
-                SELECT r.id AS recipient_id, r.contact_id, c.email, c.phone, c.name, c.tags
-                FROM mail_campaign_recipients r
-                JOIN mail_contacts c ON c.id = r.contact_id
-                WHERE r.campaign_id = ? AND r.status = 'pending' AND c.unsubscribed = 0
-                """,
-                (campaign_id,),
-            ))
+            camp = _row(camp)
+            if camp["status"] not in ("scheduled", "queued", "sending", "cancelling"):
+                return jsonify({"error": f"İptal edilemez: {camp['status']}"}), 400
+            new_status = "cancelled" if camp["status"] == "scheduled" else "cancelling"
             execute(
                 conn,
-                "UPDATE mail_campaigns SET status = 'sending', queued_at = ?, updated_at = ? WHERE id = ?",
-                (now, now, campaign_id),
+                "UPDATE mail_campaigns SET status = ?, updated_at = ? WHERE id = ?",
+                (new_status, now, campaign_id),
             )
-            sent = 0
-            for rec in recipients:
-                contact = {
-                    "name": rec.get("name") or "",
-                    "email": rec.get("email") or "",
-                    "phone": rec.get("phone") or "",
-                }
-                subject = _render_template(tpl["subject"], contact)
-                html_body = _render_template(
-                    tpl["html_body"] or _plain_to_html(tpl["text_body"] or ""), contact
-                )
-                text_body = _render_template(tpl["text_body"] or "", contact)
-                send_id, status = _stub_send(
-                    conn,
-                    channel="bulk",
-                    to_email=rec["email"],
-                    subject=subject,
-                    contact=contact,
-                    campaign_id=campaign_id,
-                    contact_id=rec["contact_id"],
-                    template_id=camp["template_id"],
-                    domain_id=camp["domain_id"],
-                    to_phone=rec.get("phone") or "",
-                    html_body=html_body,
-                    text_body=text_body,
-                )
+            if new_status == "cancelled":
                 execute(
                     conn,
-                    "UPDATE mail_campaign_recipients SET status = ?, send_id = ? WHERE id = ?",
-                    (status, send_id, rec["recipient_id"]),
+                    "UPDATE mail_campaigns SET finished_at = ? WHERE id = ?",
+                    (now, campaign_id),
                 )
-                sent += 1
-            execute(
-                conn,
-                "UPDATE mail_campaigns SET status = 'done', finished_at = ?, updated_at = ? WHERE id = ?",
-                (now, now, campaign_id),
-            )
             conn.commit()
-        return jsonify({
-            "ok": True,
-            "queued": sent,
-            "mode": "stub",
-            "message": f"{sent} alıcı için stub gönderim kaydı oluşturuldu. Alibaba bağlanınca gerçek iletim aktif olur.",
-        })
+        return jsonify({"ok": True, "status": new_status})
 
     # ── Sends / Reports ────────────────────────────────────────
     @bp.route("/sends", methods=["GET"])
