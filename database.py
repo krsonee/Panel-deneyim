@@ -1387,6 +1387,7 @@ def migrate_invoice_calc(conn):
                 period TEXT NOT NULL,
                 entry_date TEXT NOT NULL,
                 provider_id INTEGER NOT NULL REFERENCES acc_invoice_calc_providers(id),
+                ggr_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
                 stake_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
                 winning_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
                 created_by TEXT NOT NULL DEFAULT '',
@@ -1418,6 +1419,7 @@ def migrate_invoice_calc(conn):
                 period TEXT NOT NULL,
                 entry_date TEXT NOT NULL,
                 provider_id INTEGER NOT NULL,
+                ggr_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
                 stake_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
                 winning_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
                 created_by TEXT NOT NULL DEFAULT '',
@@ -1457,6 +1459,15 @@ def migrate_invoice_calc(conn):
             "UPDATE acc_invoice_calc_daily SET ggr_amount = stake_amount - winning_amount",
         )
         conn.commit()
+    elif not cols:
+        try:
+            execute(conn, "ALTER TABLE acc_invoice_calc_daily ADD COLUMN ggr_amount DOUBLE PRECISION NOT NULL DEFAULT 0")
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
     now = iso(utcnow())
     for section, name, rate, sort_order in SEED_PROVIDERS:

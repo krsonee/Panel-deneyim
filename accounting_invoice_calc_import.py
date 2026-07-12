@@ -22,13 +22,14 @@ HEADER_STAKE = frozenset({"stake", "stake_amount", "stake_try", "toplam stake", 
 HEADER_WINNING = frozenset({"winning", "winning_amount", "winning_try", "toplam winning", "winning try", "kazanc"})
 
 
-def capture_invoice_calc_day_rates(conn, entry_date):
+def capture_invoice_calc_day_rates(conn, entry_date, rates=None):
     """Kayıt anındaki canlı kuru o güne kilitle — önceki günlere dokunmaz."""
     from accounting_fx import fetch_exchange_rates
 
     period = entry_date[:7]
     now = iso(utcnow())
-    rates = fetch_exchange_rates(fresh=True)
+    if rates is None:
+        rates = fetch_exchange_rates(fresh=True)
     usd = float(rates.get("usd_try") or 0)
     eur = float(rates.get("eur_try") or 0)
     if usd <= 0 or eur <= 0:
@@ -132,6 +133,38 @@ def _norm_header(value):
     return text.replace(" ", "_")
 
 
+def _normalize_provider_name(value):
+    text = unicodedata.normalize("NFKC", str(value or ""))
+    text = text.replace("\u00a0", " ").replace("\u200b", "")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _load_workbook_bytes(raw):
+    import openpyxl
+
+    bio = BytesIO(raw)
+    try:
+        return openpyxl.load_workbook(bio, read_only=True, data_only=True)
+    except Exception:
+        bio.seek(0)
+        return openpyxl.load_workbook(bio, data_only=True)
+
+
+def _ensure_invoice_calc_schema(conn):
+    cols = _table_columns(conn)
+    if cols and "ggr_amount" not in cols:
+        raise ValueError(
+            "Veritabanı şeması güncel değil (ggr_amount eksik). Deploy sonrası sayfayı yenileyip tekrar deneyin."
+        )
+
+
+def _table_columns(conn):
+    from database import _table_columns as db_table_columns
+
+    return db_table_columns(conn, "acc_invoice_calc_daily")
+
+
 def _parse_amount(value):
     if value is None or value == "":
         return 0.0
@@ -195,7 +228,7 @@ def _map_headers(header_row):
     return mapping
 
 
-def upsert_invoice_calc_daily_batch(conn, entry_date, rows, who=""):
+def upsert_invoice_calc_daily_batch(conn, entry_date, rows, who="", capture_fx=True):
     """rows: [{provider_id, ggr_amount}, ...]"""
     period = entry_date[:7]
     now = iso(utcnow())
@@ -252,7 +285,7 @@ def upsert_invoice_calc_daily_batch(conn, entry_date, rows, who=""):
                 (period, entry_date, pid, ggr, who, now),
             )
         saved += 1
-    if saved > 0:
+    if saved > 0 and capture_fx:
         has_rows = scalar(
             conn,
             "SELECT COUNT(*) FROM acc_invoice_calc_daily WHERE entry_date = ?",
@@ -264,7 +297,10 @@ def upsert_invoice_calc_daily_batch(conn, entry_date, rows, who=""):
             (entry_date,),
         )
         if has_rows and not meta_exists:
-            capture_invoice_calc_day_rates(conn, entry_date)
+            try:
+                capture_invoice_calc_day_rates(conn, entry_date)
+            except Exception:
+                pass
     return {"saved": saved, "deleted": deleted, "skipped": skipped}
 
 
@@ -372,8 +408,6 @@ def generate_template_bytes(conn, entry_date):
 
 
 def import_workbook(conn, file_storage, who=""):
-    import openpyxl
-
     filename = (file_storage.filename or "").lower()
     if not filename.endswith((".xlsx", ".xlsm")):
         raise ValueError("Sadece .xlsx dosyası yükleyebilirsiniz.")
@@ -384,7 +418,9 @@ def import_workbook(conn, file_storage, who=""):
     if len(raw) > 15 * 1024 * 1024:
         raise ValueError("Dosya çok büyük (en fazla 15 MB).")
 
-    wb = openpyxl.load_workbook(BytesIO(raw), read_only=True, data_only=True)
+    _ensure_invoice_calc_schema(conn)
+
+    wb = _load_workbook_bytes(raw)
     try:
         ws = wb["Gunluk Veri"] if "Gunluk Veri" in wb.sheetnames else wb.worksheets[0]
         rows_iter = ws.iter_rows(values_only=True)
@@ -402,7 +438,7 @@ def import_workbook(conn, file_storage, who=""):
             raise ValueError("Excel'de 'GGR (TRY)' sütunu gerekli.")
 
         provider_rows = fetchall(conn, "SELECT id, name FROM acc_invoice_calc_providers")
-        name_to_id = {r["name"].strip().lower(): r["id"] for r in provider_rows}
+        name_to_id = {_normalize_provider_name(r["name"]).lower(): r["id"] for r in provider_rows}
 
         grouped = {}
         unknown = []
@@ -427,7 +463,7 @@ def import_workbook(conn, file_storage, who=""):
                 skipped_rows += 1
                 continue
 
-            pname = str(cell("provider_name") or "").strip()
+            pname = _normalize_provider_name(cell("provider_name"))
             if not pname:
                 skipped_rows += 1
                 continue
@@ -452,16 +488,50 @@ def import_workbook(conn, file_storage, who=""):
             })
 
         if not grouped:
+            if unknown:
+                sample = ", ".join(sorted(set(unknown))[:5])
+                raise ValueError(
+                    f"Eşleşen sağlayıcı bulunamadı ({len(set(unknown))} farklı isim). "
+                    f"Şablonu panelden yeniden indirin. Örnek: {sample}"
+                )
             raise ValueError("İşlenecek satır bulunamadı. GGR değerlerini kontrol edin.")
 
         totals = {"saved": 0, "deleted": 0, "skipped": 0}
         dates = []
         for entry_date in sorted(grouped.keys()):
-            result = upsert_invoice_calc_daily_batch(conn, entry_date, grouped[entry_date], who=who)
+            result = upsert_invoice_calc_daily_batch(
+                conn, entry_date, grouped[entry_date], who=who, capture_fx=False
+            )
             totals["saved"] += result["saved"]
             totals["deleted"] += result["deleted"]
             totals["skipped"] += result["skipped"]
             dates.append(entry_date)
+
+        bulk_rates = None
+        if dates:
+            try:
+                from accounting_fx import fetch_exchange_rates
+
+                bulk_rates = fetch_exchange_rates(fresh=True)
+            except Exception:
+                bulk_rates = None
+
+        for entry_date in dates:
+            has_rows = scalar(
+                conn,
+                "SELECT COUNT(*) FROM acc_invoice_calc_daily WHERE entry_date = ?",
+                (entry_date,),
+            )
+            meta_exists = scalar(
+                conn,
+                "SELECT COUNT(*) FROM acc_invoice_calc_day_meta WHERE entry_date = ?",
+                (entry_date,),
+            )
+            if has_rows and not meta_exists:
+                try:
+                    capture_invoice_calc_day_rates(conn, entry_date, rates=bulk_rates)
+                except Exception:
+                    pass
 
         conn.commit()
         unknown_unique = sorted(set(unknown))

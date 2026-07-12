@@ -2928,14 +2928,16 @@
     if (!file) return;
     var fd = new FormData();
     fd.append("file", file);
-    var uploadLabel = document.querySelector('label[for="acc-ic-upload-file"], label.btn-primary input#acc-ic-upload-file');
     accToast("Excel yükleniyor…");
-    fetch("/api/accounting/invoice-calc/import", { method: "POST", body: fd })
+    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = controller ? setTimeout(function () { controller.abort(); }, 120000) : null;
+    fetch("/api/accounting/invoice-calc/import", { method: "POST", body: fd, signal: controller ? controller.signal : undefined })
       .then(function (r) {
         if (r.status === 401) { location.href = "/admin/login"; return null; }
         return r.json().then(function (d) { return { ok: r.ok, data: d }; });
       })
       .then(function (res) {
+        if (timer) clearTimeout(timer);
         var fileInput = document.getElementById("acc-ic-upload-file");
         if (fileInput) fileInput.value = "";
         if (!res) { alert("Yükleme başarısız."); return; }
@@ -2958,7 +2960,14 @@
         accRenderInvoiceCalc(res.data, res.data.period);
         accToast("Excel verisi fatura hesaplamaya aktarıldı");
       })
-      .catch(function () {
+      .catch(function (err) {
+        if (timer) clearTimeout(timer);
+        var fileInput = document.getElementById("acc-ic-upload-file");
+        if (fileInput) fileInput.value = "";
+        if (err && err.name === "AbortError") {
+          alert("Excel yükleme zaman aşımına uğradı (2 dk). İnternet bağlantınızı kontrol edip tekrar deneyin.");
+          return;
+        }
         alert("Excel yüklenemedi.");
       });
   }

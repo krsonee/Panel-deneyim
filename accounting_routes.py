@@ -1,5 +1,6 @@
 """Muhasebe modülü API rotaları — Link Takip altyapısından bağımsız."""
 
+import logging
 import re
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -364,6 +365,20 @@ def _invoice_calc_row_ggr(row):
     return float(row["stake_amount"] or 0) - float(row["winning_amount"] or 0)
 
 
+def _invoice_calc_date_key(value):
+    """JSON yanıtında entries anahtarları her zaman ISO tarih metni olmalı."""
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if hasattr(value, "isoformat") and not isinstance(value, str):
+        try:
+            return value.isoformat()
+        except Exception:
+            pass
+    return str(value).strip()[:10]
+
+
 def build_invoice_calc_payload(conn, period):
     """Fatura Hesaplama (günlük GGR takip) — Pronet Fatura alanından bağımsız, kendi tablolarını kullanır."""
     providers = fetchall(
@@ -398,7 +413,7 @@ def build_invoice_calc_payload(conn, period):
         provider = provider_map.get(pid)
         if not provider:
             continue
-        entry_date = r["entry_date"]
+        entry_date = _invoice_calc_date_key(r["entry_date"])
         ggr = _invoice_calc_row_ggr(r)
         row_commission = calc_ggr_commission(ggr, provider["commission_rate"])
 
@@ -434,7 +449,7 @@ def build_invoice_calc_payload(conn, period):
     daily_totals = []
     for entry_date, agg in sorted(daily_agg.items()):
         daily_totals.append({
-            "entry_date": entry_date,
+            "entry_date": _invoice_calc_date_key(entry_date),
             "ggr_amount": round(agg["ggr_amount"], 2),
             "commission_amount": round(agg["commission_amount"], 2),
         })
@@ -2513,8 +2528,21 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
                 payload = build_invoice_calc_payload(conn, period)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-        except Exception:
-            return jsonify({"error": "Excel dosyası okunamadı. Şablonu indirip tekrar deneyin."}), 400
+        except Exception as exc:
+            logging.exception("invoice-calc excel import failed")
+            msg = str(exc).strip()
+            low = msg.lower()
+            if "ggr_amount" in low or "undefinedcolumn" in low or "no such column" in low:
+                err = "Veritabanı şeması güncel değil. Deploy sonrası sayfayı yenileyip tekrar deneyin."
+            elif "openpyxl" in low or "badzipfile" in low or "zip file" in low:
+                err = "Excel dosyası bozuk veya okunamıyor. Şablonu yeniden indirip tekrar deneyin."
+            elif "keys must be str" in low:
+                err = "İçe aktarma tamamlandı ancak yanıt oluşturulamadı. Sayfayı yenileyip veriyi kontrol edin."
+            elif msg:
+                err = f"Excel yüklenemedi: {msg}"
+            else:
+                err = "Excel dosyası okunamadı. Şablonu indirip tekrar deneyin."
+            return jsonify({"error": err}), 400
         payload["period_label"] = period_label(payload["period"])
         payload["import"] = result
         return jsonify(payload)
