@@ -1009,7 +1009,55 @@
       max-height: 420px;
       overflow-y: auto;
       scrollbar-gutter: stable;
+      contain: layout style paint;
+      overscroll-behavior: contain;
     }
+    .table-scroll tbody tr {
+      content-visibility: auto;
+      contain-intrinsic-size: auto 46px;
+    }
+    #makrolink-table-scroll {
+      max-height: min(520px, 62vh);
+      contain: layout style paint;
+      overscroll-behavior: contain;
+    }
+    #makrolink-table tbody tr {
+      content-visibility: auto;
+      contain-intrinsic-size: auto 46px;
+    }
+    #makrolink-table .ml-cat-badge {
+      display: inline-flex; align-items: center; gap: 0.25rem;
+      padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600;
+      background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.28);
+      cursor: pointer; max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #makrolink-table .ml-cat-badge:hover { border-color: var(--accent); }
+    #makrolink-table .ml-cat-badge.empty { opacity: 0.55; font-style: italic; font-weight: 500; }
+    .makrolink-table-toolbar {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+      padding: 0.55rem 0.85rem; background: var(--surface-2); border-bottom: 1px solid var(--border);
+    }
+    .makrolink-table-toolbar label {
+      margin: 0; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--muted); white-space: nowrap;
+    }
+    .makrolink-table-toolbar select {
+      width: auto; min-width: 160px; max-width: 220px;
+      font-size: 0.78rem; padding: 0.35rem 0.55rem;
+    }
+    .makrolink-filter-active {
+      display: none; align-items: center; gap: 0.35rem;
+      font-size: 0.72rem; color: var(--muted); margin-left: auto;
+    }
+    .makrolink-filter-active.is-on { display: inline-flex; }
+    .makrolink-filter-active .tag { font-size: 0.72rem; }
+    .makrolink-pager {
+      display: inline-flex; align-items: center; gap: 0.35rem; margin-left: auto;
+    }
+    .makrolink-pager button {
+      min-width: 28px; height: 28px; padding: 0 0.4rem; font-size: 0.85rem;
+    }
+    .makrolink-pager span { font-size: 0.72rem; color: var(--muted); min-width: 4.5rem; text-align: center; }
     .scroll-hint {
       display: none; font-size: 0.68rem; color: var(--muted); padding: 0.35rem 0.85rem;
       background: var(--surface-2); border-bottom: 1px solid var(--border);
@@ -1909,9 +1957,6 @@
             <span>MakroLink <span class="muted" style="font-weight:400;font-size:0.72rem;">(makrovip.com · kısa link · tıklama)</span></span>
             <div class="card-actions">
               <input id="makrolink-search" placeholder="🔎 Link ara…" style="width:150px;" autocomplete="off">
-              <select id="makrolink-filter-category" title="Kategoriye göre filtrele" style="width:auto;min-width:140px;font-size:0.78rem;padding:0.35rem 0.55rem;">
-                <option value="">Tüm kategoriler</option>
-              </select>
               <span class="muted" id="makrolink-updated" style="font-size:0.72rem;"></span>
               <button type="button" class="btn btn-sm" id="btn-makrolink-settings" data-admin-only="1">⚙️ Ayarlar</button>
               <button type="button" class="btn btn-sm" id="btn-makrolink-refresh">Yenile</button>
@@ -1985,6 +2030,16 @@
             <p class="hint" style="margin-top:0.5rem;">Akış: <code>makrovip.com/xxx</code> → <code>go.aff.makroaffi.com/…</code> → site (804/805 Smartico’da). Eski bl.ink linklerine dokunulmaz.</p>
           </div>
           <div class="table-wrap">
+            <div class="makrolink-table-toolbar">
+              <label for="makrolink-filter-category">Kategori</label>
+              <select id="makrolink-filter-category" title="Kategoriye göre filtrele">
+                <option value="">Tüm kategoriler</option>
+              </select>
+              <button type="button" class="btn btn-sm" id="makrolink-filter-clear" style="display:none;">Filtreyi temizle</button>
+              <span class="makrolink-filter-active" id="makrolink-filter-active">
+                Filtre: <span class="tag" id="makrolink-filter-active-label"></span>
+              </span>
+            </div>
             <div class="scroll-hint">Tabloyu yatay kaydırın</div>
             <div class="table-scroll" id="makrolink-table-scroll">
               <table>
@@ -2002,6 +2057,11 @@
             </div>
             <div class="table-foot">
               <span class="table-count" id="makrolink-table-count"></span>
+              <div class="makrolink-pager" id="makrolink-pager" style="display:none;">
+                <button type="button" class="btn btn-sm" id="makrolink-prev" title="Önceki sayfa">‹</button>
+                <span id="makrolink-page-info">1 / 1</span>
+                <button type="button" class="btn btn-sm" id="makrolink-next" title="Sonraki sayfa">›</button>
+              </div>
             </div>
           </div>
         </section>
@@ -2559,17 +2619,17 @@
       }
       var currentPeriod = "all";
       var currentCustomPeriod = "";
-      var TABLE_PAGE_SIZE = 10;
+      var TABLE_PAGE_SIZE = 25;
       var cachedLinks = [];
       var cachedRefReport = [];
       var cachedOnline = [];
       var tablePager = {
         "links-table": { expanded: true, sortKey: "online_count", sortDir: "desc" },
-        "ref-report-table": { expanded: true, sortKey: "total_visitors", sortDir: "desc" },
+        "ref-report-table": { expanded: false, sortKey: "total_visitors", sortDir: "desc" },
         "online-table": { expanded: true, sortKey: "time", sortDir: "desc" },
-        "sessions-table": { expanded: true, sortKey: "time", sortDir: "desc" },
-        "smartico-table": { expanded: true, sortKey: "online_now", sortDir: "desc" },
-        "blink-table": { expanded: true, sortKey: "online_now", sortDir: "desc" }
+        "sessions-table": { expanded: false, sortKey: "time", sortDir: "desc" },
+        "smartico-table": { expanded: false, sortKey: "online_now", sortDir: "desc" },
+        "blink-table": { expanded: false, sortKey: "online_now", sortDir: "desc" }
       };
       var TABLE_LABELS = {
         "links-table": "domain",
@@ -3244,8 +3304,25 @@
           return;
         }
         foot.style.display = "flex";
+        var truncated = !st.expanded && total > TABLE_PAGE_SIZE;
+        var shown = truncated ? TABLE_PAGE_SIZE : total;
         if (countEl) {
-          countEl.textContent = total + " " + label;
+          countEl.textContent = truncated ? (shown + " / " + total + " " + label) : (total + " " + label);
+        }
+        var expandBtn = foot.querySelector("[data-table-toggle]");
+        if (total > TABLE_PAGE_SIZE) {
+          if (!expandBtn) {
+            expandBtn = document.createElement("button");
+            expandBtn.type = "button";
+            expandBtn.className = "btn btn-sm";
+            expandBtn.setAttribute("data-table-toggle", tableId);
+            expandBtn.onclick = function() { toggleTableExpand(tableId); };
+            foot.appendChild(expandBtn);
+          }
+          expandBtn.style.display = "";
+          expandBtn.textContent = st.expanded ? "Daha az göster" : "Tümünü göster (" + total + ")";
+        } else if (expandBtn) {
+          expandBtn.style.display = "none";
         }
       }
 
@@ -3278,6 +3355,7 @@
       function toggleTableExpand(tableId) {
         if (!tablePager[tableId]) return;
         tablePager[tableId].expanded = !tablePager[tableId].expanded;
+        if (tableId === "smartico-table") lastSmarticoRenderSig = "";
         rerenderManagedTable(tableId);
       }
 
@@ -3666,6 +3744,44 @@
         renderSessionsBody();
       }
 
+      function updateSessionFilterCount() {
+        var filtered = allSessions.filter(sessionMatchesFilters);
+        var fc = document.getElementById("filter-count");
+        if (fc) fc.textContent = filtered.length + " / " + allSessions.length + " oyuncu";
+      }
+
+      function sessionsUpdateDynamicOnly(sessions) {
+        var byId = {};
+        (sessions || []).forEach(function(s) { byId[s.session_id] = s; });
+        document.querySelectorAll("#sessions-table tr[data-session-id], #online-table tr[data-session-id]").forEach(function(tr) {
+          var s = byId[tr.getAttribute("data-session-id")];
+          if (!s) return;
+          var timeEl = tr.querySelector(".time[data-seconds]");
+          if (timeEl) {
+            timeEl.setAttribute("data-seconds", s.total_seconds);
+            timeEl.textContent = fmtTime(s.total_seconds);
+          }
+          var statusEl = tr.querySelector('[data-col="status"]');
+          if (statusEl) {
+            statusEl.innerHTML = s.is_online
+              ? '<span class="tag online">Online</span>'
+              : '<span class="tag offline">Offline</span>';
+          }
+          var gamesEl = tr.querySelector('[data-col="games"]');
+          if (gamesEl) gamesEl.innerHTML = renderGames(s.games);
+          tr.classList.toggle("online", !!s.is_online);
+          tr.setAttribute("data-status", s.is_online ? "online" : "offline");
+        });
+      }
+
+      function sessionsStructuralSig(sessions) {
+        return listSig(sessions || [], ["session_id", "is_online", "domain", "ref_code", "ip_address", "device_category", "games"]);
+      }
+
+      function sessionsDynamicSig(sessions) {
+        return listSig(sessions || [], ["session_id", "total_seconds", "last_seen_at"]);
+      }
+
       function renderSessionsBody() {
         var tbody = document.getElementById("sessions-table");
         var filtered = allSessions.filter(sessionMatchesFilters);
@@ -3728,7 +3844,17 @@
       var REFRESH_LIVE_MS = 5000;
       var REFRESH_DASH_MS = 30000;
       var lastOnlineSig = "";
+      var lastOnlineStructSig = "";
+      var lastOnlineDynSig = "";
       var lastSessionsSig = "";
+      var lastSessionsStructSig = "";
+      var lastSessionsDynSig = "";
+      var lastSmarticoRenderSig = "";
+      var sessionsUserScrolling = false;
+      var sessionsScrollTimer = null;
+      var sessionsPendingRender = null;
+      var smarticoSearchTimer = null;
+      var sessionFilterTimer = null;
       var lastLinksSig = "";
       var lastRefSig = "";
       var lastChartsSig = "";
@@ -3747,11 +3873,17 @@
 
       function resetRefreshSignatures() {
         lastOnlineSig = "";
+        lastOnlineStructSig = "";
+        lastOnlineDynSig = "";
         lastSessionsSig = "";
+        lastSessionsStructSig = "";
+        lastSessionsDynSig = "";
+        lastSmarticoRenderSig = "";
         lastLinksSig = "";
         lastRefSig = "";
         lastChartsSig = "";
         lastFilterSig = "";
+        lastMakrolinkSig = "";
       }
 
       function touchPollStatus() {
@@ -3759,18 +3891,48 @@
       }
 
       function renderOnlineIfChanged(users) {
-        var sig = listSig(users, ["session_id", "total_seconds", "last_seen_at", "games"]);
-        if (sig === lastOnlineSig) return;
-        lastOnlineSig = sig;
-        renderOnline(users);
+        var list = users || [];
+        var structSig = listSig(list, ["session_id", "is_online", "domain", "ref_code", "ip_address", "device_category", "games"]);
+        var dynSig = listSig(list, ["session_id", "total_seconds", "last_seen_at"]);
+        cachedOnline = list;
+        if (structSig === lastOnlineStructSig) {
+          if (dynSig !== lastOnlineDynSig) {
+            lastOnlineDynSig = dynSig;
+            sessionsUpdateDynamicOnly(list);
+            document.getElementById("online-label").textContent = list.length ? list.length + " kişi sitede" : "";
+          }
+          return;
+        }
+        lastOnlineStructSig = structSig;
+        lastOnlineDynSig = dynSig;
+        lastOnlineSig = structSig + dynSig;
+        renderOnline(list);
       }
 
       function renderSessionsIfChanged(sessions) {
-        var sig = listSig(sessions, ["session_id", "total_seconds", "last_seen_at", "is_online", "games"]);
         allSessions = sessions || [];
-        if (sig === lastSessionsSig) return;
-        lastSessionsSig = sig;
-        renderSessions(sessions);
+        var structSig = sessionsStructuralSig(allSessions);
+        var dynSig = sessionsDynamicSig(allSessions);
+        if (structSig === lastSessionsStructSig) {
+          if (dynSig !== lastSessionsDynSig) {
+            lastSessionsDynSig = dynSig;
+            sessionsUpdateDynamicOnly(allSessions);
+            updateSessionFilterCount();
+          }
+          return;
+        }
+        if (sessionsUserScrolling) {
+          sessionsPendingRender = allSessions.slice();
+          lastSessionsDynSig = dynSig;
+          sessionsUpdateDynamicOnly(allSessions);
+          updateSessionFilterCount();
+          return;
+        }
+        lastSessionsStructSig = structSig;
+        lastSessionsDynSig = dynSig;
+        lastSessionsSig = structSig + dynSig;
+        sessionsPendingRender = null;
+        renderSessions(allSessions);
       }
 
       function renderLinksIfChanged(links, trackingSnippet) {
@@ -3895,6 +4057,12 @@
         smarticoLastResult = result;
         var rows = applySmarticoInactiveFilter(result.rows || []);
         rows = applySmarticoSearchFilter(rows);
+        var st = tablePager["smartico-table"] || {};
+        var renderSig = listSig(rows, ["affiliate_id", "link_id", "online_now", "visit_count", "registration_count", "ftd_count", "deposit_total", "withdrawal_total", "commissions_total", "bonus_total"])
+          + "|" + JSON.stringify(result.summary || {})
+          + "|" + (st.sortKey || "") + "|" + (st.sortDir || "") + "|" + !!st.expanded;
+        if (renderSig === lastSmarticoRenderSig) return;
+        lastSmarticoRenderSig = renderSig;
         rows = sortTableRows("smartico-table", rows, {
           affiliate_name: function(r) { return r.affiliate_name || ""; },
           link_name: function(r) { return r.link_name || ""; },
@@ -4099,6 +4267,14 @@
 
       var makrolinkLast = null;
       var makrolinkInFlight = false;
+      var makrolinkPage = 1;
+      var MAKROLINK_PAGE_SIZE = 25;
+      var lastMakrolinkSig = "";
+      var makrolinkCatOptionsHtml = "";
+      var makrolinkSearchTimer = null;
+      var makrolinkUserScrolling = false;
+      var makrolinkScrollTimer = null;
+      var makrolinkPendingRender = null;
       var makrolinkCategories = [
         "Marketing", "Call Center", "Sosyal Medya", "Mailing", "Sms",
         "Seo&Meta", "Twitter", "Instagram", "IVR"
@@ -4111,6 +4287,53 @@
           opts += '<option value="' + esc(c) + '"' + (c === cur ? " selected" : "") + ">" + esc(c) + "</option>";
         });
         return opts;
+      }
+
+      function makrolinkRebuildCatOptionsHtml() {
+        makrolinkCatOptionsHtml = makrolinkCategories.map(function(c) {
+          return '<option value="' + esc(c) + '">' + esc(c) + "</option>";
+        }).join("");
+      }
+
+      function makrolinkUpdateClickCountsOnly(links) {
+        var byId = {};
+        (links || []).forEach(function(l) { byId[String(l.id)] = l; });
+        document.querySelectorAll("#makrolink-table tr[data-ml-id]").forEach(function(tr) {
+          var l = byId[tr.getAttribute("data-ml-id")];
+          if (!l) return;
+          var cell = tr.querySelector(".ml-click-count");
+          if (cell) cell.textContent = String(l.clicks || l.click_count || 0);
+        });
+      }
+
+      function makrolinkUpdatePager(filteredLen) {
+        var pager = document.getElementById("makrolink-pager");
+        var info = document.getElementById("makrolink-page-info");
+        var prev = document.getElementById("makrolink-prev");
+        var next = document.getElementById("makrolink-next");
+        var totalPages = Math.max(1, Math.ceil(filteredLen / MAKROLINK_PAGE_SIZE));
+        if (makrolinkPage > totalPages) makrolinkPage = totalPages;
+        if (pager) pager.style.display = filteredLen > MAKROLINK_PAGE_SIZE ? "inline-flex" : "none";
+        if (info) info.textContent = makrolinkPage + " / " + totalPages;
+        if (prev) prev.disabled = makrolinkPage <= 1;
+        if (next) next.disabled = makrolinkPage >= totalPages;
+      }
+
+      function makrolinkUpdateFilterUi(catFilter) {
+        var clearBtn = document.getElementById("makrolink-filter-clear");
+        var activeWrap = document.getElementById("makrolink-filter-active");
+        var activeLabel = document.getElementById("makrolink-filter-active-label");
+        var on = !!catFilter;
+        if (clearBtn) clearBtn.style.display = on ? "" : "none";
+        if (activeWrap) activeWrap.classList.toggle("is-on", on);
+        if (activeLabel) {
+          activeLabel.textContent = catFilter === "__none__" ? "Kategorisiz" : catFilter;
+        }
+      }
+
+      function makrolinkApplyTableFilters(resetPage) {
+        if (resetPage) makrolinkPage = 1;
+        if (makrolinkLast) renderMakroLinkTable(makrolinkLast, { resetPage: !!resetPage });
       }
 
       function makrolinkSyncCategoryFilterSelect() {
@@ -4136,44 +4359,57 @@
         sel.innerHTML = opts;
       }
 
-      function renderMakroLinkTable(links) {
+      function renderMakroLinkTable(links, opts) {
+        opts = opts || {};
         makrolinkLast = links || [];
         var q = (document.getElementById("makrolink-search").value || "").trim().toLowerCase();
         var catFilter = ((document.getElementById("makrolink-filter-category") || {}).value || "");
         var rows = makrolinkLast.filter(function(l) {
+          var linkCat = (l.category || "").trim();
           if (catFilter === "__none__") {
-            if ((l.category || "").trim()) return false;
-          } else if (catFilter && (l.category || "") !== catFilter) {
+            if (linkCat) return false;
+          } else if (catFilter && linkCat !== catFilter) {
             return false;
           }
           if (!q) return true;
           return [l.code, l.label, l.destination_url, l.affiliate_id, l.ref_code, l.short_url, l.category]
             .join(" ").toLowerCase().indexOf(q) >= 0;
         });
+        if (opts.resetPage) makrolinkPage = 1;
+        var totalPages = Math.max(1, Math.ceil(rows.length / MAKROLINK_PAGE_SIZE));
+        if (makrolinkPage > totalPages) makrolinkPage = totalPages;
+        var start = (makrolinkPage - 1) * MAKROLINK_PAGE_SIZE;
+        var pageRows = rows.slice(start, start + MAKROLINK_PAGE_SIZE);
+        var scrollEl = document.getElementById("makrolink-table-scroll");
+        var scrollTop = scrollEl ? scrollEl.scrollTop : 0;
         var tb = document.getElementById("makrolink-table");
         if (!rows.length) {
           var emptyMsg = (q || catFilter) ? "Filtreye uygun link yok" : "Henüz link yok";
           tb.innerHTML = '<tr><td colspan="7" class="empty">' + emptyMsg + '</td></tr>';
         } else {
-          tb.innerHTML = rows.map(function(l) {
+          if (!makrolinkCatOptionsHtml) makrolinkRebuildCatOptionsHtml();
+          tb.innerHTML = pageRows.map(function(l) {
             var dest = l.destination_url || "";
             var destShort = dest.length > 48 ? dest.slice(0, 46) + "…" : dest;
             var aff = [l.affiliate_id, l.ref_code].filter(Boolean).join(" / ") || "—";
+            var cat = (l.category || "").trim();
+            var catCell = cat
+              ? '<span class="ml-cat-badge" data-id="' + l.id + '" data-cat="' + esc(cat) + '" title="Kategori değiştir">' + esc(cat) + '</span>'
+              : '<span class="ml-cat-badge empty" data-id="' + l.id + '" data-cat="" title="Kategori seç">Kategori yok</span>';
             return '<tr data-ml-id="' + l.id + '">' +
               '<td><div style="display:flex;align-items:center;gap:0.4rem;">' +
               '<a class="ml-link" href="' + esc(l.short_url) + '" target="_blank" rel="noopener">' + esc(l.short_url) + '</a>' +
               '<button type="button" class="icon-btn makrolink-copy" data-url="' + esc(l.short_url) + '" title="Kopyala">' + COPY_ICON_SVG + '</button>' +
               '</div></td>' +
               '<td>' + esc(l.label || "—") + '</td>' +
-              '<td><select class="makrolink-cat-select" data-id="' + l.id + '" title="Kategori değiştir" style="min-width:130px;max-width:160px;font-size:0.78rem;">' +
-              makrolinkCategoryOptions(l.category || "") +
-              '</select></td>' +
+              '<td>' + catCell + '</td>' +
               '<td title="' + esc(dest) + '"><code style="font-size:0.72rem;">' + esc(destShort) + '</code></td>' +
               '<td>' + esc(aff) + '</td>' +
-              '<td><strong>' + (l.clicks || l.click_count || 0) + '</strong></td>' +
+              '<td><strong class="ml-click-count">' + (l.clicks || l.click_count || 0) + '</strong></td>' +
               '<td><button type="button" class="btn btn-danger btn-sm makrolink-del" data-id="' + l.id + '">Sil</button></td></tr>';
           }).join("");
         }
+        if (scrollEl && !opts.skipScrollRestore) scrollEl.scrollTop = scrollTop;
         var total = makrolinkLast.length;
         var countEl = document.getElementById("makrolink-table-count");
         if (countEl) {
@@ -4181,7 +4417,27 @@
             ? (rows.length + " / " + total + " link")
             : (rows.length + " link");
         }
+        makrolinkUpdatePager(rows.length);
+        makrolinkUpdateFilterUi(catFilter);
         document.getElementById("makrolink-updated").textContent = "Son: " + new Date().toLocaleTimeString("tr-TR");
+      }
+
+      function makrolinkApplyLinks(links, forceRender) {
+        var sig = listSig(links || [], ["id", "code", "label", "category", "destination_url", "affiliate_id", "ref_code", "click_count", "short_url"]);
+        makrolinkLast = links || [];
+        if (!forceRender && sig === lastMakrolinkSig) {
+          makrolinkUpdateClickCountsOnly(makrolinkLast);
+          return;
+        }
+        if (!forceRender && makrolinkUserScrolling && sig !== lastMakrolinkSig) {
+          makrolinkPendingRender = makrolinkLast;
+          makrolinkUpdateClickCountsOnly(makrolinkLast);
+          lastMakrolinkSig = sig;
+          return;
+        }
+        lastMakrolinkSig = sig;
+        makrolinkPendingRender = null;
+        renderMakroLinkTable(makrolinkLast);
       }
 
       function loadMakroLinks() {
@@ -4193,14 +4449,16 @@
         }).then(function(d) {
           if (!d) return;
           if (d.categories && d.categories.length) makrolinkCategories = d.categories;
+          makrolinkRebuildCatOptionsHtml();
           try {
             var savedCat = localStorage.getItem("makrolink_cat_filter");
             var catSel = document.getElementById("makrolink-filter-category");
-            if (catSel && savedCat) catSel.value = savedCat;
+            if (catSel && savedCat !== null && savedCat !== undefined) catSel.value = savedCat;
           } catch (e) { /* ignore */ }
           makrolinkSyncCategoryFilterSelect();
+          makrolinkUpdateFilterUi((document.getElementById("makrolink-filter-category") || {}).value || "");
           makrolinkSyncCreateCategorySelect();
-          renderMakroLinkTable(d.links || []);
+          makrolinkApplyLinks(d.links || [], false);
         }).catch(function() {}).finally(function() { makrolinkInFlight = false; });
       }
 
@@ -4482,11 +4740,16 @@
       });
 
       bindOptional("smartico-hide-inactive", "change", function() {
+        lastSmarticoRenderSig = "";
         if (smarticoLastResult) renderSmarticoReport(smarticoLastResult);
       });
 
       bindOptional("smartico-search", "input", function() {
-        if (smarticoLastResult) renderSmarticoReport(smarticoLastResult);
+        clearTimeout(smarticoSearchTimer);
+        smarticoSearchTimer = setTimeout(function() {
+          lastSmarticoRenderSig = "";
+          if (smarticoLastResult) renderSmarticoReport(smarticoLastResult);
+        }, 220);
       });
 
       bindOptional("btn-smartico-clear", "click", function() {
@@ -4593,12 +4856,67 @@
       });
 
       bindOptional("makrolink-search", "input", function() {
-        if (makrolinkLast) renderMakroLinkTable(makrolinkLast);
+        clearTimeout(makrolinkSearchTimer);
+        makrolinkSearchTimer = setTimeout(function() {
+          makrolinkApplyTableFilters(true);
+        }, 220);
       });
       bindOptional("makrolink-filter-category", "change", function() {
         try { localStorage.setItem("makrolink_cat_filter", this.value || ""); } catch (e) { /* ignore */ }
-        if (makrolinkLast) renderMakroLinkTable(makrolinkLast);
+        makrolinkApplyTableFilters(true);
       });
+      bindOptional("makrolink-filter-clear", "click", function() {
+        var sel = document.getElementById("makrolink-filter-category");
+        if (sel) sel.value = "";
+        try { localStorage.removeItem("makrolink_cat_filter"); } catch (e) { /* ignore */ }
+        makrolinkApplyTableFilters(true);
+      });
+      bindOptional("makrolink-prev", "click", function() {
+        if (makrolinkPage > 1) {
+          makrolinkPage--;
+          if (makrolinkLast) renderMakroLinkTable(makrolinkLast);
+          var el = document.getElementById("makrolink-table-scroll");
+          if (el) el.scrollTop = 0;
+        }
+      });
+      bindOptional("makrolink-next", "click", function() {
+        makrolinkPage++;
+        if (makrolinkLast) renderMakroLinkTable(makrolinkLast);
+        var el = document.getElementById("makrolink-table-scroll");
+        if (el) el.scrollTop = 0;
+      });
+      (function() {
+        var scrollEl = document.getElementById("makrolink-table-scroll");
+        if (!scrollEl) return;
+        scrollEl.addEventListener("scroll", function() {
+          makrolinkUserScrolling = true;
+          clearTimeout(makrolinkScrollTimer);
+          makrolinkScrollTimer = setTimeout(function() {
+            makrolinkUserScrolling = false;
+            if (makrolinkPendingRender) {
+              renderMakroLinkTable(makrolinkPendingRender);
+              makrolinkPendingRender = null;
+            }
+          }, 600);
+        }, { passive: true });
+      })();
+      (function() {
+        var scrollEl = document.getElementById("sessions-table-scroll");
+        if (!scrollEl) return;
+        scrollEl.addEventListener("scroll", function() {
+          sessionsUserScrolling = true;
+          clearTimeout(sessionsScrollTimer);
+          sessionsScrollTimer = setTimeout(function() {
+            sessionsUserScrolling = false;
+            if (sessionsPendingRender) {
+              lastSessionsStructSig = sessionsStructuralSig(sessionsPendingRender);
+              lastSessionsDynSig = sessionsDynamicSig(sessionsPendingRender);
+              renderSessions(sessionsPendingRender);
+              sessionsPendingRender = null;
+            }
+          }, 600);
+        }, { passive: true });
+      })();
 
       bindOptional("makrolink-config-form", "submit", function(e) {
         e.preventDefault();
@@ -4728,7 +5046,15 @@
               makrolinkLast.forEach(function(l) {
                 if (String(l.id) === String(id)) l.category = category;
               });
+              lastMakrolinkSig = listSig(makrolinkLast, ["id", "code", "label", "category", "destination_url", "affiliate_id", "ref_code", "click_count", "short_url"]);
             }
+            var badge = document.createElement("span");
+            badge.className = "ml-cat-badge" + (category ? "" : " empty");
+            badge.setAttribute("data-id", id);
+            badge.setAttribute("data-cat", category);
+            badge.title = "Kategori değiştir";
+            badge.textContent = category || "Kategori yok";
+            catSel.replaceWith(badge);
           })
           .catch(function() {
             catSel.disabled = false;
@@ -4738,6 +5064,22 @@
       });
 
       bindOptional("makrolink-table", "click", function(e) {
+        var badge = e.target.closest ? e.target.closest(".ml-cat-badge") : null;
+        if (badge && !badge.querySelector("select")) {
+          e.stopPropagation();
+          var id = badge.getAttribute("data-id");
+          var cur = badge.getAttribute("data-cat") || "";
+          if (!makrolinkCatOptionsHtml) makrolinkRebuildCatOptionsHtml();
+          var sel = document.createElement("select");
+          sel.className = "makrolink-cat-select";
+          sel.setAttribute("data-id", id);
+          sel.style.cssText = "min-width:130px;max-width:160px;font-size:0.78rem;";
+          sel.innerHTML = '<option value="">— Kategori yok —</option>' + makrolinkCatOptionsHtml;
+          sel.value = cur;
+          badge.replaceWith(sel);
+          sel.focus();
+          return;
+        }
         var copyBtn = e.target.closest ? e.target.closest(".makrolink-copy") : null;
         if (copyBtn) {
           var url = copyBtn.getAttribute("data-url") || "";
@@ -4995,8 +5337,13 @@
           });
       });
 
+      function applyFiltersDebounced() {
+        clearTimeout(sessionFilterTimer);
+        sessionFilterTimer = setTimeout(function() { applyFilters(); }, 180);
+      }
+
       ["search-input","filter-domain","filter-ref","filter-device","filter-status"].forEach(function(id){
-        bindOptional(id, "input", applyFilters);
+        bindOptional(id, "input", applyFiltersDebounced);
         bindOptional(id, "change", applyFilters);
       });
       bindOptional("btn-clear-filter", "click", function(){
