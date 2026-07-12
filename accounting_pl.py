@@ -44,6 +44,10 @@ SECTION_LABELS = {
 # GİDERLER toplamına giren bölümler (GELİRLER ve ÜÇÜNCÜ ŞİRKET hariç, onlar ayrı satırda gösterilir).
 EXPENSE_SECTIONS = (SECTION_PERSONEL, SECTION_SABIT, SECTION_DEGISKEN, SECTION_REKLAM, SECTION_KOMISYON)
 
+# Mayıs 2026 raporundan itibaren Excel'e "Kâr Payı Dağılımı" (Yönetim Payı / Kalan / Ortak A / Ortak B) bloğu
+# eklendi. Önceki aylarda bu blok yok; bu yüzden bu tarihten önceki dönemlerde panelde gösterilmez.
+PROFIT_SPLIT_FROM_PERIOD = "2026-05"
+
 
 def _row_dict(row):
     if row is None:
@@ -61,6 +65,13 @@ def _empty_meta(period):
         "pronet_fatura_amount": 0.0,
         "pronet_odenen_amount": 0.0,
         "asil_net_amount": 0.0,
+        "yonetim_payi_label": "",
+        "yonetim_payi_amount": 0.0,
+        "kalan_amount": 0.0,
+        "ortak_a_label": "",
+        "ortak_a_amount": 0.0,
+        "ortak_b_label": "",
+        "ortak_b_amount": 0.0,
         "updated_at": None,
     }
 
@@ -73,8 +84,10 @@ def ensure_pl_meta(conn, period):
             conn,
             """
             INSERT INTO acc_pl_meta
-            (period, notes, pronet_fatura_label, pronet_fatura_amount, pronet_odenen_amount, asil_net_amount, updated_at)
-            VALUES (?, '', '', 0, 0, 0, ?)
+            (period, notes, pronet_fatura_label, pronet_fatura_amount, pronet_odenen_amount, asil_net_amount,
+             yonetim_payi_label, yonetim_payi_amount, kalan_amount, ortak_a_label, ortak_a_amount,
+             ortak_b_label, ortak_b_amount, updated_at)
+            VALUES (?, '', '', 0, 0, 0, '', 0, 0, '', 0, '', 0, ?)
             """,
             (period, now),
         )
@@ -120,11 +133,14 @@ def build_pl_payload(conn, period):
             "ucuncu_sirket": ucuncu_sirket,
             "net": net,
         },
+        "show_profit_split": period >= PROFIT_SPLIT_FROM_PERIOD,
     }
 
 
 def upsert_meta(conn, period, notes=None, pronet_fatura_label=None,
-                 pronet_fatura_amount=None, pronet_odenen_amount=None, asil_net_amount=None):
+                 pronet_fatura_amount=None, pronet_odenen_amount=None, asil_net_amount=None,
+                 yonetim_payi_label=None, yonetim_payi_amount=None, kalan_amount=None,
+                 ortak_a_label=None, ortak_a_amount=None, ortak_b_label=None, ortak_b_amount=None):
     ensure_pl_meta(conn, period)
     now = iso(utcnow())
     execute(
@@ -136,10 +152,21 @@ def upsert_meta(conn, period, notes=None, pronet_fatura_label=None,
             pronet_fatura_amount = COALESCE(?, pronet_fatura_amount),
             pronet_odenen_amount = COALESCE(?, pronet_odenen_amount),
             asil_net_amount = COALESCE(?, asil_net_amount),
+            yonetim_payi_label = COALESCE(?, yonetim_payi_label),
+            yonetim_payi_amount = COALESCE(?, yonetim_payi_amount),
+            kalan_amount = COALESCE(?, kalan_amount),
+            ortak_a_label = COALESCE(?, ortak_a_label),
+            ortak_a_amount = COALESCE(?, ortak_a_amount),
+            ortak_b_label = COALESCE(?, ortak_b_label),
+            ortak_b_amount = COALESCE(?, ortak_b_amount),
             updated_at = ?
         WHERE period = ?
         """,
-        (notes, pronet_fatura_label, pronet_fatura_amount, pronet_odenen_amount, asil_net_amount, now, period),
+        (
+            notes, pronet_fatura_label, pronet_fatura_amount, pronet_odenen_amount, asil_net_amount,
+            yonetim_payi_label, yonetim_payi_amount, kalan_amount, ortak_a_label, ortak_a_amount,
+            ortak_b_label, ortak_b_amount, now, period,
+        ),
     )
     conn.commit()
 
@@ -214,8 +241,10 @@ def reseed_period_from_history(conn, period):
         conn,
         """
         INSERT INTO acc_pl_meta
-        (period, notes, pronet_fatura_label, pronet_fatura_amount, pronet_odenen_amount, asil_net_amount, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (period, notes, pronet_fatura_label, pronet_fatura_amount, pronet_odenen_amount, asil_net_amount,
+         yonetim_payi_label, yonetim_payi_amount, kalan_amount, ortak_a_label, ortak_a_amount,
+         ortak_b_label, ortak_b_amount, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             period,
@@ -224,6 +253,13 @@ def reseed_period_from_history(conn, period):
             meta.get("pronet_fatura_amount", 0),
             meta.get("pronet_odenen_amount", 0),
             meta.get("asil_net_amount", 0),
+            meta.get("yonetim_payi_label", ""),
+            meta.get("yonetim_payi_amount", 0),
+            meta.get("kalan_amount", 0),
+            meta.get("ortak_a_label", ""),
+            meta.get("ortak_a_amount", 0),
+            meta.get("ortak_b_label", ""),
+            meta.get("ortak_b_amount", 0),
             now,
         ),
     )

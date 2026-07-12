@@ -545,7 +545,12 @@
         e.preventDefault();
         var fileInput = document.getElementById("mail-bulk-file");
         var file = fileInput && fileInput.files && fileInput.files[0];
-        if (!file) { mailToast("Önce bir CSV dosyası seç"); return; }
+        if (!file) { mailToast("Önce bir CSV veya XLSX dosyası seç"); return; }
+        var lowerName = file.name.toLowerCase();
+        if (!/\.(csv|xlsx|xlsm)$/.test(lowerName)) {
+          mailToast("Sadece .csv veya .xlsx dosyası yükleyebilirsin");
+          return;
+        }
         var tag = (document.getElementById("mail-bulk-tag").value || "").trim();
         var fd = new FormData();
         fd.append("file", file);

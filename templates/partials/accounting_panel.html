@@ -41,7 +41,8 @@
     <button type="button" class="acc-tab" data-acc-tab="commissions" data-perm="accounting.commissions">Komisyon</button>
     <button type="button" class="acc-tab" data-acc-tab="expenses" data-perm="accounting.expenses">Cari Gider</button>
     <button type="button" class="acc-tab" data-acc-tab="vault" data-perm="accounting.vault">Tahsilat & Kasa</button>
-    <button type="button" class="acc-tab" data-acc-tab="payroll" data-perm="accounting.payroll">Personel</button>
+    <button type="button" class="acc-tab" data-acc-tab="payroll" data-perm="accounting.payroll">Maaş Ödemeleri</button>
+    <button type="button" class="acc-tab" data-acc-tab="personnel" data-perm="accounting.personnel">Personel</button>
     <button type="button" class="acc-tab" data-acc-tab="invoices" data-perm="accounting.invoices">Fatura</button>
     <button type="button" class="acc-tab" data-acc-tab="invoice_calc" data-perm="accounting.invoice_calc">Fatura Hesaplama</button>
     <button type="button" class="acc-tab" data-acc-tab="pl" data-perm="accounting.pl_report">PL Raporu</button>
@@ -59,13 +60,33 @@
         <div class="lbl">Toplam Çekim</div>
       </div>
       <div class="kpi amber">
-        <div class="val" id="acc-kpi-commission">—</div>
-        <div class="lbl">Net Komisyon Masrafı</div>
+        <div class="val" id="acc-kpi-deposit-commission">—</div>
+        <div class="lbl">Toplam Yatırım Komisyonu</div>
+      </div>
+      <div class="kpi amber">
+        <div class="val" id="acc-kpi-withdrawal-commission">—</div>
+        <div class="lbl">Toplam Çekim Komisyonu</div>
       </div>
       <div class="kpi">
         <div class="val" id="acc-kpi-expenses">—</div>
         <div class="lbl">Toplam Cari Gider</div>
         <div class="sub muted" id="acc-kpi-payroll-hint"></div>
+      </div>
+      <div class="kpi rose">
+        <div class="val" id="acc-kpi-invoice-estimate">—</div>
+        <div class="lbl">Tahmini Fatura <span class="muted" style="font-weight:400;">(GGR · ₺)</span></div>
+      </div>
+      <div class="kpi green">
+        <div class="val" id="acc-kpi-personnel-accrual">—</div>
+        <div class="lbl">Personel Hakedişi <span class="muted" style="font-weight:400;">(bu ay · ₺)</span></div>
+      </div>
+    </section>
+    <section class="card" id="acc-kpi-expense-cat-card">
+      <div class="card-head"><span>Cari Gider — Kategori Bazında (Bu Ay)</span></div>
+      <div class="card-body">
+        <div class="kpi-grid acc-kpi-grid" id="acc-kpi-expense-categories">
+          <div class="kpi"><div class="val">—</div><div class="lbl">Yükleniyor…</div></div>
+        </div>
       </div>
     </section>
     <section class="card acc-profit-card">
@@ -732,6 +753,97 @@
     </section>
   </div>
 
+  <!-- Personel (sade Ofis / Türkiye listesi) — Maaş Ödemeleri alanından bağımsız -->
+  <div class="acc-pane" id="acc-pane-personnel" data-acc-pane="personnel" data-perm="accounting.personnel" hidden>
+    <section class="card">
+      <div class="card-head">
+        <span>Personel <span class="muted" style="font-weight:400;font-size:0.72rem;">(sade Ofis / Türkiye listesi — isim, işbaşı tarihi, maaş; Maaş Ödemeleri alanıyla bağlantısı yoktur)</span></span>
+      </div>
+      <p class="hint" style="margin:0 1rem 0.85rem;">Günlük yevmiye = Maaş ÷ o ayın gün sayısı. Dashboard'daki "Personel Hakedişi" kartı, işbaşı tarihinden bugüne kadarki (seçili ayda) toplam yevmiyeyi buradan çeker.</p>
+    </section>
+
+    <section class="kpi-grid acc-kpi-grid">
+      <div class="kpi green">
+        <div class="val" id="acc-pers-total-office">—</div>
+        <div class="lbl">Ofis Personeli Hakedişi (bu ay)</div>
+      </div>
+      <div class="kpi">
+        <div class="val" id="acc-pers-total-turkey">—</div>
+        <div class="lbl">Türkiye Personeli Hakedişi (bu ay)</div>
+      </div>
+      <div class="kpi amber">
+        <div class="val" id="acc-pers-total-all">—</div>
+        <div class="lbl">Toplam Hakediş (bu ay)</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span>Yeni Personel Ekle</span></div>
+      <form id="acc-pers-form" class="card-body acc-inv-meta-grid">
+        <label>Kategori
+          <select id="acc-pers-category" required>
+            <option value="office">Ofis Personeli</option>
+            <option value="turkey">Türkiye Personeli</option>
+          </select>
+        </label>
+        <label>İsim
+          <input type="text" id="acc-pers-name" placeholder="Ad Soyad" required>
+        </label>
+        <label>İşbaşı Tarihi
+          <input type="date" id="acc-pers-start" required>
+        </label>
+        <label>Maaş (₺)
+          <input type="number" step="0.01" id="acc-pers-salary" placeholder="0" required>
+        </label>
+        <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span>Ofis Personeli</span></div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table class="acc-inv-table">
+            <thead>
+              <tr>
+                <th>İsim</th>
+                <th>İşbaşı Tarihi</th>
+                <th>Maaş (₺)</th>
+                <th>Günlük Yevmiye</th>
+                <th>Bu Ay Hakediş</th>
+                <th>Durum</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="acc-pers-table-office"><tr><td colspan="7" class="empty">Henüz personel eklenmedi</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span>Türkiye Personeli</span></div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table class="acc-inv-table">
+            <thead>
+              <tr>
+                <th>İsim</th>
+                <th>İşbaşı Tarihi</th>
+                <th>Maaş (₺)</th>
+                <th>Günlük Yevmiye</th>
+                <th>Bu Ay Hakediş</th>
+                <th>Durum</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="acc-pers-table-turkey"><tr><td colspan="7" class="empty">Henüz personel eklenmedi</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
   <!-- Fatura / Pronet Proforma -->
   <div class="acc-pane" id="acc-pane-invoices" data-acc-pane="invoices" data-perm="accounting.invoices" hidden>
     <section class="card">
@@ -1027,6 +1139,29 @@
         </div>
         <div style="display:flex;justify-content:flex-end;margin-top:0.65rem;">
           <button type="button" class="btn btn-primary" id="btn-acc-pl-save-meta">Kaydet</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="acc-pl-profit-split-card" hidden>
+      <div class="card-head"><span>Kâr Payı Dağılımı</span></div>
+      <p class="hint" style="padding:0 1rem;margin-top:0.5rem;">Mayıs 2026'dan itibaren Excel'e eklenen bölüm — Asıl Net üzerinden yönetim payı ayrılıp kalan tutar ortaklar arasında paylaştırılır. Bu alanlar da elle girilir.</p>
+      <div class="card-body">
+        <div class="form-row-4">
+          <div style="grid-column: span 2;"><label for="acc-pl-yonetim-label">Yönetim Payı Etiketi</label>
+            <input id="acc-pl-yonetim-label" placeholder="örn. YÖNETİM PAYI %25" autocomplete="off">
+          </div>
+          <div><label for="acc-pl-yonetim-amount">Yönetim Payı (TRY)</label><input type="number" step="0.01" id="acc-pl-yonetim-amount"></div>
+          <div><label for="acc-pl-kalan-amount">Kalan (TRY)</label><input type="number" step="0.01" id="acc-pl-kalan-amount"></div>
+        </div>
+        <div class="form-row-4" style="margin-top:0.55rem;">
+          <div><label for="acc-pl-ortak-a-label">Ortak A Etiketi</label><input id="acc-pl-ortak-a-label" placeholder="örn. Ortak A %80" autocomplete="off"></div>
+          <div><label for="acc-pl-ortak-a-amount">Ortak A (TRY)</label><input type="number" step="0.01" id="acc-pl-ortak-a-amount"></div>
+          <div><label for="acc-pl-ortak-b-label">Ortak B Etiketi</label><input id="acc-pl-ortak-b-label" placeholder="örn. Ortak B %20" autocomplete="off"></div>
+          <div><label for="acc-pl-ortak-b-amount">Ortak B (TRY)</label><input type="number" step="0.01" id="acc-pl-ortak-b-amount"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:0.65rem;">
+          <button type="button" class="btn btn-primary" id="btn-acc-pl-save-split">Kaydet</button>
         </div>
       </div>
     </section>

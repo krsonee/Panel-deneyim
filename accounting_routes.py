@@ -1,5 +1,6 @@
 """Muhasebe modülü API rotaları — Link Takip altyapısından bağımsız."""
 
+import calendar
 import re
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -449,6 +450,66 @@ def build_invoice_calc_payload(conn, period):
     }
 
 
+def expense_category_totals(conn, period):
+    """Dashboard için kategori bazlı cari gider toplamları (0 girişli kategoriler de dahil)."""
+    exp_sql, exp_params = date_clause("e.expense_date", period)
+    rows = fetchall(
+        conn,
+        f"""
+        SELECT c.id, c.name,
+               COALESCE(SUM(e.amount_try), 0) AS amount_try,
+               COALESCE(SUM(e.amount_usd), 0) AS amount_usd,
+               COALESCE(SUM(e.amount_eur), 0) AS amount_eur
+        FROM acc_expense_categories c
+        LEFT JOIN acc_expenses e ON e.category_id = c.id{exp_sql}
+        GROUP BY c.id, c.name
+        ORDER BY c.name
+        """,
+        exp_params,
+    )
+    return [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "amount_try": round(float(r["amount_try"] or 0), 2),
+            "amount_usd": round(float(r["amount_usd"] or 0), 2),
+            "amount_eur": round(float(r["amount_eur"] or 0), 2),
+        }
+        for r in rows
+    ]
+
+
+def staff_daily_wage(salary_amount, day):
+    salary = float(salary_amount or 0)
+    if salary <= 0:
+        return 0.0
+    days_in_month = calendar.monthrange(day.year, day.month)[1]
+    return round(salary / days_in_month, 2)
+
+
+def staff_accrual_for_period(start_date, salary_amount, period, reference=None):
+    """Personel (Ofis/Türkiye) sekmesi için: işbaşı tarihinden bugüne (veya dönem sonuna) kadarki günlük yevmiye toplamı."""
+    period_start, period_end = period_date_range(period, reference)
+    if not period_start:
+        return 0.0
+    today = reference or datetime.now(timezone.utc).date()
+    if period_end > today:
+        period_end = today
+    try:
+        start = datetime.strptime(str(start_date)[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return 0.0
+    range_start = max(period_start, start)
+    if range_start > period_end:
+        return 0.0
+    total = 0.0
+    day = range_start
+    while day <= period_end:
+        total += staff_daily_wage(salary_amount, day)
+        day += timedelta(days=1)
+    return round(total, 2)
+
+
 def create_accounting_blueprint(permission_required, superadmin_required=None):
     bp = Blueprint("accounting", __name__, url_prefix="/api/accounting")
 
@@ -756,11 +817,17 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
                 f"SELECT COALESCE(SUM({amt}), 0) FROM acc_finance_transactions WHERE tx_type = 'withdrawal'{wdr_sql}",
                 wdr_params,
             ) or 0
-            commission = scalar(
+            deposit_commission = scalar(
                 conn,
-                f"SELECT COALESCE(SUM({comm}), 0) FROM acc_finance_transactions WHERE 1=1{dep_sql}",
+                f"SELECT COALESCE(SUM({comm}), 0) FROM acc_finance_transactions WHERE tx_type = 'deposit'{dep_sql}",
                 dep_params,
             ) or 0
+            withdrawal_commission = scalar(
+                conn,
+                f"SELECT COALESCE(SUM({comm}), 0) FROM acc_finance_transactions WHERE tx_type = 'withdrawal'{wdr_sql}",
+                wdr_params,
+            ) or 0
+            commission = float(deposit_commission or 0) + float(withdrawal_commission or 0)
             expenses = scalar(
                 conn,
                 f"SELECT COALESCE(SUM({amt}), 0) FROM acc_expenses WHERE 1=1{exp_sql}",
@@ -769,12 +836,16 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             payroll = payroll_accrual.get(cur, 0)
             deposits = round(float(deposits), 2)
             withdrawals = round(float(withdrawals), 2)
-            commission = round(float(commission), 2)
+            deposit_commission = round(float(deposit_commission), 2)
+            withdrawal_commission = round(float(withdrawal_commission), 2)
+            commission = round(commission, 2)
             expenses = round(float(expenses), 2)
             payroll = round(float(payroll), 2)
             result[cur] = {
                 "total_deposits": deposits,
                 "total_withdrawals": withdrawals,
+                "total_deposit_commission": deposit_commission,
+                "total_withdrawal_commission": withdrawal_commission,
                 "total_commission": commission,
                 "total_expenses": expenses,
                 "payroll_monthly": payroll,
@@ -806,10 +877,21 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
     @acc_perm(*ACC_READ)
     def dashboard():
         period = period_from_request()
+        month_period = valid_month_period(period) or default_accounting_period()
         with closing(get_db()) as conn:
             kpi = kpi_for_period(conn, period)
             employees = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_employees")]
             departments, salary_categories = payroll_context(conn)
+            expense_categories = expense_category_totals(conn, period)
+            staff_rows = fetchall(conn, "SELECT * FROM acc_staff WHERE status = 'active'")
+            personnel_accrual_try = round(
+                sum(
+                    staff_accrual_for_period(r["start_date"], r["salary_amount"], month_period)
+                    for r in staff_rows
+                ),
+                2,
+            )
+            invoice_calc_payload = build_invoice_calc_payload(conn, month_period)
         payroll_daily = compute_payroll_daily(
             payroll_source_rows(employees, salary_categories),
             period,
@@ -827,6 +909,9 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             "payroll_daily": payroll_daily,
             "departments": departments,
             "salary_categories": salary_categories,
+            "expense_categories": expense_categories,
+            "personnel_accrual_try": personnel_accrual_try,
+            "invoice_calc_estimate_try": invoice_calc_payload["grand_total"]["commission_amount"],
             **permissions_meta(),
         })
 
@@ -2503,6 +2588,13 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
         pronet_fatura_amount = parse_signed_amount(data.get("pronet_fatura_amount")) if "pronet_fatura_amount" in data else None
         pronet_odenen_amount = parse_signed_amount(data.get("pronet_odenen_amount")) if "pronet_odenen_amount" in data else None
         asil_net_amount = parse_signed_amount(data.get("asil_net_amount")) if "asil_net_amount" in data else None
+        yonetim_payi_label = data.get("yonetim_payi_label")
+        yonetim_payi_amount = parse_signed_amount(data.get("yonetim_payi_amount")) if "yonetim_payi_amount" in data else None
+        kalan_amount = parse_signed_amount(data.get("kalan_amount")) if "kalan_amount" in data else None
+        ortak_a_label = data.get("ortak_a_label")
+        ortak_a_amount = parse_signed_amount(data.get("ortak_a_amount")) if "ortak_a_amount" in data else None
+        ortak_b_label = data.get("ortak_b_label")
+        ortak_b_amount = parse_signed_amount(data.get("ortak_b_amount")) if "ortak_b_amount" in data else None
         with closing(get_db()) as conn:
             pl_upsert_meta(
                 conn, period,
@@ -2511,6 +2603,13 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
                 pronet_fatura_amount=pronet_fatura_amount,
                 pronet_odenen_amount=pronet_odenen_amount,
                 asil_net_amount=asil_net_amount,
+                yonetim_payi_label=yonetim_payi_label.strip() if isinstance(yonetim_payi_label, str) else None,
+                yonetim_payi_amount=yonetim_payi_amount,
+                kalan_amount=kalan_amount,
+                ortak_a_label=ortak_a_label.strip() if isinstance(ortak_a_label, str) else None,
+                ortak_a_amount=ortak_a_amount,
+                ortak_b_label=ortak_b_label.strip() if isinstance(ortak_b_label, str) else None,
+                ortak_b_amount=ortak_b_amount,
             )
             payload = build_pl_payload(conn, period)
         payload["period_label"] = period_label(period)
@@ -2591,5 +2690,132 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             payload = build_pl_payload(conn, period)
         payload["period_label"] = period_label(period)
         return jsonify(payload)
+
+    # --- Personel (Ofis / Türkiye listesi) — Maaş Ödemeleri (acc_employees) alanından bağımsız ---
+
+    @bp.route("/personnel", methods=["GET"])
+    @acc_perm("accounting.personnel", *ACC_READ)
+    def list_personnel():
+        period = valid_month_period(request.args.get("period")) or period_from_request()
+        period = valid_month_period(period) or default_accounting_period()
+        with closing(get_db()) as conn:
+            rows = [dict(r) for r in fetchall(conn, "SELECT * FROM acc_staff ORDER BY category, name")]
+        today = datetime.now(timezone.utc).date()
+        totals = {"office": 0.0, "turkey": 0.0, "all": 0.0}
+        for r in rows:
+            r["daily_wage"] = staff_daily_wage(r["salary_amount"], today)
+            if r["status"] == "active":
+                accrual = staff_accrual_for_period(r["start_date"], r["salary_amount"], period)
+            else:
+                accrual = 0.0
+            r["period_accrual"] = accrual
+            if r["status"] == "active":
+                cat = r["category"] if r["category"] in ("office", "turkey") else "turkey"
+                totals[cat] = round(totals[cat] + accrual, 2)
+                totals["all"] = round(totals["all"] + accrual, 2)
+        return jsonify({
+            "period": period,
+            "period_label": period_label(period),
+            "staff": rows,
+            "totals": totals,
+        })
+
+    @bp.route("/personnel", methods=["POST"])
+    @acc_perm("accounting.personnel", *MODULE_ACCESS)
+    def create_personnel():
+        data = request.get_json(silent=True) or {}
+        category = (data.get("category") or "").strip().lower()
+        if category not in ("office", "turkey"):
+            return jsonify({"error": "Kategori 'Ofis Personeli' veya 'Türkiye Personeli' olmalı."}), 400
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "İsim girin."}), 400
+        start_date = parse_date(data.get("start_date"))
+        if not start_date:
+            return jsonify({"error": "Geçerli işbaşı tarihi girin."}), 400
+        salary = parse_amount(data.get("salary_amount"))
+        if salary is None:
+            return jsonify({"error": "Geçerli maaş tutarı girin."}), 400
+        notes = (data.get("notes") or "").strip()
+        now = iso(utcnow())
+        who = (session.get("admin_display_name") or session.get("admin_username") or "").strip()
+        with closing(get_db()) as conn:
+            new_id = insert_returning_id(
+                conn,
+                """
+                INSERT INTO acc_staff
+                (category, name, start_date, salary_amount, status, notes, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)
+                """,
+                (category, name, start_date, salary, notes, who, now, now),
+            )
+            conn.commit()
+            row = fetchone(conn, "SELECT * FROM acc_staff WHERE id = ?", (new_id,))
+        return jsonify({"staff": dict(row)}), 201
+
+    @bp.route("/personnel/<int:staff_id>", methods=["PUT"])
+    @acc_perm("accounting.personnel", *MODULE_ACCESS)
+    def update_personnel(staff_id):
+        data = request.get_json(silent=True) or {}
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM acc_staff WHERE id = ?", (staff_id,))
+            if not row:
+                return jsonify({"error": "Personel bulunamadı."}), 404
+            fields = []
+            params = []
+            if "category" in data:
+                category = (data.get("category") or "").strip().lower()
+                if category not in ("office", "turkey"):
+                    return jsonify({"error": "Kategori 'Ofis Personeli' veya 'Türkiye Personeli' olmalı."}), 400
+                fields.append("category = ?")
+                params.append(category)
+            if "name" in data:
+                name = (data.get("name") or "").strip()
+                if not name:
+                    return jsonify({"error": "İsim girin."}), 400
+                fields.append("name = ?")
+                params.append(name)
+            if "start_date" in data:
+                start_date = parse_date(data.get("start_date"))
+                if not start_date:
+                    return jsonify({"error": "Geçerli işbaşı tarihi girin."}), 400
+                fields.append("start_date = ?")
+                params.append(start_date)
+            if "end_date" in data:
+                end_date = parse_date(data.get("end_date")) if data.get("end_date") else None
+                fields.append("end_date = ?")
+                params.append(end_date)
+            if "salary_amount" in data:
+                salary = parse_amount(data.get("salary_amount"))
+                if salary is None:
+                    return jsonify({"error": "Geçerli maaş tutarı girin."}), 400
+                fields.append("salary_amount = ?")
+                params.append(salary)
+            if "status" in data:
+                status = (data.get("status") or "active").strip().lower()
+                if status not in ("active", "left"):
+                    return jsonify({"error": "Durum 'active' veya 'left' olmalı."}), 400
+                fields.append("status = ?")
+                params.append(status)
+            if "notes" in data:
+                fields.append("notes = ?")
+                params.append((data.get("notes") or "").strip())
+            if not fields:
+                return jsonify({"error": "Güncellenecek alan yok."}), 400
+            fields.append("updated_at = ?")
+            params.append(iso(utcnow()))
+            params.append(staff_id)
+            execute(conn, f"UPDATE acc_staff SET {', '.join(fields)} WHERE id = ?", params)
+            conn.commit()
+            updated = fetchone(conn, "SELECT * FROM acc_staff WHERE id = ?", (staff_id,))
+        return jsonify({"staff": dict(updated)})
+
+    @bp.route("/personnel/<int:staff_id>", methods=["DELETE"])
+    @acc_perm("accounting.personnel", *MODULE_ACCESS)
+    def delete_personnel(staff_id):
+        with closing(get_db()) as conn:
+            execute(conn, "DELETE FROM acc_staff WHERE id = ?", (staff_id,))
+            conn.commit()
+        return jsonify({"ok": True})
 
     return bp

@@ -47,6 +47,8 @@ PERMISSION_CATALOG = [
      "desc": "Merkeze iletilen aylık kâr/zarar (P&L) raporu"},
     {"key": "accounting.invoice_calc", "label": "Fatura Hesaplama (Günlük)", "group": "Muhasebe",
      "desc": "Sağlayıcı bazında günlük Stake / Winning girişiyle GGR ve komisyon tahmini — Fatura alanından bağımsız"},
+    {"key": "accounting.personnel", "label": "Personel (Ofis / Türkiye Listesi)", "group": "Muhasebe",
+     "desc": "Ofis ve Türkiye personel listesi — isim, işbaşı tarihi, maaş; Maaş Ödemeleri alanından bağımsız"},
     {"key": "mailing.dashboard", "label": "Mailing Özet", "group": "Mailing",
      "desc": "Mailing dashboard KPI kartları"},
     {"key": "mailing.crm", "label": "CRM Kontaklar", "group": "Mailing",
@@ -105,7 +107,7 @@ ROLE_TEMPLATES = {
             "accounting.commissions", "accounting.expenses", "accounting.vault",
             "accounting.payroll", "accounting.payroll.office_salaries", "accounting.invoices",
             "accounting.pl_report",
-            "accounting.invoice_calc",
+            "accounting.invoice_calc", "accounting.personnel",
         ],
     },
     "mailer": {

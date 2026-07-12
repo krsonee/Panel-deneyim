@@ -302,18 +302,67 @@ def _bulk_upsert_contacts(conn, batch, tag, now):
     return cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(batch)
 
 
+def _count_csv_rows(path):
+    with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
+        return max(sum(1 for _ in f) - 1, 0)
+
+
+def _iter_csv_rows(path):
+    with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            yield row
+
+
+def _count_xlsx_rows(path):
+    import openpyxl
+
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        ws = wb.worksheets[0]
+        return max((ws.max_row or 1) - 1, 0)
+    finally:
+        wb.close()
+
+
+def _iter_xlsx_rows(path):
+    import openpyxl
+
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        ws = wb.worksheets[0]
+        rows_iter = ws.iter_rows(values_only=True)
+        try:
+            header_raw = next(rows_iter)
+        except StopIteration:
+            return
+        header = [(str(h).strip() if h is not None else "") for h in header_raw]
+        for values in rows_iter:
+            row = {}
+            for i, key in enumerate(header):
+                if not key:
+                    continue
+                val = values[i] if i < len(values) else None
+                row[key] = "" if val is None else str(val).strip()
+            yield row
+    finally:
+        wb.close()
+
+
 def _run_import_job(job_id, path, tag):
     """Arka plan thread: dosyayı satır satır okuyup IMPORT_CHUNK_SIZE'lık
     gruplar halinde bulk upsert eder — HTTP isteğinden bağımsız çalışır,
-    timeout'a düşmez."""
+    timeout'a düşmez. CSV ve XLSX (.xlsx) destekler."""
     now = iso(utcnow())
+    is_xlsx = os.path.splitext(path)[1].lower() in (".xlsx", ".xlsm")
+    count_fn = _count_xlsx_rows if is_xlsx else _count_csv_rows
+    iter_fn = _iter_xlsx_rows if is_xlsx else _iter_csv_rows
     try:
         with closing(get_db()) as conn:
             execute(conn, "UPDATE mail_import_jobs SET status = 'running', updated_at = ? WHERE id = ?", (now, job_id))
             conn.commit()
 
-            with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
-                total = max(sum(1 for _ in f) - 1, 0)
+            total = count_fn(path)
             execute(conn, "UPDATE mail_import_jobs SET total_rows = ? WHERE id = ?", (total, job_id))
             conn.commit()
 
@@ -321,33 +370,31 @@ def _run_import_job(job_id, path, tag):
             upserted = 0
             skipped = 0
             batch = []
-            with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    email = (row.get("email") or row.get("Email") or row.get("EMAIL") or "").strip().lower()
-                    processed += 1
-                    if not email or not EMAIL_RE.match(email):
-                        skipped += 1
-                        continue
-                    name = (row.get("name") or row.get("Name") or "").strip()
-                    batch.append((email, name))
-                    if len(batch) >= IMPORT_CHUNK_SIZE:
-                        upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
-                        conn.commit()
-                        batch = []
-                        execute(
-                            conn,
-                            """
-                            UPDATE mail_import_jobs
-                            SET processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
-                            WHERE id = ?
-                            """,
-                            (processed, upserted, skipped, iso(utcnow()), job_id),
-                        )
-                        conn.commit()
-                if batch:
+            for row in iter_fn(path):
+                email = (row.get("email") or row.get("Email") or row.get("EMAIL") or "").strip().lower()
+                processed += 1
+                if not email or not EMAIL_RE.match(email):
+                    skipped += 1
+                    continue
+                name = (row.get("name") or row.get("Name") or "").strip()
+                batch.append((email, name))
+                if len(batch) >= IMPORT_CHUNK_SIZE:
                     upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
                     conn.commit()
+                    batch = []
+                    execute(
+                        conn,
+                        """
+                        UPDATE mail_import_jobs
+                        SET processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (processed, upserted, skipped, iso(utcnow()), job_id),
+                    )
+                    conn.commit()
+            if batch:
+                upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
+                conn.commit()
 
             final_now = iso(utcnow())
             if tag:
@@ -713,7 +760,10 @@ def create_mailing_blueprint(permission_required):
         """Büyük liste (yüz binler / milyonlar) için dosya yükleyip arka planda işler."""
         file = request.files.get("file")
         if not file or not file.filename:
-            return jsonify({"error": "CSV dosyası seç."}), 400
+            return jsonify({"error": "CSV veya XLSX dosyası seç."}), 400
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in (".csv", ".xlsx", ".xlsm"):
+            return jsonify({"error": "Sadece .csv veya .xlsx dosyası yükleyebilirsin."}), 400
         if request.content_length and request.content_length > 800 * 1024 * 1024:
             return jsonify({"error": "Dosya çok büyük (800MB üstü). Bölüp tekrar dene."}), 400
         tag = (request.form.get("tag") or "").strip()
@@ -730,7 +780,7 @@ def create_mailing_blueprint(permission_required):
                 (file.filename, tag, now, now),
             )
             conn.commit()
-        path = os.path.join(IMPORT_DIR, f"job_{job_id}.csv")
+        path = os.path.join(IMPORT_DIR, f"job_{job_id}{ext}")
         file.save(path)
         threading.Thread(target=_run_import_job, args=(job_id, path, tag), daemon=True).start()
         return jsonify({"job_id": job_id, "status": "pending"}), 202

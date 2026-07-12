@@ -966,6 +966,14 @@ def migrate_schema(conn):
             pass
         print(f"⚠️  migrate_invoice_calc hata (atlanıyor, panel yine açılır): {exc}")
     try:
+        migrate_staff_roster(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_staff_roster hata (atlanıyor, panel yine açılır): {exc}")
+    try:
         migrate_accounting_pl(conn)
     except Exception as exc:
         try:
@@ -1193,6 +1201,22 @@ def migrate_accounting_pl(conn):
     )
     conn.commit()
 
+    # Mayıs 2026'dan itibaren Excel'e eklenen "Kâr Payı Dağılımı" bloğu (Yönetim Payı / Kalan / Ortak A / Ortak B).
+    pl_meta_cols = _table_columns(conn, "acc_pl_meta")
+    if pl_meta_cols and "yonetim_payi_label" not in pl_meta_cols:
+        new_cols = [
+            ("yonetim_payi_label", "TEXT NOT NULL DEFAULT ''"),
+            ("yonetim_payi_amount", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+            ("kalan_amount", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+            ("ortak_a_label", "TEXT NOT NULL DEFAULT ''"),
+            ("ortak_a_amount", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+            ("ortak_b_label", "TEXT NOT NULL DEFAULT ''"),
+            ("ortak_b_amount", "DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ]
+        for name, typedef in new_cols:
+            execute(conn, f"ALTER TABLE acc_pl_meta ADD COLUMN {name} {typedef}")
+        conn.commit()
+
 
 def migrate_invoice_calc(conn):
     """Fatura Hesaplama (günlük GGR takip) — Pronet Fatura alanından tamamen bağımsız."""
@@ -1283,6 +1307,50 @@ def migrate_invoice_calc(conn):
                 """,
                 (section, name, rate, sort_order, now),
             )
+    conn.commit()
+
+
+def migrate_staff_roster(conn):
+    """Personel sekmesi — sade Ofis/Türkiye listesi. Maaş Ödemeleri (acc_employees) alanından bağımsız."""
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_staff (
+                id SERIAL PRIMARY KEY,
+                category TEXT NOT NULL DEFAULT 'turkey',
+                name TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                end_date TEXT,
+                salary_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'active',
+                notes TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_staff (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category TEXT NOT NULL DEFAULT 'turkey',
+                name TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                end_date TEXT,
+                salary_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'active',
+                notes TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_acc_staff_category ON acc_staff(category)")
     conn.commit()
 
 

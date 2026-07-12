@@ -932,6 +932,20 @@
     if (el) el.textContent = text;
   }
 
+  function accRenderExpenseCategoryKpis(list) {
+    var box = document.getElementById("acc-kpi-expense-categories");
+    if (!box) return;
+    if (!list || !list.length) {
+      box.innerHTML = '<div class="kpi"><div class="val">—</div><div class="lbl">Kategori tanımlı değil</div></div>';
+      return;
+    }
+    box.innerHTML = list.map(function (c) {
+      var amt = c["amount_" + accDisplayCurrency.toLowerCase()];
+      if (amt == null) amt = c.amount_try;
+      return '<div class="kpi"><div class="val">' + accMoney(amt, accDisplayCurrency) + '</div><div class="lbl">' + accEsc(c.name) + '</div></div>';
+    }).join("");
+  }
+
   function accLoadDashboard() {
     accApi("/api/accounting/dashboard" + accPeriodQuery()).then(function (res) {
       try {
@@ -950,8 +964,12 @@
       var k = kpiAll[accDisplayCurrency] || kpiAll.TRY || {};
       accSetText("acc-kpi-deposits", accMoney(k.total_deposits, accDisplayCurrency));
       accSetText("acc-kpi-withdrawals", accMoney(k.total_withdrawals, accDisplayCurrency));
-      accSetText("acc-kpi-commission", accMoney(k.total_commission, accDisplayCurrency));
+      accSetText("acc-kpi-deposit-commission", accMoney(k.total_deposit_commission, accDisplayCurrency));
+      accSetText("acc-kpi-withdrawal-commission", accMoney(k.total_withdrawal_commission, accDisplayCurrency));
       accSetText("acc-kpi-expenses", accMoney(k.total_expenses, accDisplayCurrency));
+      accSetText("acc-kpi-invoice-estimate", accMoney(res.data.invoice_calc_estimate_try, "TRY"));
+      accSetText("acc-kpi-personnel-accrual", accMoney(res.data.personnel_accrual_try, "TRY"));
+      accRenderExpenseCategoryKpis(res.data.expense_categories || []);
       var netEl = document.getElementById("acc-kpi-net");
       if (netEl) {
         netEl.textContent = accMoney(k.net_profit, accDisplayCurrency);
@@ -2805,6 +2823,19 @@
     if (notesEl) notesEl.value = meta.notes || "";
     accSetText("acc-pl-updated", meta.updated_at ? ("Son güncelleme: " + new Date(meta.updated_at).toLocaleString("tr-TR")) : "");
 
+    var splitCard = document.getElementById("acc-pl-profit-split-card");
+    if (splitCard) splitCard.hidden = !data.show_profit_split;
+    if (data.show_profit_split) {
+      var setVal = function (id, val) { var el = document.getElementById(id); if (el) el.value = val || ""; };
+      setVal("acc-pl-yonetim-label", meta.yonetim_payi_label);
+      setVal("acc-pl-yonetim-amount", meta.yonetim_payi_amount || 0);
+      setVal("acc-pl-kalan-amount", meta.kalan_amount || 0);
+      setVal("acc-pl-ortak-a-label", meta.ortak_a_label);
+      setVal("acc-pl-ortak-a-amount", meta.ortak_a_amount || 0);
+      setVal("acc-pl-ortak-b-label", meta.ortak_b_label);
+      setVal("acc-pl-ortak-b-amount", meta.ortak_b_amount || 0);
+    }
+
     accRenderPlSections(data.sections || []);
   }
 
@@ -2899,6 +2930,28 @@
       pronet_fatura_amount: parseFloat((document.getElementById("acc-pl-pronet-fatura") || {}).value) || 0,
       pronet_odenen_amount: parseFloat((document.getElementById("acc-pl-pronet-odenen") || {}).value) || 0,
       asil_net_amount: parseFloat((document.getElementById("acc-pl-asil-net") || {}).value) || 0
+    };
+    accApi("/api/accounting/pl-report/meta", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (r && r.ok) { accPlLastResult = r.data; accRenderPlReport(r.data); accToast("Kaydedildi"); }
+      else if (r) alert((r.data && r.data.error) || "Hata");
+    });
+  }
+
+  function accSavePlProfitSplit() {
+    var period = accPlPeriod();
+    var body = {
+      period: period,
+      yonetim_payi_label: (document.getElementById("acc-pl-yonetim-label") || {}).value || "",
+      yonetim_payi_amount: parseFloat((document.getElementById("acc-pl-yonetim-amount") || {}).value) || 0,
+      kalan_amount: parseFloat((document.getElementById("acc-pl-kalan-amount") || {}).value) || 0,
+      ortak_a_label: (document.getElementById("acc-pl-ortak-a-label") || {}).value || "",
+      ortak_a_amount: parseFloat((document.getElementById("acc-pl-ortak-a-amount") || {}).value) || 0,
+      ortak_b_label: (document.getElementById("acc-pl-ortak-b-label") || {}).value || "",
+      ortak_b_amount: parseFloat((document.getElementById("acc-pl-ortak-b-amount") || {}).value) || 0
     };
     accApi("/api/accounting/pl-report/meta", {
       method: "PUT",
@@ -3410,6 +3463,9 @@
 
     var savePlMeta = document.getElementById("btn-acc-pl-save-meta");
     if (savePlMeta) savePlMeta.addEventListener("click", accSavePlMeta);
+
+    var savePlSplit = document.getElementById("btn-acc-pl-save-split");
+    if (savePlSplit) savePlSplit.addEventListener("click", accSavePlProfitSplit);
 
     var icSaveDay = document.getElementById("acc-ic-save-day");
     if (icSaveDay) icSaveDay.addEventListener("click", accSaveInvoiceCalcDay);
