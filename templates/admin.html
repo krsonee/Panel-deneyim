@@ -11,6 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { overflow-x: clip; }
     :root {
       --bg: #060a10; --sidebar: #0a0f18; --surface: #0f1623; --surface-2: #151e2e;
       --border: #243044; --text: #e8edf5; --muted: #7d8da6; --accent: #6366f1;
@@ -32,9 +33,9 @@
     [data-theme="light"] .nav-item.active { color: #4338ca; }
     [data-theme="light"] .perm-chip:has(input:checked) { color: #4338ca; }
     [data-theme="light"] .user-avatar { color: #4338ca; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: clip; }
 
-    .app { display: flex; min-height: 100vh; }
+    .app { display: flex; min-height: 100vh; width: 100%; max-width: 100%; overflow-x: clip; }
     .sidebar {
       width: var(--sidebar-w); background: var(--sidebar); border-right: 1px solid var(--border);
       display: flex; flex-direction: column; flex-shrink: 0; position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
@@ -61,13 +62,23 @@
     .sidebar-foot a { font-size: 0.78rem; color: var(--muted); text-decoration: none; }
     .sidebar-foot a:hover { color: var(--rose); }
 
-    .main { margin-left: var(--sidebar-w); flex: 1; min-width: 0; }
-    .main-inner { padding: 1.25rem 1.5rem 2rem; max-width: 1200px; }
-    .main-inner:has(#module-accounting-panel:not([hidden])),
-    .main-inner:has(#module-mailing-panel:not([hidden])) { max-width: none; padding-left: 1rem; padding-right: 1rem; }
-    .main-inner:has(#module-biolink-panel:not([hidden])) { max-width: none; padding-left: 1rem; padding-right: 1rem; }
+    .main { margin-left: var(--sidebar-w); flex: 1; min-width: 0; width: 100%; max-width: 100%; overflow-x: clip; }
+    .main-inner {
+      width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box;
+      padding: 1.25rem clamp(0.85rem, 1.5vw, 1.75rem) 2rem;
+    }
+    .module-panel { min-width: 0; max-width: 100%; }
 
-    .topbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.25rem; }
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.55rem 0.85rem;
+      align-items: center;
+      margin-bottom: 1.25rem;
+    }
+    .topbar > div:first-child { min-width: 0; grid-column: 1; grid-row: 1; }
+    .topbar > .live-pill { grid-column: 2; grid-row: 1; justify-self: end; white-space: nowrap; }
+    .topbar > .period-bar { grid-column: 1 / -1; grid-row: 2; width: 100%; min-width: 0; }
     .topbar h2 { font-size: 1.25rem; font-weight: 700; }
     .topbar p { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
     .live-pill {
@@ -78,19 +89,19 @@
     .live-pill::before { content: ""; width: 6px; height: 6px; background: var(--green); border-radius: 50%; animation: pulse 1.2s infinite; }
     @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.85)} }
 
-    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.85rem; margin-bottom: 1.25rem; }
-    @media (max-width: 1000px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 520px) { .kpi-grid { grid-template-columns: 1fr; } }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.85rem; margin-bottom: 1.25rem; }
+    @media (max-width: 1000px) { .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 520px) { .kpi-grid { grid-template-columns: minmax(0, 1fr); } }
 
     .kpi {
       background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
-      padding: 1.15rem 1.2rem; position: relative; overflow: hidden;
+      padding: 1.15rem 1.2rem; position: relative; overflow: hidden; min-width: 0;
     }
     .kpi::after { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent); opacity: 0.6; }
     .kpi.green::after { background: var(--green); }
     .kpi.amber::after { background: var(--amber); }
     .kpi.cyan::after { background: var(--cyan); }
-    .kpi .val { font-size: 2rem; font-weight: 800; line-height: 1.1; }
+    .kpi .val { font-size: clamp(1.05rem, 1.1rem + 0.45vw, 2rem); font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
     .kpi.green .val { color: var(--green); }
     .kpi .lbl { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-top: 0.35rem; }
     .kpi .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
@@ -917,18 +928,18 @@
       .acc-vault-filter-select { width: 100%; }
     }
 
-    .charts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.85rem; margin-bottom: 0.85rem; }
-    @media (max-width: 1000px) { .charts-grid { grid-template-columns: 1fr; } }
+    .charts-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.85rem; margin-bottom: 0.85rem; }
+    @media (max-width: 1000px) { .charts-grid { grid-template-columns: minmax(0, 1fr); } }
     .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1rem 1.1rem; }
     .chart-card h3 { font-size: 0.85rem; font-weight: 600; }
     .chart-card p.sub { font-size: 0.68rem; color: var(--muted); margin: 0.2rem 0 0.75rem; }
     .chart-wrap { position: relative; height: 190px; }
     .chart-empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); font-size: 0.78rem; background: rgba(6,10,16,0.75); border-radius: 8px; }
 
-    .top5-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.85rem; margin-bottom: 0.85rem; }
-    @media (max-width: 1100px) { .top5-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 560px) { .top5-grid { grid-template-columns: 1fr; } }
-    .top5-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 0.9rem 1rem; }
+    .top5-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.85rem; margin-bottom: 0.85rem; }
+    @media (max-width: 1100px) { .top5-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { .top5-grid { grid-template-columns: minmax(0, 1fr); } }
+    .top5-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 0.9rem 1rem; min-width: 0; }
     .top5-card h3 { font-size: 0.8rem; font-weight: 600; margin: 0; }
     .top5-card p.sub { font-size: 0.66rem; color: var(--muted); margin: 0.15rem 0 0.6rem; }
     .top5-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
@@ -947,18 +958,23 @@
     [data-admin-only-hidden="1"] { display: none !important; }
     [data-superadmin-hidden="1"] { display: none !important; }
 
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 0.85rem; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 0.85rem; max-width: 100%; min-width: 0; }
     .card-head {
       padding: 0.75rem 1.1rem; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.85rem;
       display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;
+      min-width: 0;
     }
-    .card-body { padding: 0.85rem 1.1rem; }
-    .card-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .card-body { padding: 0.85rem 1.1rem; min-width: 0; }
+    .card-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; max-width: 100%; min-width: 0; }
+    .card-actions input { min-width: 0; max-width: 100%; }
 
-    .form-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.55rem; }
-    .form-row-4 { display: grid; grid-template-columns: 1fr 1.2fr 1fr auto; gap: 0.55rem; }
-    @media (max-width: 768px) { .form-row-4 { grid-template-columns: 1fr 1fr; } }
-    @media (max-width: 640px) { .form-row, .form-row-4 { grid-template-columns: 1fr; } }
+    .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 0.55rem; }
+    .form-row-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 0.55rem; }
+    .form-row-4 .form-span-2 { grid-column: span 2; }
+    @media (max-width: 640px) {
+      .form-row, .form-row-4 { grid-template-columns: minmax(0, 1fr); }
+      .form-row-4 .form-span-2 { grid-column: span 1; }
+    }
 
     .tracking-code-panel {
       margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px;
@@ -1037,8 +1053,21 @@
     .mail-tpl-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
     .mail-tpl-test-email { width: auto; min-width: 200px; max-width: 260px; }
 
-    .filter-bar { display: grid; grid-template-columns: 1fr 120px 120px 110px 110px auto; gap: 0.5rem; padding: 0.85rem 1.15rem; background: var(--surface-2); border-bottom: 1px solid var(--border); }
-    @media (max-width: 900px) { .filter-bar { grid-template-columns: 1fr 1fr; } }
+    .filter-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+      gap: 0.5rem;
+      padding: 0.85rem 1.15rem;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+    }
+    .filter-bar > div:first-child { grid-column: 1 / -1; }
+    @media (min-width: 901px) {
+      .filter-bar {
+        grid-template-columns: minmax(0, 2fr) repeat(4, minmax(100px, 1fr)) auto;
+      }
+      .filter-bar > div:first-child { grid-column: auto; }
+    }
 
     .btn {
       padding: 0.55rem 0.9rem; border-radius: 9px; border: 1px solid var(--border);
@@ -1131,10 +1160,22 @@
     .tool-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem; }
     .tool-box h4 { font-size: 0.78rem; margin-bottom: 0.5rem; }
     .tool-box textarea { min-height: 110px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 0.75rem; }
-    .period-bar { display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; }
-    .period-bar select { width: auto; min-width: 140px; }
-    .custom-range-inline { display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; }
-    .custom-range-inline input[type="date"] { width: auto; min-width: 130px; }
+    .period-bar { display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; min-width: 0; }
+    .period-bar select { width: auto; min-width: 0; max-width: 100%; flex: 1 1 140px; }
+    .custom-range-inline { display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; min-width: 0; flex: 1 1 100%; }
+    .custom-range-inline input[type="date"] { width: auto; min-width: 0; flex: 1 1 120px; max-width: 100%; }
+
+    .smartico-kpi-grid {
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      padding: 0 1rem 1rem;
+      margin-bottom: 0;
+    }
+    @media (max-width: 1100px) {
+      .smartico-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 640px) {
+      .smartico-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
     .sidebar-actions { padding: 0 1rem 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; }
     .sidebar-actions .btn { width: 100%; text-align: left; }
     .settings-list { font-size: 0.8rem; line-height: 1.6; }
@@ -1331,6 +1372,11 @@
     .edit-user-form .btn-add-user { margin-top: 0.5rem; }
     [data-perm-hidden="1"] { display: none !important; }
 
+    @media (max-width: 1100px) {
+      .card-head { align-items: flex-start; }
+      .card-actions { width: 100%; }
+    }
+
     .mobile-header { display: none; }
     .sidebar-backdrop {
       display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
@@ -1364,11 +1410,15 @@
         padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
       }
       .topbar {
-        flex-direction: column; align-items: stretch; gap: 0.5rem; margin-bottom: 0.85rem;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+        margin-bottom: 0.85rem;
       }
-      .topbar > div:first-child h2,
-      .topbar > div:first-child p { display: none; }
-      .topbar .live-pill { align-self: flex-start; }
+      .topbar > div:first-child { grid-column: auto; grid-row: auto; }
+      .topbar > .live-pill { align-self: flex-start; grid-column: auto; grid-row: auto; }
+      .topbar > .period-bar { grid-column: auto; grid-row: auto; width: 100%; }
       .period-bar {
         width: 100%; flex-direction: column; align-items: stretch; gap: 0.45rem;
         padding: 0.65rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
@@ -1592,7 +1642,7 @@
           <div class="card-body">
             <form id="makrolink-create-form">
               <div class="form-row-4">
-                <div style="grid-column: span 2;"><label for="makrolink-dest">Smartico go.aff linki</label>
+                <div class="form-span-2"><label for="makrolink-dest">Smartico go.aff linki</label>
                   <input id="makrolink-dest" placeholder="https://go.aff.makroaffi.com/46ix1iwv  veya  46ix1iwv" required autocomplete="off">
                 </div>
                 <div><label for="makrolink-label">Etiket</label><input id="makrolink-label" placeholder="örn. slotbuse FTD" autocomplete="off"></div>
@@ -1702,7 +1752,7 @@
           <div class="card-body" id="smartico-error-box" style="display:none;">
             <p class="hint" style="color:#f87171;" id="smartico-error-text"></p>
           </div>
-          <section class="kpi-grid" id="smartico-kpi-grid" style="display:none;padding:0 1rem 1rem;grid-template-columns:repeat(6,1fr);">
+          <section class="kpi-grid smartico-kpi-grid" id="smartico-kpi-grid" style="display:none;">
             <div class="kpi">
               <div class="val" id="smartico-kpi-visits">0</div>
               <div class="lbl">Ziyaret</div>
