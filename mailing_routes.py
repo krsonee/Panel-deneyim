@@ -538,6 +538,17 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
             updated += 1
         conn.commit()
 
+    _invalidate_mail_stats_cache()
+    refresh_names = []
+    if from_tag:
+        refresh_names.append(from_tag)
+    if to_tag:
+        refresh_names.append(to_tag)
+    if match_tag and match_tag not in refresh_names:
+        refresh_names.append(match_tag)
+    if refresh_names:
+        _refresh_tag_counts_async(refresh_names)
+
     return {
         "ok": True,
         "matched": len(ids),
@@ -879,6 +890,10 @@ def _run_import_job(job_id, path, tag):
                 (processed, processed, upserted, inserted, updated, skipped, final_now, job_id),
             )
             conn.commit()
+            if tag:
+                _refresh_tag_counts_async([tag])
+            else:
+                _invalidate_mail_stats_cache()
     except Exception as exc:
         try:
             with closing(get_db()) as conn:
@@ -910,74 +925,103 @@ def _ensure_tag(conn, name, now):
         )
 
 
-def _contact_tag_counts(conn):
-    """Her etiketteki kontak sayısı. Aynı kontak birden fazla etikette sayılır."""
-    registry = {
-        (r["name"] or "").strip(): 0
-        for r in fetchall(conn, "SELECT name FROM mail_contact_tags ORDER BY name ASC")
-        if (r["name"] or "").strip()
-    }
-    counts = dict(registry)
+_STATS_CACHE = {"ts": 0.0, "payload": None}
+_STATS_LOCK = threading.Lock()
+_TAG_COUNT_CACHE = {"ts": 0.0, "rows": None}
 
-    def _apply_rows(rows):
-        for r in rows or []:
-            name = (r["name"] or "").strip()
-            if not name:
-                continue
-            counts[name] = int(r["count"] or 0)
 
-    def _like_fallback():
+def _recount_tag(conn, name):
+    """Tek etiketin kontak sayısını DB'ye yazar (hızlı CRM için)."""
+    name = (name or "").strip()
+    if not name:
+        return 0
+    n = scalar(
+        conn,
+        "SELECT COUNT(*) FROM mail_contacts WHERE tags LIKE ?",
+        (f'%"{name}"%',),
+    ) or 0
+    n = int(n)
+    cols = None
+    try:
+        from database import _table_columns
+        cols = _table_columns(conn, "mail_contact_tags")
+    except Exception:
+        cols = set()
+    if cols and "contact_count" in cols:
+        execute(
+            conn,
+            "UPDATE mail_contact_tags SET contact_count = ? WHERE name = ?",
+            (n, name),
+        )
+    return n
+
+
+def _contact_tag_counts(conn, *, force=False, live=False):
+    """Etiket sayıları — contact_count kolonundan (anlık). live=True ile yeniden sayar."""
+    import time
+
+    now = time.time()
+    if not force and not live and _TAG_COUNT_CACHE["rows"] is not None and (now - _TAG_COUNT_CACHE["ts"]) < 180:
+        return _TAG_COUNT_CACHE["rows"]
+
+    registry_rows = fetchall(conn, "SELECT * FROM mail_contact_tags ORDER BY name ASC")
+    counts = {}
+    has_count_col = False
+    for r in registry_rows or []:
+        name = (r["name"] or "").strip()
+        if not name:
+            continue
+        keys = r.keys() if hasattr(r, "keys") else []
+        if "contact_count" in keys:
+            has_count_col = True
+            counts[name] = int(r["contact_count"] or 0)
+        else:
+            counts[name] = 0
+
+    if live or force or not has_count_col:
         for name in list(counts.keys()):
-            n = scalar(
-                conn,
-                "SELECT COUNT(*) FROM mail_contacts WHERE tags LIKE ?",
-                (f'%"{name}"%',),
-            )
-            counts[name] = int(n or 0)
-
-    if uses_postgres():
+            counts[name] = _recount_tag(conn, name)
         try:
-            rows = fetchall(
-                conn,
-                """
-                SELECT elem AS name, COUNT(*)::bigint AS count
-                FROM mail_contacts c
-                CROSS JOIN LATERAL jsonb_array_elements_text(
-                    CASE
-                        WHEN c.tags IS NULL OR btrim(c.tags) IN ('', '[]') THEN '[]'::jsonb
-                        WHEN left(btrim(c.tags), 1) = '[' THEN c.tags::jsonb
-                        ELSE '[]'::jsonb
-                    END
-                ) AS elem
-                GROUP BY elem
-                """,
-            )
-            _apply_rows(rows)
+            conn.commit()
         except Exception:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            _like_fallback()
-    else:
-        try:
-            rows = fetchall(
-                conn,
-                """
-                SELECT je.value AS name, COUNT(*) AS count
-                FROM mail_contacts c, json_each(c.tags) AS je
-                WHERE c.tags IS NOT NULL AND c.tags NOT IN ('', '[]')
-                GROUP BY je.value
-                """,
-            )
-            _apply_rows(rows)
-        except Exception:
-            _like_fallback()
+            pass
 
-    return sorted(
+    rows = sorted(
         [{"name": name, "count": int(counts[name] or 0)} for name in counts],
         key=lambda item: (-item["count"], item["name"].lower()),
     )
+    _TAG_COUNT_CACHE["ts"] = time.time()
+    _TAG_COUNT_CACHE["rows"] = rows
+    return rows
+
+
+def _invalidate_mail_stats_cache():
+    _STATS_CACHE["ts"] = 0.0
+    _STATS_CACHE["payload"] = None
+    _TAG_COUNT_CACHE["ts"] = 0.0
+    _TAG_COUNT_CACHE["rows"] = None
+
+
+def _refresh_tag_counts_async(tag_names=None):
+    """Ağır sayımı arka planda yap — CRM'i kilitlemesin."""
+    names = list(tag_names) if tag_names else None
+
+    def _job():
+        try:
+            with closing(get_db()) as conn:
+                if names:
+                    for name in names:
+                        _ensure_tag(conn, name, iso(utcnow()))
+                        _recount_tag(conn, name)
+                else:
+                    _contact_tag_counts(conn, live=True)
+                conn.commit()
+            _invalidate_mail_stats_cache()
+        except Exception as exc:
+            print(f"⚠️  tag count refresh: {exc}")
+
+    threading.Thread(target=_job, daemon=True, name="mail-tag-count-refresh").start()
+
 
 
 def _stub_send(conn, *, channel, to_email, subject, contact=None, campaign_id=None,
@@ -1111,25 +1155,39 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/contacts/stats", methods=["GET"])
     @mail_perm(*MAIL_CRM)
     def contact_stats():
-        """CRM özet sayaçları: toplam kontak, mail durumu ve etiket bazlı sayılar."""
+        """CRM özet — hızlı path. ?refresh=1 ile etiket sayıları canlı yenilenir."""
+        import time
+
+        refresh = (request.args.get("refresh") or "").strip() in ("1", "true", "yes")
+        now = time.time()
+        if not refresh and _STATS_CACHE["payload"] and (now - _STATS_CACHE["ts"]) < 60:
+            return jsonify(_STATS_CACHE["payload"])
+
         with closing(get_db()) as conn:
-            total = scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0
-            mailed = scalar(
+            total = int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0)
+            # EXISTS üzerinde 3M satır taramak paneli patates yapıyordu
+            mailed = int(scalar(
                 conn,
-                """
-                SELECT COUNT(*) FROM mail_contacts c
-                WHERE EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = c.id)
-                """,
-            ) or 0
+                "SELECT COUNT(DISTINCT contact_id) FROM mail_sends WHERE contact_id IS NOT NULL",
+            ) or 0)
+            mailed = min(mailed, total)
             never_mailed = max(total - mailed, 0)
-            by_tag = _contact_tag_counts(conn)
-        return jsonify({
+            by_tag = _contact_tag_counts(conn, live=refresh)
+            # İlk kurulumda sayılar 0 ise arka planda bir kez doldur
+            if not refresh and by_tag and sum(t["count"] for t in by_tag) == 0 and total > 0:
+                _refresh_tag_counts_async()
+        payload = {
             "total": total,
             "mailed": mailed,
             "never_mailed": never_mailed,
             "by_tag": by_tag,
             "tag_count": len(by_tag),
-        })
+            "cached": not refresh,
+        }
+        with _STATS_LOCK:
+            _STATS_CACHE["ts"] = time.time()
+            _STATS_CACHE["payload"] = payload
+        return jsonify(payload)
 
     @bp.route("/contacts", methods=["GET"])
     @mail_perm(*MAIL_CRM)
@@ -1138,21 +1196,23 @@ def create_mailing_blueprint(permission_required):
         tag = (request.args.get("tag") or "").strip()
         limit = min(int(request.args.get("limit") or 200), 1000)
         with closing(get_db()) as conn:
+            clauses = []
+            params = []
+            if tag:
+                clauses.append("tags LIKE ?")
+                params.append(f'%"{tag}"%')
+            if q:
+                clauses.append("(LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR LOWER(phone) LIKE ?)")
+                like = f"%{q}%"
+                params.extend([like, like, like])
+            where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+            params.append(limit)
             rows = _rows(fetchall(
                 conn,
-                "SELECT * FROM mail_contacts ORDER BY id DESC LIMIT ?",
-                (limit,),
+                f"SELECT * FROM mail_contacts{where} ORDER BY id DESC LIMIT ?",
+                tuple(params),
             ))
-        out = []
-        for r in rows:
-            c = _contact_out(r)
-            if q:
-                blob = f"{c.get('email','')} {c.get('name','')} {c.get('phone','')}".lower()
-                if q not in blob:
-                    continue
-            if tag and tag not in (c.get("tags") or []):
-                continue
-            out.append(c)
+        out = [_contact_out(r) for r in rows]
         return jsonify({"contacts": out, "count": len(out)})
 
     @bp.route("/contacts", methods=["POST"])
@@ -1456,6 +1516,7 @@ def create_mailing_blueprint(permission_required):
             _ensure_tag(conn, name, now)
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_contact_tags WHERE name = ?", (name,))
+        _invalidate_mail_stats_cache()
         return jsonify({"tag": _row(row)}), 201
 
     @bp.route("/contacts/tags/bulk", methods=["POST"])

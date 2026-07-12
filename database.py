@@ -2841,6 +2841,19 @@ def migrate_mail_campaigns_pro(conn):
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_campaigns_status ON mail_campaigns(status)")
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_camp_recip_camp_status ON mail_campaign_recipients(campaign_id, status)")
     conn.commit()
+    # Etiket sayacı — CRM'in 3M satırda her seferinde taranmasını önler
+    tag_cols = _table_columns(conn, "mail_contact_tags") or set()
+    if tag_cols and "contact_count" not in tag_cols:
+        try:
+            execute(conn, "ALTER TABLE mail_contact_tags ADD COLUMN contact_count INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_contacts_tags ON mail_contacts(tags)")
+    conn.commit()
 
 
 def ensure_mail_import_jobs_table(conn):

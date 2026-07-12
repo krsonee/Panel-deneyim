@@ -611,7 +611,11 @@
 
   function mailLoadTab(tab) {
     if (tab === "dashboard") mailLoadDashboard();
-    else if (tab === "crm") { mailLoadTags(); mailLoadContactStats(); mailLoadContacts(); }
+    else if (tab === "crm") {
+      mailLoadContacts();
+      mailLoadTags();
+      mailLoadContactStats();
+    }
     else if (tab === "templates") mailLoadTemplates();
     else if (tab === "campaigns") {
       mailLoadTags().then(mailFillCampTagSelect);
@@ -735,9 +739,16 @@
     }).join("");
   }
 
-  function mailLoadContactStats() {
-    return mailApi("/api/mailing/contacts/stats", { timeoutMs: 120000 }).then(function (res) {
-      if (!res || !res.ok) return;
+  function mailLoadContactStats(opts) {
+    opts = opts || {};
+    var qs = opts.refresh ? "?refresh=1" : "";
+    var timeout = opts.refresh ? 300000 : 20000;
+    setText("mail-crm-stat-total", "…");
+    return mailApi("/api/mailing/contacts/stats" + qs, { timeoutMs: timeout }).then(function (res) {
+      if (!res || !res.ok) {
+        setText("mail-crm-stat-total", "—");
+        return;
+      }
       var s = res.data || {};
       setText("mail-crm-stat-total", fmtNum(s.total));
       setText("mail-crm-stat-mailed", fmtNum(s.mailed));
@@ -1458,9 +1469,16 @@
       }
     });
     bindClick("mail-contacts-refresh", function () {
-      mailLoadContactStats();
       mailLoadContacts();
       mailLoadTags();
+      mailLoadContactStats({ refresh: true });
+    });
+    bindClick("mail-crm-tag-refresh", function () {
+      var hint = document.getElementById("mail-crm-tag-stats-hint");
+      if (hint) hint.textContent = "Sayılar hesaplanıyor (büyük listede 1–2 dk sürebilir)…";
+      mailLoadContactStats({ refresh: true }).then(function () {
+        if (hint) hint.textContent = "Aynı kontak birden fazla etikette sayılabilir";
+      });
     });
     bindClick("mail-contacts-select-page", function () {
       document.querySelectorAll(".mail-contact-check").forEach(function (el) { el.checked = true; });
