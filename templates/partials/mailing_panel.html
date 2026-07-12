@@ -55,6 +55,24 @@
             <input type="text" id="mail-csv-tag" placeholder="Varsayılan etiket (opsiyonel)" style="max-width:220px;">
             <button type="button" class="btn btn-primary" id="mail-csv-submit">İçe aktar</button>
           </div>
+          <p class="hint" style="margin-top:0.4rem;">Bu kutu küçük listeler için (birkaç bin satıra kadar). Yüz binler / milyonlar için aşağıdaki "Büyük liste yükle" bölümünü kullan.</p>
+        </div>
+      </div>
+    </section>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Büyük liste yükle (dosya — sınırsız satır)</span></div>
+      <div class="card-body">
+        <form id="mail-bulk-import-form" class="form-row-4" style="grid-template-columns:1.4fr 1fr auto;">
+          <div><label>CSV dosyası (email, name sütunları)</label><input type="file" id="mail-bulk-file" accept=".csv,text/csv"></div>
+          <div><label>Etiket (opsiyonel)</label><input type="text" id="mail-bulk-tag" placeholder="örn. eski_liste"></div>
+          <div style="display:flex;align-items:flex-end;"><button type="submit" class="btn btn-primary">Yüklemeyi başlat</button></div>
+        </form>
+        <p class="hint" style="margin-top:0.5rem;">Dosya arka planda parça parça işlenir, sayfayı kapatsan da devam eder — durumunu aşağıdan takip edebilirsin. Milyonlarca satır olsa da timeout almaz.</p>
+        <div id="mail-bulk-progress" hidden style="margin-top:0.85rem;">
+          <div style="background:rgba(148,163,184,0.18);border-radius:999px;height:10px;overflow:hidden;">
+            <div id="mail-bulk-progress-bar" style="background:var(--green,#22c55e);height:100%;width:0%;transition:width .3s;"></div>
+          </div>
+          <p class="hint" id="mail-bulk-progress-text" style="margin-top:0.4rem;">—</p>
         </div>
       </div>
     </section>

@@ -9,6 +9,7 @@ import json
 import os
 import re
 import secrets
+import threading
 import urllib.parse
 from contextlib import closing
 
@@ -27,6 +28,13 @@ from database import (
     upsert_mail_setting,
     utcnow,
 )
+
+IMPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mail_imports")
+IMPORT_CHUNK_SIZE = 2000
+
+
+def _ensure_import_dir():
+    os.makedirs(IMPORT_DIR, exist_ok=True)
 
 MODULE_ACCESS = ("module.mailing",)
 MAIL_DASH = ("mailing.dashboard", "module.mailing")
@@ -261,6 +269,127 @@ def _untag_contact(conn, contact_id, tag, now=None):
             conn,
             "UPDATE mail_contacts SET tags = ?, updated_at = ? WHERE id = ?",
             (_tags_json(tags), now, contact_id),
+        )
+
+
+def _bulk_upsert_contacts(conn, batch, tag, now):
+    """batch: [(email, name), ...]. Tek SQL ifadesiyle toplu insert/upsert —
+    milyonlarca satırı satır-satır sorgu yapmadan işlemek için."""
+    if not batch:
+        return 0
+    tag = (tag or "").strip()
+    tag_json_single = json.dumps([tag], ensure_ascii=False) if tag else "[]"
+    values_sql = []
+    params = []
+    for email, name in batch:
+        values_sql.append("(?, ?, ?, ?, 0, '', ?, ?)")
+        params += [email, name, tag_json_single, "csv", now, now]
+    sql = f"""
+        INSERT INTO mail_contacts (email, name, tags, source, unsubscribed, notes, created_at, updated_at)
+        VALUES {",".join(values_sql)}
+        ON CONFLICT (email) DO UPDATE SET
+            name = CASE WHEN mail_contacts.name = '' THEN EXCLUDED.name ELSE mail_contacts.name END,
+            tags = CASE
+                WHEN ? = '' THEN mail_contacts.tags
+                WHEN mail_contacts.tags LIKE '%"' || ? || '"%' THEN mail_contacts.tags
+                WHEN mail_contacts.tags = '[]' THEN ?
+                ELSE substr(mail_contacts.tags, 1, length(mail_contacts.tags) - 1) || ',"' || ? || '"]'
+            END,
+            updated_at = EXCLUDED.updated_at
+    """
+    params += [tag, tag, tag_json_single, tag]
+    cur = execute(conn, sql, tuple(params))
+    return cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(batch)
+
+
+def _run_import_job(job_id, path, tag):
+    """Arka plan thread: dosyayı satır satır okuyup IMPORT_CHUNK_SIZE'lık
+    gruplar halinde bulk upsert eder — HTTP isteğinden bağımsız çalışır,
+    timeout'a düşmez."""
+    now = iso(utcnow())
+    try:
+        with closing(get_db()) as conn:
+            execute(conn, "UPDATE mail_import_jobs SET status = 'running', updated_at = ? WHERE id = ?", (now, job_id))
+            conn.commit()
+
+            with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
+                total = max(sum(1 for _ in f) - 1, 0)
+            execute(conn, "UPDATE mail_import_jobs SET total_rows = ? WHERE id = ?", (total, job_id))
+            conn.commit()
+
+            processed = 0
+            upserted = 0
+            skipped = 0
+            batch = []
+            with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    email = (row.get("email") or row.get("Email") or row.get("EMAIL") or "").strip().lower()
+                    processed += 1
+                    if not email or not EMAIL_RE.match(email):
+                        skipped += 1
+                        continue
+                    name = (row.get("name") or row.get("Name") or "").strip()
+                    batch.append((email, name))
+                    if len(batch) >= IMPORT_CHUNK_SIZE:
+                        upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
+                        conn.commit()
+                        batch = []
+                        execute(
+                            conn,
+                            """
+                            UPDATE mail_import_jobs
+                            SET processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
+                            WHERE id = ?
+                            """,
+                            (processed, upserted, skipped, iso(utcnow()), job_id),
+                        )
+                        conn.commit()
+                if batch:
+                    upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
+                    conn.commit()
+
+            final_now = iso(utcnow())
+            if tag:
+                _ensure_tag(conn, tag, final_now)
+            execute(
+                conn,
+                """
+                UPDATE mail_import_jobs
+                SET status = 'done', processed_rows = ?, upserted_count = ?, skipped_count = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (processed, upserted, skipped, final_now, job_id),
+            )
+            conn.commit()
+    except Exception as exc:
+        try:
+            with closing(get_db()) as conn:
+                execute(
+                    conn,
+                    "UPDATE mail_import_jobs SET status = 'error', error = ?, updated_at = ? WHERE id = ?",
+                    (str(exc)[:500], iso(utcnow()), job_id),
+                )
+                conn.commit()
+        except Exception:
+            pass
+    finally:
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+
+def _ensure_tag(conn, name, now):
+    name = (name or "").strip()
+    if not name:
+        return
+    exists = scalar(conn, "SELECT COUNT(*) FROM mail_contact_tags WHERE name = ?", (name,))
+    if not exists:
+        insert_returning_id(
+            conn,
+            "INSERT INTO mail_contact_tags (name, created_at) VALUES (?, ?)",
+            (name, now),
         )
 
 
@@ -578,17 +707,49 @@ def create_mailing_blueprint(permission_required):
             conn.commit()
         return jsonify({"created": created, "updated": updated, "skipped": skipped})
 
-    def _ensure_tag(conn, name, now):
-        name = (name or "").strip()
-        if not name:
-            return
-        exists = scalar(conn, "SELECT COUNT(*) FROM mail_contact_tags WHERE name = ?", (name,))
-        if not exists:
-            insert_returning_id(
+    @bp.route("/contacts/import/start", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def start_import_job():
+        """Büyük liste (yüz binler / milyonlar) için dosya yükleyip arka planda işler."""
+        file = request.files.get("file")
+        if not file or not file.filename:
+            return jsonify({"error": "CSV dosyası seç."}), 400
+        if request.content_length and request.content_length > 800 * 1024 * 1024:
+            return jsonify({"error": "Dosya çok büyük (800MB üstü). Bölüp tekrar dene."}), 400
+        tag = (request.form.get("tag") or "").strip()
+        _ensure_import_dir()
+        now = iso(utcnow())
+        with closing(get_db()) as conn:
+            job_id = insert_returning_id(
                 conn,
-                "INSERT INTO mail_contact_tags (name, created_at) VALUES (?, ?)",
-                (name, now),
+                """
+                INSERT INTO mail_import_jobs
+                (filename, tag, status, total_rows, processed_rows, upserted_count, skipped_count, error, created_at, updated_at)
+                VALUES (?, ?, 'pending', 0, 0, 0, 0, '', ?, ?)
+                """,
+                (file.filename, tag, now, now),
             )
+            conn.commit()
+        path = os.path.join(IMPORT_DIR, f"job_{job_id}.csv")
+        file.save(path)
+        threading.Thread(target=_run_import_job, args=(job_id, path, tag), daemon=True).start()
+        return jsonify({"job_id": job_id, "status": "pending"}), 202
+
+    @bp.route("/contacts/import/status/<int:job_id>", methods=["GET"])
+    @mail_perm(*MAIL_CRM)
+    def import_job_status(job_id):
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM mail_import_jobs WHERE id = ?", (job_id,))
+        if not row:
+            return jsonify({"error": "İş bulunamadı."}), 404
+        return jsonify({"job": _row(row)})
+
+    @bp.route("/contacts/import/jobs", methods=["GET"])
+    @mail_perm(*MAIL_CRM)
+    def list_import_jobs():
+        with closing(get_db()) as conn:
+            rows = _rows(fetchall(conn, "SELECT * FROM mail_import_jobs ORDER BY id DESC LIMIT 20"))
+        return jsonify({"jobs": rows})
 
     @bp.route("/tags", methods=["GET"])
     @mail_perm(*MAIL_CRM)

@@ -183,6 +183,42 @@
     });
   }
 
+  function mailPollImportJob(jobId) {
+    var progBox = document.getElementById("mail-bulk-progress");
+    var progBar = document.getElementById("mail-bulk-progress-bar");
+    var progText = document.getElementById("mail-bulk-progress-text");
+    function poll() {
+      mailApi("/api/mailing/contacts/import/status/" + jobId).then(function (res) {
+        if (!res || !res.ok || !res.data.job) {
+          if (progText) progText.textContent = "Durum alınamadı, tekrar deneniyor…";
+          setTimeout(poll, 3000);
+          return;
+        }
+        var j = res.data.job;
+        var pct = j.total_rows > 0 ? Math.min(100, Math.round((j.processed_rows / j.total_rows) * 100)) : 0;
+        if (progBar) progBar.style.width = pct + "%";
+        if (progText) {
+          progText.textContent = (j.status === "pending" ? "Başlıyor… " : "") +
+            j.processed_rows + " / " + j.total_rows + " satır (" + pct + "%) · " +
+            "işlenen: " + j.upserted_count + " · geçersiz: " + j.skipped_count;
+        }
+        if (j.status === "done") {
+          mailToast("İçe aktarma tamam · " + j.upserted_count + " kontak işlendi · " + j.skipped_count + " geçersiz e-posta atlandı");
+          mailLoadContacts();
+          mailLoadTags();
+          setTimeout(function () { if (progBox) progBox.hidden = true; }, 4000);
+          return;
+        }
+        if (j.status === "error") {
+          mailToast("İçe aktarma hata verdi: " + (j.error || "bilinmeyen hata"));
+          return;
+        }
+        setTimeout(poll, 2000);
+      });
+    }
+    poll();
+  }
+
   function mailLoadTemplates() {
     return mailApi("/api/mailing/templates").then(function (res) {
       mailTemplates = (res && res.ok && res.data.templates) || [];
@@ -503,6 +539,36 @@
         mailLoadTags();
       });
     });
+    var bulkForm = document.getElementById("mail-bulk-import-form");
+    if (bulkForm) {
+      bulkForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var fileInput = document.getElementById("mail-bulk-file");
+        var file = fileInput && fileInput.files && fileInput.files[0];
+        if (!file) { mailToast("Önce bir CSV dosyası seç"); return; }
+        var tag = (document.getElementById("mail-bulk-tag").value || "").trim();
+        var fd = new FormData();
+        fd.append("file", file);
+        fd.append("tag", tag);
+        var progBox = document.getElementById("mail-bulk-progress");
+        var progBar = document.getElementById("mail-bulk-progress-bar");
+        var progText = document.getElementById("mail-bulk-progress-text");
+        if (progBox) progBox.hidden = false;
+        if (progBar) progBar.style.width = "0%";
+        if (progText) progText.textContent = "Dosya yükleniyor…";
+        mailApi("/api/mailing/contacts/import/start", { method: "POST", body: fd, timeoutMs: 20 * 60 * 1000 })
+          .then(function (res) {
+            if (!res || !res.ok) {
+              mailToast((res && res.data && res.data.error) || "Yükleme başlatılamadı");
+              if (progBox) progBox.hidden = true;
+              return;
+            }
+            mailToast("Yükleme başladı, arka planda işleniyor…");
+            fileInput.value = "";
+            mailPollImportJob(res.data.job_id);
+          });
+      });
+    }
     bindClick("mail-contacts-refresh", mailLoadContacts);
     var qEl = document.getElementById("mail-contact-q");
     if (qEl) qEl.addEventListener("input", debounce(mailLoadContacts, 300));

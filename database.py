@@ -2284,6 +2284,21 @@ def init_mailing_schema(conn):
             )
             """,
             "CREATE INDEX IF NOT EXISTS idx_mail_click_token ON mail_click_links(token)",
+            """
+            CREATE TABLE IF NOT EXISTS mail_import_jobs (
+                id SERIAL PRIMARY KEY,
+                filename TEXT NOT NULL DEFAULT '',
+                tag TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                total_rows INTEGER NOT NULL DEFAULT 0,
+                processed_rows INTEGER NOT NULL DEFAULT 0,
+                upserted_count INTEGER NOT NULL DEFAULT 0,
+                skipped_count INTEGER NOT NULL DEFAULT 0,
+                error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
         ]
     else:
         statements = [
@@ -2445,6 +2460,21 @@ def init_mailing_schema(conn):
             )
             """,
             "CREATE INDEX IF NOT EXISTS idx_mail_click_token ON mail_click_links(token)",
+            """
+            CREATE TABLE IF NOT EXISTS mail_import_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL DEFAULT '',
+                tag TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                total_rows INTEGER NOT NULL DEFAULT 0,
+                processed_rows INTEGER NOT NULL DEFAULT 0,
+                upserted_count INTEGER NOT NULL DEFAULT 0,
+                skipped_count INTEGER NOT NULL DEFAULT 0,
+                error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
         ]
     for sql in statements:
         execute(conn, sql)
@@ -2500,6 +2530,114 @@ def ensure_mail_click_links_table(conn):
     conn.commit()
 
 
+def ensure_mail_import_jobs_table(conn):
+    """Mevcut DB'lerde büyük liste import job tablosu yoksa ekle."""
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mail_import_jobs (
+                id SERIAL PRIMARY KEY,
+                filename TEXT NOT NULL DEFAULT '',
+                tag TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                total_rows INTEGER NOT NULL DEFAULT 0,
+                processed_rows INTEGER NOT NULL DEFAULT 0,
+                upserted_count INTEGER NOT NULL DEFAULT 0,
+                skipped_count INTEGER NOT NULL DEFAULT 0,
+                error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mail_import_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL DEFAULT '',
+                tag TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                total_rows INTEGER NOT NULL DEFAULT 0,
+                processed_rows INTEGER NOT NULL DEFAULT 0,
+                upserted_count INTEGER NOT NULL DEFAULT 0,
+                skipped_count INTEGER NOT NULL DEFAULT 0,
+                error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+    conn.commit()
+
+
+def _dedupe_mail_contacts_by_email(conn):
+    """Büyük ölçekli bulk upsert (ON CONFLICT) için email üzerinde UNIQUE
+    index gerekiyor — önce olası (nadir) mükerrer kayıtları birleştirir."""
+    dups = fetchall(conn, "SELECT email FROM mail_contacts GROUP BY email HAVING COUNT(*) > 1")
+    for d in dups:
+        email = d["email"] if isinstance(d, dict) else d[0]
+        try:
+            rows = fetchall(conn, "SELECT id, name, tags FROM mail_contacts WHERE email = ? ORDER BY id ASC", (email,))
+            if len(rows) < 2:
+                continue
+            keep_id = rows[0]["id"]
+            all_tags = []
+            best_name = ""
+            for r in rows:
+                try:
+                    parsed = json.loads(r["tags"] or "[]")
+                    if isinstance(parsed, list):
+                        all_tags += [str(x) for x in parsed]
+                except Exception:
+                    pass
+                if not best_name and (r["name"] or "").strip():
+                    best_name = (r["name"] or "").strip()
+            merged = json.dumps(sorted(set(all_tags)), ensure_ascii=False)
+            execute(conn, "UPDATE mail_contacts SET tags = ?, name = ? WHERE id = ?", (merged, best_name, keep_id))
+            for r in rows[1:]:
+                dup_id = r["id"]
+                for tbl, col in (
+                    ("mail_campaign_recipients", "contact_id"),
+                    ("mail_sends", "contact_id"),
+                    ("mail_click_links", "contact_id"),
+                    ("mail_ivr_events", "contact_id"),
+                ):
+                    execute(conn, f"UPDATE {tbl} SET {col} = ? WHERE {col} = ?", (keep_id, dup_id))
+                execute(conn, "DELETE FROM mail_contacts WHERE id = ?", (dup_id,))
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+
+def ensure_mail_contacts_unique_email(conn):
+    """Toplu import (ON CONFLICT (email) DO UPDATE) için gerekli unique index."""
+    try:
+        execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_contacts_email_unique ON mail_contacts(email)")
+        conn.commit()
+        return
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    _dedupe_mail_contacts_by_email(conn)
+    try:
+        execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_contacts_email_unique ON mail_contacts(email)")
+        conn.commit()
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  ensure_mail_contacts_unique_email hata: {exc}")
+
+
 def init_db():
     with closing(get_db()) as conn:
         init_schema(conn)
@@ -2512,3 +2650,19 @@ def init_db():
             except Exception:
                 pass
             print(f"⚠️  ensure_mail_click_links_table hata: {exc}")
+        try:
+            ensure_mail_import_jobs_table(conn)
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            print(f"⚠️  ensure_mail_import_jobs_table hata: {exc}")
+        try:
+            ensure_mail_contacts_unique_email(conn)
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            print(f"⚠️  ensure_mail_contacts_unique_email hata: {exc}")
