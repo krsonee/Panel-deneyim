@@ -107,6 +107,28 @@
 
   var MAIL_BULK_MAX_BYTES = 800 * 1024 * 1024;
 
+  function mailValidateImportFile(file) {
+    var lowerName = file.name.toLowerCase();
+    if (!/\.(csv|xlsx|xlsm)$/.test(lowerName)) return "sadece .csv veya .xlsx yükleyebilirsin";
+    if (file.size > MAIL_BULK_MAX_BYTES) return "800MB üstü, bölüp tekrar dene";
+    return null;
+  }
+
+  // Yapıştırılan ham e-posta metnini (10 milyona kadar) DOM'a hiç yazdırmadan
+  // CSV'ye çevirip mevcut çoklu dosya kuyruğuna sahte bir File olarak ekler.
+  function mailQueueTextAsFile(rawText, tag, labelPrefix) {
+    var tokens = String(rawText || "").split(/[\s,;]+/).filter(Boolean);
+    if (!tokens.length) return { count: 0, error: null };
+    var csv = "email\n" + tokens.join("\n");
+    var blob = new Blob([csv], { type: "text/csv" });
+    var fname = (labelPrefix || "yapistirilan-liste") + "-" + Date.now() + ".csv";
+    var file = new File([blob], fname, { type: "text/csv" });
+    var err = mailValidateImportFile(file);
+    if (err) return { count: tokens.length, error: err };
+    mailEnqueueImport(file, tag);
+    return { count: tokens.length, error: null };
+  }
+
   function mailBulkSetError(msg) {
     var progBox = document.getElementById("mail-bulk-progress");
     var progBar = document.getElementById("mail-bulk-progress-bar");
@@ -730,15 +752,8 @@
         var tag = (tagInput.value || "").trim();
         var accepted = [];
         files.forEach(function (file) {
-          var lowerName = file.name.toLowerCase();
-          if (!/\.(csv|xlsx|xlsm)$/.test(lowerName)) {
-            mailToast(file.name + ": sadece .csv veya .xlsx yükleyebilirsin, atlandı");
-            return;
-          }
-          if (file.size > MAIL_BULK_MAX_BYTES) {
-            mailToast(file.name + ": 800MB üstü, atlandı — bölüp tekrar dene");
-            return;
-          }
+          var err = mailValidateImportFile(file);
+          if (err) { mailToast(file.name + ": " + err + ", atlandı"); return; }
           accepted.push(file);
         });
         if (!accepted.length) return;
@@ -747,6 +762,35 @@
         tagInput.value = "";
       });
     }
+    var pasteBox = document.getElementById("mail-paste-box");
+    var pasteStatusEl = document.getElementById("mail-paste-status");
+    function mailHandlePastedText(text) {
+      var tag = (document.getElementById("mail-paste-tag") || {}).value || "";
+      tag = tag.trim();
+      var result = mailQueueTextAsFile(text, tag, "yapistirilan-liste");
+      if (!pasteStatusEl) return;
+      if (result.error) {
+        pasteStatusEl.textContent = "Hata: " + result.error + " (algılanan " + fmtNum(result.count) + " e-posta işlenmedi)";
+      } else if (!result.count) {
+        pasteStatusEl.textContent = "Yapıştırılan içerikte e-posta bulunamadı.";
+      } else {
+        pasteStatusEl.textContent = fmtNum(result.count) + " e-posta algılandı, yükleme kuyruğuna eklendi.";
+      }
+    }
+    if (pasteBox) {
+      pasteBox.addEventListener("paste", function (e) {
+        e.preventDefault();
+        var text = (e.clipboardData || window.clipboardData).getData("text");
+        pasteBox.value = "";
+        mailHandlePastedText(text);
+      });
+    }
+    bindClick("mail-paste-submit", function () {
+      var text = pasteBox ? pasteBox.value : "";
+      if (!text || !text.trim()) { mailToast("Önce bir şey yapıştır veya yaz"); return; }
+      mailHandlePastedText(text);
+      if (pasteBox) pasteBox.value = "";
+    });
     bindClick("mail-bulk-cancel", function () {
       if (!mailImportCurrentJobId) return;
       mailApi("/api/mailing/contacts/import/cancel/" + mailImportCurrentJobId, { method: "POST" }).then(function (res) {

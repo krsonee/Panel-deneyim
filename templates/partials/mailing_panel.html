@@ -83,6 +83,18 @@
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Sadece e-posta listesi yapıştır (isim/diğer alan yok)</span></div>
+      <div class="card-body">
+        <textarea id="mail-paste-box" rows="4" style="width:100%;font-family:inherit;" placeholder="Buraya yapıştır (Ctrl+V) — virgülle, noktalı virgülle veya satır satır ayrılmış e-postalar. Yapıştırınca otomatik kuyruğa eklenir."></textarea>
+        <div style="display:flex;gap:0.6rem;align-items:flex-end;margin-top:0.5rem;flex-wrap:wrap;">
+          <div style="max-width:220px;"><label>Etiket (opsiyonel)</label><input type="text" id="mail-paste-tag" placeholder="örn. hizli_liste"></div>
+          <button type="button" class="btn btn-sm" id="mail-paste-submit">Kuyruğa ekle</button>
+        </div>
+        <p class="hint" id="mail-paste-status" style="margin-top:0.5rem;">—</p>
+        <p class="hint">10 milyona kadar e-posta yapıştırabilirsin, yapıştırdığın anda otomatik olarak yükleme kuyruğuna eklenir (yukarıdaki dosya kuyruğuyla aynı sistemi kullanır). "Kuyruğa ekle" butonu, yapıştırma yakalanamayan durumlar veya elle az sayıda giriş için yedektir.</p>
+      </div>
+    </section>
+    <section class="card" style="margin-bottom:1rem;">
       <div class="card-head"><span>Smartico'dan otomatik segment</span></div>
       <div class="card-body">
         <p class="hint">
