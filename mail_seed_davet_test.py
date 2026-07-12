@@ -1,10 +1,11 @@
 """Makrobet davet mail şablonu — deploy'da otomatik seed edilir.
 
-Marka renkleri (makrobet804.com yükleme ekranından):
+Marka renkleri (makrobet804.com):
   - Arka plan: #1c1f33 (koyu lacivert)
   - Altın vurgu: #fcc64d
   - Beyaz: #ffffff
   - Logo: beyaz italik "Makro" + altın kalın "bet"
+  - Promo sayfası: /tr/pages/promotions
 """
 
 DAVET_TEST_NAME = "Davet test"
@@ -18,17 +19,15 @@ Makrobet ailesine özel davetlisin!
 ★ YENİ ÜYELERE ÖZEL: 3.000 TL DENEME KASASI ★
 Kayıt ol, deneme kasanı al ve hemen oynamaya başla.
 
-Makrobet'te seni neler bekliyor?
-- 3.000 TL deneme kasası (yeni üyeler)
-- Hoş geldin & yatırım bonusları
-- Yüksek oranlı spor & canlı bahis
-- Binlerce slot ve canlı casino
-- Kayıp iadesi promosyonları
-- Free spin fırsatları
-- Hızlı yatırım ve çekim
-- 7/24 canlı destek
+Güncel promosyonlar:
+- Sıfır Riskle Yatırım Senden, Güvence Makrobet'ten!
+- Arkadaşının aldığı yatırım bonusunu sana da ekleyelim!
+- Makro Görev — günlük görevlerle kasa ödülleri
+- Mutlu Saatler — yatırımlarda ekstra kasa ödülleri
+- Amusnet Race — 500.000 TL ödül havuzu
+- Kripto Yatır, Havale Çek — 10.000 ₺ değerinde Ultra Kasa
 
-Hemen üye ol: {{link:sc:https://makrobet804.com/tr/promo}}
+Tüm promosyonları gör: {{link:sc:https://makrobet804.com/tr/pages/promotions}}
 
 18 yaşından büyükler içindir. Sorumlu oyun.
 """
@@ -54,50 +53,50 @@ DAVET_TEST_HTML = """<!DOCTYPE html>
               <div style="font-size:12px;color:#9ca3c7;letter-spacing:2px;text-transform:uppercase;">Spor Bahisleri &amp; Casino</div>
             </td>
           </tr>
-          <!-- Hero -->
+          <!-- Greeting -->
           <tr>
-            <td style="background-color:#252947;border-left:1px solid rgba(252,198,77,0.15);border-right:1px solid rgba(252,198,77,0.15);padding:28px 32px 20px;">
+            <td style="background-color:#252947;border-left:1px solid rgba(252,198,77,0.15);border-right:1px solid rgba(252,198,77,0.15);padding:28px 32px 16px;">
               <p style="margin:0 0 10px;font-size:12px;color:#fcc64d;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">Özel davet</p>
               <h1 style="margin:0 0 14px;font-size:24px;line-height:1.35;color:#ffffff;font-weight:700;">Merhaba {{name}},<br>sana özel fırsatlar hazır!</h1>
-              <p style="margin:0;font-size:14px;line-height:1.65;color:#c5c9dc;">Makrobet'te yüksek oranlar, binlerce oyun ve hızlı ödeme altyapısıyla kazanmaya bir adım uzaktasın.</p>
+              <p style="margin:0;font-size:14px;line-height:1.65;color:#c5c9dc;">Makrobet'te güncel promosyonlar, yüksek oranlar ve hızlı ödeme altyapısıyla kazanmaya bir adım uzaktasın.</p>
             </td>
           </tr>
-          <!-- 3000 TL deneme kasası -->
+          <!-- 3000 TL deneme kasası — HERO -->
           <tr>
-            <td style="background-color:#252947;border-left:1px solid rgba(252,198,77,0.15);border-right:1px solid rgba(252,198,77,0.15);padding:4px 32px 24px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:linear-gradient(145deg,#2d3255 0%,#1c1f33 100%);border-radius:16px;border:2px solid #fcc64d;box-shadow:0 0 32px rgba(252,198,77,0.18);">
+            <td style="background-color:#252947;border-left:1px solid rgba(252,198,77,0.15);border-right:1px solid rgba(252,198,77,0.15);padding:8px 32px 28px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:linear-gradient(145deg,#2d3255 0%,#1c1f33 100%);border-radius:16px;border:2px solid #fcc64d;box-shadow:0 0 40px rgba(252,198,77,0.22);">
                 <tr>
-                  <td style="padding:26px 24px;text-align:center;">
-                    <div style="display:inline-block;background:rgba(252,198,77,0.15);border:1px solid rgba(252,198,77,0.35);border-radius:999px;padding:5px 14px;font-size:11px;font-weight:700;color:#fcc64d;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">Yeni üyelere özel</div>
-                    <div style="font-size:44px;font-weight:900;color:#fcc64d;line-height:1;">3.000 TL</div>
-                    <div style="font-size:20px;font-weight:800;color:#ffffff;margin-top:6px;letter-spacing:0.5px;">DENEME KASASI</div>
-                    <p style="margin:14px 0 0;font-size:13px;line-height:1.55;color:#c5c9dc;">Hemen kayıt ol, deneme kasanı al ve risk almadan slot &amp; casino oyunlarını dene.</p>
+                  <td style="padding:30px 24px;text-align:center;">
+                    <div style="display:inline-block;background:rgba(252,198,77,0.15);border:1px solid rgba(252,198,77,0.35);border-radius:999px;padding:5px 14px;font-size:11px;font-weight:700;color:#fcc64d;text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;">Yeni üyelere özel</div>
+                    <div style="font-size:48px;font-weight:900;color:#fcc64d;line-height:1;">3.000 TL</div>
+                    <div style="font-size:22px;font-weight:800;color:#ffffff;margin-top:8px;letter-spacing:0.5px;">DENEME KASASI</div>
+                    <p style="margin:16px 0 0;font-size:14px;line-height:1.55;color:#c5c9dc;">Hemen kayıt ol, deneme kasanı al ve risk almadan slot &amp; casino oyunlarını dene.</p>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
-          <!-- Promo özellikleri -->
+          <!-- Güncel promosyonlar (site) -->
           <tr>
             <td style="background-color:#252947;border-left:1px solid rgba(252,198,77,0.15);border-right:1px solid rgba(252,198,77,0.15);padding:4px 32px 24px;">
-              <p style="margin:0 0 14px;font-size:12px;font-weight:700;color:#fcc64d;text-transform:uppercase;letter-spacing:1px;">Promosyonlar &amp; Avantajlar</p>
+              <p style="margin:0 0 14px;font-size:12px;font-weight:700;color:#fcc64d;text-transform:uppercase;letter-spacing:1px;">Güncel Promosyonlar</p>
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td width="50%" valign="top" style="padding:0 6px 10px 0;">
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#1c1f33;border-radius:12px;border:1px solid rgba(252,198,77,0.12);">
                       <tr><td style="padding:14px 14px;">
-                        <div style="font-size:18px;margin-bottom:5px;">🎁</div>
-                        <div style="font-size:13px;font-weight:700;color:#ffffff;">Hoş Geldin Bonusu</div>
-                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">İlk yatırımına özel cazip hoş geldin fırsatları</div>
+                        <div style="font-size:18px;margin-bottom:5px;">🛡️</div>
+                        <div style="font-size:13px;font-weight:700;color:#ffffff;line-height:1.35;">Sıfır Riskle Yatırım</div>
+                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">Yatırım senden, güvence Makrobet'ten!</div>
                       </td></tr>
                     </table>
                   </td>
                   <td width="50%" valign="top" style="padding:0 0 10px 6px;">
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#1c1f33;border-radius:12px;border:1px solid rgba(252,198,77,0.12);">
                       <tr><td style="padding:14px 14px;">
-                        <div style="font-size:18px;margin-bottom:5px;">⚽</div>
-                        <div style="font-size:13px;font-weight:700;color:#ffffff;">Spor &amp; Canlı Bahis</div>
-                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">Yüksek oranlar ve geniş bahis marketleri</div>
+                        <div style="font-size:18px;margin-bottom:5px;">👥</div>
+                        <div style="font-size:13px;font-weight:700;color:#ffffff;line-height:1.35;">Arkadaş Bonusu</div>
+                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">Arkadaşının aldığı yatırım bonusunu sana da ekleyelim!</div>
                       </td></tr>
                     </table>
                   </td>
@@ -106,18 +105,18 @@ DAVET_TEST_HTML = """<!DOCTYPE html>
                   <td width="50%" valign="top" style="padding:0 6px 10px 0;">
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#1c1f33;border-radius:12px;border:1px solid rgba(252,198,77,0.12);">
                       <tr><td style="padding:14px 14px;">
-                        <div style="font-size:18px;margin-bottom:5px;">🎰</div>
-                        <div style="font-size:13px;font-weight:700;color:#ffffff;">Casino &amp; Slot</div>
-                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">Canlı casino masaları ve binlerce slot oyunu</div>
+                        <div style="font-size:18px;margin-bottom:5px;">✅</div>
+                        <div style="font-size:13px;font-weight:700;color:#ffffff;line-height:1.35;">Makro Görev</div>
+                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">Günlük görevleri tamamla, kasa ödüllerini kazan</div>
                       </td></tr>
                     </table>
                   </td>
                   <td width="50%" valign="top" style="padding:0 0 10px 6px;">
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#1c1f33;border-radius:12px;border:1px solid rgba(252,198,77,0.12);">
                       <tr><td style="padding:14px 14px;">
-                        <div style="font-size:18px;margin-bottom:5px;">🔄</div>
-                        <div style="font-size:13px;font-weight:700;color:#ffffff;">Kayıp İadesi</div>
-                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">Spor ve casino kayıplarında iade promosyonları</div>
+                        <div style="font-size:18px;margin-bottom:5px;">⏰</div>
+                        <div style="font-size:13px;font-weight:700;color:#ffffff;line-height:1.35;">Mutlu Saatler</div>
+                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">Belirli saatlerde yatırımlarda ekstra kasa ödülleri</div>
                       </td></tr>
                     </table>
                   </td>
@@ -126,29 +125,18 @@ DAVET_TEST_HTML = """<!DOCTYPE html>
                   <td width="50%" valign="top" style="padding:0 6px 10px 0;">
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#1c1f33;border-radius:12px;border:1px solid rgba(252,198,77,0.12);">
                       <tr><td style="padding:14px 14px;">
-                        <div style="font-size:18px;margin-bottom:5px;">🎡</div>
-                        <div style="font-size:13px;font-weight:700;color:#ffffff;">Free Spin</div>
-                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">Slot oyunlarında ücretsiz dönüş fırsatları</div>
+                        <div style="font-size:18px;margin-bottom:5px;">🏆</div>
+                        <div style="font-size:13px;font-weight:700;color:#ffffff;line-height:1.35;">Amusnet Race</div>
+                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">500.000 TL ödül havuzlu slot yarışması</div>
                       </td></tr>
                     </table>
                   </td>
                   <td width="50%" valign="top" style="padding:0 0 10px 6px;">
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#1c1f33;border-radius:12px;border:1px solid rgba(252,198,77,0.12);">
                       <tr><td style="padding:14px 14px;">
-                        <div style="font-size:18px;margin-bottom:5px;">💳</div>
-                        <div style="font-size:13px;font-weight:700;color:#ffffff;">Hızlı Ödeme</div>
-                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">Anında yatırım, hızlı çekim ve güvenli işlem</div>
-                      </td></tr>
-                    </table>
-                  </td>
-                </tr>
-                <tr>
-                  <td colspan="2" valign="top">
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#1c1f33;border-radius:12px;border:1px solid rgba(252,198,77,0.12);">
-                      <tr><td style="padding:14px 14px;">
-                        <div style="font-size:18px;margin-bottom:5px;">💬</div>
-                        <div style="font-size:13px;font-weight:700;color:#ffffff;">7/24 Canlı Destek</div>
-                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">Her an yanındayız — bonus ve işlemler için profesyonel destek</div>
+                        <div style="font-size:18px;margin-bottom:5px;">₿</div>
+                        <div style="font-size:13px;font-weight:700;color:#ffffff;line-height:1.35;">Kripto Yatır, Havale Çek</div>
+                        <div style="font-size:11px;color:#9ca3c7;margin-top:4px;line-height:1.45;">10.000 ₺ değerinde Ultra Kasa kazan!</div>
                       </td></tr>
                     </table>
                   </td>
@@ -156,11 +144,11 @@ DAVET_TEST_HTML = """<!DOCTYPE html>
               </table>
             </td>
           </tr>
-          <!-- CTA -->
+          <!-- CTA — site "Detayları Gör" stili -->
           <tr>
             <td style="background-color:#252947;border-left:1px solid rgba(252,198,77,0.15);border-right:1px solid rgba(252,198,77,0.15);padding:8px 32px 32px;text-align:center;">
-              <a href="{{link:sc:https://makrobet804.com/tr/promo}}" style="display:inline-block;background:linear-gradient(180deg,#fcc64d 0%,#e5a830 100%);color:#1c1f33;font-size:16px;font-weight:900;text-decoration:none;padding:16px 44px;border-radius:999px;box-shadow:0 6px 28px rgba(252,198,77,0.4);letter-spacing:0.5px;text-transform:uppercase;">Hemen Üye Ol</a>
-              <p style="margin:14px 0 0;font-size:11px;color:#7d84a0;">Tüm promosyonları görmek için promo sayfasını ziyaret et.</p>
+              <a href="{{link:sc:https://makrobet804.com/tr/pages/promotions}}" style="display:inline-block;background-color:#fcc64d;color:#1c1f33;font-size:15px;font-weight:800;text-decoration:none;padding:14px 36px;border-radius:8px;box-shadow:0 4px 16px rgba(252,198,77,0.35);letter-spacing:0.3px;">Detayları Gör</a>
+              <p style="margin:14px 0 0;font-size:11px;color:#7d84a0;">Tüm promosyonlar makrobet804.com/tr/pages/promotions adresinde.</p>
             </td>
           </tr>
           <!-- Footer -->
