@@ -675,31 +675,42 @@
     return mailApi("/api/mailing/tags").then(function (res) {
       if (!res || !res.ok) return;
       mailTags = res.data.tags || [];
-      mailRenderTagFilterOptions();
+      mailFillAllTagSelects();
     });
   }
 
-  function mailRenderTagFilterOptions() {
-    var sel = document.getElementById("mail-contact-tag-filter");
-    if (!sel) return;
-    var cur = sel.value;
-    var countMap = {};
-    (mailTagCounts || []).forEach(function (t) {
-      countMap[t.name] = t.count;
-    });
+  function mailTagNameList() {
     var names = {};
-    mailTags.forEach(function (t) { names[t.name] = true; });
-    (mailTagCounts || []).forEach(function (t) { names[t.name] = true; });
-    var list = Object.keys(names).sort(function (a, b) {
-      return a.localeCompare(b, "tr");
+    (mailTags || []).forEach(function (t) { if (t && t.name) names[t.name] = true; });
+    (mailTagCounts || []).forEach(function (t) { if (t && t.name) names[t.name] = true; });
+    return Object.keys(names).sort(function (a, b) { return a.localeCompare(b, "tr"); });
+  }
+
+  function mailFillAllTagSelects() {
+    var countMap = {};
+    (mailTagCounts || []).forEach(function (t) { countMap[t.name] = t.count; });
+    var list = mailTagNameList();
+    var optionsWithEmpty = function (emptyLabel) {
+      return '<option value="">' + esc(emptyLabel || "Etiket yok") + "</option>" +
+        list.map(function (name) {
+          var c = countMap[name];
+          var label = c == null ? name : (name + " (" + fmtNum(c) + ")");
+          return '<option value="' + esc(name) + '">' + esc(label) + "</option>";
+        }).join("");
+    };
+    document.querySelectorAll("select.mail-tag-select").forEach(function (sel) {
+      var cur = sel.value;
+      var isFilter = sel.id === "mail-contact-tag-filter";
+      var isMove = sel.id === "mail-tag-move-from" || sel.id === "mail-tag-move-to";
+      var emptyLabel = isFilter ? "Tüm etiketler" : (isMove ? "Seç…" : "Etiket yok");
+      sel.innerHTML = optionsWithEmpty(emptyLabel);
+      if (cur) sel.value = cur;
     });
-    sel.innerHTML = '<option value="">Tüm etiketler</option>' +
-      list.map(function (name) {
-        var c = countMap[name];
-        var label = (c == null) ? name : (name + " (" + fmtNum(c) + ")");
-        return '<option value="' + esc(name) + '">' + esc(label) + "</option>";
-      }).join("");
-    sel.value = cur;
+    mailFillCampTagSelect();
+  }
+
+  function mailRenderTagFilterOptions() {
+    mailFillAllTagSelects();
   }
 
   function mailRenderTagStats(byTag) {
@@ -751,7 +762,7 @@
       }
       var rows = res.data.contacts || [];
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty">Kontak yok</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">Kontak yok</td></tr>';
         return;
       }
       tbody.innerHTML = rows.map(function (c) {
@@ -759,6 +770,7 @@
           return '<span class="acc-chip"><span class="acc-chip-text">' + esc(t) + "</span></span>";
         }).join(" ");
         return "<tr>" +
+          '<td><input type="checkbox" class="mail-contact-check" value="' + c.id + '"></td>' +
           "<td>" + esc(c.email) + (c.unsubscribed ? ' <span class="muted">(unsub)</span>' : "") + "</td>" +
           "<td>" + esc(c.name) + "</td>" +
           "<td>" + (tags || "—") + "</td>" +
@@ -1311,9 +1323,8 @@
     if (cForm) {
       cForm.addEventListener("submit", function (e) {
         e.preventDefault();
-        var tags = (document.getElementById("mail-c-tags").value || "").split(",").map(function (t) {
-          return t.trim();
-        }).filter(Boolean);
+        var tagVal = (document.getElementById("mail-c-tags").value || "").trim();
+        var tags = tagVal ? [tagVal] : [];
         mailApi("/api/mailing/contacts", {
           method: "POST",
           body: {
@@ -1449,11 +1460,98 @@
     bindClick("mail-contacts-refresh", function () {
       mailLoadContactStats();
       mailLoadContacts();
+      mailLoadTags();
     });
+    bindClick("mail-contacts-select-page", function () {
+      document.querySelectorAll(".mail-contact-check").forEach(function (el) { el.checked = true; });
+      var n = document.querySelectorAll(".mail-contact-check:checked").length;
+      mailToast(n ? (n + " kontak seçildi") : "Seçilecek kontak yok");
+    });
+
+    function mailSelectedContactIds() {
+      return Array.prototype.map.call(
+        document.querySelectorAll(".mail-contact-check:checked"),
+        function (el) { return Number(el.value); }
+      ).filter(Boolean);
+    }
+
+    function mailRunBulkTag(action) {
+      var fromEl = document.getElementById("mail-tag-move-from");
+      var toEl = document.getElementById("mail-tag-move-to");
+      var statusEl = document.getElementById("mail-tag-move-status");
+      var fromTag = (fromEl && fromEl.value) || "";
+      var toTag = (toEl && toEl.value) || "";
+      var ids = mailSelectedContactIds();
+      var body = { action: action, from_tag: fromTag, to_tag: toTag };
+      if (ids.length) {
+        body.contact_ids = ids;
+      } else {
+        body.match_tag = fromTag || ((document.getElementById("mail-contact-tag-filter") || {}).value || "");
+        if (!body.match_tag) {
+          mailToast("Kaynak etiket seç veya listeden kontak işaretle");
+          return;
+        }
+        if (action === "add") body.from_tag = body.match_tag;
+      }
+      if (action === "add" && !toTag) { mailToast("Hedef etiket seç"); return; }
+      if (action === "remove" && !fromTag) { mailToast("Kaldırılacak etiket seç"); return; }
+      if (action === "move" && (!fromTag || !toTag)) { mailToast("Kaynak ve hedef etiket seç"); return; }
+
+      var scope = ids.length ? (ids.length + " seçili") : ("«" + (body.match_tag || fromTag) + "» tümü");
+      var label = action === "move" ? ("Taşı: " + fromTag + " → " + toTag) : (action === "add" ? ("Ekle: " + toTag) : ("Kaldır: " + fromTag));
+      if (!confirm(label + "\nKapsam: " + scope + "\nDevam?")) return;
+      if (statusEl) statusEl.textContent = "İşleniyor…";
+      mailApi("/api/mailing/contacts/tags/bulk", { method: "POST", body: body, timeoutMs: 300000 })
+        .then(function (res) {
+          if (!res || !res.ok) {
+            var err = (res && res.data && res.data.error) || "İşlem başarısız";
+            if (statusEl) statusEl.textContent = err;
+            mailToast(err);
+            return;
+          }
+          var msg = (res.data && res.data.message) || "Tamam";
+          if (statusEl) statusEl.textContent = msg;
+          mailToast(msg);
+          mailLoadTags();
+          mailLoadContactStats();
+          mailLoadContacts();
+        });
+    }
+
+    bindClick("mail-tag-move-btn", function () { mailRunBulkTag("move"); });
+    bindClick("mail-tag-add-btn", function () { mailRunBulkTag("add"); });
+    bindClick("mail-tag-remove-btn", function () { mailRunBulkTag("remove"); });
+
+    var tagCreateForm = document.getElementById("mail-tag-create-form");
+    if (tagCreateForm) {
+      tagCreateForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var name = (document.getElementById("mail-tag-create-name").value || "").trim();
+        if (!name) return;
+        mailApi("/api/mailing/tags", { method: "POST", body: { name: name } }).then(function (res) {
+          if (!res || !res.ok) {
+            mailToast((res && res.data && res.data.error) || "Etiket oluşturulamadı");
+            return;
+          }
+          mailToast("Etiket oluşturuldu: " + name);
+          document.getElementById("mail-tag-create-name").value = "";
+          mailLoadTags().then(function () {
+            ["mail-bulk-tag", "mail-paste-tag", "mail-c-tags", "mail-csv-tag", "mail-tag-move-to"].forEach(function (id) {
+              var el = document.getElementById(id);
+              if (el) el.value = name;
+            });
+          });
+          mailLoadContactStats();
+        });
+      });
+    }
+
     var qEl = document.getElementById("mail-contact-q");
     if (qEl) qEl.addEventListener("input", debounce(mailLoadContacts, 300));
     var tagEl = document.getElementById("mail-contact-tag-filter");
     if (tagEl) tagEl.addEventListener("change", function () {
+      var fromEl = document.getElementById("mail-tag-move-from");
+      if (fromEl && tagEl.value) fromEl.value = tagEl.value;
       mailRenderTagStats(mailTagCounts);
       mailLoadContacts();
     });
@@ -1466,6 +1564,8 @@
         if (filterEl) {
           filterEl.value = (filterEl.value === tagName) ? "" : tagName;
         }
+        var fromEl = document.getElementById("mail-tag-move-from");
+        if (fromEl && filterEl && filterEl.value) fromEl.value = filterEl.value;
         mailRenderTagStats(mailTagCounts);
         mailLoadContacts();
         return;

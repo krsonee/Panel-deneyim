@@ -454,6 +454,100 @@ def _untag_contact(conn, contact_id, tag, now=None):
         )
 
 
+def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=None, match_tag="", limit=None):
+    """Toplu etiket işlemleri.
+
+    action:
+      - add: to_tag ekle
+      - remove: from_tag kaldır
+      - move: from_tag kaldır + to_tag ekle (üyelik sonrası segment kaydırma)
+    Kapsam: contact_ids listesi veya match_tag ile eşleşen tüm kontaklar.
+    """
+    action = (action or "").strip().lower()
+    from_tag = (from_tag or "").strip()
+    to_tag = (to_tag or "").strip()
+    match_tag = (match_tag or "").strip()
+    now = iso(utcnow())
+
+    if action not in ("add", "remove", "move"):
+        raise ValueError("Geçersiz işlem. add / remove / move kullanın.")
+    if action == "add" and not to_tag:
+        raise ValueError("Eklenecek etiket gerekli.")
+    if action == "remove" and not from_tag:
+        raise ValueError("Kaldırılacak etiket gerekli.")
+    if action == "move" and (not from_tag or not to_tag):
+        raise ValueError("Taşıma için kaynak ve hedef etiket gerekli.")
+    if action == "move" and from_tag == to_tag:
+        raise ValueError("Kaynak ve hedef etiket aynı olamaz.")
+
+    if to_tag:
+        _ensure_tag(conn, to_tag, now)
+    if from_tag:
+        _ensure_tag(conn, from_tag, now)
+
+    ids = []
+    if contact_ids:
+        for raw in contact_ids:
+            try:
+                ids.append(int(raw))
+            except (TypeError, ValueError):
+                continue
+        ids = list(dict.fromkeys(ids))
+    elif match_tag:
+        sql = 'SELECT id FROM mail_contacts WHERE tags LIKE ? ORDER BY id ASC'
+        params = [f'%"{match_tag}"%']
+        if limit:
+            sql += " LIMIT ?"
+            params.append(int(limit))
+        ids = [r["id"] for r in fetchall(conn, sql, tuple(params))]
+    else:
+        raise ValueError("contact_ids veya match_tag gerekli.")
+
+    if not ids:
+        return {"ok": True, "matched": 0, "updated": 0, "action": action}
+
+    updated = 0
+    chunk = 500
+    for i in range(0, len(ids), chunk):
+        part = ids[i:i + chunk]
+        placeholders = ",".join(["?"] * len(part))
+        rows = fetchall(
+            conn,
+            f"SELECT id, tags FROM mail_contacts WHERE id IN ({placeholders})",
+            tuple(part),
+        )
+        for row in rows:
+            tags = _parse_tags(row["tags"])
+            before = list(tags)
+            if action == "add":
+                if to_tag not in tags:
+                    tags.append(to_tag)
+            elif action == "remove":
+                tags = [t for t in tags if t != from_tag]
+            else:  # move
+                tags = [t for t in tags if t != from_tag]
+                if to_tag not in tags:
+                    tags.append(to_tag)
+            if tags == before:
+                continue
+            execute(
+                conn,
+                "UPDATE mail_contacts SET tags = ?, updated_at = ? WHERE id = ?",
+                (_tags_json(tags), now, row["id"]),
+            )
+            updated += 1
+        conn.commit()
+
+    return {
+        "ok": True,
+        "matched": len(ids),
+        "updated": updated,
+        "action": action,
+        "from_tag": from_tag,
+        "to_tag": to_tag,
+    }
+
+
 def _campaign_selection_where(tag_filter, exclude_previously_sent):
     """Kampanya alıcı seçiminde kullanılan WHERE + params — hem sayım
     önizlemesinde hem gerçek eklemede aynı filtre mantığı kullanılsın diye."""
@@ -1363,6 +1457,37 @@ def create_mailing_blueprint(permission_required):
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_contact_tags WHERE name = ?", (name,))
         return jsonify({"tag": _row(row)}), 201
+
+    @bp.route("/contacts/tags/bulk", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def bulk_contact_tags():
+        """Toplu etiket ekle / kaldır / taşı (segment kaydırma)."""
+        data = request.get_json(silent=True) or {}
+        try:
+            with closing(get_db()) as conn:
+                result = _bulk_retag_contacts(
+                    conn,
+                    action=data.get("action"),
+                    from_tag=data.get("from_tag") or "",
+                    to_tag=data.get("to_tag") or "",
+                    contact_ids=data.get("contact_ids"),
+                    match_tag=data.get("match_tag") or "",
+                    limit=data.get("limit"),
+                )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Toplu etiket işlemi başarısız: {exc}"}), 400
+        action = result.get("action")
+        msg = f"{result.get('updated', 0)} kontak güncellendi"
+        if action == "move":
+            msg = f"{result.get('updated', 0)} kontak «{result.get('from_tag')}» → «{result.get('to_tag')}» taşındı"
+        elif action == "add":
+            msg = f"{result.get('updated', 0)} kontağa «{result.get('to_tag')}» eklendi"
+        elif action == "remove":
+            msg = f"{result.get('updated', 0)} kontaktan «{result.get('from_tag')}» kaldırıldı"
+        result["message"] = msg
+        return jsonify(result)
 
     # ── Templates ──────────────────────────────────────────────
     @bp.route("/templates", methods=["GET"])

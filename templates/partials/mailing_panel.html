@@ -37,6 +37,19 @@
   <!-- CRM -->
   <div class="acc-pane" id="mail-pane-crm" data-mail-pane="crm" hidden>
     <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Etiket yönetimi</span></div>
+      <div class="card-body">
+        <form id="mail-tag-create-form" class="form-row-4" style="grid-template-columns:1fr auto;align-items:end;max-width:520px;">
+          <div>
+            <label>Yeni etiket adı</label>
+            <input type="text" id="mail-tag-create-name" placeholder="örn. uye_oldu, Davet datasi 2" required>
+          </div>
+          <div><button type="submit" class="btn btn-primary">Etiket oluştur</button></div>
+        </form>
+        <p class="hint" style="margin-top:0.55rem;">Önce etiketi oluştur, sonra data yüklerken listeden seç. Üyelik sonrası segment kaydırmak için aşağıdaki toplu taşımayı kullan.</p>
+      </div>
+    </section>
+    <section class="card" style="margin-bottom:1rem;">
       <div class="card-head"><span>Kontak ekle</span></div>
       <div class="card-body">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;align-items:start;">
@@ -45,7 +58,10 @@
             <form id="mail-contact-form" class="form-row-4" style="grid-template-columns:1fr;">
               <div><label>E-posta</label><input type="email" id="mail-c-email" required placeholder="ornek@mail.com"></div>
               <div><label>Ad</label><input type="text" id="mail-c-name" placeholder="Ad Soyad (opsiyonel)"></div>
-              <div><label>Etiketler</label><input type="text" id="mail-c-tags" placeholder="vip, davet_datasi"></div>
+              <div>
+                <label>Etiket</label>
+                <select id="mail-c-tags" class="mail-tag-select"><option value="">Etiket yok</option></select>
+              </div>
               <div><button type="submit" class="btn btn-primary">Ekle</button></div>
             </form>
           </div>
@@ -53,7 +69,10 @@
             <p class="hint" style="margin:0 0 0.65rem;font-weight:600;color:var(--text,#e2e8f0);">Çoklu dosya ekle</p>
             <form id="mail-bulk-import-form" class="form-row-4" style="grid-template-columns:1fr;">
               <div><label>CSV veya XLSX — birden fazla seçebilirsin</label><input type="file" id="mail-bulk-file" multiple accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
-              <div><label>Etiket (opsiyonel)</label><input type="text" id="mail-bulk-tag" placeholder="örn. davet_datasi"></div>
+              <div>
+                <label>Etiket (mevcutlardan seç)</label>
+                <select id="mail-bulk-tag" class="mail-tag-select"><option value="">Etiket yok</option></select>
+              </div>
               <div><button type="submit" class="btn btn-primary">Yüklemeyi başlat</button></div>
             </form>
             <p class="hint" style="margin-top:0.45rem;">CSV ile tek seferde ~100 milyon e-postaya kadar yükleyebilirsin (dosya boyutu en fazla 5GB). 20MB üstü CSV otomatik ~10MB parçalara bölünür (Render timeout önlemi). Excel (.xlsx) tek sayfada en fazla ~1 milyon satır tutar — daha büyük listeler için CSV kullan.</p>
@@ -96,8 +115,11 @@
           <div id="mail-csv-box" style="margin-top:0.65rem;">
             <label>CSV (email, name, tags)</label>
             <textarea id="mail-csv-input" rows="4" placeholder="email,name,tags&#10;a@b.com,Ali,vip"></textarea>
-            <div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
-              <input type="text" id="mail-csv-tag" placeholder="Varsayılan etiket (opsiyonel)" style="max-width:220px;">
+            <div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end;">
+              <div style="min-width:180px;">
+                <label>Varsayılan etiket</label>
+                <select id="mail-csv-tag" class="mail-tag-select"><option value="">Etiket yok</option></select>
+              </div>
               <button type="button" class="btn btn-primary" id="mail-csv-submit">İçe aktar</button>
             </div>
           </div>
@@ -109,7 +131,10 @@
       <div class="card-body">
         <textarea id="mail-paste-box" rows="4" style="width:100%;font-family:inherit;" placeholder="Buraya yapıştır (Ctrl+V) — virgülle, noktalı virgülle veya satır satır ayrılmış e-postalar. Yapıştırınca otomatik kuyruğa eklenir."></textarea>
         <div style="display:flex;gap:0.6rem;align-items:flex-end;margin-top:0.5rem;flex-wrap:wrap;">
-          <div style="max-width:220px;"><label>Etiket (opsiyonel)</label><input type="text" id="mail-paste-tag" placeholder="örn. hizli_liste"></div>
+          <div style="min-width:200px;">
+            <label>Etiket (mevcutlardan seç)</label>
+            <select id="mail-paste-tag" class="mail-tag-select"><option value="">Etiket yok</option></select>
+          </div>
           <button type="button" class="btn btn-sm" id="mail-paste-submit">Kuyruğa ekle</button>
         </div>
         <p class="hint" id="mail-paste-status" style="margin-top:0.5rem;">—</p>
@@ -149,19 +174,43 @@
         </div>
         <div class="mail-tag-stats-list" id="mail-crm-tag-stats-list"></div>
       </div>
+      <div class="mail-tag-move" id="mail-tag-move-box">
+        <div class="mail-tag-move-title">Etiketler arası taşı / filtrele</div>
+        <div class="mail-tag-move-grid">
+          <div>
+            <label>Kaynak etiket</label>
+            <select id="mail-tag-move-from" class="mail-tag-select"><option value="">Seç…</option></select>
+          </div>
+          <div>
+            <label>Hedef etiket</label>
+            <select id="mail-tag-move-to" class="mail-tag-select"><option value="">Seç…</option></select>
+          </div>
+          <div style="display:flex;gap:0.4rem;align-items:flex-end;flex-wrap:wrap;">
+            <button type="button" class="btn btn-sm btn-primary" id="mail-tag-move-btn" title="Kaynaktan çıkar, hedefe ekle">Taşı</button>
+            <button type="button" class="btn btn-sm" id="mail-tag-add-btn" title="Hedef etiketi ekle (kaynak kalır)">Ekle</button>
+            <button type="button" class="btn btn-sm" id="mail-tag-remove-btn" title="Kaynak etiketi kaldır">Kaldır</button>
+          </div>
+        </div>
+        <p class="hint" style="margin:0.55rem 0 0;">
+          Örn. <code>Davet datasi</code> → <code>uye_oldu</code>: üye olanları taşı.
+          İşlem seçili satırlara uygulanır; seçim yoksa kaynak etiketteki <strong>tüm</strong> kontaklılara uygulanır.
+        </p>
+        <p class="hint" id="mail-tag-move-status" style="margin:0.35rem 0 0;">—</p>
+      </div>
       <div class="card-head">
         <span>Kontaklar</span>
-        <div style="display:flex;gap:0.5rem;align-items:center;">
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
           <input type="search" id="mail-contact-q" placeholder="Ara…" style="width:160px;">
-          <select id="mail-contact-tag-filter" style="width:auto;min-width:120px;"><option value="">Tüm etiketler</option></select>
+          <select id="mail-contact-tag-filter" class="mail-tag-select" style="width:auto;min-width:140px;"><option value="">Tüm etiketler</option></select>
+          <button type="button" class="btn btn-sm" id="mail-contacts-select-page">Sayfayı seç</button>
           <button type="button" class="btn btn-sm" id="mail-contacts-refresh">Yenile</button>
         </div>
       </div>
       <div class="table-wrap">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>E-posta</th><th>Ad</th><th>Etiket</th><th>Kaynak</th><th></th></tr></thead>
-            <tbody id="mail-contacts-table"><tr><td colspan="5" class="empty">Veri yok</td></tr></tbody>
+            <thead><tr><th style="width:2rem;"></th><th>E-posta</th><th>Ad</th><th>Etiket</th><th>Kaynak</th><th></th></tr></thead>
+            <tbody id="mail-contacts-table"><tr><td colspan="6" class="empty">Veri yok</td></tr></tbody>
           </table>
         </div>
       </div>
