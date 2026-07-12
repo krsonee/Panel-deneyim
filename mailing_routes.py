@@ -322,6 +322,12 @@ def _bulk_upsert_contacts(conn, batch, tag, now):
         return 0
     tag = (tag or "").strip()
     tag_json_single = json.dumps([tag], ensure_ascii=False) if tag else "[]"
+    # Not: '%' işaretini SQL metninin İÇİNE değil, bağlı (bound) parametrenin
+    # içine koyuyoruz. Postgres'te (psycopg2) '%s' dışında kalan her ham '%'
+    # karakteri bir placeholder gibi sayılıp "IndexError: tuple index out of
+    # range" hatasına yol açıyor — bu yüzden LIKE deseni burada Python'da
+    # hazırlanıp parametre olarak veriliyor (SQLite'ta da sorunsuz çalışır).
+    tag_like_pattern = f'%"{tag}"%'
     values_sql = []
     params = []
     for email, name in batch:
@@ -334,15 +340,38 @@ def _bulk_upsert_contacts(conn, batch, tag, now):
             name = CASE WHEN mail_contacts.name = '' THEN EXCLUDED.name ELSE mail_contacts.name END,
             tags = CASE
                 WHEN ? = '' THEN mail_contacts.tags
-                WHEN mail_contacts.tags LIKE '%"' || ? || '"%' THEN mail_contacts.tags
+                WHEN mail_contacts.tags LIKE ? THEN mail_contacts.tags
                 WHEN mail_contacts.tags = '[]' THEN ?
                 ELSE substr(mail_contacts.tags, 1, length(mail_contacts.tags) - 1) || ',"' || ? || '"]'
             END,
             updated_at = EXCLUDED.updated_at
     """
-    params += [tag, tag, tag_json_single, tag]
+    params += [tag, tag_like_pattern, tag_json_single, tag]
     cur = execute(conn, sql, tuple(params))
     return cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(batch)
+
+
+def _detect_csv_delimiter(path):
+    """Türkiye'de Excel'in varsayılan CSV export'u virgül yerine noktalı virgül
+    (;) kullanır (virgül ondalık ayracı olduğu için). Header/örnek satırlara
+    bakıp doğru ayracı otomatik seçiyoruz — aksi halde tüm satır tek bir
+    sütun gibi okunur ve email/name sütunları hiç bulunamaz."""
+    try:
+        with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
+            sample = f.read(65536)
+    except OSError:
+        return ","
+    if not sample.strip():
+        return ","
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+        return dialect.delimiter
+    except csv.Error:
+        pass
+    first_line = next((ln for ln in sample.splitlines() if ln.strip()), "")
+    counts = {d: first_line.count(d) for d in (",", ";", "\t")}
+    best = max(counts, key=counts.get)
+    return best if counts[best] > 0 else ","
 
 
 def _count_csv_rows(path):
@@ -351,8 +380,9 @@ def _count_csv_rows(path):
 
 
 def _iter_csv_rows(path):
+    delimiter = _detect_csv_delimiter(path)
     with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
-        reader = csv.DictReader(f)
+        reader = csv.DictReader(f, delimiter=delimiter)
         for row in reader:
             yield row
 
@@ -419,17 +449,38 @@ def _run_import_job(job_id, path, tag):
             skipped = 0
             batch = []
             cancelled = False
-            for row in iter_fn(path):
-                email = (row.get("email") or row.get("Email") or row.get("EMAIL") or "").strip().lower()
-                processed += 1
-                if not email or not EMAIL_RE.match(email):
+            # Manuel next() döngüsü kullanıyoruz ki satırı ÜRETİRKEN (örn. bozuk
+            # encoding, tutarsız sütun sayısı) bir hata çıksa bile o satırı
+            # geçersiz sayıp devam edebilelim — tek bozuk satır tüm job'ı
+            # 'error' durumuna düşürmesin, milyonlarca satırın kalanı işlensin.
+            row_iter = iter_fn(path)
+            while True:
+                try:
+                    row = next(row_iter)
+                except StopIteration:
+                    break
+                except Exception:
+                    processed += 1
                     skipped += 1
                     continue
-                name = (row.get("name") or row.get("Name") or "").strip()
-                batch.append((email, name))
+                processed += 1
+                try:
+                    email = (row.get("email") or row.get("Email") or row.get("EMAIL") or "").strip().lower()
+                    if not email or not EMAIL_RE.match(email):
+                        skipped += 1
+                        continue
+                    name = (row.get("name") or row.get("Name") or "").strip()
+                    batch.append((email, name))
+                except Exception:
+                    skipped += 1
+                    continue
                 if len(batch) >= IMPORT_CHUNK_SIZE:
-                    upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
-                    conn.commit()
+                    try:
+                        upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+                        skipped += len(batch)
                     batch = []
                     execute(
                         conn,
@@ -446,8 +497,12 @@ def _run_import_job(job_id, path, tag):
                         cancelled = True
                         break
             if batch and not cancelled:
-                upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
-                conn.commit()
+                try:
+                    upserted += _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    skipped += len(batch)
 
             final_now = iso(utcnow())
             if cancelled:
