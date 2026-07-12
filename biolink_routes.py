@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, redirect, render_template, request, sessio
 import biolink_api
 from database import get_db
 
-MODULE_ACCESS = ("tracking.biolink",)
+MODULE_ACCESS = ("module.biolink", "biolink.pages")
 
 
 def create_biolink_blueprint(permission_required):

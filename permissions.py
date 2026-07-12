@@ -11,6 +11,8 @@ PERMISSION_CATALOG = [
      "desc": "Kampanya, CRM, şablon ve IVR mailing modülü"},
     {"key": "module.marketing", "label": "Marketing", "group": "Modüller",
      "desc": "Marketing modülüne erişim"},
+    {"key": "module.biolink", "label": "Bio Sayfa", "group": "Modüller",
+     "desc": "Link-in-bio sayfa oluşturucu modülü"},
     {"key": "module.settings", "label": "Ayarlar", "group": "Modüller",
      "desc": "Panel ayarları ekranı"},
     {"key": "tracking.dashboard", "label": "Dashboard & Grafikler", "group": "Link Takip",
@@ -29,8 +31,8 @@ PERMISSION_CATALOG = [
      "desc": "bl.ink API entegrasyonu, ayarları ve link/online rapor görüntüleme"},
     {"key": "tracking.makrolink", "label": "MakroLink (makrovip.com)", "group": "Link Takip",
      "desc": "Kendi kısa link oluşturma, tıklama raporu ve Smartico URL kısaltma"},
-    {"key": "tracking.biolink", "label": "Bio Sayfa Oluşturucu", "group": "Link Takip",
-     "desc": "Heylink/Linktree tarzı özel sayfa oluşturma, tema seçimi ve tıklama raporu"},
+    {"key": "biolink.pages", "label": "Sayfa Oluşturucu", "group": "Bio Sayfa",
+     "desc": "Link-in-bio sayfa oluşturma, tema, buton/promo yönetimi ve tıklama raporu"},
     {"key": "accounting.dashboard", "label": "Muhasebe Özet", "group": "Muhasebe",
      "desc": "Muhasebe dashboard KPI kartları"},
     {"key": "accounting.transactions", "label": "Yatırım / Çekim", "group": "Muhasebe",
@@ -77,7 +79,12 @@ PERMISSION_CATALOG = [
 
 ALL_PERMISSION_KEYS = [p["key"] for p in PERMISSION_CATALOG]
 
-MODULE_KEYS = ("module.tracking", "module.accounting", "module.mailing", "module.marketing", "module.settings")
+MODULE_KEYS = ("module.tracking", "module.accounting", "module.mailing", "module.marketing", "module.biolink", "module.settings")
+
+BIOLINK_PERMS = (
+    "module.biolink",
+    "biolink.pages",
+)
 
 MAILING_PERMS = (
     "module.mailing",
@@ -107,7 +114,8 @@ ROLE_TEMPLATES = {
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.domains",
             "tracking.players", "tracking.reports", "tracking.export", "tracking.smartico",
-            "tracking.blink", "tracking.makrolink", "tracking.biolink",
+            "tracking.blink", "tracking.makrolink",
+            "module.biolink", "biolink.pages",
         ],
     },
     "accountant": {
@@ -136,7 +144,8 @@ ROLE_TEMPLATES = {
         "desc": "Sadece görüntüleme, düzenleme yok",
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.players", "tracking.reports", "tracking.smartico",
-            "tracking.blink", "tracking.makrolink", "tracking.biolink",
+            "tracking.blink", "tracking.makrolink",
+            "module.biolink", "biolink.pages",
             "module.mailing", "mailing.dashboard", "mailing.reports",
         ],
     },
@@ -145,8 +154,14 @@ ROLE_TEMPLATES = {
         "desc": "Raporlar ve dashboard",
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.reports", "tracking.smartico",
-            "tracking.blink", "tracking.makrolink", "tracking.biolink",
+            "tracking.blink", "tracking.makrolink",
+            "module.biolink", "biolink.pages",
         ],
+    },
+    "biolink_editor": {
+        "label": "Bio Sayfa Editörü",
+        "desc": "Link-in-bio sayfa oluşturucu modülünde tam yetki",
+        "permissions": list(BIOLINK_PERMS),
     },
     "custom": {
         "label": "Özel Yetki",
@@ -171,12 +186,17 @@ def normalize_permissions(raw):
             return []
     if not isinstance(raw, list):
         return []
+    legacy_biolink = any(str(item).strip() == "tracking.biolink" for item in raw)
     cleaned = []
     for item in raw:
         key = str(item).strip()
+        if key == "tracking.biolink":
+            continue
         if key == "*" or key in ALL_PERMISSION_KEYS:
             if key not in cleaned:
                 cleaned.append(key)
+    if legacy_biolink and "biolink.pages" not in cleaned:
+        cleaned.append("biolink.pages")
     return cleaned
 
 
@@ -193,6 +213,8 @@ def ensure_module_parents(permissions):
         perms.append("module.mailing")
     if any(p.startswith("marketing.") for p in perms) and "module.marketing" not in perms:
         perms.append("module.marketing")
+    if any(p.startswith("biolink.") for p in perms) and "module.biolink" not in perms:
+        perms.append("module.biolink")
     if "admin.users" in perms and "module.settings" not in perms:
         perms.append("module.settings")
     if "admin.audit" in perms and "module.settings" not in perms:
@@ -234,6 +256,8 @@ def has_any_module_access(user_permissions):
         return True
     if any(p.startswith("marketing.") for p in perms):
         return True
+    if any(p.startswith("biolink.") for p in perms):
+        return True
     if "admin.users" in perms or "admin.audit" in perms:
         return True
     return False
@@ -242,7 +266,7 @@ def has_any_module_access(user_permissions):
 def available_modules(user_permissions):
     perms = normalize_permissions(user_permissions)
     if "*" in perms:
-        return ["tracking", "accounting", "mailing", "marketing", "settings"]
+        return ["tracking", "accounting", "mailing", "marketing", "biolink", "settings"]
     mods = []
     if "module.tracking" in perms or any(p.startswith("tracking.") for p in perms):
         mods.append("tracking")
@@ -252,6 +276,8 @@ def available_modules(user_permissions):
         mods.append("mailing")
     if "module.marketing" in perms or any(p.startswith("marketing.") for p in perms):
         mods.append("marketing")
+    if "module.biolink" in perms or any(p.startswith("biolink.") for p in perms):
+        mods.append("biolink")
     if "module.settings" in perms or "admin.users" in perms or "admin.audit" in perms:
         mods.append("settings")
     return mods
@@ -267,4 +293,6 @@ def default_module_for_user(user_permissions):
         return "mailing"
     if "marketing" in mods:
         return "marketing"
+    if "biolink" in mods:
+        return "biolink"
     return mods[0] if mods else None

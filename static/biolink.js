@@ -10,7 +10,7 @@
   function blHas(key) {
     if (!blPerms || !blPerms.length) return true;
     if (blPerms.indexOf("*") >= 0) return true;
-    if (blPerms.indexOf("module.tracking") >= 0) return true;
+    if (blPerms.indexOf("module.biolink") >= 0) return true;
     return blPerms.indexOf(key) >= 0;
   }
 
@@ -74,7 +74,7 @@
 
   // ── Sayfa listesi ────────────────────────────────────────
   function loadPages() {
-    if (!blHas("tracking.biolink")) return Promise.resolve();
+    if (!blHas("biolink.pages")) return Promise.resolve();
     return blApi("/api/biolink/pages").then(function (r) {
       if (!r || !r.ok) return;
       blPages = r.data.pages || [];
@@ -376,7 +376,11 @@
       if (blLoaded) return;
       blLoaded = true;
       bindEvents();
-      loadThemes().then(loadPages);
+      loadThemes();
+    },
+    onShow: function () {
+      if (!blLoaded) this.init();
+      loadPages();
     },
     setPermissions: function (perms) {
       blPerms = perms || [];
