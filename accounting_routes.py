@@ -37,6 +37,15 @@ from accounting_period import (
 )
 from accounting_invoices import build_payment_invoices
 from accounting_pronet import build_invoice_payload, calc_commission, reseed_period_from_history
+from accounting_pl import (
+    SECTION_LABELS as PL_SECTION_LABELS,
+    add_line as pl_add_line,
+    build_pl_payload,
+    delete_line as pl_delete_line,
+    reseed_period_from_history as pl_reseed_period_from_history,
+    update_line as pl_update_line,
+    upsert_meta as pl_upsert_meta,
+)
 from accounting_vault import (
     VAULT_ICONS,
     VAULT_PALETTE,
@@ -329,6 +338,117 @@ def unique_salary_slug(conn, base_slug):
     return slug
 
 
+def calc_ggr_commission(ggr_amount, commission_rate):
+    """GGR (Stake - Winning) üzerinden komisyon. Aylık toplamda negatif GGR için komisyon 0 kabul edilir."""
+    ggr = float(ggr_amount or 0)
+    rate = float(commission_rate or 0)
+    if ggr <= 0:
+        return 0.0
+    return round(ggr * rate / 100.0, 2)
+
+
+def build_invoice_calc_payload(conn, period):
+    """Fatura Hesaplama (günlük GGR takip) — Pronet Fatura alanından bağımsız, kendi tablolarını kullanır."""
+    providers = fetchall(
+        conn,
+        """
+        SELECT id, section, name, commission_rate
+        FROM acc_invoice_calc_providers
+        WHERE active = 1
+        ORDER BY CASE section WHEN 'sport' THEN 0 WHEN 'casino' THEN 1 WHEN 'special' THEN 2 ELSE 3 END, sort_order, name
+        """,
+    )
+    provider_list = [dict(p) for p in providers]
+    provider_map = {p["id"]: p for p in provider_list}
+
+    rows = fetchall(
+        conn,
+        """
+        SELECT entry_date, provider_id, stake_amount, winning_amount
+        FROM acc_invoice_calc_daily
+        WHERE period = ?
+        ORDER BY entry_date, provider_id
+        """,
+        (period,),
+    )
+
+    entries = {}
+    provider_agg = {}
+    daily_agg = {}
+
+    for r in rows:
+        pid = r["provider_id"]
+        provider = provider_map.get(pid)
+        if not provider:
+            continue
+        entry_date = r["entry_date"]
+        stake = float(r["stake_amount"] or 0)
+        winning = float(r["winning_amount"] or 0)
+        ggr = stake - winning
+        row_commission = calc_ggr_commission(ggr, provider["commission_rate"])
+
+        entries.setdefault(entry_date, {})[str(pid)] = {
+            "stake_amount": round(stake, 2),
+            "winning_amount": round(winning, 2),
+            "ggr_amount": round(ggr, 2),
+            "commission_amount": row_commission,
+        }
+
+        pa = provider_agg.setdefault(pid, {"stake_amount": 0.0, "winning_amount": 0.0})
+        pa["stake_amount"] += stake
+        pa["winning_amount"] += winning
+
+        da = daily_agg.setdefault(entry_date, {"stake_amount": 0.0, "winning_amount": 0.0, "commission_amount": 0.0})
+        da["stake_amount"] += stake
+        da["winning_amount"] += winning
+        da["commission_amount"] += row_commission
+
+    provider_totals = []
+    for pid, agg in provider_agg.items():
+        provider = provider_map.get(pid)
+        if not provider:
+            continue
+        ggr = agg["stake_amount"] - agg["winning_amount"]
+        commission = calc_ggr_commission(ggr, provider["commission_rate"])
+        provider_totals.append({
+            "provider_id": pid,
+            "name": provider["name"],
+            "section": provider["section"],
+            "commission_rate": provider["commission_rate"],
+            "stake_amount": round(agg["stake_amount"], 2),
+            "winning_amount": round(agg["winning_amount"], 2),
+            "ggr_amount": round(ggr, 2),
+            "commission_amount": commission,
+        })
+    provider_totals.sort(key=lambda x: x["commission_amount"], reverse=True)
+
+    daily_totals = []
+    for entry_date, agg in sorted(daily_agg.items()):
+        daily_totals.append({
+            "entry_date": entry_date,
+            "stake_amount": round(agg["stake_amount"], 2),
+            "winning_amount": round(agg["winning_amount"], 2),
+            "ggr_amount": round(agg["stake_amount"] - agg["winning_amount"], 2),
+            "commission_amount": round(agg["commission_amount"], 2),
+        })
+
+    grand_total = {
+        "stake_amount": round(sum(p["stake_amount"] for p in provider_totals), 2),
+        "winning_amount": round(sum(p["winning_amount"] for p in provider_totals), 2),
+        "ggr_amount": round(sum(p["ggr_amount"] for p in provider_totals), 2),
+        "commission_amount": round(sum(p["commission_amount"] for p in provider_totals), 2),
+    }
+
+    return {
+        "period": period,
+        "providers": provider_list,
+        "entries": entries,
+        "provider_totals": provider_totals,
+        "daily_totals": daily_totals,
+        "grand_total": grand_total,
+    }
+
+
 def create_accounting_blueprint(permission_required, superadmin_required=None):
     bp = Blueprint("accounting", __name__, url_prefix="/api/accounting")
 
@@ -424,6 +544,14 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
         except (TypeError, ValueError):
             return None
         if amount < 0:
+            return None
+        return round(amount, 2)
+
+    def parse_signed_amount(value):
+        """P&L raporu satırları (yatırım/gider gibi) negatif olabilir — parse_amount'tan farklı olarak izin verir."""
+        try:
+            amount = float(value)
+        except (TypeError, ValueError):
             return None
         return round(amount, 2)
 
@@ -2243,5 +2371,225 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             )
             conn.commit()
         return jsonify({"ok": True, "amount_eur": amount_eur})
+
+    # --- Fatura Hesaplama (günlük GGR takip) — Pronet Fatura alanından tamamen bağımsız ---
+
+    @bp.route("/invoice-calc", methods=["GET"])
+    @acc_perm("accounting.invoice_calc", *ACC_READ)
+    def get_invoice_calc():
+        period = valid_month_period(request.args.get("period")) or period_from_request()
+        if not period or period == "all":
+            period = default_accounting_period()
+        with closing(get_db()) as conn:
+            payload = build_invoice_calc_payload(conn, period)
+        payload["period_label"] = period_label(period)
+        return jsonify(payload)
+
+    @bp.route("/invoice-calc/day", methods=["PUT"])
+    @acc_perm("accounting.invoice_calc", *MODULE_ACCESS)
+    def save_invoice_calc_day():
+        data = request.get_json(silent=True) or {}
+        entry_date = parse_date(data.get("entry_date"))
+        if not entry_date:
+            return jsonify({"error": "Geçerli bir tarih girin."}), 400
+        period = entry_date[:7]
+        rows = data.get("rows") or []
+        now = iso(utcnow())
+        who = (session.get("admin_display_name") or session.get("admin_username") or "").strip()
+        with closing(get_db()) as conn:
+            valid_ids = {r["id"] for r in fetchall(conn, "SELECT id FROM acc_invoice_calc_providers")}
+            for item in rows:
+                try:
+                    pid = int(item.get("provider_id"))
+                except (TypeError, ValueError):
+                    continue
+                if pid not in valid_ids:
+                    continue
+                stake = parse_amount(item.get("stake_amount"))
+                winning = parse_amount(item.get("winning_amount"))
+                stake = stake if stake is not None else 0.0
+                winning = winning if winning is not None else 0.0
+                exists = scalar(
+                    conn,
+                    "SELECT COUNT(*) FROM acc_invoice_calc_daily WHERE entry_date = ? AND provider_id = ?",
+                    (entry_date, pid),
+                )
+                if stake == 0 and winning == 0:
+                    if exists:
+                        execute(
+                            conn,
+                            "DELETE FROM acc_invoice_calc_daily WHERE entry_date = ? AND provider_id = ?",
+                            (entry_date, pid),
+                        )
+                    continue
+                if exists:
+                    execute(
+                        conn,
+                        """
+                        UPDATE acc_invoice_calc_daily
+                        SET stake_amount = ?, winning_amount = ?, created_by = ?, updated_at = ?
+                        WHERE entry_date = ? AND provider_id = ?
+                        """,
+                        (stake, winning, who, now, entry_date, pid),
+                    )
+                else:
+                    insert_returning_id(
+                        conn,
+                        """
+                        INSERT INTO acc_invoice_calc_daily
+                        (period, entry_date, provider_id, stake_amount, winning_amount, created_by, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (period, entry_date, pid, stake, winning, who, now),
+                    )
+            conn.commit()
+            payload = build_invoice_calc_payload(conn, period)
+        payload["period_label"] = period_label(period)
+        payload["saved_date"] = entry_date
+        return jsonify(payload)
+
+    @bp.route("/invoice-calc/providers/<int:provider_id>", methods=["PUT"])
+    @acc_perm("accounting.invoice_calc", *MODULE_ACCESS)
+    def update_invoice_calc_provider(provider_id):
+        data = request.get_json(silent=True) or {}
+        fields = []
+        params = []
+        if "commission_rate" in data:
+            rate = parse_amount(data.get("commission_rate"))
+            if rate is None:
+                return jsonify({"error": "Geçerli komisyon oranı girin."}), 400
+            fields.append("commission_rate = ?")
+            params.append(rate)
+        if "active" in data:
+            fields.append("active = ?")
+            params.append(1 if data.get("active") else 0)
+        if not fields:
+            return jsonify({"error": "Güncellenecek alan yok."}), 400
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT id FROM acc_invoice_calc_providers WHERE id = ?", (provider_id,))
+            if not row:
+                return jsonify({"error": "Sağlayıcı bulunamadı."}), 404
+            params.append(provider_id)
+            execute(conn, f"UPDATE acc_invoice_calc_providers SET {', '.join(fields)} WHERE id = ?", params)
+            conn.commit()
+            updated = fetchone(
+                conn,
+                "SELECT id, section, name, commission_rate, active FROM acc_invoice_calc_providers WHERE id = ?",
+                (provider_id,),
+            )
+        return jsonify({"ok": True, "provider": dict(updated)})
+
+    @bp.route("/pl-report", methods=["GET"])
+    @acc_perm("accounting.pl_report", *ACC_READ)
+    def get_pl_report():
+        period = valid_month_period(request.args.get("period")) or period_from_request()
+        if not period or period == "all":
+            period = default_accounting_period()
+        with closing(get_db()) as conn:
+            payload = build_pl_payload(conn, period)
+        payload["period_label"] = period_label(period)
+        payload["sections_meta"] = PL_SECTION_LABELS
+        return jsonify(payload)
+
+    @bp.route("/pl-report/meta", methods=["PUT"])
+    @acc_perm("accounting.pl_report", *MODULE_ACCESS)
+    def update_pl_report_meta():
+        data = request.get_json(silent=True) or {}
+        period = valid_month_period(data.get("period")) or period_from_request()
+        if not period or period == "all":
+            return jsonify({"error": "Geçerli ay seçin (YYYY-MM)."}), 400
+        notes = data.get("notes")
+        pronet_fatura_label = data.get("pronet_fatura_label")
+        pronet_fatura_amount = parse_signed_amount(data.get("pronet_fatura_amount")) if "pronet_fatura_amount" in data else None
+        pronet_odenen_amount = parse_signed_amount(data.get("pronet_odenen_amount")) if "pronet_odenen_amount" in data else None
+        asil_net_amount = parse_signed_amount(data.get("asil_net_amount")) if "asil_net_amount" in data else None
+        with closing(get_db()) as conn:
+            pl_upsert_meta(
+                conn, period,
+                notes=notes.strip() if isinstance(notes, str) else None,
+                pronet_fatura_label=pronet_fatura_label.strip() if isinstance(pronet_fatura_label, str) else None,
+                pronet_fatura_amount=pronet_fatura_amount,
+                pronet_odenen_amount=pronet_odenen_amount,
+                asil_net_amount=asil_net_amount,
+            )
+            payload = build_pl_payload(conn, period)
+        payload["period_label"] = period_label(period)
+        return jsonify(payload)
+
+    @bp.route("/pl-report/lines", methods=["POST"])
+    @acc_perm("accounting.pl_report", *MODULE_ACCESS)
+    def create_pl_report_line():
+        data = request.get_json(silent=True) or {}
+        period = valid_month_period(data.get("period")) or period_from_request()
+        if not period or period == "all":
+            return jsonify({"error": "Geçerli ay seçin (YYYY-MM)."}), 400
+        section_key = (data.get("section_key") or "").strip()
+        if section_key not in PL_SECTION_LABELS:
+            return jsonify({"error": "Geçersiz bölüm."}), 400
+        label = (data.get("label") or "").strip()
+        if not label:
+            return jsonify({"error": "Kalem adı girin."}), 400
+        amount = parse_signed_amount(data.get("amount"))
+        if amount is None:
+            return jsonify({"error": "Geçerli tutar girin."}), 400
+        with closing(get_db()) as conn:
+            new_id = pl_add_line(conn, period, section_key, label, amount)
+            if new_id is None:
+                return jsonify({"error": "Kalem eklenemedi."}), 400
+            payload = build_pl_payload(conn, period)
+        payload["period_label"] = period_label(period)
+        return jsonify(payload)
+
+    @bp.route("/pl-report/lines/<int:line_id>", methods=["PUT"])
+    @acc_perm("accounting.pl_report", *MODULE_ACCESS)
+    def update_pl_report_line(line_id):
+        data = request.get_json(silent=True) or {}
+        period = valid_month_period(data.get("period")) or period_from_request()
+        if not period or period == "all":
+            return jsonify({"error": "Geçerli ay seçin (YYYY-MM)."}), 400
+        label = data.get("label")
+        amount = parse_signed_amount(data.get("amount")) if "amount" in data else None
+        with closing(get_db()) as conn:
+            ok = pl_update_line(
+                conn, line_id, period,
+                label=label.strip() if isinstance(label, str) and label.strip() else None,
+                amount=amount,
+            )
+            if not ok:
+                return jsonify({"error": "Kalem bulunamadı."}), 404
+            payload = build_pl_payload(conn, period)
+        payload["period_label"] = period_label(period)
+        return jsonify(payload)
+
+    @bp.route("/pl-report/lines/<int:line_id>", methods=["DELETE"])
+    @acc_perm("accounting.pl_report", *MODULE_ACCESS)
+    def delete_pl_report_line(line_id):
+        period = valid_month_period(request.args.get("period")) or period_from_request()
+        if not period or period == "all":
+            return jsonify({"error": "Geçerli ay seçin (YYYY-MM)."}), 400
+        with closing(get_db()) as conn:
+            ok = pl_delete_line(conn, line_id, period)
+            if not ok:
+                return jsonify({"error": "Kalem bulunamadı."}), 404
+            payload = build_pl_payload(conn, period)
+        payload["period_label"] = period_label(period)
+        return jsonify(payload)
+
+    @bp.route("/pl-report/reseed", methods=["POST"])
+    @acc_superadmin
+    def reseed_pl_report():
+        """Gecmis Excel PL raporundan aktarilan verilerle bir donemi yeniden yukler.
+        Sadece superadmin kullanabilir (gecmis veri yukleme/duzeltme araci)."""
+        data = request.get_json(silent=True) or {}
+        period = valid_month_period(data.get("period"))
+        if not period:
+            return jsonify({"error": "Geçerli ay seçin (YYYY-MM)."}), 400
+        with closing(get_db()) as conn:
+            ok = pl_reseed_period_from_history(conn, period)
+            if not ok:
+                return jsonify({"error": "Bu dönem için geçmiş PL verisi tanımlı değil."}), 404
+            payload = build_pl_payload(conn, period)
+        payload["period_label"] = period_label(period)
+        return jsonify(payload)
 
     return bp

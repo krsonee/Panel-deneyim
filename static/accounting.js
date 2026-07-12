@@ -19,6 +19,8 @@
   var ACC_RATES_POLL_MS = 30000;
   var ACC_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
 
+  var accInvoiceCalcData = null;
+
   var accHidePassivePm = localStorage.getItem("acc_hide_passive_pm") === "1";
   var accCanViewOfficeSalaries = false;
   var accVaults = [];
@@ -2539,6 +2541,375 @@
     if (el) el.textContent = text;
   }
 
+  // ---- Fatura Hesaplama (günlük GGR takip) — Fatura alanından bağımsız ----
+
+  function accIcFmt(n) {
+    return accMoney(n, "TRY");
+  }
+
+  function accIcSectionLabel(section) {
+    if (section === "sport") return "Spor Bahisleri";
+    if (section === "special") return "Özel Kalemler";
+    return "Casino Bahisleri";
+  }
+
+  function accIcDefaultDate(period) {
+    var today = accToday();
+    if (!period || period === "all") return today;
+    return today.slice(0, 7) === period ? today : period + "-01";
+  }
+
+  function accIcEnsureDate(period) {
+    var dateEl = document.getElementById("acc-ic-date");
+    if (!dateEl) return;
+    if (!dateEl.value || dateEl.value.slice(0, 7) !== period) {
+      dateEl.value = accIcDefaultDate(period);
+    }
+  }
+
+  function accRenderIcDayTable(data) {
+    var tbody = document.getElementById("acc-ic-table-body");
+    if (!tbody) return;
+    var providers = (data && data.providers) || [];
+    if (!providers.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">Sağlayıcı tanımlı değil</td></tr>';
+      return;
+    }
+    var dateEl = document.getElementById("acc-ic-date");
+    var selDate = dateEl && dateEl.value ? dateEl.value : accToday();
+    var dayEntries = (data.entries && data.entries[selDate]) || {};
+    var lastSection = null;
+    var html = "";
+    providers.forEach(function (p) {
+      if (p.section !== lastSection) {
+        lastSection = p.section;
+        html += '<tr class="acc-ic-section-row"><td colspan="6">' + accEsc(accIcSectionLabel(p.section)) + '</td></tr>';
+      }
+      var e = dayEntries[String(p.id)] || {};
+      var stakeVal = e.stake_amount || "";
+      var winVal = e.winning_amount || "";
+      var ggr = (parseFloat(stakeVal) || 0) - (parseFloat(winVal) || 0);
+      var comm = ggr > 0 ? ggr * (parseFloat(p.commission_rate) || 0) / 100 : 0;
+      html += '<tr data-ic-row="' + p.id + '" data-ic-name="' + accEsc(String(p.name || "").toLowerCase()) + '">' +
+        '<td class="acc-inv-name">' + accEsc(p.name) + '</td>' +
+        '<td><input type="number" step="0.01" data-ic-rate="' + p.id + '" value="' + (p.commission_rate || 0) + '" style="width:70px;"></td>' +
+        '<td><input type="number" step="0.01" data-ic-field="stake_amount" data-ic-provider="' + p.id + '" value="' + stakeVal + '" placeholder="0"></td>' +
+        '<td><input type="number" step="0.01" data-ic-field="winning_amount" data-ic-provider="' + p.id + '" value="' + winVal + '" placeholder="0"></td>' +
+        '<td class="' + (ggr < 0 ? "acc-ic-neg" : "") + '" data-ic-ggr="' + p.id + '">' + accIcFmt(ggr) + '</td>' +
+        '<td class="acc-inv-comm" data-ic-comm="' + p.id + '">' + accIcFmt(comm) + '</td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = html;
+    accIcApplySearchFilter();
+  }
+
+  function accIcRecalcRow(providerId) {
+    var stakeEl = document.querySelector('[data-ic-field="stake_amount"][data-ic-provider="' + providerId + '"]');
+    var winEl = document.querySelector('[data-ic-field="winning_amount"][data-ic-provider="' + providerId + '"]');
+    var rateEl = document.querySelector('[data-ic-rate="' + providerId + '"]');
+    var stake = parseFloat(stakeEl && stakeEl.value) || 0;
+    var win = parseFloat(winEl && winEl.value) || 0;
+    var rate = parseFloat(rateEl && rateEl.value) || 0;
+    var ggr = stake - win;
+    var comm = ggr > 0 ? ggr * rate / 100 : 0;
+    var ggrCell = document.querySelector('[data-ic-ggr="' + providerId + '"]');
+    var commCell = document.querySelector('[data-ic-comm="' + providerId + '"]');
+    if (ggrCell) {
+      ggrCell.textContent = accIcFmt(ggr);
+      ggrCell.classList.toggle("acc-ic-neg", ggr < 0);
+    }
+    if (commCell) commCell.textContent = accIcFmt(comm);
+  }
+
+  function accIcApplySearchFilter() {
+    var searchEl = document.getElementById("acc-ic-search");
+    var term = searchEl ? searchEl.value.trim().toLowerCase() : "";
+    var rows = Array.prototype.slice.call(document.querySelectorAll("#acc-ic-table-body tr"));
+    var currentSectionRow = null;
+    var anyVisible = false;
+    rows.forEach(function (tr) {
+      if (tr.classList.contains("acc-ic-section-row")) {
+        if (currentSectionRow) currentSectionRow.style.display = anyVisible ? "" : "none";
+        currentSectionRow = tr;
+        anyVisible = false;
+        return;
+      }
+      var name = tr.getAttribute("data-ic-name") || "";
+      var show = !term || name.indexOf(term) >= 0;
+      tr.style.display = show ? "" : "none";
+      if (show) anyVisible = true;
+    });
+    if (currentSectionRow) currentSectionRow.style.display = anyVisible ? "" : "none";
+  }
+
+  function accRenderIcProviderTotals(list) {
+    var tbody = document.getElementById("acc-ic-provider-totals-body");
+    if (!tbody) return;
+    if (!list || !list.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">Henüz veri yok</td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.map(function (p) {
+      return '<tr>' +
+        '<td class="acc-inv-name">' + accEsc(p.name) + '</td>' +
+        '<td>' + (parseFloat(p.commission_rate) || 0).toFixed(2) + '%</td>' +
+        '<td>' + accIcFmt(p.stake_amount) + '</td>' +
+        '<td>' + accIcFmt(p.winning_amount) + '</td>' +
+        '<td class="' + (p.ggr_amount < 0 ? "acc-ic-neg" : "") + '">' + accIcFmt(p.ggr_amount) + '</td>' +
+        '<td class="acc-inv-comm">' + accIcFmt(p.commission_amount) + '</td>' +
+        '</tr>';
+    }).join("");
+  }
+
+  function accRenderIcDailyTotals(list) {
+    var tbody = document.getElementById("acc-ic-daily-totals-body");
+    if (!tbody) return;
+    if (!list || !list.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz veri yok</td></tr>';
+      return;
+    }
+    var rows = list.slice().reverse();
+    tbody.innerHTML = rows.map(function (d) {
+      return '<tr>' +
+        '<td>' + accEsc(d.entry_date.split("-").reverse().join(".")) + '</td>' +
+        '<td>' + accIcFmt(d.stake_amount) + '</td>' +
+        '<td>' + accIcFmt(d.winning_amount) + '</td>' +
+        '<td class="' + (d.ggr_amount < 0 ? "acc-ic-neg" : "") + '">' + accIcFmt(d.ggr_amount) + '</td>' +
+        '<td class="acc-inv-comm">' + accIcFmt(d.commission_amount) + '</td>' +
+        '</tr>';
+    }).join("");
+  }
+
+  function accRenderInvoiceCalc(data, period) {
+    accInvoiceCalcData = data;
+    accIcEnsureDate(period);
+    var t = data.grand_total || {};
+    accSetText("acc-ic-kpi-stake", accIcFmt(t.stake_amount));
+    accSetText("acc-ic-kpi-winning", accIcFmt(t.winning_amount));
+    accSetText("acc-ic-kpi-ggr", accIcFmt(t.ggr_amount));
+    accSetText("acc-ic-kpi-commission", accIcFmt(t.commission_amount));
+    accRenderIcDayTable(data);
+    accRenderIcProviderTotals(data.provider_totals || []);
+    accRenderIcDailyTotals(data.daily_totals || []);
+    accSetText("acc-ic-updated", "Son güncelleme: " + new Date().toLocaleTimeString("tr-TR"));
+  }
+
+  function accLoadInvoiceCalc() {
+    var period = accSelectedMonthPeriod() || accResolvePeriod();
+    if (!period || period === "all") period = accCurrentMonth();
+    return accApi("/api/accounting/invoice-calc?period=" + encodeURIComponent(period)).then(function (r) {
+      if (r && r.ok) accRenderInvoiceCalc(r.data, period);
+      else if (r) console.error("accLoadInvoiceCalc", r.data);
+    });
+  }
+
+  function accIcCollectDayRows() {
+    var rows = [];
+    document.querySelectorAll('#acc-ic-table-body [data-ic-field="stake_amount"]').forEach(function (el) {
+      var pid = el.getAttribute("data-ic-provider");
+      var winEl = document.querySelector('[data-ic-field="winning_amount"][data-ic-provider="' + pid + '"]');
+      rows.push({
+        provider_id: parseInt(pid, 10),
+        stake_amount: el.value,
+        winning_amount: winEl ? winEl.value : 0
+      });
+    });
+    return rows;
+  }
+
+  function accSaveInvoiceCalcDay() {
+    var dateEl = document.getElementById("acc-ic-date");
+    var entryDate = dateEl && dateEl.value ? dateEl.value : accToday();
+    var payload = { entry_date: entryDate, rows: accIcCollectDayRows() };
+    accApi("/api/accounting/invoice-calc/day", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }).then(function (r) {
+      if (r && r.ok) {
+        accRenderInvoiceCalc(r.data, entryDate.slice(0, 7));
+        accToast("Günlük veriler kaydedildi");
+      } else if (r) alert((r.data && r.data.error) || "Kaydedilemedi");
+    });
+  }
+
+  function accIcSaveRate(providerId, rate) {
+    accApi("/api/accounting/invoice-calc/providers/" + providerId, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commission_rate: rate })
+    }).then(function (r) {
+      if (r && r.ok) accToast("Oran güncellendi");
+      else if (r) alert((r.data && r.data.error) || "Oran güncellenemedi");
+    });
+  }
+
+  function accIcOnDateChange() {
+    var dateEl = document.getElementById("acc-ic-date");
+    if (!dateEl || !dateEl.value) return;
+    var newPeriod = dateEl.value.slice(0, 7);
+    var curPeriod = accSelectedMonthPeriod();
+    if (newPeriod !== curPeriod) {
+      var monthEl = document.getElementById("acc-filter-month");
+      var modeEl = document.getElementById("acc-filter-period");
+      if (modeEl) modeEl.value = "pick";
+      if (monthEl) monthEl.value = newPeriod;
+      accResolvePeriod();
+      accLoadInvoiceCalc();
+    } else {
+      accRenderIcDayTable(accInvoiceCalcData || {});
+    }
+  }
+
+  // ---- PL Raporu (merkeze iletilen aylık kâr/zarar raporu) ----
+
+  var accPlLastResult = null;
+
+  function accPlFmt(n) {
+    return accMoney(n, "TRY");
+  }
+
+  function accPlPeriod() {
+    var period = accSelectedMonthPeriod() || accResolvePeriod();
+    if (!period || period === "all") period = accCurrentMonth();
+    return period;
+  }
+
+  function accLoadPlReport() {
+    var period = accPlPeriod();
+    return accApi("/api/accounting/pl-report?period=" + encodeURIComponent(period)).then(function (r) {
+      if (r && r.ok) { accPlLastResult = r.data; accRenderPlReport(r.data); }
+      else if (r) console.error("accLoadPlReport", r.data);
+    });
+  }
+
+  function accRenderPlReport(data) {
+    var s = data.summary || {};
+    accSetText("acc-pl-kpi-gelirler", accPlFmt(s.gelirler));
+    accSetText("acc-pl-kpi-giderler", accPlFmt(s.giderler));
+    accSetText("acc-pl-kpi-ucuncu", accPlFmt(s.ucuncu_sirket));
+    accSetText("acc-pl-kpi-net", accPlFmt(s.net));
+    var netEl = document.getElementById("acc-pl-kpi-net");
+    if (netEl) netEl.style.color = (parseFloat(s.net) || 0) < 0 ? "var(--rose)" : "var(--green)";
+
+    var meta = data.meta || {};
+    var labelEl = document.getElementById("acc-pl-pronet-label");
+    if (labelEl) labelEl.value = meta.pronet_fatura_label || "";
+    var faturaEl = document.getElementById("acc-pl-pronet-fatura");
+    if (faturaEl) faturaEl.value = meta.pronet_fatura_amount || 0;
+    var odenenEl = document.getElementById("acc-pl-pronet-odenen");
+    if (odenenEl) odenenEl.value = meta.pronet_odenen_amount || 0;
+    var asilEl = document.getElementById("acc-pl-asil-net");
+    if (asilEl) asilEl.value = meta.asil_net_amount || 0;
+    var notesEl = document.getElementById("acc-pl-notes");
+    if (notesEl) notesEl.value = meta.notes || "";
+    accSetText("acc-pl-updated", meta.updated_at ? ("Son güncelleme: " + new Date(meta.updated_at).toLocaleString("tr-TR")) : "");
+
+    accRenderPlSections(data.sections || []);
+  }
+
+  function accRenderPlSections(sections) {
+    var wrap = document.getElementById("acc-pl-sections");
+    if (!wrap) return;
+    wrap.innerHTML = (sections || []).map(function (sec) {
+      var rows = (sec.items || []).map(function (item) {
+        return '<tr>' +
+          '<td><input type="text" class="acc-pl-line-label" data-pl-id="' + item.id + '" value="' + accEsc(item.label) + '"></td>' +
+          '<td><input type="number" step="0.01" class="acc-pl-line-amount" data-pl-id="' + item.id + '" value="' + item.amount + '" style="width:150px;"></td>' +
+          '<td><button type="button" class="btn btn-sm btn-danger" data-pl-del="' + item.id + '">Sil</button></td>' +
+          '</tr>';
+      }).join("");
+      return '<section class="card acc-pl-section-card" data-pl-section="' + sec.key + '">' +
+        '<div class="card-head"><span>' + accEsc(sec.label) + '</span><strong>' + accPlFmt(sec.total) + '</strong></div>' +
+        '<div class="table-wrap"><div class="table-scroll"><table class="acc-inv-table">' +
+        '<thead><tr><th>Kalem</th><th>Tutar (TRY)</th><th></th></tr></thead>' +
+        '<tbody>' + (rows || '<tr><td colspan="3" class="empty">Henüz kalem yok</td></tr>') + '</tbody>' +
+        '</table></div></div>' +
+        '<div class="card-body acc-pl-add-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end;">' +
+        '<label style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:0.25rem;font-size:0.72rem;color:var(--muted);">Yeni kalem' +
+        '<input type="text" class="acc-pl-new-label" placeholder="Kalem adı" autocomplete="off"></label>' +
+        '<label style="display:flex;flex-direction:column;gap:0.25rem;font-size:0.72rem;color:var(--muted);">Tutar (TRY)' +
+        '<input type="number" step="0.01" class="acc-pl-new-amount" style="width:150px;"></label>' +
+        '<button type="button" class="btn btn-sm btn-primary acc-pl-add-btn" data-pl-section="' + sec.key + '">+ Ekle</button>' +
+        '</div>' +
+        '</section>';
+    }).join("");
+
+    wrap.querySelectorAll(".acc-pl-line-label, .acc-pl-line-amount").forEach(function (inp) {
+      inp.addEventListener("change", function () { accSavePlLine(inp.getAttribute("data-pl-id")); });
+    });
+    wrap.querySelectorAll("[data-pl-del]").forEach(function (btn) {
+      btn.onclick = function () {
+        if (!confirm("Bu kalem silinsin mi?")) return;
+        var period = accPlPeriod();
+        accApi("/api/accounting/pl-report/lines/" + btn.getAttribute("data-pl-del") + "?period=" + encodeURIComponent(period), { method: "DELETE" })
+          .then(function (r) {
+            if (r && r.ok) { accPlLastResult = r.data; accRenderPlReport(r.data); accToast("Silindi"); }
+            else if (r) alert((r.data && r.data.error) || "Hata");
+          });
+      };
+    });
+    wrap.querySelectorAll(".acc-pl-add-btn").forEach(function (btn) {
+      btn.onclick = function () {
+        var card = btn.closest(".acc-pl-section-card");
+        if (!card) return;
+        var labelInp = card.querySelector(".acc-pl-new-label");
+        var amountInp = card.querySelector(".acc-pl-new-amount");
+        var label = (labelInp.value || "").trim();
+        if (!label) { accToast("Kalem adı girin"); return; }
+        var amount = parseFloat(amountInp.value);
+        if (isNaN(amount)) amount = 0;
+        var period = accPlPeriod();
+        accApi("/api/accounting/pl-report/lines", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ period: period, section_key: btn.getAttribute("data-pl-section"), label: label, amount: amount })
+        }).then(function (r) {
+          if (r && r.ok) { accPlLastResult = r.data; accRenderPlReport(r.data); accToast("Kalem eklendi"); }
+          else if (r) alert((r.data && r.data.error) || "Hata");
+        });
+      };
+    });
+  }
+
+  function accSavePlLine(lineId) {
+    if (!lineId) return;
+    var period = accPlPeriod();
+    var labelInp = document.querySelector('.acc-pl-line-label[data-pl-id="' + lineId + '"]');
+    var amountInp = document.querySelector('.acc-pl-line-amount[data-pl-id="' + lineId + '"]');
+    var body = { period: period };
+    if (labelInp) body.label = labelInp.value;
+    if (amountInp) body.amount = parseFloat(amountInp.value) || 0;
+    accApi("/api/accounting/pl-report/lines/" + lineId, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (r && r.ok) { accPlLastResult = r.data; accRenderPlReport(r.data); accToast("Güncellendi"); }
+      else if (r) alert((r.data && r.data.error) || "Hata");
+    });
+  }
+
+  function accSavePlMeta() {
+    var period = accPlPeriod();
+    var body = {
+      period: period,
+      notes: (document.getElementById("acc-pl-notes") || {}).value || "",
+      pronet_fatura_label: (document.getElementById("acc-pl-pronet-label") || {}).value || "",
+      pronet_fatura_amount: parseFloat((document.getElementById("acc-pl-pronet-fatura") || {}).value) || 0,
+      pronet_odenen_amount: parseFloat((document.getElementById("acc-pl-pronet-odenen") || {}).value) || 0,
+      asil_net_amount: parseFloat((document.getElementById("acc-pl-asil-net") || {}).value) || 0
+    };
+    accApi("/api/accounting/pl-report/meta", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (r && r.ok) { accPlLastResult = r.data; accRenderPlReport(r.data); accToast("Kaydedildi"); }
+      else if (r) alert((r.data && r.data.error) || "Hata");
+    });
+  }
+
   function accSwitchTab(tab) {
     accActiveTab = tab;
     document.querySelectorAll(".acc-tab").forEach(function (el) {
@@ -2556,6 +2927,8 @@
     else if (tab === "vault") accLoadVault();
     else if (tab === "payroll") { accLoadEmpOptions(); accLoadEmployees(); }
     else if (tab === "invoices") accLoadInvoice();
+    else if (tab === "invoice_calc") accLoadInvoiceCalc();
+    else if (tab === "pl") accLoadPlReport();
   }
 
   function accRefreshAll() {
@@ -2567,6 +2940,8 @@
     else if (accActiveTab === "vault") accLoadVault();
     else if (accActiveTab === "payroll") { accLoadEmpOptions(); accLoadEmployees(); }
     else if (accActiveTab === "invoices") accLoadInvoice();
+    else if (accActiveTab === "invoice_calc") accLoadInvoiceCalc();
+    else if (accActiveTab === "pl") accLoadPlReport();
   }
 
   function accBindForm(formId, handler) {
@@ -3014,6 +3389,37 @@
     if (saveMeta) saveMeta.addEventListener("click", accSaveInvoiceMeta);
     var saveLines = document.getElementById("acc-inv-save-lines");
     if (saveLines) saveLines.addEventListener("click", accSaveInvoiceLines);
+
+    var savePlMeta = document.getElementById("btn-acc-pl-save-meta");
+    if (savePlMeta) savePlMeta.addEventListener("click", accSavePlMeta);
+
+    var icSaveDay = document.getElementById("acc-ic-save-day");
+    if (icSaveDay) icSaveDay.addEventListener("click", accSaveInvoiceCalcDay);
+    var icTodayBtn = document.getElementById("acc-ic-today");
+    if (icTodayBtn) icTodayBtn.addEventListener("click", function () {
+      var dateEl = document.getElementById("acc-ic-date");
+      if (dateEl) dateEl.value = accToday();
+      accIcOnDateChange();
+    });
+    var icDateEl = document.getElementById("acc-ic-date");
+    if (icDateEl) icDateEl.addEventListener("change", accIcOnDateChange);
+    var icSearchEl = document.getElementById("acc-ic-search");
+    if (icSearchEl) icSearchEl.addEventListener("input", accIcApplySearchFilter);
+    var icTableBody = document.getElementById("acc-ic-table-body");
+    if (icTableBody) {
+      icTableBody.addEventListener("input", function (e) {
+        var el = e.target;
+        if (!el || !el.matches) return;
+        if (el.matches("[data-ic-field]")) accIcRecalcRow(el.getAttribute("data-ic-provider"));
+        else if (el.matches("[data-ic-rate]")) accIcRecalcRow(el.getAttribute("data-ic-rate"));
+      });
+      icTableBody.addEventListener("change", function (e) {
+        var el = e.target;
+        if (el && el.matches && el.matches("[data-ic-rate]")) {
+          accIcSaveRate(el.getAttribute("data-ic-rate"), parseFloat(el.value) || 0);
+        }
+      });
+    }
     var hidePassiveBtn = document.getElementById("acc-pm-hide-passive");
     if (hidePassiveBtn) {
       accUpdateHidePassivePmUi();

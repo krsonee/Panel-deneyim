@@ -957,6 +957,22 @@ def migrate_schema(conn):
         except Exception:
             pass
         print(f"⚠️  migrate_accounting_pronet hata (atlanıyor, panel yine açılır): {exc}")
+    try:
+        migrate_invoice_calc(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_invoice_calc hata (atlanıyor, panel yine açılır): {exc}")
+    try:
+        migrate_accounting_pl(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_accounting_pl hata (atlanıyor, panel yine açılır): {exc}")
 
 
 def migrate_accounting_pronet(conn):
@@ -1107,6 +1123,166 @@ def migrate_accounting_pronet(conn):
             """,
             (now,),
         )
+    conn.commit()
+
+
+def migrate_accounting_pl(conn):
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_pl_meta (
+                period TEXT PRIMARY KEY,
+                notes TEXT NOT NULL DEFAULT '',
+                pronet_fatura_label TEXT NOT NULL DEFAULT '',
+                pronet_fatura_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                pronet_odenen_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                asil_net_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_pl_lines (
+                id SERIAL PRIMARY KEY,
+                period TEXT NOT NULL,
+                section_key TEXT NOT NULL,
+                label TEXT NOT NULL,
+                amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_pl_meta (
+                period TEXT PRIMARY KEY,
+                notes TEXT NOT NULL DEFAULT '',
+                pronet_fatura_label TEXT NOT NULL DEFAULT '',
+                pronet_fatura_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                pronet_odenen_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                asil_net_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_pl_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                period TEXT NOT NULL,
+                section_key TEXT NOT NULL,
+                label TEXT NOT NULL,
+                amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+    execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS idx_acc_pl_lines_period ON acc_pl_lines(period)",
+    )
+    conn.commit()
+
+
+def migrate_invoice_calc(conn):
+    """Fatura Hesaplama (günlük GGR takip) — Pronet Fatura alanından tamamen bağımsız."""
+    from accounting_pronet import SEED_PROVIDERS
+
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_invoice_calc_providers (
+                id SERIAL PRIMARY KEY,
+                section TEXT NOT NULL DEFAULT 'casino',
+                name TEXT NOT NULL UNIQUE,
+                commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_invoice_calc_daily (
+                id SERIAL PRIMARY KEY,
+                period TEXT NOT NULL,
+                entry_date TEXT NOT NULL,
+                provider_id INTEGER NOT NULL REFERENCES acc_invoice_calc_providers(id),
+                stake_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                winning_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                created_by TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL,
+                UNIQUE(entry_date, provider_id)
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_invoice_calc_providers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                section TEXT NOT NULL DEFAULT 'casino',
+                name TEXT NOT NULL UNIQUE,
+                commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_invoice_calc_daily (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                period TEXT NOT NULL,
+                entry_date TEXT NOT NULL,
+                provider_id INTEGER NOT NULL,
+                stake_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                winning_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+                created_by TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL,
+                UNIQUE(entry_date, provider_id),
+                FOREIGN KEY (provider_id) REFERENCES acc_invoice_calc_providers(id)
+            )
+            """,
+        )
+    execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS idx_acc_invoice_calc_daily_period ON acc_invoice_calc_daily(period)",
+    )
+
+    now = iso(utcnow())
+    for section, name, rate, sort_order in SEED_PROVIDERS:
+        exists = scalar(
+            conn,
+            "SELECT COUNT(*) FROM acc_invoice_calc_providers WHERE name = ?",
+            (name,),
+        )
+        if not exists:
+            insert_returning_id(
+                conn,
+                """
+                INSERT INTO acc_invoice_calc_providers
+                (section, name, commission_rate, sort_order, active, created_at)
+                VALUES (?, ?, ?, ?, 1, ?)
+                """,
+                (section, name, rate, sort_order, now),
+            )
     conn.commit()
 
 
