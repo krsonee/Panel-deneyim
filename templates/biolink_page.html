@@ -8,7 +8,7 @@
 <meta name="robots" content="index, follow">
 <meta property="og:title" content="{{ page.title }}">
 <meta property="og:description" content="{{ page.subtitle }}">
-{% if page.avatar_url %}<meta property="og:image" content="{{ page.avatar_url }}">{% endif %}
+{% if page.avatar_url %}<meta property="og:image" content="{{ page.avatar_url }}">{% elif theme.brand_logo_src %}<meta property="og:image" content="{{ theme.brand_logo_src }}">{% endif %}
 <meta property="og:type" content="website">
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,11 +23,11 @@
     --card-border: {{ theme.card_border }};
     --card-hover: {{ theme.card_hover }};
     --accent: {{ theme.accent }};
+    --accent2: {{ theme.accent2 or theme.accent }};
     --radius: {% if page.button_shape == 'pill' %}999px{% elif page.button_shape == 'square' %}8px{% else %}18px{% endif %};
     --wa: #25D366;
     --tg: #229ED9;
     --ig: #E4405F;
-    --x: #e7e9ea;
     --tt: #fe2c55;
     --yt: #FF0000;
   }
@@ -41,15 +41,98 @@
   body {
     display: flex; justify-content: center;
     padding: 2.5rem 1rem 3rem;
-    background-attachment: fixed;
     position: relative;
     overflow-x: hidden;
   }
-  body::before {
-    content: "";
-    position: fixed; inset: 0; pointer-events: none;
-    background: radial-gradient(600px 400px at 50% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%);
+
+  /* Animasyonlu arka plan katmanları */
+  .bg-layer {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    overflow: hidden;
   }
+  .bg-glow {
+    position: absolute; border-radius: 50%; filter: blur(70px); opacity: 0.45;
+  }
+  body:not(.animated-bg) .bg-layer { display: none; }
+
+  body.anim-makrobet { background: #061c3d; }
+  body.anim-makrobet .bg-glow.g1 {
+    width: 420px; height: 420px; top: -120px; left: 50%; transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(255,213,62,0.35), transparent 70%);
+    animation: floatA 9s ease-in-out infinite;
+  }
+  body.anim-makrobet .bg-glow.g2 {
+    width: 360px; height: 360px; bottom: -80px; right: -60px;
+    background: radial-gradient(circle, rgba(74,143,231,0.4), transparent 70%);
+    animation: floatB 11s ease-in-out infinite;
+  }
+  body.anim-makrobet .bg-glow.g3 {
+    width: 280px; height: 280px; bottom: 20%; left: -80px;
+    background: radial-gradient(circle, rgba(255,213,62,0.2), transparent 70%);
+    animation: floatC 13s ease-in-out infinite;
+  }
+  body.anim-makrobet .brand-watermark {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -52%);
+    width: min(280px, 70vw); opacity: 0.06; filter: saturate(0.9);
+    animation: watermarkPulse 8s ease-in-out infinite;
+  }
+
+  body.anim-aurora .bg-glow.g1 {
+    width: 500px; height: 500px; top: -10%; left: -10%;
+    background: radial-gradient(circle, rgba(110,231,255,0.35), transparent 70%);
+    animation: floatA 10s ease-in-out infinite;
+  }
+  body.anim-aurora .bg-glow.g2 {
+    width: 450px; height: 450px; top: 30%; right: -15%;
+    background: radial-gradient(circle, rgba(167,139,250,0.35), transparent 70%);
+    animation: floatB 12s ease-in-out infinite;
+  }
+  body.anim-aurora .bg-glow.g3 {
+    width: 380px; height: 380px; bottom: -10%; left: 20%;
+    background: radial-gradient(circle, rgba(56,189,248,0.25), transparent 70%);
+    animation: floatC 14s ease-in-out infinite;
+  }
+
+  body.anim-neon .bg-glow.g1 {
+    width: 400px; height: 400px; top: 10%; left: 50%; transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(192,132,252,0.4), transparent 70%);
+    animation: neonPulse 4s ease-in-out infinite;
+  }
+  body.anim-neon .bg-glow.g2 {
+    width: 320px; height: 320px; bottom: 5%; right: 10%;
+    background: radial-gradient(circle, rgba(34,211,238,0.3), transparent 70%);
+    animation: neonPulse 5s ease-in-out infinite reverse;
+  }
+
+  body.anim-gold .bg-glow.g1 {
+    width: 480px; height: 480px; top: -5%; left: 50%; transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(255,213,62,0.35), transparent 70%);
+    animation: shimmerMove 7s linear infinite;
+  }
+  body.anim-gold .bg-glow.g2 {
+    width: 300px; height: 300px; bottom: 10%; left: -5%;
+    background: radial-gradient(circle, rgba(245,158,11,0.25), transparent 70%);
+    animation: floatB 9s ease-in-out infinite;
+  }
+
+  body.anim-ocean .bg-glow.g1 {
+    width: 500px; height: 500px; top: -15%; right: -10%;
+    background: radial-gradient(circle, rgba(56,189,248,0.35), transparent 70%);
+    animation: floatA 11s ease-in-out infinite;
+  }
+  body.anim-ocean .bg-glow.g2 {
+    width: 400px; height: 400px; bottom: -5%; left: -10%;
+    background: radial-gradient(circle, rgba(14,165,233,0.3), transparent 70%);
+    animation: floatC 13s ease-in-out infinite;
+  }
+
+  @keyframes floatA { 0%,100%{transform:translate(0,0)} 50%{transform:translate(20px,-25px)} }
+  @keyframes floatB { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-25px,15px)} }
+  @keyframes floatC { 0%,100%{transform:translate(0,0)} 50%{transform:translate(15px,20px)} }
+  @keyframes neonPulse { 0%,100%{opacity:0.35;transform:scale(1)} 50%{opacity:0.55;transform:scale(1.08)} }
+  @keyframes shimmerMove { 0%{transform:translateX(-50%) rotate(0deg)} 100%{transform:translateX(-50%) rotate(360deg)} }
+  @keyframes watermarkPulse { 0%,100%{opacity:0.05} 50%{opacity:0.08} }
+
   .wrap {
     width: 100%; max-width: 420px;
     display: flex; flex-direction: column; align-items: center;
@@ -60,10 +143,14 @@
     from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: none; }
   }
+
+  .brand-logo-top {
+    width: min(180px, 55vw); height: auto; margin-bottom: 1.1rem;
+    filter: drop-shadow(0 8px 24px rgba(0,0,0,0.35));
+  }
   .avatar-ring {
-    padding: 3px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 30%, #fff));
+    padding: 3px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
     margin-bottom: 1rem;
     box-shadow: 0 12px 40px -12px color-mix(in srgb, var(--accent) 55%, transparent);
   }
@@ -86,23 +173,20 @@
   .heading {
     text-align: center; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em;
     color: var(--muted); text-transform: uppercase; margin: 1rem 0 0.1rem;
-    position: relative;
   }
   .heading::before, .heading::after {
     content: ""; display: inline-block; width: 28px; height: 1px;
     background: color-mix(in srgb, var(--accent) 40%, transparent);
     vertical-align: middle; margin: 0 0.5rem;
   }
-  .heading:first-child { margin-top: 0; }
 
   a.link-btn {
     display: flex; align-items: center; gap: 0.75rem;
     padding: 0.95rem 1.05rem; border-radius: var(--radius);
     background: var(--card-bg); border: 1px solid var(--card-border);
     color: var(--text); text-decoration: none; font-weight: 600; font-size: 0.92rem;
-    transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, border-color 0.18s;
-    position: relative; overflow: hidden;
-    backdrop-filter: blur(8px);
+    transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+    backdrop-filter: blur(10px);
   }
   a.link-btn::after {
     content: "→"; margin-left: auto; opacity: 0.35; font-size: 0.9rem; flex-shrink: 0;
@@ -111,36 +195,35 @@
     background: var(--card-hover); transform: translateY(-2px);
     box-shadow: 0 14px 36px -18px rgba(0,0,0,0.55);
   }
-  a.link-btn:active { transform: translateY(0); }
 
   .link-icon {
-    width: 38px; height: 38px; border-radius: 12px;
+    width: 40px; height: 40px; border-radius: 12px;
     display: flex; align-items: center; justify-content: center;
     font-size: 1.1rem; flex-shrink: 0;
     background: color-mix(in srgb, var(--accent) 15%, transparent);
   }
+  .platform-svg { width: 22px; height: 22px; display: block; }
+
+  a.platform-whatsapp .link-icon { background: rgba(37,211,102,0.18); color: #25D366; }
+  a.platform-telegram .link-icon { background: rgba(34,158,217,0.18); color: #229ED9; }
+  a.platform-instagram .link-icon { background: rgba(228,64,95,0.18); color: #E4405F; }
+  a.platform-twitter .link-icon { background: rgba(255,255,255,0.12); color: #fff; }
+  a.platform-tiktok .link-icon { background: rgba(254,44,85,0.18); color: #fe2c55; }
+  a.platform-youtube .link-icon { background: rgba(255,0,0,0.18); color: #FF0000; }
+
+  a.platform-whatsapp { border-left: 3px solid var(--wa); }
+  a.platform-telegram { border-left: 3px solid var(--tg); }
+  a.platform-instagram { border-left: 3px solid var(--ig); }
+  a.platform-twitter { border-left: 3px solid #555; }
+  a.platform-tiktok { border-left: 3px solid var(--tt); }
+  a.platform-youtube { border-left: 3px solid var(--yt); }
+
   .link-label { flex: 1; line-height: 1.25; }
   .link-badge {
     font-size: 0.62rem; font-weight: 800; text-transform: uppercase;
-    padding: 0.22rem 0.55rem; border-radius: 999px; letter-spacing: 0.04em;
-    background: var(--accent); color: #0a0a0a; flex-shrink: 0;
-    margin-right: 0.25rem;
+    padding: 0.22rem 0.55rem; border-radius: 999px;
+    background: var(--accent); color: #0a0a0a; flex-shrink: 0; margin-right: 0.25rem;
   }
-
-  /* Platform stilleri */
-  a.platform-whatsapp { border-left: 3px solid var(--wa); }
-  a.platform-whatsapp .link-icon { background: color-mix(in srgb, var(--wa) 22%, transparent); }
-  a.platform-telegram { border-left: 3px solid var(--tg); }
-  a.platform-telegram .link-icon { background: color-mix(in srgb, var(--tg) 22%, transparent); }
-  a.platform-instagram { border-left: 3px solid var(--ig); }
-  a.platform-instagram .link-icon { background: color-mix(in srgb, var(--ig) 22%, transparent); }
-  a.platform-twitter { border-left: 3px solid #657786; }
-  a.platform-twitter .link-icon { background: rgba(255,255,255,0.08); }
-  a.platform-tiktok { border-left: 3px solid var(--tt); }
-  a.platform-tiktok .link-icon { background: color-mix(in srgb, var(--tt) 22%, transparent); }
-  a.platform-youtube { border-left: 3px solid var(--yt); }
-  a.platform-youtube .link-icon { background: color-mix(in srgb, var(--yt) 22%, transparent); }
-
   a.link-btn.highlight {
     border-color: var(--accent);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent),
@@ -148,62 +231,60 @@
   }
 
   a.bonus-card {
-    flex-direction: column; align-items: stretch; gap: 0.55rem;
-    padding: 1rem 1.05rem;
-    background: linear-gradient(145deg,
-      color-mix(in srgb, var(--accent) 12%, var(--card-bg)),
-      var(--card-bg));
+    flex-direction: column; align-items: stretch; gap: 0.55rem; padding: 1rem 1.05rem;
+    background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 12%, var(--card-bg)), var(--card-bg));
     border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--card-border));
   }
   a.bonus-card::after { display: none; }
-  a.bonus-card .bonus-top {
-    display: flex; align-items: center; gap: 0.65rem;
-  }
+  a.bonus-card .bonus-top { display: flex; align-items: center; gap: 0.65rem; }
   a.bonus-card .bonus-amount {
-    font-size: 0.72rem; font-weight: 800; letter-spacing: 0.03em;
-    padding: 0.25rem 0.6rem; border-radius: 999px;
-    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #fff));
-    color: #0c0c0c;
-    margin-left: auto;
+    font-size: 0.72rem; font-weight: 800; padding: 0.25rem 0.6rem; border-radius: 999px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #0c0c0c; margin-left: auto;
   }
-  a.bonus-card .bonus-cta {
-    font-size: 0.72rem; color: var(--muted); display: flex; align-items: center; gap: 0.35rem;
-  }
+  a.bonus-card .bonus-cta { font-size: 0.72rem; color: var(--muted); }
   a.bonus-card .bonus-cta span { color: var(--accent); font-weight: 700; }
 
-  .footer {
-    margin-top: 2rem; display: flex; flex-direction: column; align-items: center; gap: 0.55rem;
-  }
+  .footer { margin-top: 2rem; display: flex; flex-direction: column; align-items: center; gap: 0.55rem; }
   .share-btn {
     display: inline-flex; align-items: center; gap: 0.4rem;
     background: rgba(255,255,255,0.04); border: 1px solid var(--card-border); color: var(--muted);
     font-size: 0.76rem; padding: 0.45rem 1rem; border-radius: 999px; cursor: pointer;
     font-family: inherit; font-weight: 600;
-    transition: color 0.15s, border-color 0.15s;
   }
   .share-btn:hover { color: var(--text); border-color: var(--accent); }
   .powered { font-size: 0.65rem; color: var(--muted); opacity: 0.55; }
-  @media (max-width: 380px) {
-    a.link-btn { padding: 0.85rem 0.95rem; font-size: 0.88rem; }
-    h1 { font-size: 1.28rem; }
-  }
 </style>
 </head>
-<body>
+<body class="{% if theme.animated %}animated-bg anim-{{ theme.animation }}{% endif %}">
+  <div class="bg-layer" aria-hidden="true">
+    {% if theme.brand_logo_src %}
+    <img class="brand-watermark" src="{{ theme.brand_logo_src }}" alt="">
+    {% endif %}
+    <div class="bg-glow g1"></div>
+    <div class="bg-glow g2"></div>
+    <div class="bg-glow g3"></div>
+  </div>
+
   <div class="wrap">
+    {% if theme.brand_logo_src and not page.avatar_url %}
+    <img class="brand-logo-top" src="{{ theme.brand_logo_src }}" alt="{{ page.title }}">
+    {% else %}
     <div class="avatar-ring">
       <div class="avatar">
         {% if page.avatar_url %}<img src="{{ page.avatar_url }}" alt="{{ page.title }}">{% else %}{{ page.title[:1]|upper }}{% endif %}
       </div>
     </div>
+    {% endif %}
+
     <h1>{{ page.title }}</h1>
     {% if page.subtitle %}<p class="subtitle">{{ page.subtitle }}</p>{% endif %}
+
     <div class="links">
       {% for b in page.buttons %}
         {% if b.button_type == 'heading' %}
           <div class="heading">{{ b.label }}</div>
         {% elif b.button_type == 'bonus' %}
-          <a class="link-btn bonus-card highlight platform-bonus" href="/p/{{ page.slug }}/go/{{ b.id }}">
+          <a class="link-btn bonus-card highlight" href="/p/{{ page.slug }}/go/{{ b.id }}">
             <div class="bonus-top">
               <span class="link-icon">{{ b.display_icon or b.icon or '🎁' }}</span>
               <span class="link-label">{{ b.label }}</span>
@@ -213,13 +294,20 @@
           </a>
         {% else %}
           <a class="link-btn platform-{{ b.button_type }}{% if b.highlight %} highlight{% endif %}" href="/p/{{ page.slug }}/go/{{ b.id }}">
-            <span class="link-icon">{{ b.display_icon or b.icon or '🔗' }}</span>
+            <span class="link-icon">
+              {% if b.button_type in ['whatsapp','telegram','instagram','twitter','tiktok','youtube'] %}
+                {% set platform = b.button_type %}{% include 'partials/biolink_platform_icon.html' %}
+              {% else %}
+                {{ b.display_icon or b.icon or '🔗' }}
+              {% endif %}
+            </span>
             <span class="link-label">{{ b.label }}</span>
             {% if b.badge_text and b.button_type != 'whatsapp' %}<span class="link-badge">{{ b.badge_text }}</span>{% endif %}
           </a>
         {% endif %}
       {% endfor %}
     </div>
+
     <div class="footer">
       <button type="button" class="share-btn" onclick="biolinkShare()">Paylaş</button>
       <span class="powered">{{ page.title }}</span>

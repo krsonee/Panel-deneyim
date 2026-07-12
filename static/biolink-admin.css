@@ -104,7 +104,16 @@
   justify-content: center;
   font-size: 1.1rem;
   background: color-mix(in srgb, var(--chip-color, #6366f1) 18%, transparent);
+  color: var(--chip-color, var(--accent));
 }
+.bl-block-type-badge svg { width: 14px; height: 14px; vertical-align: -2px; }
+.bl-brand-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--bl-color, var(--accent)) 18%, transparent);
+  color: var(--bl-color, var(--accent));
+}
+.bl-brand-icon svg { width: 22px; height: 22px; }
 .bl-quick-chip .bl-q-label {
   font-size: 0.68rem;
   font-weight: 700;

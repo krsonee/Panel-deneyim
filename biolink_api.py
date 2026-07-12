@@ -103,6 +103,72 @@ THEMES = {
         "card_hover": "rgba(255,255,255,0.12)",
         "accent": "#d4af37",
     },
+    "makrobet": {
+        "name": "★ Makrobet (Marka · Animasyonlu)",
+        "bg": "#061c3d",
+        "text": "#e8efff",
+        "muted": "#8fa3cc",
+        "card_bg": "rgba(11, 35, 71, 0.88)",
+        "card_border": "rgba(255, 213, 62, 0.38)",
+        "card_hover": "rgba(15, 45, 85, 0.95)",
+        "accent": "#ffd53e",
+        "accent2": "#4a8fe7",
+        "animated": True,
+        "animation": "makrobet",
+        "brand_logo": True,
+    },
+    "aurora": {
+        "name": "★ Aurora (Animasyonlu)",
+        "bg": "#050810",
+        "text": "#eef4ff",
+        "muted": "#8ba4c9",
+        "card_bg": "rgba(255,255,255,0.06)",
+        "card_border": "rgba(120,200,255,0.22)",
+        "card_hover": "rgba(255,255,255,0.11)",
+        "accent": "#6ee7ff",
+        "accent2": "#a78bfa",
+        "animated": True,
+        "animation": "aurora",
+    },
+    "neon_pulse": {
+        "name": "★ Neon Pulse (Animasyonlu)",
+        "bg": "#07050f",
+        "text": "#f5f0ff",
+        "muted": "#b8a8d9",
+        "card_bg": "rgba(255,255,255,0.05)",
+        "card_border": "rgba(168,85,247,0.35)",
+        "card_hover": "rgba(255,255,255,0.10)",
+        "accent": "#c084fc",
+        "accent2": "#22d3ee",
+        "animated": True,
+        "animation": "neon",
+    },
+    "gold_shimmer": {
+        "name": "★ Altın Akış (Animasyonlu)",
+        "bg": "#0a0806",
+        "text": "#fff8eb",
+        "muted": "#c4a574",
+        "card_bg": "rgba(255,255,255,0.06)",
+        "card_border": "rgba(255,213,62,0.32)",
+        "card_hover": "rgba(255,255,255,0.11)",
+        "accent": "#ffd53e",
+        "accent2": "#f59e0b",
+        "animated": True,
+        "animation": "gold",
+    },
+    "ocean_wave": {
+        "name": "★ Okyanus Dalgası (Animasyonlu)",
+        "bg": "#031018",
+        "text": "#e6f4ff",
+        "muted": "#7eb8d4",
+        "card_bg": "rgba(255,255,255,0.06)",
+        "card_border": "rgba(56,189,248,0.28)",
+        "card_hover": "rgba(255,255,255,0.11)",
+        "accent": "#38bdf8",
+        "accent2": "#0ea5e9",
+        "animated": True,
+        "animation": "ocean",
+    },
 }
 
 DEFAULT_THEME = "carbon"
@@ -113,16 +179,18 @@ CLICKABLE_TYPE_LIST = ("link", "whatsapp", "telegram", "instagram", "twitter", "
 CLICKABLE_TYPES = frozenset(CLICKABLE_TYPE_LIST)
 BUTTON_TYPES = CLICKABLE_TYPES | {HEADING_TYPE}
 
+PLATFORM_ICON_TYPES = frozenset({"whatsapp", "telegram", "instagram", "twitter", "tiktok", "youtube"})
+
 BUTTON_TYPE_META = {
-    "link": {"label": "Özel Link", "icon": "🔗", "color": "#6366f1", "group": "Genel"},
-    "whatsapp": {"label": "WhatsApp", "icon": "💬", "color": "#25D366", "group": "Sosyal"},
-    "telegram": {"label": "Telegram", "icon": "✈️", "color": "#229ED9", "group": "Sosyal"},
-    "instagram": {"label": "Instagram", "icon": "📸", "color": "#E4405F", "group": "Sosyal"},
-    "twitter": {"label": "X (Twitter)", "icon": "𝕏", "color": "#e7e9ea", "group": "Sosyal"},
-    "tiktok": {"label": "TikTok", "icon": "🎵", "color": "#fe2c55", "group": "Sosyal"},
-    "youtube": {"label": "YouTube", "icon": "▶️", "color": "#FF0000", "group": "Sosyal"},
-    "bonus": {"label": "Bonus / Promo", "icon": "🎁", "color": "#f5c451", "group": "Promo"},
-    "heading": {"label": "Bölüm Başlığı", "icon": "📌", "color": "#94a3b8", "group": "Düzen"},
+    "link": {"label": "Özel Link", "icon": "🔗", "color": "#6366f1", "group": "Genel", "brand_icon": False},
+    "whatsapp": {"label": "WhatsApp", "icon": "", "color": "#25D366", "group": "Sosyal", "brand_icon": True},
+    "telegram": {"label": "Telegram", "icon": "", "color": "#229ED9", "group": "Sosyal", "brand_icon": True},
+    "instagram": {"label": "Instagram", "icon": "", "color": "#E4405F", "group": "Sosyal", "brand_icon": True},
+    "twitter": {"label": "X (Twitter)", "icon": "", "color": "#000000", "group": "Sosyal", "brand_icon": True},
+    "tiktok": {"label": "TikTok", "icon": "", "color": "#fe2c55", "group": "Sosyal", "brand_icon": True},
+    "youtube": {"label": "YouTube", "icon": "", "color": "#FF0000", "group": "Sosyal", "brand_icon": True},
+    "bonus": {"label": "Bonus / Promo", "icon": "🎁", "color": "#f5c451", "group": "Promo", "brand_icon": False},
+    "heading": {"label": "Bölüm Başlığı", "icon": "📌", "color": "#94a3b8", "group": "Düzen", "brand_icon": False},
 }
 
 
@@ -135,7 +203,29 @@ def theme_vars(theme_key, accent_override=""):
     out = dict(t)
     if (accent_override or "").strip():
         out["accent"] = accent_override.strip()
+    out["animated"] = bool(t.get("animated"))
+    out["animation"] = t.get("animation") or ""
+    out["accent2"] = t.get("accent2") or out["accent"]
+    if t.get("brand_logo"):
+        try:
+            from mail_logo_embed import LOGO_DATA_URI
+            out["brand_logo_src"] = LOGO_DATA_URI
+        except Exception:
+            out["brand_logo_src"] = ""
+    else:
+        out["brand_logo_src"] = ""
     return out
+
+
+def uses_brand_icon(button_type):
+    return button_type in PLATFORM_ICON_TYPES
+
+
+def default_icon(button_type):
+    if uses_brand_icon(button_type):
+        return ""
+    meta = BUTTON_TYPE_META.get(button_type) or {}
+    return meta.get("icon") or "🔗"
 
 
 def button_type_catalog():
@@ -147,11 +237,6 @@ def button_type_catalog():
 
 def is_clickable(button_type):
     return button_type in CLICKABLE_TYPES
-
-
-def default_icon(button_type):
-    meta = BUTTON_TYPE_META.get(button_type) or {}
-    return meta.get("icon") or "🔗"
 
 
 def resolve_button_url(button_type, url, badge_text=""):
