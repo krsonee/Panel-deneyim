@@ -1076,12 +1076,51 @@
     };
   }
 
+  // Sayfa yenilendiğinde sunucuda hâlâ süren (pending/running) bir içe aktarma
+  // varsa onu bulup takibe geri bağlanır — böylece "yenileyince kayboldu" sorunu
+  // çözülür. Uzun süredir güncellenmemiş (stale) işler sunucu yeniden başlamış
+  // olabileceğinden sonsuza kadar beklenmez, kullanıcı bilgilendirilir.
+  var MAIL_STALE_JOB_MS = 90 * 1000;
+  function mailResumePendingImports() {
+    mailApi("/api/mailing/contacts/import/jobs").then(function (res) {
+      if (!res || !res.ok) return;
+      var jobs = res.data.jobs || [];
+      var active = jobs.filter(function (j) {
+        return j.status === "pending" || j.status === "running" || j.status === "cancelling";
+      });
+      if (!active.length) return;
+      active.sort(function (a, b) { return (a.id || 0) - (b.id || 0); });
+      var job = active[0];
+      var refIso = job.updated_at || job.created_at;
+      var refMs = refIso ? new Date(refIso).getTime() : 0;
+      var staleMs = refMs ? (Date.now() - refMs) : Infinity;
+      if (!refMs || staleMs > MAIL_STALE_JOB_MS) {
+        mailToast((job.filename || "Önceki bir dosya") + ": sunucuda yanıt vermeyen eski bir iş bulundu (sunucu yeniden başlamış olabilir). Gerekirse yeniden yükle.");
+        return;
+      }
+      mailImportBusy = true;
+      mailImportCurrentJobId = job.id;
+      var progBox = document.getElementById("mail-bulk-progress");
+      var cancelBtn = document.getElementById("mail-bulk-cancel");
+      if (progBox) progBox.hidden = false;
+      if (cancelBtn) cancelBtn.hidden = false;
+      mailUpdateBulkFormState();
+      mailToast((job.filename || "Bir dosya") + ": sunucuda sürmekte olan yükleme bulundu, takip ediliyor…");
+      mailPollImportJob(job.id, function () {
+        mailImportBusy = false;
+        mailUpdateBulkFormState();
+        mailStartNextImport();
+      }, job.filename || "");
+    });
+  }
+
   window.MakroMailing = {
     init: function () {
       if (mailLoaded) return;
       mailLoaded = true;
       bindEvents();
       setTplMode("simple");
+      mailResumePendingImports();
     },
     onShow: function () {
       if (!mailLoaded) this.init();
