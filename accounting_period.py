@@ -5,6 +5,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 
 MONTH_PERIOD_RE = re.compile(r"^(\d{4})-(\d{2})$")
+CUSTOM_PERIOD_RE = re.compile(r"^custom:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$")
 
 
 def utc_today():
@@ -28,6 +29,17 @@ def parse_period(period, reference=None):
         start = date(year, month, 1)
         last_day = calendar.monthrange(year, month)[1]
         return start, date(year, month, last_day), "month"
+
+    custom_match = CUSTOM_PERIOD_RE.match(raw)
+    if custom_match:
+        try:
+            start = date.fromisoformat(custom_match.group(1))
+            end = date.fromisoformat(custom_match.group(2))
+        except ValueError:
+            return None, None, "all"
+        if start > end:
+            start, end = end, start
+        return start, end, raw
 
     match = MONTH_PERIOD_RE.match(raw)
     if match:

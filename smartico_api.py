@@ -290,8 +290,11 @@ def _request(host, path, api_key, params=None):
         raise SmarticoError("Smartico API beklenmeyen bir cevap döndürdü.") from exc
 
 
+_CUSTOM_PERIOD_RE = re.compile(r"^custom:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$")
+
+
 def date_range_from_period(period):
-    """Panelin ortak period parametresiyle aynı sözleşme (today/yesterday/7days/30days/all)."""
+    """Panelin ortak period parametresiyle aynı sözleşme (today/yesterday/7days/30days/all/custom:.../...)."""
     now = datetime.now(timezone.utc)
     today = now.date()
     if period == "today":
@@ -305,6 +308,16 @@ def date_range_from_period(period):
         return today - timedelta(days=29), today + timedelta(days=1)
     if period == "6months":
         return today - timedelta(days=182), today + timedelta(days=1)
+    match = _CUSTOM_PERIOD_RE.match(period or "")
+    if match:
+        try:
+            start = datetime.strptime(match.group(1), "%Y-%m-%d").date()
+            end = datetime.strptime(match.group(2), "%Y-%m-%d").date()
+        except ValueError:
+            return None, None
+        if start > end:
+            start, end = end, start
+        return start, min(end + timedelta(days=1), today + timedelta(days=1))
     return None, None
 
 

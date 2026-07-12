@@ -13,7 +13,14 @@
         <option value="all">Tüm Zamanlar</option>
         <option value="30days">Son 30 Gün</option>
         <option value="today">Bugün</option>
+        <option value="custom">Özel Aralık</option>
       </select>
+      <span id="acc-custom-range" class="custom-range-inline" style="display:none;">
+        <input type="date" id="acc-filter-date-from">
+        <span class="muted" style="font-size:0.72rem;">–</span>
+        <input type="date" id="acc-filter-date-to">
+        <button type="button" class="btn btn-sm btn-primary" id="btn-acc-custom-apply">Uygula</button>
+      </span>
       <span class="muted" id="acc-period-label" style="font-size:0.72rem;"></span>
       <label for="acc-display-currency" class="muted" style="font-size:0.72rem;">Gösterim:</label>
       <select id="acc-display-currency">

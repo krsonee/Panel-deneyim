@@ -401,6 +401,9 @@ def notify_new_visitor(domain, ref_code, ip_address, device_display):
     threading.Thread(target=send_telegram, args=(msg,), daemon=True).start()
 
 
+CUSTOM_PERIOD_RE = re.compile(r"^custom:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$")
+
+
 def date_range_from_period(period):
     now = utcnow()
     if period == "today":
@@ -414,6 +417,17 @@ def date_range_from_period(period):
         return iso(now - timedelta(days=7)), iso(now)
     if period == "30days":
         return iso(now - timedelta(days=30)), iso(now)
+    match = CUSTOM_PERIOD_RE.match(period or "")
+    if match:
+        try:
+            start = datetime.strptime(match.group(1), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            end = datetime.strptime(match.group(2), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None, None
+        if start > end:
+            start, end = end, start
+        end = min(end + timedelta(days=1), now + timedelta(days=1))
+        return iso(start), iso(end)
     return None, None
 
 

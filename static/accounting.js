@@ -4,6 +4,7 @@
   var ACC_PAGE = 10;
   var accPeriod = localStorage.getItem("acc_period") || "";
   var accPeriodMode = localStorage.getItem("acc_period_mode") || "pick";
+  var accCustomPeriod = localStorage.getItem("acc_custom_period") || "";
   var accActiveTab = "dashboard";
   var accPaymentMethods = [];
   var accCategories = [];
@@ -307,6 +308,9 @@
     if (mode === "all" || mode === "30days" || mode === "today") {
       if (monthEl) monthEl.disabled = true;
       accPeriod = mode;
+    } else if (mode === "custom") {
+      if (monthEl) monthEl.disabled = true;
+      accPeriod = accCustomPeriod || "all";
     } else {
       if (monthEl) {
         monthEl.disabled = false;
@@ -2924,6 +2928,17 @@
         monthEl.value = accCurrentMonth();
       }
     }
+    if (accPeriodMode === "custom") {
+      var box = document.getElementById("acc-custom-range");
+      if (box) box.style.display = "";
+      var m = /^custom:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/.exec(accCustomPeriod);
+      if (m) {
+        var fromEl = document.getElementById("acc-filter-date-from");
+        var toEl = document.getElementById("acc-filter-date-to");
+        if (fromEl) fromEl.value = m[1];
+        if (toEl) toEl.value = m[2];
+      }
+    }
     accResolvePeriod();
     accSyncTxDateToPeriod();
   }
@@ -2951,14 +2966,36 @@
     });
     var accFilterPeriod = document.getElementById("acc-filter-period");
     if (accFilterPeriod) accFilterPeriod.addEventListener("change", function () {
+      var box = document.getElementById("acc-custom-range");
+      if (accFilterPeriod.value === "custom") {
+        if (box) box.style.display = "";
+        return;
+      }
+      if (box) box.style.display = "none";
       accResolvePeriod();
       accRefreshAll();
+    });
+    var accCustomApply = document.getElementById("btn-acc-custom-apply");
+    if (accCustomApply) accCustomApply.addEventListener("click", function () {
+      var fromEl = document.getElementById("acc-filter-date-from");
+      var toEl = document.getElementById("acc-filter-date-to");
+      var from = fromEl ? fromEl.value : "";
+      var to = toEl ? toEl.value : "";
+      if (!from || !to) { accToast("Başlangıç ve bitiş tarihi seçin"); return; }
+      if (from > to) { var t = from; from = to; to = t; fromEl.value = from; toEl.value = to; }
+      accCustomPeriod = "custom:" + from + ":" + to;
+      localStorage.setItem("acc_custom_period", accCustomPeriod);
+      accResolvePeriod();
+      accRefreshAll();
+      accToast("Özel tarih aralığı uygulandı");
     });
     var accMonthFilter = document.getElementById("acc-filter-month");
     if (accMonthFilter) {
       accMonthFilter.addEventListener("change", function () {
         var modeEl = document.getElementById("acc-filter-period");
         if (modeEl) modeEl.value = "pick";
+        var box = document.getElementById("acc-custom-range");
+        if (box) box.style.display = "none";
         accResolvePeriod();
         accRefreshAll();
       });

@@ -1,5 +1,6 @@
 """Smartico affiliate raporu API rotaları — Link Takip altyapısından bağımsız."""
 
+import re
 from contextlib import closing
 
 from flask import Blueprint, jsonify, request
@@ -10,6 +11,7 @@ from database import get_db
 MODULE_ACCESS = ("tracking.smartico",)
 
 _VALID_PERIODS = {"all", "today", "yesterday", "7days", "30days"}
+_CUSTOM_PERIOD_RE = re.compile(r"^custom:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$")
 
 
 def create_smartico_blueprint(permission_required, admin_only_required=None):
@@ -62,7 +64,7 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
     @perm(*MODULE_ACCESS)
     def report():
         period = (request.args.get("period") or "all").strip()
-        if period not in _VALID_PERIODS:
+        if period not in _VALID_PERIODS and not _CUSTOM_PERIOD_RE.match(period):
             period = "all"
         force = request.args.get("force") == "1"
         with closing(get_db()) as conn:

@@ -988,6 +988,8 @@
     .tool-box textarea { min-height: 110px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 0.75rem; }
     .period-bar { display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; }
     .period-bar select { width: auto; min-width: 140px; }
+    .custom-range-inline { display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; }
+    .custom-range-inline input[type="date"] { width: auto; min-width: 130px; }
     .sidebar-actions { padding: 0 1rem 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; }
     .sidebar-actions .btn { width: 100%; text-align: left; }
     .settings-list { font-size: 0.8rem; line-height: 1.6; }
@@ -1229,6 +1231,8 @@
       .period-bar select,
       .period-bar input[type="month"] { width: 100%; min-width: 0; }
       .period-bar > span { font-size: 0.72rem; line-height: 1.35; }
+      .custom-range-inline { width: 100%; }
+      .custom-range-inline input[type="date"] { flex: 1; min-width: 0; }
       .kpi .val { font-size: 1.65rem; }
       .acc-net-profit { font-size: 2rem; }
       .acc-tabs {
@@ -1331,7 +1335,14 @@
               <option value="yesterday">Dün</option>
               <option value="7days">Son 7 Gün</option>
               <option value="30days">Son 30 Gün</option>
+              <option value="custom">Özel Aralık</option>
             </select>
+            <span id="filter-custom-range" class="custom-range-inline" style="display:none;">
+              <input type="date" id="filter-date-from">
+              <span class="muted" style="font-size:0.72rem;">–</span>
+              <input type="date" id="filter-date-to">
+              <button type="button" class="btn btn-sm btn-primary" id="btn-filter-custom-apply">Uygula</button>
+            </span>
           </div>
         </div>
 
@@ -2022,6 +2033,7 @@
         setTimeout(function() { btn.innerHTML = original; btn.classList.remove("copied"); }, 1200);
       }
       var currentPeriod = "all";
+      var currentCustomPeriod = "";
       var TABLE_PAGE_SIZE = 10;
       var cachedLinks = [];
       var cachedRefReport = [];
@@ -2390,6 +2402,10 @@
       }
 
       function periodQuery() {
+        if (currentPeriod === "custom") {
+          if (!currentCustomPeriod) return "";
+          return "?period=" + encodeURIComponent(currentCustomPeriod);
+        }
         return currentPeriod && currentPeriod !== "all" ? "?period=" + encodeURIComponent(currentPeriod) : "";
       }
 
@@ -3385,7 +3401,7 @@
         if (smarticoInFlight) return;
         smarticoInFlight = true;
         var pq = periodQuery();
-        var url = API + "/api/smartico/report" + (pq ? pq + "&" : "?") + "period=" + encodeURIComponent(currentPeriod) + (force ? "&force=1" : "");
+        var url = API + "/api/smartico/report" + (pq || "?period=" + encodeURIComponent(currentPeriod)) + (force ? "&force=1" : "");
         fetch(url).then(function(r) {
           if (r.status === 401) { location.href = "/admin/login"; return null; }
           return r.json();
@@ -3802,9 +3818,30 @@
 
       bindOptional("filter-period", "change", function() {
         currentPeriod = this.value;
+        var box = document.getElementById("filter-custom-range");
+        if (currentPeriod === "custom") {
+          if (box) box.style.display = "";
+          return;
+        }
+        if (box) box.style.display = "none";
         resetRefreshSignatures();
         refreshAll();
         if (smarticoConfigured !== false) loadSmarticoReport(false);
+      });
+
+      bindOptional("btn-filter-custom-apply", "click", function() {
+        var fromEl = document.getElementById("filter-date-from");
+        var toEl = document.getElementById("filter-date-to");
+        var from = fromEl ? fromEl.value : "";
+        var to = toEl ? toEl.value : "";
+        if (!from || !to) { toast("Başlangıç ve bitiş tarihi seçin"); return; }
+        if (from > to) { var t = from; from = to; to = t; fromEl.value = from; toEl.value = to; }
+        currentCustomPeriod = "custom:" + from + ":" + to;
+        currentPeriod = "custom";
+        resetRefreshSignatures();
+        refreshAll();
+        if (smarticoConfigured !== false) loadSmarticoReport(false);
+        toast("Özel tarih aralığı uygulandı");
       });
 
       bindOptional("btn-smartico-settings", "click", function() {
