@@ -455,6 +455,7 @@
           "<td>" + esc(t.subject) + "</td>" +
           "<td>" + esc(fmtTime(t.updated_at)) + "</td>" +
           '<td style="white-space:nowrap;">' +
+          '<button type="button" class="btn btn-sm mail-view-tpl" data-id="' + t.id + '">Görüntüle</button> ' +
           '<button type="button" class="btn btn-sm mail-edit-tpl" data-id="' + t.id + '">Düzenle</button> ' +
           '<button type="button" class="btn btn-sm mail-del-tpl" data-id="' + t.id + '">Sil</button>' +
           "</td></tr>";
@@ -475,20 +476,19 @@
     if (mailTplMode === "html") refreshTplPreview();
   }
 
-  function previewHtmlFromEditors() {
-    var html = (document.getElementById("mail-tpl-html") || {}).value || "";
-    var text = (document.getElementById("mail-tpl-text") || {}).value || "";
-    if (!html.trim() && text.trim()) {
-      html = text
-        .replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
-        .split(/\n\n+/).map(function (block) {
-          return "<p>" + block.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>\n") + "</p>";
-        }).join("\n");
-      // restore link tokens that got escaped
-      html = html.replace(/\{\{link:([^}]+)\}\}/g, function (_m, url) {
+  function textToPreviewHtml(text) {
+    if (!text || !text.trim()) return "";
+    return text
+      .replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
+      .split(/\n\n+/).map(function (block) {
+        return "<p>" + block.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>\n") + "</p>";
+      }).join("\n")
+      .replace(/\{\{link:([^}]+)\}\}/g, function (_m, url) {
         return "{{link:" + url.replace(/&amp;/g, "&") + "}}";
       });
-    }
+  }
+
+  function substituteTplPlaceholders(html) {
     return (html || "<p class='muted'>Önizleme boş</p>")
       .replace(/\{\{name\}\}/g, "Ali")
       .replace(/\{\{email\}\}/g, "ali@ornek.com")
@@ -499,13 +499,47 @@
       });
   }
 
+  function previewHtmlFromEditors() {
+    var html = (document.getElementById("mail-tpl-html") || {}).value || "";
+    var text = (document.getElementById("mail-tpl-text") || {}).value || "";
+    if (!html.trim() && text.trim()) html = textToPreviewHtml(text);
+    return substituteTplPlaceholders(html);
+  }
+
+  function previewHtmlFromTemplate(tpl) {
+    if (!tpl) return "<p class='muted'>Şablon bulunamadı</p>";
+    var html = (tpl.html_body || "").trim();
+    var text = (tpl.text_body || "").trim();
+    if (!html && text) html = textToPreviewHtml(text);
+    return substituteTplPlaceholders(html);
+  }
+
+  function buildTplPreviewDoc(bodyHtml) {
+    return "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
+      "<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:16px;color:#111;line-height:1.5;font-size:15px}a{color:#2563eb}</style>" +
+      "</head><body>" + bodyHtml + "</body></html>";
+  }
+
   function refreshTplPreview() {
     var frame = document.getElementById("mail-tpl-preview");
     if (!frame) return;
-    var doc = "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
-      "<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:16px;color:#111;line-height:1.5;font-size:15px}a{color:#2563eb}</style>" +
-      "</head><body>" + previewHtmlFromEditors() + "</body></html>";
-    frame.srcdoc = doc;
+    frame.srcdoc = buildTplPreviewDoc(previewHtmlFromEditors());
+  }
+
+  function openTplViewModal(tpl) {
+    if (!tpl) return;
+    var modal = document.getElementById("mail-tpl-view-modal");
+    var frame = document.getElementById("mail-tpl-view-frame");
+    var title = document.getElementById("mail-tpl-view-title");
+    if (!modal || !frame) return;
+    if (title) title.textContent = "Önizleme — " + (tpl.name || "Şablon");
+    frame.srcdoc = buildTplPreviewDoc(previewHtmlFromTemplate(tpl));
+    modal.classList.add("open");
+  }
+
+  function closeTplViewModal() {
+    var modal = document.getElementById("mail-tpl-view-modal");
+    if (modal) modal.classList.remove("open");
   }
 
   function insertAtCursor(textarea, snippet) {
@@ -836,6 +870,13 @@
           .then(function () { mailLoadContactStats(); mailLoadContacts(); });
         return;
       }
+      var viewT = e.target.closest(".mail-view-tpl");
+      if (viewT) {
+        var vid = Number(viewT.getAttribute("data-id"));
+        var vt = mailTemplates.find(function (x) { return x.id === vid; });
+        if (vt) openTplViewModal(vt);
+        return;
+      }
       var editT = e.target.closest(".mail-edit-tpl");
       if (editT) {
         var tid = Number(editT.getAttribute("data-id"));
@@ -957,6 +998,13 @@
       refreshTplPreview();
     });
     bindClick("mail-tpl-refresh", mailLoadTemplates);
+    bindClick("mail-tpl-view-close", closeTplViewModal);
+    var viewModal = document.getElementById("mail-tpl-view-modal");
+    if (viewModal) {
+      viewModal.addEventListener("click", function (e) {
+        if (e.target === viewModal) closeTplViewModal();
+      });
+    }
     bindClick("mail-tpl-test-send", function () {
       var id = document.getElementById("mail-tpl-id").value;
       var email = (document.getElementById("mail-tpl-test-email").value || "").trim();
