@@ -120,6 +120,10 @@ MAIL_SET = ("mailing.settings", "module.mailing")
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 LINK_TOKEN_RE = re.compile(r"\{\{\s*link\s*:\s*([^}]+)\s*\}\}", re.I)
+HREF_LINK_TOKEN_RE = re.compile(
+    r"href\s*=\s*([\"'])\s*\{\{\s*link\s*:\s*([^}]+)\s*\}\}\s*\1",
+    re.I,
+)
 HREF_RE = re.compile(r'(<a\b[^>]*\bhref\s*=\s*["\'])(https?://[^"\']+)(["\'])', re.I)
 
 
@@ -292,6 +296,14 @@ def _inject_tracking(conn, body, *, send_id, contact_id=None, campaign_id=None, 
             safe_dest = html_lib.escape(safe_dest, quote=True)
             return f'<a href="{tracked}" target="_blank" rel="noopener">{safe_dest}</a>'
         return tracked
+
+    if as_html:
+        def repl_href_link(m):
+            q = m.group(1)
+            tracked = token_for(m.group(2))
+            return f"href={q}{tracked}{q}"
+
+        body = HREF_LINK_TOKEN_RE.sub(repl_href_link, body)
 
     body = LINK_TOKEN_RE.sub(repl_token, body)
 

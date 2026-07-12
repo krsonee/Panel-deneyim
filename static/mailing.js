@@ -745,14 +745,22 @@
   }
 
   function substituteTplPlaceholders(html) {
-    return (html || "<p class='muted'>Önizleme boş</p>")
-      .replace(/\{\{name\}\}/g, "Ali")
+    var s = html || "<p class='muted'>Önizleme boş</p>";
+    function linkUrl(raw) {
+      return String(raw || "").trim().replace(/^sc\s*:\s*/i, "");
+    }
+    // href="{{link:...}}" → sadece URL; aksi halde butonlar patlıyor
+    s = s.replace(/href\s*=\s*(["'])\s*\{\{\s*link\s*:\s*([^}]+)\s*\}\}\s*\1/gi, function (_m, q, raw) {
+      return "href=" + q + linkUrl(raw) + q;
+    });
+    s = s.replace(/\{\{name\}\}/g, "Ali")
       .replace(/\{\{email\}\}/g, "ali@ornek.com")
       .replace(/\{\{phone\}\}/g, "+90555…")
-      .replace(/\{\{\s*link\s*:\s*([^}]+)\s*\}\}/gi, function (_m, url) {
-        var u = url.trim().replace(/^sc\s*:\s*/i, "");
-        return '<a href="' + u + '" style="color:#2563eb;">' + u + "</a>";
+      .replace(/\{\{\s*link\s*:\s*([^}]+)\s*\}\}/gi, function (_m, raw) {
+        var u = linkUrl(raw);
+        return '<a href="' + u + '" style="color:#ffd53e;">' + u + "</a>";
       });
+    return s;
   }
 
   function previewHtmlFromEditors() {
@@ -774,11 +782,10 @@
     return "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
       "<meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
       "<style>" +
-      "body{margin:0;padding:20px 12px;background:#0f172a;}" +
-      ".mail-preview-shell{max-width:600px;margin:0 auto;}" +
+      "body{margin:0;padding:24px 12px;background:#0b1220;}" +
+      ".mail-preview-shell{max-width:560px;margin:0 auto;}" +
       "img{max-width:100%;height:auto;display:block;}" +
-      ".promo-thumb{max-height:76px;object-fit:cover;}" +
-      "a{color:#2563eb}</style></head><body>" +
+      "a{color:inherit}</style></head><body>" +
       "<div class='mail-preview-shell'>" + bodyHtml + "</div></body></html>";
   }
 
