@@ -9,6 +9,8 @@ PERMISSION_CATALOG = [
      "desc": "Muhasebe modülüne erişim"},
     {"key": "module.mailing", "label": "Mailing", "group": "Modüller",
      "desc": "Kampanya, CRM, şablon ve IVR mailing modülü"},
+    {"key": "module.marketing", "label": "Marketing", "group": "Modüller",
+     "desc": "Marketing modülüne erişim"},
     {"key": "module.settings", "label": "Ayarlar", "group": "Modüller",
      "desc": "Panel ayarları ekranı"},
     {"key": "tracking.dashboard", "label": "Dashboard & Grafikler", "group": "Link Takip",
@@ -27,6 +29,8 @@ PERMISSION_CATALOG = [
      "desc": "bl.ink API entegrasyonu, ayarları ve link/online rapor görüntüleme"},
     {"key": "tracking.makrolink", "label": "MakroLink (makrovip.com)", "group": "Link Takip",
      "desc": "Kendi kısa link oluşturma, tıklama raporu ve Smartico URL kısaltma"},
+    {"key": "tracking.biolink", "label": "Bio Sayfa Oluşturucu", "group": "Link Takip",
+     "desc": "Heylink/Linktree tarzı özel sayfa oluşturma, tema seçimi ve tıklama raporu"},
     {"key": "accounting.dashboard", "label": "Muhasebe Özet", "group": "Muhasebe",
      "desc": "Muhasebe dashboard KPI kartları"},
     {"key": "accounting.transactions", "label": "Yatırım / Çekim", "group": "Muhasebe",
@@ -63,6 +67,8 @@ PERMISSION_CATALOG = [
      "desc": "Gönderim logları ve özet raporlar"},
     {"key": "mailing.settings", "label": "Mailing Ayarları", "group": "Mailing",
      "desc": "Domain, SMTP/DirectMail ve webhook ayarları"},
+    {"key": "marketing.deals", "label": "Anlaşmalar", "group": "Marketing",
+     "desc": "Kanal / affiliate anlaşmaları tablosu — anlaşma tarihi, sabit ücret, komisyon oranı"},
     {"key": "admin.users", "label": "Kullanıcı Yönetimi", "group": "Yönetim",
      "desc": "Admin ekleme, silme ve yetki düzenleme"},
     {"key": "admin.audit", "label": "Aktivite Günlüğü", "group": "Yönetim",
@@ -71,7 +77,7 @@ PERMISSION_CATALOG = [
 
 ALL_PERMISSION_KEYS = [p["key"] for p in PERMISSION_CATALOG]
 
-MODULE_KEYS = ("module.tracking", "module.accounting", "module.mailing", "module.settings")
+MODULE_KEYS = ("module.tracking", "module.accounting", "module.mailing", "module.marketing", "module.settings")
 
 MAILING_PERMS = (
     "module.mailing",
@@ -82,6 +88,11 @@ MAILING_PERMS = (
     "mailing.ivr",
     "mailing.reports",
     "mailing.settings",
+)
+
+MARKETING_PERMS = (
+    "module.marketing",
+    "marketing.deals",
 )
 
 ROLE_TEMPLATES = {
@@ -96,7 +107,7 @@ ROLE_TEMPLATES = {
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.domains",
             "tracking.players", "tracking.reports", "tracking.export", "tracking.smartico",
-            "tracking.blink", "tracking.makrolink",
+            "tracking.blink", "tracking.makrolink", "tracking.biolink",
         ],
     },
     "accountant": {
@@ -115,12 +126,17 @@ ROLE_TEMPLATES = {
         "desc": "Mailing modülünde tam yetki",
         "permissions": list(MAILING_PERMS),
     },
+    "marketer": {
+        "label": "Marketing Operatörü",
+        "desc": "Marketing modülünde tam yetki",
+        "permissions": list(MARKETING_PERMS),
+    },
     "viewer": {
         "label": "İzleyici",
         "desc": "Sadece görüntüleme, düzenleme yok",
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.players", "tracking.reports", "tracking.smartico",
-            "tracking.blink", "tracking.makrolink",
+            "tracking.blink", "tracking.makrolink", "tracking.biolink",
             "module.mailing", "mailing.dashboard", "mailing.reports",
         ],
     },
@@ -129,7 +145,7 @@ ROLE_TEMPLATES = {
         "desc": "Raporlar ve dashboard",
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.reports", "tracking.smartico",
-            "tracking.blink", "tracking.makrolink",
+            "tracking.blink", "tracking.makrolink", "tracking.biolink",
         ],
     },
     "custom": {
@@ -175,6 +191,8 @@ def ensure_module_parents(permissions):
         perms.append("module.accounting")
     if any(p.startswith("mailing.") for p in perms) and "module.mailing" not in perms:
         perms.append("module.mailing")
+    if any(p.startswith("marketing.") for p in perms) and "module.marketing" not in perms:
+        perms.append("module.marketing")
     if "admin.users" in perms and "module.settings" not in perms:
         perms.append("module.settings")
     if "admin.audit" in perms and "module.settings" not in perms:
@@ -214,6 +232,8 @@ def has_any_module_access(user_permissions):
         return True
     if any(p.startswith("mailing.") for p in perms):
         return True
+    if any(p.startswith("marketing.") for p in perms):
+        return True
     if "admin.users" in perms or "admin.audit" in perms:
         return True
     return False
@@ -222,7 +242,7 @@ def has_any_module_access(user_permissions):
 def available_modules(user_permissions):
     perms = normalize_permissions(user_permissions)
     if "*" in perms:
-        return ["tracking", "accounting", "mailing", "settings"]
+        return ["tracking", "accounting", "mailing", "marketing", "settings"]
     mods = []
     if "module.tracking" in perms or any(p.startswith("tracking.") for p in perms):
         mods.append("tracking")
@@ -230,6 +250,8 @@ def available_modules(user_permissions):
         mods.append("accounting")
     if "module.mailing" in perms or any(p.startswith("mailing.") for p in perms):
         mods.append("mailing")
+    if "module.marketing" in perms or any(p.startswith("marketing.") for p in perms):
+        mods.append("marketing")
     if "module.settings" in perms or "admin.users" in perms or "admin.audit" in perms:
         mods.append("settings")
     return mods
@@ -243,4 +265,6 @@ def default_module_for_user(user_permissions):
         return "accounting"
     if "mailing" in mods:
         return "mailing"
+    if "marketing" in mods:
+        return "marketing"
     return mods[0] if mods else None

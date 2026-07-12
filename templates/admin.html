@@ -1303,7 +1303,52 @@
       .acc-options-row { flex-wrap: wrap; }
       .acc-options-row .btn { width: 100%; min-height: 44px; }
       .form-row-4 { grid-template-columns: 1fr; }
+      .biolink-editor-grid { grid-template-columns: 1fr !important; }
+      .biolink-preview-frame-wrap { margin: 1rem auto 0; }
     }
+
+    /* Bio Sayfa Oluşturucu */
+    .biolink-editor-grid { display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 1.5rem; align-items: start; }
+    .biolink-editor-form h4 { margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--text, #eee); }
+    .biolink-btn-row {
+      display: grid; grid-template-columns: 34px 44px 1fr 1fr auto auto auto; gap: 0.4rem; align-items: center;
+      padding: 0.4rem 0.3rem; border-bottom: 1px solid var(--border, #2a2a2a);
+    }
+    .biolink-btn-row.heading-row { grid-template-columns: 34px 1fr auto auto; opacity: 0.85; }
+    .biolink-btn-row input { padding: 0.35rem 0.5rem; font-size: 0.8rem; }
+    .biolink-btn-row .drag-order { display: flex; flex-direction: column; gap: 1px; }
+    .biolink-btn-row .drag-order button {
+      background: none; border: none; color: var(--muted, #888); cursor: pointer; font-size: 0.7rem; padding: 0;
+      line-height: 1;
+    }
+    .biolink-btn-row .drag-order button:hover { color: var(--text, #eee); }
+    .biolink-add-btn-row {
+      display: grid; grid-template-columns: 90px 60px 1fr 1fr auto; gap: 0.4rem; margin-top: 0.6rem;
+    }
+    @media (max-width: 640px) {
+      .biolink-btn-row { grid-template-columns: 24px 36px 1fr auto; grid-template-rows: auto auto; }
+      .biolink-btn-row input[placeholder*="https"] { grid-column: 1 / -1; }
+      .biolink-add-btn-row { grid-template-columns: 1fr; }
+    }
+    .biolink-preview-frame-wrap {
+      width: 100%; max-width: 320px; margin: 0 auto;
+      border: 10px solid #1b1f27; border-radius: 32px; overflow: hidden;
+      box-shadow: 0 20px 50px -20px rgba(0,0,0,0.6); background: #000;
+    }
+    .biolink-preview-frame-wrap iframe {
+      width: 100%; height: 600px; border: none; display: block; background: #0b0f14;
+    }
+    .biolink-stat-row {
+      display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.35rem 0;
+      border-bottom: 1px solid var(--border, #222); font-size: 0.8rem;
+    }
+    .biolink-stat-row .val { font-weight: 700; color: var(--accent, #6cf); }
+    .biolink-theme-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 50%; margin-right: 0.35rem; vertical-align: -2px; }
+    .biolink-status-pill {
+      font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px;
+    }
+    .biolink-status-pill.active { background: rgba(34,211,168,0.15); color: #22d3a8; }
+    .biolink-status-pill.inactive { background: rgba(255,255,255,0.08); color: #999; }
   </style>
 </head>
 <body>
@@ -1318,6 +1363,7 @@
         <button type="button" class="nav-item active" data-module="tracking" data-perm="module.tracking"><span class="icon">📊</span> Link Takip & Analiz</button>
         <button type="button" class="nav-item" data-module="accounting" data-perm="module.accounting"><span class="icon">💰</span> Muhasebe</button>
         <button type="button" class="nav-item" data-module="mailing" data-perm="module.mailing"><span class="icon">✉️</span> Mailing</button>
+        <button type="button" class="nav-item" data-module="marketing" data-perm="module.marketing"><span class="icon">📣</span> Marketing</button>
         <button type="button" class="nav-item" id="btn-open-settings" data-superadmin-only="1" style="width:100%;border:none;background:none;cursor:pointer;font:inherit;text-align:left;">
           <span class="icon">⚙️</span> Ayarlar
         </button>
@@ -1505,6 +1551,83 @@
             </div>
             <div class="table-foot">
               <span class="table-count" id="makrolink-table-count"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" data-perm="tracking.biolink">
+          <div class="card-head">
+            <span>Bio Sayfa Oluşturucu <span class="muted" style="font-weight:400;font-size:0.72rem;">(Heylink/Linktree tarzı, kendi barındırdığımız sayfa)</span></span>
+            <div class="card-actions">
+              <span class="muted" id="biolink-updated" style="font-size:0.72rem;"></span>
+              <button type="button" class="btn btn-sm btn-primary" id="btn-biolink-new">+ Yeni Sayfa</button>
+              <button type="button" class="btn btn-sm" id="btn-biolink-refresh">Yenile</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <p class="hint">Sayfa adresi: <code>panel-alan-adiniz/p/&lt;slug&gt;</code> — istersen sonra <code>vipmakro.com</code> gibi bir domaini bu panele CNAME ile yönlendirip aynı sayfayı o adreste de açabiliriz.</p>
+            <div class="table-wrap">
+              <div class="scroll-hint">Tabloyu yatay kaydırın</div>
+              <div class="table-scroll">
+                <table>
+                  <thead><tr>
+                    <th>Başlık</th><th>Adres</th><th>Tema</th><th>Görüntülenme</th><th>Buton / Tıklama</th><th>Durum</th><th></th>
+                  </tr></thead>
+                  <tbody id="biolink-pages-table"><tr><td colspan="7" class="empty">Henüz sayfa yok</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card-body" id="biolink-editor" style="display:none;border-top:1px solid var(--border,#222);padding-top:1rem;">
+            <div class="biolink-editor-grid">
+              <div class="biolink-editor-form">
+                <h4 id="biolink-editor-title">Sayfa Düzenle</h4>
+                <div class="form-row-4">
+                  <div><label for="bl-title">Başlık</label><input id="bl-title" placeholder="MAKROVIP DESTEK HATTI" autocomplete="off"></div>
+                  <div><label for="bl-slug">Slug (adres)</label><input id="bl-slug" placeholder="vipmakro" autocomplete="off"></div>
+                  <div><label for="bl-theme">Tema</label><select id="bl-theme"></select></div>
+                  <div><label for="bl-shape">Buton Şekli</label>
+                    <select id="bl-shape">
+                      <option value="pill">Pill (yuvarlak)</option>
+                      <option value="rounded">Rounded</option>
+                      <option value="square">Köşeli</option>
+                    </select>
+                  </div>
+                </div>
+                <div style="margin-top:0.6rem;"><label for="bl-subtitle">Alt Başlık / Açıklama</label><textarea id="bl-subtitle" rows="2" style="width:100%;" placeholder="Kısa açıklama…"></textarea></div>
+                <div class="form-row-4" style="margin-top:0.6rem;">
+                  <div><label for="bl-avatar">Avatar/Logo URL (ops.)</label><input id="bl-avatar" placeholder="https://…" autocomplete="off"></div>
+                  <div><label for="bl-accent">Vurgu Rengi (ops.)</label><input id="bl-accent" type="color" style="height:36px;padding:2px;"></div>
+                  <div><label for="bl-ga4-id">GA4 Measurement ID (ops.)</label><input id="bl-ga4-id" placeholder="G-XXXXXXXX" autocomplete="off"></div>
+                  <div><label for="bl-ga4-secret">GA4 API Secret (ops.)</label><input id="bl-ga4-secret" type="password" placeholder="boş = değiştirme" autocomplete="off"></div>
+                </div>
+                <div class="acc-options-row" style="margin-top:0.85rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+                  <button type="button" class="btn btn-primary" id="btn-biolink-save">Kaydet</button>
+                  <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.8rem;"><input type="checkbox" id="bl-is-active" checked> Aktif (yayında)</label>
+                  <a id="biolink-preview-link" href="#" target="_blank" class="btn btn-sm">🔗 Canlı sayfayı aç</a>
+                  <button type="button" class="btn btn-sm" id="btn-biolink-close">Kapat</button>
+                </div>
+
+                <h4 style="margin-top:1.3rem;">Butonlar / Linkler</h4>
+                <div id="biolink-buttons-list"><p class="muted-sm">Önce sayfayı kaydedin.</p></div>
+                <div class="biolink-add-btn-row">
+                  <select id="bl-new-btn-type"><option value="link">Buton (link)</option><option value="heading">Başlık / Ayraç</option></select>
+                  <input id="bl-new-btn-icon" placeholder="🎁" maxlength="4">
+                  <input id="bl-new-btn-label" placeholder="Buton yazısı">
+                  <input id="bl-new-btn-url" placeholder="https://…">
+                  <button type="button" class="btn btn-sm" id="btn-biolink-add-button">+ Ekle</button>
+                </div>
+
+                <h4 style="margin-top:1.3rem;">İstatistikler</h4>
+                <div id="biolink-stats"><p class="muted-sm">Henüz veri yok.</p></div>
+              </div>
+              <div class="biolink-editor-preview">
+                <div class="biolink-preview-frame-wrap">
+                  <iframe id="biolink-preview-frame" title="Önizleme"></iframe>
+                </div>
+                <p class="muted-sm" style="text-align:center;margin-top:0.5rem;">Canlı önizleme — kaydettikçe güncellenir</p>
+              </div>
             </div>
           </div>
         </section>
@@ -1779,6 +1902,7 @@
 
         {% include 'partials/accounting_panel.html' %}
         {% include 'partials/mailing_panel.html' %}
+        {% include 'partials/marketing_panel.html' %}
       </div>
     </div>
   </div>
@@ -2039,6 +2163,8 @@
 
   <script src="/static/accounting.js?v=20260712e"></script>
   <script src="/static/mailing.js?v=20260711b"></script>
+  <script src="/static/biolink.js?v=20260712a"></script>
+  <script src="/static/marketing.js?v=20260712a"></script>
   <script>
     (function () {
       var API = "";
@@ -2203,9 +2329,11 @@
         var trackPanel = document.getElementById("module-tracking-panel");
         var accPanel = document.getElementById("module-accounting-panel");
         var mailPanel = document.getElementById("module-mailing-panel");
+        var mktPanel = document.getElementById("module-marketing-panel");
         if (trackPanel) trackPanel.hidden = name !== "tracking";
         if (accPanel) accPanel.hidden = name !== "accounting";
         if (mailPanel) mailPanel.hidden = name !== "mailing";
+        if (mktPanel) mktPanel.hidden = name !== "marketing";
         document.querySelectorAll(".nav-item[data-module]").forEach(function(el) {
           el.classList.toggle("active", el.getAttribute("data-module") === name);
         });
@@ -2213,6 +2341,7 @@
         if (mobileTitle) {
           mobileTitle.textContent = name === "accounting" ? "Muhasebe"
             : name === "mailing" ? "Mailing"
+            : name === "marketing" ? "Marketing"
             : "Link Takip & Analiz";
         }
         if (typeof window.closeMobileSidebar === "function") window.closeMobileSidebar();
@@ -2222,6 +2351,9 @@
         }
         if (name === "mailing" && window.MakroMailing) {
           window.MakroMailing.onShow();
+        }
+        if (name === "marketing" && window.MakroMarketing) {
+          window.MakroMarketing.onShow();
         }
       }
 
@@ -2393,6 +2525,12 @@
           }
           if (window.MakroMailing && window.MakroMailing.setPermissions) {
             window.MakroMailing.setPermissions(myPermissions);
+          }
+          if (window.MakroMarketing && window.MakroMarketing.setPermissions) {
+            window.MakroMarketing.setPermissions(myPermissions);
+          }
+          if (window.MakroBiolink && window.MakroBiolink.setPermissions) {
+            window.MakroBiolink.setPermissions(myPermissions);
           }
           var badge = document.getElementById("acc-role-badge");
           if (badge) {
@@ -3771,6 +3909,16 @@
         } catch (err) {
           console.error("MakroMailing.init", err);
         }
+        try {
+          if (window.MakroMarketing) window.MakroMarketing.init();
+        } catch (err) {
+          console.error("MakroMarketing.init", err);
+        }
+        try {
+          if (window.MakroBiolink) window.MakroBiolink.init();
+        } catch (err) {
+          console.error("MakroBiolink.init", err);
+        }
         loadMe(function() {
           trackingPollEnabled = currentModule === "tracking";
           if (trackingPollEnabled) refreshAll();
@@ -4395,6 +4543,7 @@
         initPasswordToggles();
         if (window.MakroAccounting) window.MakroAccounting.init();
         if (window.MakroMailing) window.MakroMailing.init();
+        if (window.MakroMarketing) window.MakroMarketing.init();
       }
     })();
   </script>

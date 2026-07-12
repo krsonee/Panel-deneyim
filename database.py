@@ -305,6 +305,7 @@ def init_schema(conn):
         execute(conn, sql)
     init_accounting_schema(conn)
     init_mailing_schema(conn)
+    init_marketing_schema(conn)
     init_audit_log_schema(conn)
     conn.commit()
 
@@ -662,6 +663,131 @@ def migrate_makrolink(conn):
     conn.commit()
 
 
+def migrate_biolink(conn):
+    """Bio Sayfa (Heylink/Linktree tarzı) sayfa oluşturucu — biolink_pages / biolink_buttons / biolink_clicks."""
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS biolink_pages (
+                id SERIAL PRIMARY KEY,
+                slug TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL DEFAULT '',
+                subtitle TEXT NOT NULL DEFAULT '',
+                avatar_url TEXT NOT NULL DEFAULT '',
+                theme TEXT NOT NULL DEFAULT 'carbon',
+                accent_color TEXT NOT NULL DEFAULT '',
+                button_shape TEXT NOT NULL DEFAULT 'pill',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                view_count INTEGER NOT NULL DEFAULT 0,
+                ga4_measurement_id TEXT NOT NULL DEFAULT '',
+                ga4_api_secret TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS biolink_buttons (
+                id SERIAL PRIMARY KEY,
+                page_id INTEGER NOT NULL REFERENCES biolink_pages(id) ON DELETE CASCADE,
+                button_type TEXT NOT NULL DEFAULT 'link',
+                label TEXT NOT NULL DEFAULT '',
+                url TEXT NOT NULL DEFAULT '',
+                icon TEXT NOT NULL DEFAULT '',
+                highlight INTEGER NOT NULL DEFAULT 0,
+                badge_text TEXT NOT NULL DEFAULT '',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                click_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS biolink_clicks (
+                id SERIAL PRIMARY KEY,
+                button_id INTEGER NOT NULL REFERENCES biolink_buttons(id) ON DELETE CASCADE,
+                page_id INTEGER NOT NULL REFERENCES biolink_pages(id) ON DELETE CASCADE,
+                clicked_at TEXT NOT NULL,
+                ip_hash TEXT NOT NULL DEFAULT '',
+                user_agent TEXT NOT NULL DEFAULT '',
+                referer TEXT NOT NULL DEFAULT ''
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS biolink_pages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL DEFAULT '',
+                subtitle TEXT NOT NULL DEFAULT '',
+                avatar_url TEXT NOT NULL DEFAULT '',
+                theme TEXT NOT NULL DEFAULT 'carbon',
+                accent_color TEXT NOT NULL DEFAULT '',
+                button_shape TEXT NOT NULL DEFAULT 'pill',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                view_count INTEGER NOT NULL DEFAULT 0,
+                ga4_measurement_id TEXT NOT NULL DEFAULT '',
+                ga4_api_secret TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS biolink_buttons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id INTEGER NOT NULL,
+                button_type TEXT NOT NULL DEFAULT 'link',
+                label TEXT NOT NULL DEFAULT '',
+                url TEXT NOT NULL DEFAULT '',
+                icon TEXT NOT NULL DEFAULT '',
+                highlight INTEGER NOT NULL DEFAULT 0,
+                badge_text TEXT NOT NULL DEFAULT '',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                click_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (page_id) REFERENCES biolink_pages(id)
+            )
+            """,
+        )
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS biolink_clicks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                button_id INTEGER NOT NULL,
+                page_id INTEGER NOT NULL,
+                clicked_at TEXT NOT NULL,
+                ip_hash TEXT NOT NULL DEFAULT '',
+                user_agent TEXT NOT NULL DEFAULT '',
+                referer TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (button_id) REFERENCES biolink_buttons(id),
+                FOREIGN KEY (page_id) REFERENCES biolink_pages(id)
+            )
+            """,
+        )
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_biolink_buttons_page ON biolink_buttons(page_id)")
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_biolink_clicks_button ON biolink_clicks(button_id)")
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_biolink_clicks_page ON biolink_clicks(page_id)")
+    conn.commit()
+
+
 def init_accounting_schema(conn):
     if uses_postgres():
         statements = [
@@ -926,6 +1052,14 @@ def migrate_schema(conn):
             pass
         print(f"⚠️  migrate_makrolink hata (atlanıyor, panel yine açılır): {exc}")
     try:
+        migrate_biolink(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_biolink hata (atlanıyor, panel yine açılır): {exc}")
+    try:
         migrate_ref_labels(conn)
     except Exception as exc:
         try:
@@ -941,6 +1075,14 @@ def migrate_schema(conn):
         except Exception:
             pass
         print(f"⚠️  init_mailing_schema hata (atlanıyor, panel yine açılır): {exc}")
+    try:
+        init_marketing_schema(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  init_marketing_schema hata (atlanıyor, panel yine açılır): {exc}")
     try:
         migrate_float_precision(conn)
     except Exception as exc:
@@ -2729,6 +2871,56 @@ def ensure_mail_contacts_unique_email(conn):
         except Exception:
             pass
         print(f"⚠️  ensure_mail_contacts_unique_email hata: {exc}")
+
+
+def init_marketing_schema(conn):
+    """Marketing modülü — kanal / affiliate anlaşmaları tablosu (şimdilik tamamen manuel giriş)."""
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mkt_deals (
+                id SERIAL PRIMARY KEY,
+                agreement_date TEXT NOT NULL,
+                channel_name TEXT NOT NULL,
+                channel_type TEXT NOT NULL DEFAULT '',
+                channel_ref_code TEXT NOT NULL DEFAULT '',
+                fixed_fee DOUBLE PRECISION NOT NULL DEFAULT 0,
+                fixed_fee_currency TEXT NOT NULL DEFAULT 'TRY',
+                affiliate_commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                payment_status TEXT NOT NULL DEFAULT 'pending',
+                status TEXT NOT NULL DEFAULT 'active',
+                notes TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mkt_deals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agreement_date TEXT NOT NULL,
+                channel_name TEXT NOT NULL,
+                channel_type TEXT NOT NULL DEFAULT '',
+                channel_ref_code TEXT NOT NULL DEFAULT '',
+                fixed_fee DOUBLE PRECISION NOT NULL DEFAULT 0,
+                fixed_fee_currency TEXT NOT NULL DEFAULT 'TRY',
+                affiliate_commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+                payment_status TEXT NOT NULL DEFAULT 'pending',
+                status TEXT NOT NULL DEFAULT 'active',
+                notes TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        )
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_mkt_deals_date ON mkt_deals(agreement_date)")
+    conn.commit()
 
 
 def init_db():

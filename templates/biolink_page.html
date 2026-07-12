@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{ page.title }}</title>
+<meta name="description" content="{{ page.subtitle }}">
+<meta name="robots" content="index, follow">
+<meta property="og:title" content="{{ page.title }}">
+<meta property="og:description" content="{{ page.subtitle }}">
+{% if page.avatar_url %}<meta property="og:image" content="{{ page.avatar_url }}">{% endif %}
+<meta property="og:type" content="website">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: {{ theme.bg }};
+    --text: {{ theme.text }};
+    --muted: {{ theme.muted }};
+    --card-bg: {{ theme.card_bg }};
+    --card-border: {{ theme.card_border }};
+    --card-hover: {{ theme.card_hover }};
+    --accent: {{ theme.accent }};
+    --radius: {% if page.button_shape == 'pill' %}999px{% elif page.button_shape == 'square' %}6px{% else %}16px{% endif %};
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100%;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  body {
+    display: flex; justify-content: center;
+    padding: 3rem 1.1rem 3.5rem;
+    background-attachment: fixed;
+  }
+  .wrap { width: 100%; max-width: 460px; display: flex; flex-direction: column; align-items: center; }
+  .avatar {
+    width: 92px; height: 92px; border-radius: 50%; overflow: hidden;
+    background: var(--card-bg); border: 2px solid var(--card-border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem; font-weight: 700; color: var(--accent);
+    margin-bottom: 1.1rem; box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+  }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  h1 {
+    font-size: 1.32rem; font-weight: 800; text-align: center; margin: 0 0 0.35rem;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 0.9rem; color: var(--muted); text-align: center; margin: 0 0 1.6rem;
+    max-width: 340px; line-height: 1.45;
+  }
+  .links { width: 100%; display: flex; flex-direction: column; gap: 0.65rem; }
+  .heading {
+    text-align: center; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em;
+    color: var(--muted); text-transform: uppercase; margin: 0.9rem 0 0.15rem;
+  }
+  .heading:first-child { margin-top: 0; }
+  a.link-btn {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.95rem 1.15rem; border-radius: var(--radius);
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    color: var(--text); text-decoration: none; font-weight: 600; font-size: 0.95rem;
+    transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+    position: relative; overflow: hidden;
+  }
+  a.link-btn:hover { background: var(--card-hover); transform: translateY(-1px); }
+  a.link-btn:active { transform: translateY(0); }
+  a.link-btn.highlight {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 10px 30px -8px var(--accent);
+  }
+  .link-icon { font-size: 1.15rem; flex-shrink: 0; line-height: 1; }
+  .link-label { flex: 1; }
+  .link-badge {
+    font-size: 0.65rem; font-weight: 800; text-transform: uppercase;
+    padding: 0.18rem 0.5rem; border-radius: 999px; letter-spacing: 0.03em;
+    background: var(--accent); color: #0a0a0a; flex-shrink: 0;
+  }
+  .link-arrow { opacity: 0.45; flex-shrink: 0; font-size: 0.85rem; }
+  .footer {
+    margin-top: 2.2rem; display: flex; flex-direction: column; align-items: center; gap: 0.6rem;
+  }
+  .share-btn {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    background: transparent; border: 1px solid var(--card-border); color: var(--muted);
+    font-size: 0.78rem; padding: 0.4rem 0.9rem; border-radius: 999px; cursor: pointer;
+    font-family: inherit;
+  }
+  .share-btn:hover { color: var(--text); border-color: var(--accent); }
+  .powered { font-size: 0.68rem; color: var(--muted); opacity: 0.6; letter-spacing: 0.02em; }
+  @media (max-width: 380px) {
+    a.link-btn { padding: 0.85rem 1rem; font-size: 0.9rem; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="avatar">
+      {% if page.avatar_url %}<img src="{{ page.avatar_url }}" alt="{{ page.title }}">{% else %}{{ page.title[:1]|upper }}{% endif %}
+    </div>
+    <h1>{{ page.title }}</h1>
+    {% if page.subtitle %}<p class="subtitle">{{ page.subtitle }}</p>{% endif %}
+    <div class="links">
+      {% for b in page.buttons %}
+        {% if b.button_type == 'heading' %}
+          <div class="heading">{{ b.label }}</div>
+        {% else %}
+          <a class="link-btn{% if b.highlight %} highlight{% endif %}" href="/p/{{ page.slug }}/go/{{ b.id }}">
+            {% if b.icon %}<span class="link-icon">{{ b.icon }}</span>{% endif %}
+            <span class="link-label">{{ b.label }}</span>
+            {% if b.badge_text %}<span class="link-badge">{{ b.badge_text }}</span>{% endif %}
+            <span class="link-arrow">→</span>
+          </a>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <div class="footer">
+      <button type="button" class="share-btn" onclick="biolinkShare()">🔗 Sayfayı Paylaş</button>
+      <span class="powered">{{ page.title }}</span>
+    </div>
+  </div>
+  <script>
+    function biolinkShare() {
+      var url = window.location.href;
+      if (navigator.share) {
+        navigator.share({ title: document.title, url: url }).catch(function(){});
+      } else if (navigator.clipboard) {
+        navigator.clipboard.writeText(url).then(function() {
+          var btn = document.querySelector(".share-btn");
+          if (btn) { var t = btn.textContent; btn.textContent = "✅ Kopyalandı"; setTimeout(function(){ btn.textContent = t; }, 1500); }
+        });
+      }
+    }
+  </script>
+</body>
+</html>

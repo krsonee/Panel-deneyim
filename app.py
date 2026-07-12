@@ -2164,6 +2164,8 @@ from smartico_routes import create_smartico_blueprint
 from blink_routes import create_blink_blueprint
 from makrolink_routes import create_makrolink_blueprint
 from mailing_routes import create_mailing_blueprint, create_mailing_click_blueprint
+from biolink_routes import create_biolink_blueprint
+from marketing_routes import create_marketing_blueprint
 import makrolink_api
 
 app.register_blueprint(create_accounting_blueprint(permission_required, superadmin_required))
@@ -2172,6 +2174,8 @@ app.register_blueprint(create_blink_blueprint(permission_required, superadmin_re
 app.register_blueprint(create_makrolink_blueprint(permission_required, admin_only_required))
 app.register_blueprint(create_mailing_blueprint(permission_required))
 app.register_blueprint(create_mailing_click_blueprint())
+app.register_blueprint(create_biolink_blueprint(permission_required))
+app.register_blueprint(create_marketing_blueprint(permission_required))
 
 
 @app.before_request
