@@ -1,8 +1,10 @@
 """Makrobet davet mail şablonu — deploy'da otomatik seed edilir.
 
-Logo: harici CDN hotlink engelliyor → HTML wordmark (MAKRO + BET) kullanılıyor.
-Promolar: küçük banner kırpımları yerine tipografi kartları.
+Logo: makrobet804.com/cdn/makrobet/upload_files/logo.png (site script logosu, base64 gömülü).
+Promolar: tipografi kartları.
 """
+
+from mail_logo_embed import LOGO_DATA_URI, LOGO_HEIGHT, LOGO_WIDTH
 
 DAVET_TEST_NAME = "Davet test"
 
@@ -30,15 +32,12 @@ PROMOS = [
 
 
 def _logo_html():
-    """Site logosu — CDN 403 verdiği için e-postada güvenilir HTML wordmark."""
-    return f"""<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
-  <tr>
-    <td style="font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:900;color:{C_TEXT};letter-spacing:3px;line-height:1;padding-right:8px;">MAKRO</td>
-    <td style="background-color:{C_GOLD};border-radius:7px;padding:6px 12px;">
-      <span style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:{C_DARK};letter-spacing:1px;">BET</span>
-    </td>
-  </tr>
-</table>"""
+    """Site script logosu — CDN hotlink 403 verdiği için base64 data URI."""
+    return (
+        f'<img src="{LOGO_DATA_URI}" alt="Makrobet" width="{LOGO_WIDTH}" height="{LOGO_HEIGHT}" '
+        f'style="display:block;margin:0 auto;width:{LOGO_WIDTH}px;max-width:{LOGO_WIDTH}px;'
+        f'height:{LOGO_HEIGHT}px;border:0;">'
+    )
 
 
 def _promo_rows_html():
@@ -93,9 +92,9 @@ DAVET_TEST_HTML = f"""<!DOCTYPE html>
     <tr>
       <td align="center" style="padding:22px 12px;">
         <table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;width:100%;">
-          <!-- Logo -->
+          <!-- Logo (site script logosu, siyah zemin logo dosyasıyla uyumlu) -->
           <tr>
-            <td style="background-color:{C_CARD};padding:20px 22px 16px;text-align:center;border-radius:12px 12px 0 0;border:1px solid rgba(255,213,62,0.14);border-bottom:1px solid rgba(255,213,62,0.08);">
+            <td style="background-color:#000000;padding:18px 22px 14px;text-align:center;border-radius:12px 12px 0 0;border:1px solid rgba(255,213,62,0.14);border-bottom:1px solid rgba(255,213,62,0.08);">
               <a href="{PROMO_LINK}" style="text-decoration:none;">{_logo_html()}</a>
             </td>
           </tr>
