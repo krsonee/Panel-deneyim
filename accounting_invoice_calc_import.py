@@ -273,6 +273,11 @@ def generate_template_bytes(conn, entry_date):
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
+    entry_dt = datetime.strptime(entry_date, "%Y-%m-%d")
+    fmt_date = "DD.MM.YYYY"
+    fmt_ggr = "#.##0,00"
+    fmt_rate = "0,00"
+
     providers = fetchall(
         conn,
         """
@@ -309,17 +314,31 @@ def generate_template_bytes(conn, entry_date):
         cell.alignment = Alignment(horizontal="center")
 
     row_idx = 2
+    last_row = 1
     for p in providers:
         ex = existing.get(p["id"], {})
-        ws.cell(row=row_idx, column=1, value=entry_date)
+        c_date = ws.cell(row=row_idx, column=1, value=entry_dt)
+        c_date.number_format = fmt_date
         ws.cell(row=row_idx, column=2, value=p["name"])
         ws.cell(row=row_idx, column=3, value=SECTION_LABELS_TR.get(p["section"], p["section"]))
-        ws.cell(row=row_idx, column=4, value=float(p["commission_rate"] or 0))
+        c_rate = ws.cell(row=row_idx, column=4, value=float(p["commission_rate"] or 0))
+        c_rate.number_format = fmt_rate
         ggr_val = ex.get("ggr_amount")
         if ggr_val is None and ex:
             ggr_val = float(ex.get("stake_amount") or 0) - float(ex.get("winning_amount") or 0)
-        ws.cell(row=row_idx, column=5, value=float(ggr_val) if ggr_val not in (None, "") else None)
+        c_ggr = ws.cell(row=row_idx, column=5)
+        c_ggr.number_format = fmt_ggr
+        if ggr_val not in (None, ""):
+            c_ggr.value = float(ggr_val)
+        last_row = row_idx
         row_idx += 1
+
+    # Boş GGR hücreleri de sayı biçiminde kalsın — Genel biçime çevrilince import bozulmasın.
+    if last_row >= 2:
+        for r in range(2, last_row + 1):
+            ws.cell(row=r, column=1).number_format = fmt_date
+            ws.cell(row=r, column=4).number_format = fmt_rate
+            ws.cell(row=r, column=5).number_format = fmt_ggr
 
     widths = [12, 42, 18, 10, 16]
     for i, w in enumerate(widths, 1):
@@ -332,11 +351,12 @@ def generate_template_bytes(conn, entry_date):
     lines = [
         "",
         "1. 'Gunluk Veri' sekmesindeki GGR (TRY) sütununu Pronet panelinden doldurun.",
-        "2. Tarih sütununu değiştirmeyin (tek gün) veya her satırda farklı gün kullanabilirsiniz.",
-        "3. Sağlayıcı adlarını değiştirmeyin — paneldeki isimlerle birebir eşleşmelidir.",
-        "4. Boş bırakılan veya 0 olan satırlar yüklenmez / mevcut kayıt silinir.",
-        "5. GGR negatif olabilir (oyuncu kazancı fazlaysa).",
-        "6. Panel → Muhasebe → Fatura Hesaplama → Excel Yükle ile dosyayı yükleyin.",
+        "2. Tarih sütunu tarih, GGR sütunu sayı biçimindedir — sütun biçimini Genel yapmayın.",
+        "3. Tarih sütununu değiştirmeyin (tek gün) veya her satırda farklı gün kullanabilirsiniz.",
+        "4. Sağlayıcı adlarını değiştirmeyin — paneldeki isimlerle birebir eşleşmelidir.",
+        "5. Boş bırakılan veya 0 olan satırlar yüklenmez / mevcut kayıt silinir.",
+        "6. GGR negatif olabilir (oyuncu kazancı fazlaysa).",
+        "7. Panel → Muhasebe → Fatura Hesaplama → Excel Yükle ile dosyayı yükleyin.",
         "",
         f"Şablon tarihi: {entry_date}",
         f"Sağlayıcı sayısı: {len(providers)}",
