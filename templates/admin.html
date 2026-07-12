@@ -1909,6 +1909,9 @@
             <span>MakroLink <span class="muted" style="font-weight:400;font-size:0.72rem;">(makrovip.com · kısa link · tıklama)</span></span>
             <div class="card-actions">
               <input id="makrolink-search" placeholder="🔎 Link ara…" style="width:150px;" autocomplete="off">
+              <select id="makrolink-filter-category" title="Kategoriye göre filtrele" style="width:auto;min-width:140px;font-size:0.78rem;padding:0.35rem 0.55rem;">
+                <option value="">Tüm kategoriler</option>
+              </select>
               <span class="muted" id="makrolink-updated" style="font-size:0.72rem;"></span>
               <button type="button" class="btn btn-sm" id="btn-makrolink-settings" data-admin-only="1">⚙️ Ayarlar</button>
               <button type="button" class="btn btn-sm" id="btn-makrolink-refresh">Yenile</button>
@@ -4110,17 +4113,47 @@
         return opts;
       }
 
+      function makrolinkSyncCategoryFilterSelect() {
+        var sel = document.getElementById("makrolink-filter-category");
+        if (!sel) return;
+        var cur = sel.value || "";
+        var opts = '<option value="">Tüm kategoriler</option>';
+        opts += '<option value="__none__"' + (cur === "__none__" ? " selected" : "") + '>Kategorisiz</option>';
+        makrolinkCategories.forEach(function(c) {
+          opts += '<option value="' + esc(c) + '"' + (c === cur ? " selected" : "") + ">" + esc(c) + "</option>";
+        });
+        sel.innerHTML = opts;
+      }
+
+      function makrolinkSyncCreateCategorySelect() {
+        var sel = document.getElementById("makrolink-category");
+        if (!sel) return;
+        var cur = sel.value || "";
+        var opts = '<option value="">— Seçin —</option>';
+        makrolinkCategories.forEach(function(c) {
+          opts += '<option value="' + esc(c) + '"' + (c === cur ? " selected" : "") + ">" + esc(c) + "</option>";
+        });
+        sel.innerHTML = opts;
+      }
+
       function renderMakroLinkTable(links) {
         makrolinkLast = links || [];
         var q = (document.getElementById("makrolink-search").value || "").trim().toLowerCase();
+        var catFilter = ((document.getElementById("makrolink-filter-category") || {}).value || "");
         var rows = makrolinkLast.filter(function(l) {
+          if (catFilter === "__none__") {
+            if ((l.category || "").trim()) return false;
+          } else if (catFilter && (l.category || "") !== catFilter) {
+            return false;
+          }
           if (!q) return true;
           return [l.code, l.label, l.destination_url, l.affiliate_id, l.ref_code, l.short_url, l.category]
             .join(" ").toLowerCase().indexOf(q) >= 0;
         });
         var tb = document.getElementById("makrolink-table");
         if (!rows.length) {
-          tb.innerHTML = '<tr><td colspan="7" class="empty">Henüz link yok</td></tr>';
+          var emptyMsg = (q || catFilter) ? "Filtreye uygun link yok" : "Henüz link yok";
+          tb.innerHTML = '<tr><td colspan="7" class="empty">' + emptyMsg + '</td></tr>';
         } else {
           tb.innerHTML = rows.map(function(l) {
             var dest = l.destination_url || "";
@@ -4141,7 +4174,13 @@
               '<td><button type="button" class="btn btn-danger btn-sm makrolink-del" data-id="' + l.id + '">Sil</button></td></tr>';
           }).join("");
         }
-        document.getElementById("makrolink-table-count").textContent = rows.length + " link";
+        var total = makrolinkLast.length;
+        var countEl = document.getElementById("makrolink-table-count");
+        if (countEl) {
+          countEl.textContent = (rows.length !== total)
+            ? (rows.length + " / " + total + " link")
+            : (rows.length + " link");
+        }
         document.getElementById("makrolink-updated").textContent = "Son: " + new Date().toLocaleTimeString("tr-TR");
       }
 
@@ -4154,6 +4193,13 @@
         }).then(function(d) {
           if (!d) return;
           if (d.categories && d.categories.length) makrolinkCategories = d.categories;
+          try {
+            var savedCat = localStorage.getItem("makrolink_cat_filter");
+            var catSel = document.getElementById("makrolink-filter-category");
+            if (catSel && savedCat) catSel.value = savedCat;
+          } catch (e) { /* ignore */ }
+          makrolinkSyncCategoryFilterSelect();
+          makrolinkSyncCreateCategorySelect();
           renderMakroLinkTable(d.links || []);
         }).catch(function() {}).finally(function() { makrolinkInFlight = false; });
       }
@@ -4547,6 +4593,10 @@
       });
 
       bindOptional("makrolink-search", "input", function() {
+        if (makrolinkLast) renderMakroLinkTable(makrolinkLast);
+      });
+      bindOptional("makrolink-filter-category", "change", function() {
+        try { localStorage.setItem("makrolink_cat_filter", this.value || ""); } catch (e) { /* ignore */ }
         if (makrolinkLast) renderMakroLinkTable(makrolinkLast);
       });
 
