@@ -614,7 +614,7 @@
     else if (tab === "crm") {
       mailLoadContacts();
       mailLoadTags();
-      mailLoadContactStats();
+      mailLoadContactStats({ syncTags: true });
     }
     else if (tab === "templates") mailLoadTemplates();
     else if (tab === "campaigns") {
@@ -745,7 +745,11 @@
     var wrap = document.getElementById("mail-crm-tag-stats");
     var list = document.getElementById("mail-crm-tag-stats-list");
     if (!wrap || !list) return;
+    // Filtre değerini koruyarak select'leri doldur (önce aktif değeri oku)
+    var filterEl = document.getElementById("mail-contact-tag-filter");
+    var keepFilter = filterEl ? filterEl.value : "";
     mailRenderTagFilterOptions();
+    if (filterEl && keepFilter) filterEl.value = keepFilter;
     if (!mailTagCounts.length) {
       wrap.hidden = true;
       list.innerHTML = "";
@@ -764,7 +768,10 @@
 
   function mailLoadContactStats(opts) {
     opts = opts || {};
-    var qs = opts.refresh ? "?refresh=1" : "";
+    var parts = [];
+    if (opts.refresh) parts.push("refresh=1");
+    if (opts.syncTags) parts.push("sync_tags=1");
+    var qs = parts.length ? ("?" + parts.join("&")) : "";
     var timeout = opts.refresh ? 300000 : 20000;
     setText("mail-crm-stat-total", "…");
     return mailApi("/api/mailing/contacts/stats" + qs, { timeoutMs: timeout }).then(function (res) {
@@ -778,6 +785,7 @@
       setText("mail-crm-stat-never", fmtNum(s.never_mailed));
       mailRenderTagStats(s.by_tag || []);
       mailFillCampTagSelect();
+      mailLoadTags();
     });
   }
 
@@ -798,7 +806,8 @@
     var url = "/api/mailing/contacts?limit=500";
     if (q) url += "&q=" + encodeURIComponent(q);
     if (tag) url += "&tag=" + encodeURIComponent(tag);
-    return mailApi(url).then(function (res) {
+    // 3M + etiket filtresi: COUNT kaldırıldı ama SELECT yine sürebilir
+    return mailApi(url, { timeoutMs: 60000 }).then(function (res) {
       var tbody = document.getElementById("mail-contacts-table");
       if (!tbody) return;
       if (!res || !res.ok) {
@@ -811,6 +820,19 @@
       var rows = res.data.contacts || [];
       mailContactsPageTotal = rows.length;
       mailContactsFilterTotal = Number(res.data.total != null ? res.data.total : rows.length) || 0;
+      // Sayfada görünen etiketleri select listesine ekle (registry gecikmesi)
+      var harvested = false;
+      rows.forEach(function (c) {
+        (c.tags || []).forEach(function (t) {
+          if (!t) return;
+          var found = (mailTagCounts || []).some(function (x) { return x && x.name === t; });
+          if (!found) {
+            mailTagCounts = (mailTagCounts || []).concat([{ name: t, count: null }]);
+            harvested = true;
+          }
+        });
+      });
+      if (harvested) mailFillAllTagSelects();
       if (!rows.length) {
         tbody.innerHTML = '<tr><td colspan="6" class="empty">Kontak yok</td></tr>';
         mailUpdateContactSelectionCount();
@@ -1512,12 +1534,12 @@
     bindClick("mail-contacts-refresh", function () {
       mailLoadContacts();
       mailLoadTags();
-      mailLoadContactStats({ refresh: true });
+      mailLoadContactStats({ refresh: true, syncTags: true });
     });
     bindClick("mail-crm-tag-refresh", function () {
       var hint = document.getElementById("mail-crm-tag-stats-hint");
       if (hint) hint.textContent = "Sayılar hesaplanıyor (büyük listede 1–2 dk sürebilir)…";
-      mailLoadContactStats({ refresh: true }).then(function () {
+      mailLoadContactStats({ refresh: true, syncTags: true }).then(function () {
         if (hint) hint.textContent = "Aynı kontak birden fazla etikette sayılabilir";
       });
     });
@@ -1669,9 +1691,18 @@
     if (qEl) qEl.addEventListener("input", debounce(mailLoadContacts, 300));
     var tagEl = document.getElementById("mail-contact-tag-filter");
     if (tagEl) tagEl.addEventListener("change", function () {
+      var selected = tagEl.value || "";
       var fromEl = document.getElementById("mail-tag-move-from");
-      if (fromEl && tagEl.value) fromEl.value = tagEl.value;
-      mailRenderTagStats(mailTagCounts);
+      if (fromEl && selected) fromEl.value = selected;
+      // Select'leri rebuild etme — değer kaybı / yarış olmasın
+      var list = document.getElementById("mail-crm-tag-stats-list");
+      if (list) {
+        list.querySelectorAll(".mail-tag-stat").forEach(function (btn) {
+          var name = btn.getAttribute("data-mail-tag-filter") || "";
+          if (selected && name === selected) btn.classList.add("is-active");
+          else btn.classList.remove("is-active");
+        });
+      }
       mailLoadContacts();
     });
 
@@ -1680,12 +1711,21 @@
       if (tagBtn) {
         var tagName = tagBtn.getAttribute("data-mail-tag-filter") || "";
         var filterEl = document.getElementById("mail-contact-tag-filter");
+        var next = "";
         if (filterEl) {
-          filterEl.value = (filterEl.value === tagName) ? "" : tagName;
+          next = (filterEl.value === tagName) ? "" : tagName;
+          filterEl.value = next;
         }
         var fromEl = document.getElementById("mail-tag-move-from");
-        if (fromEl && filterEl && filterEl.value) fromEl.value = filterEl.value;
-        mailRenderTagStats(mailTagCounts);
+        if (fromEl && next) fromEl.value = next;
+        var list = document.getElementById("mail-crm-tag-stats-list");
+        if (list) {
+          list.querySelectorAll(".mail-tag-stat").forEach(function (btn) {
+            var name = btn.getAttribute("data-mail-tag-filter") || "";
+            if (next && name === next) btn.classList.add("is-active");
+            else btn.classList.remove("is-active");
+          });
+        }
         mailLoadContacts();
         return;
       }

@@ -257,6 +257,18 @@ def _tags_json(tags):
     return json.dumps(_parse_tags(tags), ensure_ascii=False)
 
 
+def _tag_match_clause(tag, column="tags"):
+    """Etiket eşleşme SQL'i — JSON text içinde `\"etiket\"` (PG + SQLite).
+
+    jsonb cast kullanılmaz: bozuk tags satırları tüm sorguyu abort eder.
+    """
+    tag = (tag or "").strip()
+    if not tag:
+        return "1=0", ()
+    # Standart JSON dizi elemanı: ..."Etiket"...
+    return f"{column} LIKE ?", (f'%"{tag}"%',)
+
+
 def _contact_out(row):
     d = _row(row) if not isinstance(row, dict) else dict(row)
     if not d:
@@ -455,13 +467,13 @@ def _untag_contact(conn, contact_id, tag, now=None):
 
 
 def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=None, match_tag="", limit=None):
-    """Toplu etiket işlemleri.
+    """Toplu etiket işlemleri — eşleşen ID'leri belleğe yüklemez, parça parça işler.
 
     action:
       - add: to_tag ekle
       - remove: from_tag kaldır
-      - move: from_tag kaldır + to_tag ekle (üyelik sonrası segment kaydırma)
-    Kapsam: contact_ids listesi veya match_tag ile eşleşen tüm kontaklar.
+      - move: from_tag kaldır + to_tag ekle
+    Kapsam: contact_ids listesi veya match_tag ile eşleşen kontaklar.
     """
     action = (action or "").strip().lower()
     from_tag = (from_tag or "").strip()
@@ -493,50 +505,86 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
             except (TypeError, ValueError):
                 continue
         ids = list(dict.fromkeys(ids))
-    elif match_tag:
-        sql = 'SELECT id FROM mail_contacts WHERE tags LIKE ? ORDER BY id ASC'
-        params = [f'%"{match_tag}"%']
-        if limit:
-            sql += " LIMIT ?"
-            params.append(int(limit))
-        ids = [r["id"] for r in fetchall(conn, sql, tuple(params))]
-    else:
+    elif not match_tag:
         raise ValueError("contact_ids veya match_tag gerekli.")
 
-    if not ids:
-        return {"ok": True, "matched": 0, "updated": 0, "action": action}
-
     updated = 0
-    chunk = 500
-    for i in range(0, len(ids), chunk):
-        part = ids[i:i + chunk]
-        placeholders = ",".join(["?"] * len(part))
-        rows = fetchall(
+    matched = 0
+    batch_size = 800
+    max_batches = 50000
+    hard_limit = int(limit) if limit else None
+
+    def _apply_row(row):
+        nonlocal updated
+        row = _row(row) if not isinstance(row, dict) else row
+        tags = _parse_tags(row.get("tags"))
+        before = list(tags)
+        if action == "add":
+            if to_tag not in tags:
+                tags.append(to_tag)
+        elif action == "remove":
+            tags = [t for t in tags if t != from_tag]
+        else:  # move
+            tags = [t for t in tags if t != from_tag]
+            if to_tag not in tags:
+                tags.append(to_tag)
+        if tags == before:
+            return False
+        execute(
             conn,
-            f"SELECT id, tags FROM mail_contacts WHERE id IN ({placeholders})",
-            tuple(part),
+            "UPDATE mail_contacts SET tags = ?, updated_at = ? WHERE id = ?",
+            (_tags_json(tags), now, int(row["id"])),
         )
-        for row in rows:
-            tags = _parse_tags(row["tags"])
-            before = list(tags)
-            if action == "add":
-                if to_tag not in tags:
-                    tags.append(to_tag)
-            elif action == "remove":
-                tags = [t for t in tags if t != from_tag]
-            else:  # move
-                tags = [t for t in tags if t != from_tag]
-                if to_tag not in tags:
-                    tags.append(to_tag)
-            if tags == before:
-                continue
-            execute(
+        updated += 1
+        return True
+
+    if ids:
+        matched = len(ids)
+        for i in range(0, len(ids), batch_size):
+            part = ids[i : i + batch_size]
+            placeholders = ",".join(["?"] * len(part))
+            rows = fetchall(
                 conn,
-                "UPDATE mail_contacts SET tags = ?, updated_at = ? WHERE id = ?",
-                (_tags_json(tags), now, row["id"]),
+                f"SELECT id, tags FROM mail_contacts WHERE id IN ({placeholders})",
+                tuple(part),
             )
-            updated += 1
-        conn.commit()
+            for row in rows or []:
+                _apply_row(row)
+            try:
+                conn.commit()
+            except Exception:
+                pass
+    else:
+        # match_tag: tüm id'leri çekme — etiket kalktıkça eşleşenler azalır
+        clause, params = _tag_match_clause(match_tag)
+        for _ in range(max_batches):
+            take = batch_size
+            if hard_limit is not None:
+                remain = hard_limit - matched
+                if remain <= 0:
+                    break
+                take = min(batch_size, remain)
+            rows = fetchall(
+                conn,
+                f"SELECT id, tags FROM mail_contacts WHERE {clause} ORDER BY id ASC LIMIT ?",
+                tuple(params) + (take,),
+            )
+            if not rows:
+                break
+            matched += len(rows)
+            changed_any = False
+            for row in rows:
+                if _apply_row(row):
+                    changed_any = True
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            if not changed_any:
+                break
+            # add: aynı satırlar tekrar gelir — tek tur yeterli
+            if action == "add":
+                break
 
     _invalidate_mail_stats_cache()
     refresh_names = []
@@ -548,19 +596,27 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
         refresh_names.append(match_tag)
 
     cleaned = []
-    # Taşı/kaldır sonrası kaynak etiket boşaldıysa otomatik sil
+    # Önce sayımı güncelle, 0 ise sil
     if action in ("move", "remove") and from_tag:
         try:
-            cleaned = _cleanup_empty_tags(conn, [from_tag])
+            n = _recount_tag(conn, from_tag)
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            if int(n or 0) <= 0:
+                cleaned = _cleanup_empty_tags(conn, [from_tag])
         except Exception:
             cleaned = []
 
-    if refresh_names:
-        _refresh_tag_counts_async(refresh_names)
+    # Diğer etiket sayıları arka planda
+    async_names = [n for n in refresh_names if n not in cleaned]
+    if async_names:
+        _refresh_tag_counts_async(async_names)
 
     return {
         "ok": True,
-        "matched": len(ids),
+        "matched": matched,
         "updated": updated,
         "action": action,
         "from_tag": from_tag,
@@ -576,8 +632,9 @@ def _campaign_selection_where(tag_filter, exclude_previously_sent):
     params = []
     tag_filter = (tag_filter or "").strip()
     if tag_filter:
-        clauses.append('tags LIKE ?')
-        params.append(f'%"{tag_filter}"%')
+        clause, tparams = _tag_match_clause(tag_filter)
+        clauses.append(clause)
+        params.extend(tparams)
     if exclude_previously_sent:
         clauses.append(
             "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
@@ -922,10 +979,12 @@ def _run_import_job(job_id, path, tag):
             pass
 
 
-def _ensure_tag(conn, name, now):
+def _ensure_tag(conn, name, now=None):
     name = (name or "").strip()
     if not name:
-        return
+        return False
+    if now is None:
+        now = iso(utcnow())
     exists = scalar(conn, "SELECT COUNT(*) FROM mail_contact_tags WHERE name = ?", (name,))
     if not exists:
         insert_returning_id(
@@ -933,13 +992,17 @@ def _ensure_tag(conn, name, now):
             "INSERT INTO mail_contact_tags (name, created_at) VALUES (?, ?)",
             (name, now),
         )
+        return True
+    return False
 
 
 def _tag_usage_count(conn, name):
+    """Canlı etiket kullanım sayısı."""
     name = (name or "").strip()
     if not name:
         return 0
-    return int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts WHERE tags LIKE ?", (f'%"{name}"%',)) or 0)
+    clause, params = _tag_match_clause(name)
+    return int(scalar(conn, f"SELECT COUNT(*) FROM mail_contacts WHERE {clause}", params) or 0)
 
 
 def _delete_tag(conn, name, *, force=False):
@@ -973,9 +1036,22 @@ def _cleanup_empty_tags(conn, names=None):
         name = (name or "").strip()
         if not name:
             continue
-        if _tag_usage_count(conn, name) == 0:
-            execute(conn, "DELETE FROM mail_contact_tags WHERE name = ?", (name,))
-            deleted.append(name)
+        # Önce registry contact_count; 0 ise doğrula, >0 ise canlı say
+        cached = None
+        try:
+            row = fetchone(conn, "SELECT contact_count FROM mail_contact_tags WHERE name = ?", (name,))
+            if row is not None and "contact_count" in (row.keys() if hasattr(row, "keys") else []):
+                cached = int(row["contact_count"] or 0)
+        except Exception:
+            cached = None
+        usage = cached if cached is not None else _tag_usage_count(conn, name)
+        if usage == 0:
+            # Güvenlik: registry 0 diyorsa bir kez canlı doğrula
+            if cached == 0:
+                usage = _tag_usage_count(conn, name)
+            if usage == 0:
+                execute(conn, "DELETE FROM mail_contact_tags WHERE name = ?", (name,))
+                deleted.append(name)
     if deleted:
         try:
             conn.commit()
@@ -987,6 +1063,151 @@ def _cleanup_empty_tags(conn, names=None):
 _STATS_CACHE = {"ts": 0.0, "payload": None}
 _STATS_LOCK = threading.Lock()
 _TAG_COUNT_CACHE = {"ts": 0.0, "rows": None}
+_TAG_SYNC_STATE = {"ts": 0.0, "running": False, "last_added": 0}
+
+
+def _approx_contact_total(conn):
+    """3M satırda COUNT(*) yavaş — PG approx veya cache."""
+    if uses_postgres():
+        try:
+            n = scalar(
+                conn,
+                "SELECT reltuples::bigint FROM pg_class WHERE relname = 'mail_contacts'",
+            )
+            if n is not None and int(n) >= 0:
+                # reltuples 0 olabilir (yeni tablo) — o zaman exact
+                if int(n) > 1000:
+                    return int(n), True
+        except Exception:
+            pass
+    return int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0), False
+
+
+def _registry_tag_count(conn, name):
+    name = (name or "").strip()
+    if not name:
+        return None
+    try:
+        row = fetchone(
+            conn,
+            "SELECT contact_count FROM mail_contact_tags WHERE name = ?",
+            (name,),
+        )
+        if row is None:
+            return None
+        if hasattr(row, "keys") and "contact_count" in row.keys():
+            return int(row["contact_count"] or 0)
+    except Exception:
+        pass
+    return None
+
+
+def _harvest_tags_into_registry(conn, tag_names, now=None):
+    """Görünen/keşfedilen etiketleri registry'ye ekle (ucuz)."""
+    if now is None:
+        now = iso(utcnow())
+    added = 0
+    for name in tag_names or []:
+        name = (name or "").strip()
+        if not name:
+            continue
+        if _ensure_tag(conn, name, now):
+            added += 1
+    return added
+
+
+def _sync_missing_tags_from_contacts(conn, *, max_rows=250000, batch_size=2000):
+    """Kontak tags JSON'unda olup registry'de olmayan etiketleri bul/ekle.
+
+    Tam tablo taraması pahalı — en yeni id'lerden geriye batch; max_rows ile sınırlı.
+    Dönüş: eklenen etiket sayısı.
+    """
+    now = iso(utcnow())
+    existing = {
+        (r["name"] or "").strip()
+        for r in (fetchall(conn, "SELECT name FROM mail_contact_tags") or [])
+        if (r["name"] or "").strip()
+    }
+    discovered = set()
+    cursor_id = int(scalar(conn, "SELECT COALESCE(MAX(id), 0) FROM mail_contacts") or 0) + 1
+    scanned = 0
+    while scanned < max_rows and cursor_id > 1:
+        take = min(batch_size, max_rows - scanned)
+        rows = fetchall(
+            conn,
+            "SELECT id, tags FROM mail_contacts WHERE id < ? ORDER BY id DESC LIMIT ?",
+            (cursor_id, take),
+        )
+        if not rows:
+            break
+        for row in rows:
+            row = _row(row)
+            cursor_id = min(cursor_id, int(row["id"]))
+            for t in _parse_tags(row.get("tags")):
+                if t and t not in existing:
+                    discovered.add(t)
+        scanned += len(rows)
+        if len(rows) < take:
+            break
+    added = 0
+    for name in sorted(discovered):
+        if _ensure_tag(conn, name, now):
+            added += 1
+            existing.add(name)
+    if added:
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        _invalidate_mail_stats_cache()
+    return {"scanned": scanned, "added": added, "discovered": len(discovered)}
+
+
+def _maybe_sync_missing_tags_async(*, force=False, interval_sec=21600):
+    """CRM açılışında tam tarama yapma — arka planda throttle'lı senkron."""
+    import time
+
+    now = time.time()
+    if _TAG_SYNC_STATE["running"]:
+        return
+    if not force and _TAG_SYNC_STATE["ts"] and (now - _TAG_SYNC_STATE["ts"]) < interval_sec:
+        return
+
+    def _job():
+        _TAG_SYNC_STATE["running"] = True
+        try:
+            with closing(get_db()) as conn:
+                # İlk tur: yeni id'lerden geriye doğru da örnekle (son importlar)
+                result = _sync_missing_tags_from_contacts(conn, max_rows=300000, batch_size=2500)
+                # Son kontaklardan da örnek (eski id'ler atlanırsa)
+                rows = fetchall(
+                    conn,
+                    "SELECT tags FROM mail_contacts ORDER BY id DESC LIMIT 5000",
+                )
+                names = set()
+                for row in rows or []:
+                    names.update(_parse_tags(_row(row).get("tags")))
+                added2 = _harvest_tags_into_registry(conn, names)
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+                _TAG_SYNC_STATE["last_added"] = int(result.get("added") or 0) + int(added2 or 0)
+                if _TAG_SYNC_STATE["last_added"]:
+                    # Yeni etiketler için sayım arka planda
+                    _refresh_tag_counts_async(list(names) if names else None)
+            _TAG_SYNC_STATE["ts"] = time.time()
+            _invalidate_mail_stats_cache()
+            print(
+                f"🏷️  tag sync: scanned={result.get('scanned')} "
+                f"added={_TAG_SYNC_STATE['last_added']}"
+            )
+        except Exception as exc:
+            print(f"⚠️  tag sync: {exc}")
+        finally:
+            _TAG_SYNC_STATE["running"] = False
+
+    threading.Thread(target=_job, daemon=True, name="mail-tag-sync").start()
 
 
 def _recount_tag(conn, name):
@@ -994,12 +1215,7 @@ def _recount_tag(conn, name):
     name = (name or "").strip()
     if not name:
         return 0
-    n = scalar(
-        conn,
-        "SELECT COUNT(*) FROM mail_contacts WHERE tags LIKE ?",
-        (f'%"{name}"%',),
-    ) or 0
-    n = int(n)
+    n = _tag_usage_count(conn, name)
     cols = None
     try:
         from database import _table_columns
@@ -1228,12 +1444,15 @@ def create_mailing_blueprint(permission_required):
         import time
 
         refresh = (request.args.get("refresh") or "").strip() in ("1", "true", "yes")
+        sync_tags = (request.args.get("sync_tags") or "").strip() in ("1", "true", "yes")
         now = time.time()
-        if not refresh and _STATS_CACHE["payload"] and (now - _STATS_CACHE["ts"]) < 60:
+        if not refresh and not sync_tags and _STATS_CACHE["payload"] and (now - _STATS_CACHE["ts"]) < 60:
+            # Arka planda eksik etiket senkronu (throttle) — yanıtı bloklama
+            _maybe_sync_missing_tags_async(force=False)
             return jsonify(_STATS_CACHE["payload"])
 
         with closing(get_db()) as conn:
-            total = int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0)
+            total, total_approx = _approx_contact_total(conn)
             # EXISTS üzerinde 3M satır taramak paneli patates yapıyordu
             mailed = int(scalar(
                 conn,
@@ -1241,12 +1460,15 @@ def create_mailing_blueprint(permission_required):
             ) or 0)
             mailed = min(mailed, total)
             never_mailed = max(total - mailed, 0)
+            # Sayfa açılışında registry dışı etiketleri yakala (throttle / force)
+            _maybe_sync_missing_tags_async(force=sync_tags or refresh)
             by_tag = _contact_tag_counts(conn, live=refresh)
             # İlk kurulumda sayılar 0 ise arka planda bir kez doldur
             if not refresh and by_tag and sum(t["count"] for t in by_tag) == 0 and total > 0:
                 _refresh_tag_counts_async()
         payload = {
             "total": total,
+            "total_approx": bool(total_approx),
             "mailed": mailed,
             "never_mailed": never_mailed,
             "by_tag": by_tag,
@@ -1268,24 +1490,63 @@ def create_mailing_blueprint(permission_required):
             clauses = []
             params = []
             if tag:
-                clauses.append("tags LIKE ?")
-                params.append(f'%"{tag}"%')
+                clause, tparams = _tag_match_clause(tag)
+                clauses.append(clause)
+                params.extend(tparams)
             if q:
                 clauses.append("(LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR LOWER(phone) LIKE ?)")
                 like = f"%{q}%"
                 params.extend([like, like, like])
             where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-            total = int(scalar(conn, f"SELECT COUNT(*) FROM mail_contacts{where}", tuple(params)) or 0)
+
+            # 3M satırda COUNT(*) + LIKE paneli kilitler / 15s abort
+            total = None
+            total_approx = False
+            if tag and not q:
+                reg = _registry_tag_count(conn, tag)
+                if reg is not None:
+                    total = reg
+                else:
+                    # Registry yoksa sayma — sayfa sonucu yeter
+                    total = None
+                    total_approx = True
+            elif not tag and not q:
+                total, total_approx = _approx_contact_total(conn)
+            else:
+                # q ile filtre: exact count pahalı — atla
+                total = None
+                total_approx = True
+
             rows = _rows(fetchall(
                 conn,
                 f"SELECT * FROM mail_contacts{where} ORDER BY id DESC LIMIT ?",
                 tuple(params) + (limit,),
             ))
+            # Görünen etiketleri registry'ye ekle (ucuz, eksik dropdown düzeltir)
+            page_tags = set()
+            for r in rows:
+                page_tags.update(_parse_tags(r.get("tags") if isinstance(r, dict) else r["tags"]))
+            if page_tags:
+                added = _harvest_tags_into_registry(conn, page_tags)
+                if added:
+                    try:
+                        conn.commit()
+                    except Exception:
+                        pass
+                    _invalidate_mail_stats_cache()
+
+            if total is None:
+                # En az sayfa boyutu kadar göster
+                total = len(rows)
+                if len(rows) >= limit:
+                    total_approx = True
+
         out = [_contact_out(r) for r in rows]
         return jsonify({
             "contacts": out,
             "count": len(out),
-            "total": total,
+            "total": int(total),
+            "total_approx": bool(total_approx),
             "limit": limit,
         })
 
