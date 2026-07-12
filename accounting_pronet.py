@@ -16,6 +16,7 @@ SEED_PROVIDERS = [
     ("sport", "Goldenrace", 18, 40),
     ("sport", "Ultraplay", 16, 50),
     ("sport", "Binary", 20, 60),
+    ("sport", "Beter E-Sports", 16, 65),
     # Casino
     ("casino", "Canlı Casino (Xprogaming) + Tips", 25, 100),
     ("casino", "Evolution Canlı Casino", 25, 110),
@@ -97,7 +98,35 @@ SEED_PROVIDERS = [
     ("casino", "Lava Casino", 17, 860),
     ("casino", "Fashion TV", 17, 870),
     ("casino", "Eclipse Casino", 17, 880),
-    ("special", "ProClub Jackpot", 0, 900),
+    ("casino", "El Casino", 18, 890),
+    ("casino", "77 Gaming", 14, 891),
+    ("casino", "Sneaky Slots", 15, 892),
+    ("casino", "BGaming", 17, 893),
+    ("casino", "TaDa Gaming", 15, 894),
+    ("casino", "Tap King", 16, 895),
+    ("casino", "JDB", 17, 896),
+    ("casino", "Degen", 16, 897),
+    ("casino", "King Midas", 16, 898),
+    ("casino", "Penguin King", 16, 899),
+    ("casino", "Future Of Slots", 17, 900),
+    ("casino", "InOut Games", 17, 901),
+    ("casino", "Mancala", 17, 902),
+    ("casino", "Aviator LLC", 18, 903),
+    ("casino", "Sexy", 17, 904),
+    ("casino", "ShadyLady", 19, 905),
+    ("casino", "OneTouch", 15, 906),
+    ("casino", "Kalamba", 18, 907),
+    ("casino", "Mascot", 18, 908),
+    ("casino", "Spinoro", 17, 909),
+    ("casino", "Liberty Spins Bullseye", 16, 910),
+    ("casino", "Liberty Spins Grand", 16, 911),
+    ("casino", "Liberty Spins Luxe", 16, 912),
+    ("casino", "Liberty Spins Prime", 16, 913),
+    ("casino", "Zoom Slot", 17, 914),
+    ("casino", "Gemini", 16, 915),
+    ("casino", "Cosmo Play", 15, 916),
+    ("casino", "Ruby Play (V)", 16, 917),
+    ("special", "ProClub Jackpot", 0, 999),
 ]
 
 SEED_FIXED_FEES = [
@@ -109,6 +138,7 @@ SEED_FIXED_FEES = [
     ("Smartico Afiliate Software License", 2000, "monthly", 60),
     ("Statistic Center", 1500, "monthly", 70),
     ("Streaming", 5000, "monthly", 80),
+    ("2025 Lisans Ücreti", 35000, "one_time", 85),
 ]
 
 # Haziran 2025 fatura satırları (volume, jackpot) — provider name ile eşleşir
@@ -404,6 +434,8 @@ def ensure_period_lines(conn, period, eur_try_rate=45.436):
     )
     rate = float(eur_try_rate or 45.436)
     for fee in fixed_fees:
+        if fee["billing_cycle"] == "one_time":
+            continue
         amount_try = round(float(fee["amount_eur"]) * rate, 2)
         insert_returning_id(
             conn,
@@ -417,6 +449,108 @@ def ensure_period_lines(conn, period, eur_try_rate=45.436):
             (period, fee["id"], float(fee["amount_eur"]), amount_try, now, now),
         )
     conn.commit()
+
+
+def reseed_period_from_history(conn, period):
+    """Gecmis PDF faturasindan okunan verilerle bir donemi sifirdan yeniden olustur.
+
+    Sadece accounting_pronet_seed_data.PERIOD_META icinde tanimli donemler icin
+    calisir (superadmin tarafindan tetiklenir, kilit kontrolunu bilerek atlar cunku
+    bu, gecmis fatura kayitlarini PDF ile birebir eslemek icin kullanilan bir
+    veri-duzeltme/yukleme aracidir).
+    """
+    from accounting_pronet_seed_data import (
+        PERIOD_EXTRA_FIXED,
+        PERIOD_FIXED_EXCLUDE,
+        PERIOD_LINES,
+        PERIOD_META,
+    )
+
+    if period not in PERIOD_META:
+        return False
+
+    seed_pronet_templates(conn)
+    meta = PERIOD_META[period]
+    eur_rate = round(float(meta["grand"]) / float(meta["eur"]), 6) if meta.get("eur") else 45.436
+    now = iso(utcnow())
+
+    execute(conn, "DELETE FROM acc_pronet_period_lines WHERE period = ?", (period,))
+    exists = scalar(conn, "SELECT COUNT(*) FROM acc_pronet_period_meta WHERE period = ?", (period,))
+    if exists:
+        execute(
+            conn,
+            """
+            UPDATE acc_pronet_period_meta
+            SET gross_revenue_try = ?, eur_try_rate = ?, sms_fee_try = ?, notes = ?, updated_at = ?
+            WHERE period = ?
+            """,
+            (meta["gross"], eur_rate, meta["sms"], meta.get("notes") or "", now, period),
+        )
+    else:
+        execute(
+            conn,
+            """
+            INSERT INTO acc_pronet_period_meta
+            (period, gross_revenue_try, eur_try_rate, sms_fee_try, notes, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (period, meta["gross"], eur_rate, meta["sms"], meta.get("notes") or "", now),
+        )
+
+    lines_data = PERIOD_LINES.get(period, {})
+    providers = fetchall(
+        conn,
+        "SELECT * FROM acc_pronet_providers WHERE active = 1 ORDER BY sort_order, name",
+    )
+    for p in providers:
+        entry = lines_data.get(p["name"])
+        if entry is None:
+            vol, jp, manual_val = 0, 0, None
+        else:
+            vol, jp, manual_val = entry
+        rate = float(p["commission_rate"] or 0)
+        comm = calc_commission(vol, jp, rate, manual_val)
+        insert_returning_id(
+            conn,
+            """
+            INSERT INTO acc_pronet_period_lines
+            (period, line_kind, provider_id, fixed_fee_id, custom_label,
+             volume_try, jackpot_try, tips_try, commission_rate, commission_try,
+             manual_commission, created_at, updated_at)
+            VALUES (?, 'provider', ?, NULL, NULL, ?, ?, 0, ?, ?, ?, ?, ?)
+            """,
+            (period, p["id"], vol, jp, rate, comm, manual_val, now, now),
+        )
+
+    exclude = PERIOD_FIXED_EXCLUDE.get(period, set())
+    extra_fixed = {name: comm for name, _amt, comm in PERIOD_EXTRA_FIXED.get(period, [])}
+    fixed_fees = fetchall(
+        conn,
+        "SELECT * FROM acc_pronet_fixed_fees WHERE active = 1 ORDER BY sort_order, name",
+    )
+    for fee in fixed_fees:
+        if fee["name"] in exclude:
+            continue
+        is_extra = fee["name"] in extra_fixed
+        if is_extra:
+            amount_try = float(extra_fixed[fee["name"]])
+        elif fee["billing_cycle"] == "one_time" and fee["name"] not in extra_fixed:
+            continue
+        else:
+            amount_try = round(float(fee["amount_eur"]) * eur_rate, 2)
+        insert_returning_id(
+            conn,
+            """
+            INSERT INTO acc_pronet_period_lines
+            (period, line_kind, provider_id, fixed_fee_id, custom_label,
+             volume_try, jackpot_try, tips_try, commission_rate, commission_try,
+             manual_commission, created_at, updated_at)
+            VALUES (?, 'fixed', NULL, ?, NULL, ?, 0, 0, 0, ?, NULL, ?, ?)
+            """,
+            (period, fee["id"], float(fee["amount_eur"]), amount_try, now, now),
+        )
+    conn.commit()
+    return True
 
 
 def _row_dict(row):

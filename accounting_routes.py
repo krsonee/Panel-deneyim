@@ -36,7 +36,7 @@ from accounting_period import (
     period_label,
 )
 from accounting_invoices import build_payment_invoices
-from accounting_pronet import build_invoice_payload, calc_commission
+from accounting_pronet import build_invoice_payload, calc_commission, reseed_period_from_history
 from accounting_vault import (
     VAULT_ICONS,
     VAULT_PALETTE,
@@ -329,11 +329,16 @@ def unique_salary_slug(conn, base_slug):
     return slug
 
 
-def create_accounting_blueprint(permission_required):
+def create_accounting_blueprint(permission_required, superadmin_required=None):
     bp = Blueprint("accounting", __name__, url_prefix="/api/accounting")
 
     def acc_perm(*keys):
         return permission_required(*keys)
+
+    def acc_superadmin(view):
+        if superadmin_required is None:
+            return permission_required(*MODULE_ACCESS)(view)
+        return superadmin_required(view)
 
     def can_view_office_salaries():
         return has_permission(session.get("admin_permissions"), ACC_OFFICE_SALARIES)
@@ -2179,6 +2184,24 @@ def create_accounting_blueprint(permission_required):
                     (vol, jp, rt, comm, manual_val, now, line_id),
                 )
             conn.commit()
+            payload = build_invoice_payload(conn, period)
+        payload["period_label"] = period_label(period)
+        return jsonify(payload)
+
+    @bp.route("/pronet-invoice/reseed", methods=["POST"])
+    @acc_superadmin
+    def reseed_pronet_invoice():
+        """Gecmis PDF faturasindan okunan verilerle bir donemi yeniden yukler.
+        Sadece superadmin yetkisi olan hesaplar kullanabilir, kilit kontrolunu
+        kasitli olarak atlar (gecmis fatura verisi duzeltme/yukleme araci)."""
+        data = request.get_json(silent=True) or {}
+        period = valid_month_period(data.get("period"))
+        if not period:
+            return jsonify({"error": "Geçerli ay seçin (YYYY-MM)."}), 400
+        with closing(get_db()) as conn:
+            ok = reseed_period_from_history(conn, period)
+            if not ok:
+                return jsonify({"error": "Bu dönem için geçmiş fatura verisi tanımlı değil."}), 404
             payload = build_invoice_payload(conn, period)
         payload["period_label"] = period_label(period)
         return jsonify(payload)
