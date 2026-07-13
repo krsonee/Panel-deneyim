@@ -3902,10 +3902,11 @@
       }
 
       var lastLinks = [];
-      /* Canlı: 10sn · Hafif dashboard: 45sn · Ağır (MakroLink/Smartico/Blink): 90sn */
-      var REFRESH_LIVE_MS = 10000;
-      var REFRESH_DASH_MS = 45000;
-      var REFRESH_HEAVY_MS = 90000;
+      /* Canlı online: 30sn · Dashboard: 2dk · Ağır (MakroLink/Smartico/Blink): 5dk
+         (API yükü düşük; tickTimes sadece ekrandaki süreyi artırır, sunucuya gitmez) */
+      var REFRESH_LIVE_MS = 30000;
+      var REFRESH_DASH_MS = 120000;
+      var REFRESH_HEAVY_MS = 300000;
       var heavyInFlight = false;
       var lastOnlineSig = "";
       var lastOnlineStructSig = "";

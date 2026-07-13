@@ -1240,7 +1240,7 @@
         var pane = document.getElementById("mail-pane-campaigns");
         if (!pane || pane.hidden) return;
         mailLoadCampaigns();
-      }, 6000);
+      }, 15000);
     }
     if (!need && mailCampPollTimer) {
       clearInterval(mailCampPollTimer);

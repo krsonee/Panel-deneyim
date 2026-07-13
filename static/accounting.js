@@ -16,7 +16,7 @@
   var accEmpCurrencyView = localStorage.getItem("acc_emp_currency_view") || accDisplayCurrency;
   var accRates = { usd_try: null, eur_try: null, date: null, source: null, fetched_at: null };
   var accRatesPollId = null;
-  var ACC_RATES_POLL_MS = 120000;
+  var ACC_RATES_POLL_MS = 300000;
   var accModuleVisible = false;
   var ACC_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
 
