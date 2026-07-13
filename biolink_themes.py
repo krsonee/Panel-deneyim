@@ -589,15 +589,23 @@ BRAND_LOGOS = [
 ]
 
 BRAND_BANNERS = [
+    # Yatay bannerlar
     {"key": "468x60", "label": "468×60 (önerilen)", "url": "/static/biolink/banners/banner-468x60.gif", "w": 468, "h": 60},
     {"key": "400x60", "label": "400×60", "url": "/static/biolink/banners/banner-400x60.gif", "w": 400, "h": 60},
     {"key": "468x50", "label": "468×50", "url": "/static/biolink/banners/banner-468x50.gif", "w": 468, "h": 50},
-    {"key": "728x90", "label": "728×90", "url": "/static/biolink/banners/banner-728x90.gif", "w": 728, "h": 90},
-    {"key": "1000x100", "label": "1000×100", "url": "/static/biolink/banners/banner-1000x100.gif", "w": 1000, "h": 100},
-    {"key": "1000x50", "label": "1000×50", "url": "/static/biolink/banners/banner-1000x50.gif", "w": 1000, "h": 50},
-    {"key": "1200x90", "label": "1200×90", "url": "/static/biolink/banners/banner-1200x90.gif", "w": 1200, "h": 90},
     {"key": "150x50", "label": "150×50", "url": "/static/biolink/banners/banner-150x50.gif", "w": 150, "h": 50},
+    {"key": "728x90", "label": "728×90", "url": "/static/biolink/banners/banner-728x90.gif", "w": 728, "h": 90},
+    {"key": "1000x50", "label": "1000×50", "url": "/static/biolink/banners/banner-1000x50.gif", "w": 1000, "h": 50},
+    {"key": "1000x100", "label": "1000×100", "url": "/static/biolink/banners/banner-1000x100.gif", "w": 1000, "h": 100},
+    {"key": "1200x90", "label": "1200×90", "url": "/static/biolink/banners/banner-1200x90.gif", "w": 1200, "h": 90},
+    {"key": "1550x100", "label": "1550×100", "url": "/static/biolink/banners/banner-1550x100.gif", "w": 1550, "h": 100},
+    {"key": "2000x160", "label": "2000×160", "url": "/static/biolink/banners/banner-2000x160.gif", "w": 2000, "h": 160},
     {"key": "1080x1080", "label": "1080×1080 (kare)", "url": "/static/biolink/banners/banner-1080x1080.gif", "w": 1080, "h": 1080},
+    # Dikey bannerlar
+    {"key": "136x728", "label": "136×728 (dikey)", "url": "/static/biolink/banners/banner-136x728.gif", "w": 136, "h": 728},
+    {"key": "120x600", "label": "120×600 (dikey)", "url": "/static/biolink/banners/banner-120x600.gif", "w": 120, "h": 600},
+    {"key": "160x600", "label": "160×600 (dikey)", "url": "/static/biolink/banners/banner-160x600.gif", "w": 160, "h": 600},
+    {"key": "300x600", "label": "300×600 (dikey)", "url": "/static/biolink/banners/banner-300x600.gif", "w": 300, "h": 600},
 ]
 
 
