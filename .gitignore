@@ -10,5 +10,5 @@ mail_imports/
 uploads/biolink/*
 !uploads/biolink/.gitkeep
 
-# Banner processing temp files (frames, scenes, verify outputs)
-work/banner_edit/
+# Banner / favicon processing temp files
+work/
