@@ -16,7 +16,8 @@
   var accEmpCurrencyView = localStorage.getItem("acc_emp_currency_view") || accDisplayCurrency;
   var accRates = { usd_try: null, eur_try: null, date: null, source: null, fetched_at: null };
   var accRatesPollId = null;
-  var ACC_RATES_POLL_MS = 30000;
+  var ACC_RATES_POLL_MS = 120000;
+  var accModuleVisible = false;
   var ACC_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
 
   var accInvoiceCalcData = null;
@@ -270,9 +271,16 @@
   function accStartRatesPolling() {
     if (accRatesPollId) clearInterval(accRatesPollId);
     accRatesPollId = setInterval(function () {
-      if (document.hidden) return;
+      if (document.hidden || !accModuleVisible) return;
       accLoadRates();
     }, ACC_RATES_POLL_MS);
+  }
+
+  function accStopRatesPolling() {
+    if (accRatesPollId) {
+      clearInterval(accRatesPollId);
+      accRatesPollId = null;
+    }
   }
 
   function accRatesSummary(rates) {
@@ -3986,17 +3994,31 @@
 
   window.MakroAccounting = {
     init: function () {
+      /* Sadece UI bağla — veri ve kur poll'u onShow'da (arka plan kasmasını önler) */
       accApplyFallbackRates();
       try { accInitForms(); } catch (err) { console.error("accInitForms", err); }
       try { accInitUi(); } catch (err) { console.error("accInitUi", err); }
-      accStartRatesPolling();
-      try { accSwitchTab("dashboard"); } catch (err) { console.error("accSwitchTab", err); }
-      accLoadRates();
+      try {
+        document.querySelectorAll(".acc-tab").forEach(function (el) {
+          el.classList.toggle("active", el.getAttribute("data-acc-tab") === "dashboard");
+        });
+        document.querySelectorAll(".acc-pane").forEach(function (el) {
+          var show = el.getAttribute("data-acc-pane") === "dashboard";
+          el.classList.toggle("active", show);
+          el.hidden = !show;
+        });
+        accActiveTab = "dashboard";
+      } catch (err) { console.error("accInitTabUi", err); }
     },
     refresh: accRefreshAll,
     onShow: function () {
+      accModuleVisible = true;
       accLoadRates().then(accRefreshAll);
       accStartRatesPolling();
+    },
+    onHide: function () {
+      accModuleVisible = false;
+      accStopRatesPolling();
     },
     setPermissions: function (perms) {
       var list = perms || [];

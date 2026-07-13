@@ -1236,10 +1236,13 @@
     });
     if (need && !mailCampPollTimer) {
       mailCampPollTimer = setInterval(function () {
+        if (document.hidden) return;
+        var modulePane = document.getElementById("module-mailing-panel");
+        if (modulePane && modulePane.hidden) return;
         var pane = document.getElementById("mail-pane-campaigns");
         if (!pane || pane.hidden) return;
         mailLoadCampaigns();
-      }, 4000);
+      }, 6000);
     }
     if (!need && mailCampPollTimer) {
       clearInterval(mailCampPollTimer);
@@ -2258,6 +2261,16 @@
         if (hasActive || mailImportBusy) tab = "crm";
         switchMailTab(tab);
       });
+    },
+    onHide: function () {
+      if (mailCampPollTimer) {
+        clearInterval(mailCampPollTimer);
+        mailCampPollTimer = null;
+      }
+      if (mailImportPollTimer) {
+        clearTimeout(mailImportPollTimer);
+        mailImportPollTimer = null;
+      }
     },
     setPermissions: function (perms) {
       mailPerms = perms || [];
