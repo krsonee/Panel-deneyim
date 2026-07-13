@@ -62,7 +62,7 @@ from database import (
 )
 
 # ── Ortam değişkenleri (Render → Environment) ──
-ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "tolgakt")
 # NOT: "makro123" varsayılanı SADECE yerel geliştirme için. Production'da (Render)
 # ADMIN_PASSWORD ortam değişkeni MUTLAKA güçlü bir değerle override edilmelidir.
 # Bu satır bilerek değiştirilmedi — Render'da zaten farklı bir değer set edilmiş
@@ -843,9 +843,9 @@ def admin_only_required(view):
     @wraps(view)
     @login_required
     def wrapped(*args, **kwargs):
-        if (session.get("admin_username") or "").strip().lower() != "admin":
+        if not is_primary_admin(session.get("admin_username")):
             if request.path.startswith("/api/"):
-                return jsonify({"error": "Bu işlem sadece admin hesabı içindir."}), 403
+                return jsonify({"error": "Bu işlem sadece sahip hesap içindir."}), 403
             return render_template("login.html", error="Bu sayfa için yetkiniz yok."), 403
         return view(*args, **kwargs)
     return wrapped
@@ -1112,6 +1112,7 @@ def api_me():
         "display_name": (row["display_name"] if row else "") or session.get("admin_username"),
         "role": session.get("admin_role"),
         "permissions": perms,
+        "is_primary_admin": is_primary_admin(session.get("admin_username")),
         "two_factor_required": two_factor_required,
         "two_factor_enabled": two_factor_enabled,
         "role_templates": ROLE_TEMPLATES,

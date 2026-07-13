@@ -2706,6 +2706,7 @@
       var smarticoAffiliateListLoading = false;
       var refLabelMap = {};
       var myUsername = "";
+      var myIsPrimaryAdmin = false;
 
       function loadRefLabelMap() {
         if (!hasPerm("tracking.reports")) return;
@@ -2920,7 +2921,7 @@
         document.querySelectorAll("[data-perm-any]").forEach(function(el) {
           el.setAttribute("data-perm-hidden", hasAnyPerm(el.getAttribute("data-perm-any")) ? "0" : "1");
         });
-        var isAdminUser = (myUsername || "").trim().toLowerCase() === "admin";
+        var isAdminUser = !!myIsPrimaryAdmin;
         document.querySelectorAll("[data-admin-only]").forEach(function(el) {
           el.setAttribute("data-admin-only-hidden", isAdminUser ? "0" : "1");
         });
@@ -3011,6 +3012,7 @@
           permissionCatalog = data.permission_catalog || [];
           availableModules = data.available_modules || [];
           myUsername = data.username || "";
+          myIsPrimaryAdmin = !!data.is_primary_admin;
           applyPermissions();
           loadRefLabelMap();
           if (window.MakroAccounting && window.MakroAccounting.setPermissions) {
@@ -3196,7 +3198,7 @@
       }
 
       function loadSettings() {
-        var isAdminUser = (myUsername || "").trim().toLowerCase() === "admin";
+        var isAdminUser = !!myIsPrimaryAdmin;
         var isSuperAdminOrAbove = myPermissions.indexOf("*") !== -1;
         if (!isAdminUser && !isSuperAdminOrAbove) return;
 

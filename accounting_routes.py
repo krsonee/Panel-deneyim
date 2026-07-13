@@ -1,6 +1,7 @@
 """Muhasebe modülü API rotaları — Link Takip altyapısından bağımsız."""
 
 import logging
+import os
 import re
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -535,7 +536,8 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
         return has_permission(session.get("admin_permissions"), ACC_OFFICE_SALARIES)
 
     def can_view_executive_salaries():
-        return (session.get("admin_username") or "").strip().lower() == "admin"
+        primary = (os.environ.get("ADMIN_USERNAME", "tolgakt") or "").strip().lower()
+        return (session.get("admin_username") or "").strip().lower() == primary
 
     def permissions_meta():
         return {

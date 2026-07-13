@@ -15,7 +15,7 @@ services:
       - key: PUBLIC_BASE_URL
         value: https://takipmkr.onrender.com
       - key: ADMIN_USERNAME
-        value: admin
+        value: tolgakt
       - key: ADMIN_PASSWORD
         sync: false  # Şifre repoda tutulmaz; Render Dashboard'dan manuel set edilmeli.
       - key: DATABASE_URL
