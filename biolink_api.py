@@ -32,9 +32,11 @@ from database import (
 
 from biolink_themes import (
     BRAND_BANNERS,
+    BRAND_FAVICONS,
     BRAND_LOGOS,
     DEFAULT_BANNER,
     DEFAULT_BRAND_LOGO,
+    DEFAULT_FAVICON,
     DEFAULT_HEADING_STYLE,
     DEFAULT_THEME,
     HEADING_STYLE_KEYS,
@@ -330,15 +332,13 @@ def _store_favicon_url(val):
 
 
 def resolve_favicon_url(page):
-    """Boş favicon → sayfa logosu → varsayılan Makrobet logosu."""
+    """Boş favicon → varsayılan Makrobet favicon."""
     if not page:
-        return DEFAULT_BRAND_LOGO
+        return DEFAULT_FAVICON
     raw = (page.get("favicon_url") or "").strip()
     if raw and raw != NONE_MARKER:
         return raw
-    if not page.get("hide_logo") and (page.get("logo_url") or "").strip():
-        return page["logo_url"]
-    return DEFAULT_BRAND_LOGO
+    return DEFAULT_FAVICON
 
 
 def _page_row(row):
@@ -949,14 +949,14 @@ def list_brand_assets(conn):
     custom = list_custom_assets(conn)
     logos = list(BRAND_LOGOS) + [a for a in custom if a["kind"] == "logo"]
     banners = list(BRAND_BANNERS) + [a for a in custom if a["kind"] == "banner"]
-    favicons = list(BRAND_LOGOS) + [a for a in custom if a["kind"] in ("logo", "favicon")]
+    favicons = list(BRAND_FAVICONS) + [a for a in custom if a["kind"] == "favicon"]
     return {
         "logos": logos,
         "banners": banners,
         "favicons": favicons,
         "default_logo": DEFAULT_BRAND_LOGO,
         "default_banner": DEFAULT_BANNER,
-        "default_favicon": DEFAULT_BRAND_LOGO,
+        "default_favicon": DEFAULT_FAVICON,
     }
 
 

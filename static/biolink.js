@@ -263,7 +263,7 @@
     if (kind === "favicon") {
       return {
         key: "default",
-        label: "Varsayılan (logo)",
+        label: "Varsayılan (Makrobet)",
         url: "",
         custom: false,
         isNone: true,

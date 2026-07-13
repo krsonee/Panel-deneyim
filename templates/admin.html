@@ -2639,9 +2639,9 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260712m"></script>
-  <script src="/static/mailing.js?v=20260712v"></script>
-  <script src="/static/biolink.js?v=20260713i"></script>
+  <script src="/static/accounting.js?v=20260713p"></script>
+  <script src="/static/mailing.js?v=20260713p"></script>
+  <script src="/static/biolink.js?v=20260713j"></script>
   <script src="/static/marketing.js?v=20260712d"></script>
   <script>
     (function () {
@@ -2826,12 +2826,21 @@
             : "Link Takip & Analiz";
         }
         if (typeof window.closeMobileSidebar === "function") window.closeMobileSidebar();
+        var wasTracking = trackingPollEnabled;
         trackingPollEnabled = name === "tracking";
+        if (name === "tracking" && !wasTracking) {
+          ensureTrackingConfigs();
+          refreshAll();
+        }
         if (name === "accounting" && window.MakroAccounting) {
           window.MakroAccounting.onShow();
+        } else if (window.MakroAccounting && window.MakroAccounting.onHide) {
+          window.MakroAccounting.onHide();
         }
         if (name === "mailing" && window.MakroMailing) {
           window.MakroMailing.onShow();
+        } else if (window.MakroMailing && window.MakroMailing.onHide) {
+          window.MakroMailing.onHide();
         }
         if (name === "marketing" && window.MakroMarketing) {
           window.MakroMarketing.onShow();
@@ -4679,6 +4688,27 @@
             }).catch(function(){})
           );
         }
+        if (!jobs.length) return;
+        dashInFlight = true;
+        Promise.all(jobs).catch(function(){}).finally(function(){
+          dashInFlight = false;
+          touchPollStatus();
+        });
+      }
+
+      function ensureTrackingConfigs() {
+        if (!smarticoConfigLoaded && hasPerm("tracking.smartico")) loadSmarticoConfig();
+        if (!blinkConfigLoaded && hasPerm("tracking.blink")) loadBlinkConfig();
+        if (hasPerm("tracking.makrolink")) {
+          loadMakroLinkConfig();
+          loadMakrolinkTargetDomains();
+        }
+      }
+
+      function refreshDashboardHeavy() {
+        if (!trackingPollEnabled || document.hidden || heavyInFlight) return;
+        ensureTrackingConfigs();
+        var jobs = [];
         if (hasPerm("tracking.smartico") && smarticoConfigured !== false) {
           jobs.push(Promise.resolve().then(function(){ loadSmarticoReport(false); }));
         }
@@ -4689,9 +4719,9 @@
           jobs.push(Promise.resolve().then(function(){ loadMakroLinks(); }));
         }
         if (!jobs.length) return;
-        dashInFlight = true;
+        heavyInFlight = true;
         Promise.all(jobs).catch(function(){}).finally(function(){
-          dashInFlight = false;
+          heavyInFlight = false;
           touchPollStatus();
         });
       }
@@ -4699,6 +4729,7 @@
       function refreshAll() {
         refreshLive();
         refreshDashboard();
+        refreshDashboardHeavy();
       }
 
       function bindOptional(id, type, fn) {
@@ -4771,21 +4802,18 @@
         }
         loadMe(function() {
           trackingPollEnabled = currentModule === "tracking";
-          if (trackingPollEnabled) refreshAll();
-          if (!smarticoConfigLoaded) loadSmarticoConfig();
-          if (!blinkConfigLoaded) loadBlinkConfig();
-          loadMakroLinkConfig();
-          loadMakrolinkTargetDomains();
-          if (hasPerm("tracking.makrolink")) loadMakroLinks();
+          /* switchModule zaten ilk yüklemeyi yaptı — sadece interval'ları başlat */
+          if (trackingPollEnabled) ensureTrackingConfigs();
           setInterval(refreshLive, REFRESH_LIVE_MS);
           setInterval(refreshDashboard, REFRESH_DASH_MS);
+          setInterval(refreshDashboardHeavy, REFRESH_HEAVY_MS);
+          setInterval(function() {
+            if (trackingPollEnabled) tickTimes();
+          }, 2000);
         });
         document.addEventListener("visibilitychange", function() {
           if (!document.hidden && trackingPollEnabled) refreshAll();
         });
-        setInterval(function() {
-          if (trackingPollEnabled) tickTimes();
-        }, 1000);
       }
 
       bindOptional("add-link-form", "submit", function(e) {

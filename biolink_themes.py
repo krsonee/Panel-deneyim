@@ -578,6 +578,7 @@ DEFAULT_THEME = "makrobet"
 DEFAULT_HEADING_STYLE = "classic"
 DEFAULT_BRAND_LOGO = "/static/biolink/logo/logo-400.png"
 DEFAULT_BANNER = "/static/biolink/banners/banner-468x60.gif"
+DEFAULT_FAVICON = "/static/biolink/favicons/favicon-makrobet.ico"
 
 BRAND_LOGOS = [
     {"key": "logo-400", "label": "Logo 400px", "url": "/static/biolink/logo/logo-400.png", "w": 400, "h": 93},
@@ -608,9 +609,22 @@ BRAND_BANNERS = [
     {"key": "300x600", "label": "300×600 (dikey)", "url": "/static/biolink/banners/banner-300x600.gif", "w": 300, "h": 600},
 ]
 
+BRAND_FAVICONS = [
+    {"key": "makrobet-ico", "label": "Makrobet Favicon", "url": "/static/biolink/favicons/favicon-makrobet.ico"},
+    {"key": "logo-avatar-favicon", "label": "Logo Avatar", "url": "/static/biolink/logo/logo-avatar-512.png", "w": 512, "h": 512},
+    {"key": "logo-200-favicon", "label": "Logo 200px", "url": "/static/biolink/logo/logo-200.png", "w": 200, "h": 46},
+]
+
 
 def brand_assets():
-    return {"logos": list(BRAND_LOGOS), "banners": list(BRAND_BANNERS), "default_logo": DEFAULT_BRAND_LOGO, "default_banner": DEFAULT_BANNER}
+    return {
+        "logos": list(BRAND_LOGOS),
+        "banners": list(BRAND_BANNERS),
+        "favicons": list(BRAND_FAVICONS),
+        "default_logo": DEFAULT_BRAND_LOGO,
+        "default_banner": DEFAULT_BANNER,
+        "default_favicon": DEFAULT_FAVICON,
+    }
 
 # key, name, category — CSS class = hs-{key}
 HEADING_STYLES = [
