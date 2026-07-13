@@ -760,33 +760,46 @@
       }
 
       var urlLabel = fieldLabel(b.button_type, "url");
-      var badgeField = (b.button_type === "whatsapp" || b.button_type === "bonus")
-        ? '<input value="' + blEsc(b.badge_text || "") + '" data-bl-field="badge_text" data-bl-id="' + b.id + '" placeholder="' + blEsc(fieldLabel(b.button_type, "badge_text")) + '">'
-        : "";
+      var preset = blPreset(b.button_type);
+      var fieldsHtml = "";
+
+      if (blIsBrandType(b.button_type)) {
+        fieldsHtml = '<div class="bl-block-fields brand">' +
+          '<div class="bl-block-icon-col bl-brand-icon">' + blPlatformIconHtml(b.button_type) + "</div>" +
+          '<div class="bl-block-input-stack">';
+        (preset.fields || []).forEach(function (f) {
+          var val = f.key === "label" ? b.label : f.key === "url" ? (b.url || "") : f.key === "badge_text" ? (b.badge_text || "") : "";
+          fieldsHtml += '<div class="bl-block-field-row"><label class="bl-block-field-lbl">' + blEsc(f.label) + "</label>" +
+            '<input value="' + blEsc(val) + '" data-bl-field="' + f.key + '" data-bl-id="' + b.id + '" placeholder="' + blEsc(f.placeholder || "") + '"></div>';
+        });
+        fieldsHtml += "</div></div>";
+      } else {
+        var badgeField = b.button_type === "bonus"
+          ? '<input class="bl-field-span" value="' + blEsc(b.badge_text || "") + '" data-bl-field="badge_text" data-bl-id="' + b.id + '" placeholder="' + blEsc(fieldLabel(b.button_type, "badge_text")) + '">'
+          : "";
+        var iconCell = '<div class="bl-icon-cell"><input value="' + blEsc(b.icon || meta.icon) + '" maxlength="8" data-bl-field="icon" data-bl-id="' + b.id + '">' +
+          '<button type="button" data-bl-emoji-inline="' + b.id + '">😀</button></div>';
+        fieldsHtml = '<div class="bl-block-fields">' +
+          iconCell +
+          '<input value="' + blEsc(b.label) + '" data-bl-field="label" data-bl-id="' + b.id + '" placeholder="Başlık">' +
+          badgeField +
+          '<input class="bl-field-span" value="' + blEsc(b.url || "") + '" data-bl-field="url" data-bl-id="' + b.id + '" placeholder="' + blEsc(urlLabel) + '">' +
+          "</div>";
+      }
 
       var badgeIcon = blPlatformIconHtml(b.button_type) || blEsc(meta.icon || "🔗");
-      var iconCell = blIsBrandType(b.button_type)
-        ? '<div class="bl-icon-cell bl-brand-icon">' + blPlatformIconHtml(b.button_type) + "</div>"
-        : '<div class="bl-icon-cell"><input value="' + blEsc(b.icon || meta.icon) + '" maxlength="8" data-bl-field="icon" data-bl-id="' + b.id + '">' +
-          '<button type="button" data-bl-emoji-inline="' + b.id + '">😀</button></div>';
-
       return '<div class="' + cardCls + '" style="--bl-color:' + meta.color + '">' + order +
         '<div class="bl-block-main">' +
         '<span class="bl-block-type-badge">' + badgeIcon + " " + blEsc(meta.label) + "</span>" +
-        '<div class="bl-block-fields">' +
-        iconCell +
-        '<input value="' + blEsc(b.label) + '" data-bl-field="label" data-bl-id="' + b.id + '" placeholder="Başlık">' +
-        '<input value="' + blEsc(b.url || "") + '" data-bl-field="url" data-bl-id="' + b.id + '" placeholder="' + blEsc(urlLabel) + '" style="grid-column:1/-1">' +
-        (badgeField ? badgeField.replace('style="grid-column:1/-1"', 'style="grid-column:1/-1"') : "") +
-        "</div>" +
+        fieldsHtml +
         (b.resolved_url ? '<div class="bl-block-meta">→ ' + blEsc(b.resolved_url) + "</div>" : "") +
         "</div>" +
         '<div class="bl-block-actions">' +
         '<div class="bl-block-toggles">' +
-        '<label class="bl-toggle-pill" title="Öne çıkar"><input type="checkbox" ' + (b.highlight ? "checked" : "") + ' data-bl-field="highlight" data-bl-id="' + b.id + '"> ⭐</label>' +
-        '<label class="bl-toggle-pill"><input type="checkbox" ' + (b.is_active ? "checked" : "") + ' data-bl-field="is_active" data-bl-id="' + b.id + '"> Aktif</label>' +
+        '<label class="bl-toggle-pill" title="Öne çıkar"><input type="checkbox" ' + (b.highlight ? "checked" : "") + ' data-bl-field="highlight" data-bl-id="' + b.id + '"><span>⭐ Öne çıkar</span></label>' +
+        '<label class="bl-toggle-pill"><input type="checkbox" ' + (b.is_active ? "checked" : "") + ' data-bl-field="is_active" data-bl-id="' + b.id + '"><span>Aktif</span></label>' +
         "</div>" +
-        '<button type="button" class="btn btn-danger btn-sm" data-bl-btn-del="' + b.id + '">Sil</button></div></div>';
+        '<button type="button" class="btn btn-danger btn-sm bl-block-del" data-bl-btn-del="' + b.id + '">Sil</button></div></div>';
     }).join("");
 
     bindBlockEvents(box);
