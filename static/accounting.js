@@ -3810,6 +3810,7 @@
         }, 150);
       });
     }
+  }
 
   function accInitPeriodFilter() {
     var modeEl = document.getElementById("acc-filter-period");
