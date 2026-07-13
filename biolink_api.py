@@ -472,7 +472,9 @@ def get_public_page_by_domain(conn, host):
     )
     if not row:
         return None
-    return get_page(conn, row["id"], with_buttons=True, buttons_active_only=True)
+    page = _page_row(row)
+    page["buttons"] = list_buttons(conn, page["id"], active_only=True)
+    return page
 
 
 def get_public_page(conn, slug):
