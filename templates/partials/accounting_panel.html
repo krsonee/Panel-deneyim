@@ -810,8 +810,9 @@
     </section>
 
     <section class="card">
-      <div class="card-head"><span>Yeni Personel Ekle</span></div>
+      <div class="card-head"><span id="acc-pers-form-title">Yeni Personel Ekle</span></div>
       <form id="acc-pers-form" class="form-row-4">
+        <input type="hidden" id="acc-pers-edit-id" value="">
         <div><label>Kategori</label>
           <select id="acc-pers-category" required>
             <option value="office">Ofis Personeli</option>
@@ -840,10 +841,13 @@
         <div><label>Maaş</label>
           <input type="number" step="0.01" min="0" id="acc-pers-salary" placeholder="0" required>
         </div>
-        <div><label>USD/TL</label><input type="number" id="acc-pers-rate-usd" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
-        <div><label>EUR/TL</label><input type="number" id="acc-pers-rate-eur" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = otomatik"></div>
+        <div><label>USD/TL</label><input type="number" id="acc-pers-rate-usd" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = tarihteki kur"></div>
+        <div><label>EUR/TL</label><input type="number" id="acc-pers-rate-eur" class="acc-form-rate" step="0.0001" min="0.0001" placeholder="Boş = tarihteki kur"></div>
         <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-pers-fx-preview"></p></div>
-        <div style="align-self:end"><button type="submit" class="btn btn-primary">Ekle</button></div>
+        <div style="align-self:end;display:flex;gap:0.45rem;flex-wrap:wrap;">
+          <button type="submit" class="btn btn-primary">Ekle</button>
+          <button type="button" class="btn btn-sm" id="acc-pers-cancel-edit" hidden>Vazgeç</button>
+        </div>
       </form>
     </section>
 

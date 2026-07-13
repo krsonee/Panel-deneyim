@@ -2272,7 +2272,7 @@
       { value: "active", label: "Aktif" },
       { value: "left", label: "Ayrıldı" }
     ], "acc-emp-status-select " + statusCls);
-    var delCell = '<button class="btn btn-sm btn-danger acc-emp-del" data-del-emp="' + r.id + '" title="Sil">×</button>';
+    var delCell = '<button type="button" class="btn btn-sm btn-danger acc-emp-del" data-del-emp="' + r.id + '" title="Personeli sil">Sil</button>';
 
     if (panel === "left") {
       return '<tr class="' + rowCls + '">' +
@@ -2375,9 +2375,23 @@
     accBindEmployeeInlineEditors(tbody);
     tbody.querySelectorAll("[data-del-emp]").forEach(function (btn) {
       btn.onclick = function () {
-        if (!confirm("Silinsin mi?")) return;
-        accApi("/api/accounting/employees/" + btn.getAttribute("data-del-emp"), { method: "DELETE" })
-          .then(function (r) { if (r && r.ok) { accLoadEmployees(); accLoadDashboard(); accToast("Silindi"); } });
+        if (!confirm("Bu maaş kaydı kalıcı olarak silinsin mi?")) return;
+        var delBtn = btn;
+        if (window.withButtonBusy) {
+          window.withButtonBusy(delBtn, function () {
+            return accApi("/api/accounting/employees/" + delBtn.getAttribute("data-del-emp"), { method: "DELETE" })
+              .then(function (r) {
+                if (r && r.ok) { accLoadEmployees(); accLoadDashboard(); accToast("Silindi"); }
+                else if (r) alert((r.data && r.data.error) || "Silinemedi");
+              });
+          }, "…");
+        } else {
+          accApi("/api/accounting/employees/" + btn.getAttribute("data-del-emp"), { method: "DELETE" })
+            .then(function (r) {
+              if (r && r.ok) { accLoadEmployees(); accLoadDashboard(); accToast("Silindi"); }
+              else if (r) alert((r.data && r.data.error) || "Silinemedi");
+            });
+        }
       };
     });
   }
@@ -2435,7 +2449,10 @@
       '<td class="acc-emp-td-date mono">' + accEsc(r.end_date || "") + "</td>" +
       '<td class="acc-emp-td-money">' + salaryCell + "</td>" +
       '<td class="acc-emp-td-status"><span class="acc-emp-status-select left-status acc-emp-status-pill">Ayrıldı</span></td>' +
-      '<td class="acc-emp-td-action"><button type="button" class="btn btn-sm" data-reactivate-emp="' + r.id + '" title="Aktif personele geri al">Geri Al</button></td>' +
+      '<td class="acc-emp-td-action">' +
+        '<button type="button" class="btn btn-sm" data-reactivate-emp="' + r.id + '" title="Aktif personele geri al">Geri Al</button> ' +
+        '<button type="button" class="btn btn-sm btn-danger" data-del-emp="' + r.id + '" title="Personeli sil">Sil</button>' +
+      '</td>' +
       "</tr>";
   }
 
@@ -2454,6 +2471,16 @@
       btn.onclick = function () {
         if (!confirm("Bu personel yeniden aktif personel listesine alınsın mı?")) return;
         accSaveEmployeeField(btn.getAttribute("data-reactivate-emp"), { status: "active", end_date: null });
+      };
+    });
+    tbody.querySelectorAll("[data-del-emp]").forEach(function (btn) {
+      btn.onclick = function () {
+        if (!confirm("Bu personel kalıcı olarak silinsin mi?")) return;
+        accApi("/api/accounting/employees/" + btn.getAttribute("data-del-emp"), { method: "DELETE" })
+          .then(function (r) {
+            if (r && r.ok) { accLoadEmployees(); accLoadDashboard(); accToast("Silindi"); }
+            else if (r) alert((r.data && r.data.error) || "Silinemedi");
+          });
       };
     });
   }
@@ -3070,6 +3097,7 @@
       '<td>' + accPersFmt(daily.TRY) + '<div class="sub muted">' + accPersMultiSub(daily) + '</div></td>' +
       '<td class="acc-inv-comm">' + accPersFmt(accrual.TRY) + '<div class="sub muted">' + accPersMultiSub(accrual) + '</div></td>' +
       '<td class="acc-inv-actions">' +
+        '<button type="button" class="btn btn-sm" data-pers-edit="' + p.id + '" title="Düzenle">Düzenle</button> ' +
         '<button type="button" class="btn btn-sm" data-pers-leave="' + p.id + '" title="İşten çıkış tarihini girip pasif listeye al">İşten Ayrıldı</button> ' +
         '<button type="button" class="btn btn-danger btn-sm" data-pers-del="' + p.id + '" title="Sil">Sil</button>' +
       '</td>' +
@@ -3095,6 +3123,7 @@
       '<td class="mono">' + accDateTr(p.end_date) + '</td>' +
       '<td>' + accMoney(p.salary_amount, p.currency || "TRY") + '</td>' +
       '<td class="acc-inv-actions">' +
+        '<button type="button" class="btn btn-sm" data-pers-edit="' + p.id + '" title="Düzenle">Düzenle</button> ' +
         '<button type="button" class="btn btn-sm" data-pers-reactivate="' + p.id + '" title="Aktif personele geri al">Geri Al</button> ' +
         '<button type="button" class="btn btn-danger btn-sm" data-pers-del="' + p.id + '" title="Sil">Sil</button>' +
       '</td>' +
@@ -3137,7 +3166,85 @@
     accBindPersonnelTableActions();
   }
 
+  function accPersFillForm(p) {
+    if (!p) return;
+    var idEl = document.getElementById("acc-pers-edit-id");
+    if (idEl) idEl.value = p.id || "";
+    var cat = document.getElementById("acc-pers-category");
+    if (cat) cat.value = p.category === "office" ? "office" : "turkey";
+    var name = document.getElementById("acc-pers-name");
+    if (name) name.value = p.name || "";
+    var ref = document.getElementById("acc-pers-reference");
+    if (ref) ref.value = p.notes || "";
+    var dept = document.getElementById("acc-pers-dept");
+    if (dept) {
+      accRefreshPersDeptSelect();
+      dept.value = p.department || "";
+    }
+    var start = document.getElementById("acc-pers-start");
+    if (start) start.value = p.start_date || "";
+    var cur = document.getElementById("acc-pers-currency");
+    if (cur) cur.value = p.currency || "TRY";
+    var salary = document.getElementById("acc-pers-salary");
+    if (salary) salary.value = p.salary_amount != null ? p.salary_amount : "";
+    var rateUsd = document.getElementById("acc-pers-rate-usd");
+    var rateEur = document.getElementById("acc-pers-rate-eur");
+    if (rateUsd) rateUsd.value = p.rate_usd_try > 0 ? p.rate_usd_try : "";
+    if (rateEur) rateEur.value = p.rate_eur_try > 0 ? p.rate_eur_try : "";
+    var title = document.getElementById("acc-pers-form-title");
+    if (title) title.textContent = "Personeli Düzenle";
+    var submitBtn = document.querySelector("#acc-pers-form button[type='submit']");
+    if (submitBtn) submitBtn.textContent = "Kaydet";
+    var cancelBtn = document.getElementById("acc-pers-cancel-edit");
+    if (cancelBtn) cancelBtn.hidden = false;
+    var formCard = document.getElementById("acc-pers-form");
+    if (formCard && formCard.scrollIntoView) formCard.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function accPersResetForm() {
+    var form = document.getElementById("acc-pers-form");
+    if (form) form.reset();
+    var idEl = document.getElementById("acc-pers-edit-id");
+    if (idEl) idEl.value = "";
+    var curEl = document.getElementById("acc-pers-currency");
+    if (curEl) curEl.value = "TRY";
+    var previewEl = document.getElementById("acc-pers-fx-preview");
+    if (previewEl) previewEl.textContent = "";
+    var title = document.getElementById("acc-pers-form-title");
+    if (title) title.textContent = "Yeni Personel Ekle";
+    var submitBtn = document.querySelector("#acc-pers-form button[type='submit']");
+    if (submitBtn) submitBtn.textContent = "Ekle";
+    var cancelBtn = document.getElementById("acc-pers-cancel-edit");
+    if (cancelBtn) cancelBtn.hidden = true;
+    accClearFormRates("acc-pers-rate-usd", "acc-pers-rate-eur");
+  }
+
+  function accFindPersonnelById(id) {
+    id = String(id);
+    var all = (accPersonnelData && accPersonnelData.staff) || [];
+    for (var i = 0; i < all.length; i++) {
+      if (String(all[i].id) === id) return all[i];
+    }
+    return null;
+  }
+
+  function accLoadPersonnel() {
+    var period = accSelectedMonthPeriod() || accResolvePeriod();
+    if (!period || period === "all") period = accCurrentMonth();
+    return accApi("/api/accounting/personnel?period=" + encodeURIComponent(period)).then(function (r) {
+      if (r && r.ok) accRenderPersonnel(r.data);
+      else if (r) console.error("accLoadPersonnel", r.data);
+    });
+  }
+
   function accBindPersonnelTableActions() {
+    document.querySelectorAll("[data-pers-edit]").forEach(function (btn) {
+      btn.onclick = function () {
+        var row = accFindPersonnelById(btn.getAttribute("data-pers-edit"));
+        if (!row) { alert("Personel bulunamadı"); return; }
+        accPersFillForm(row);
+      };
+    });
     document.querySelectorAll("[data-pers-leave]").forEach(function (btn) {
       btn.onclick = function () {
         var endDate = prompt("Çıkış tarihi (YYYY-MM-DD):", accToday());
@@ -3173,24 +3280,6 @@
           });
       };
     });
-  }
-
-  function accLoadPersonnel() {
-    var period = accSelectedMonthPeriod() || accResolvePeriod();
-    if (!period || period === "all") period = accCurrentMonth();
-    return accApi("/api/accounting/personnel?period=" + encodeURIComponent(period)).then(function (r) {
-      if (r && r.ok) accRenderPersonnel(r.data);
-      else if (r) console.error("accLoadPersonnel", r.data);
-    });
-  }
-
-  function accPersResetForm() {
-    var form = document.getElementById("acc-pers-form");
-    if (form) form.reset();
-    var curEl = document.getElementById("acc-pers-currency");
-    if (curEl) curEl.value = "TRY";
-    var previewEl = document.getElementById("acc-pers-fx-preview");
-    if (previewEl) previewEl.textContent = "";
   }
 
   function accRefreshPersDeptSelect() {
@@ -3968,6 +4057,7 @@
 
     accBindForm("acc-pers-form", function (e) {
       e.preventDefault();
+      var editId = (document.getElementById("acc-pers-edit-id") || {}).value || "";
       var payload = Object.assign({
         category: document.getElementById("acc-pers-category").value,
         name: document.getElementById("acc-pers-name").value.trim(),
@@ -3977,19 +4067,26 @@
         salary_amount: document.getElementById("acc-pers-salary").value,
         currency: document.getElementById("acc-pers-currency").value
       }, accReadFormRates("acc-pers-rate-usd", "acc-pers-rate-eur"));
-      accApi("/api/accounting/personnel", {
-        method: "POST",
+      var url = editId
+        ? "/api/accounting/personnel/" + editId
+        : "/api/accounting/personnel";
+      accApi(url, {
+        method: editId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       }).then(function (r) {
         if (r && r.ok) {
           accPersResetForm();
           accLoadPersonnel();
-          accSavedToast("Personel eklendi", r.data.rates);
-        } else if (r) alert((r.data && r.data.error) || "Eklenemedi");
+          accLoadDashboard();
+          accSavedToast(editId ? "Personel güncellendi" : "Personel eklendi", r.data.rates);
+        } else if (r) alert((r.data && r.data.error) || "Kaydedilemedi");
       });
     });
+    var persCancel = document.getElementById("acc-pers-cancel-edit");
+    if (persCancel) persCancel.addEventListener("click", function () { accPersResetForm(); });
     accBindFxPreview("acc-pers-salary", "acc-pers-currency", "acc-pers-fx-preview", "acc-pers-rate-usd", "acc-pers-rate-eur");
+    accInjectExportButtons();
     var hidePassiveBtn = document.getElementById("acc-pm-hide-passive");
     if (hidePassiveBtn) {
       accUpdateHidePassivePmUi();
@@ -4038,6 +4135,88 @@
     window.addEventListener("resize", accScheduleKpiFit);
   }
 
+  function accCsvEscape(v) {
+    var s = v == null ? "" : String(v).replace(/\r?\n/g, " ").trim();
+    if (/[";\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function accDownloadCsv(filename, headers, rows) {
+    var lines = [headers.map(accCsvEscape).join(";")];
+    (rows || []).forEach(function (row) {
+      lines.push(row.map(accCsvEscape).join(";"));
+    });
+    var blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename || ("muhasebe-" + Date.now() + ".csv");
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      URL.revokeObjectURL(a.href);
+      a.remove();
+    }, 800);
+    accToast("CSV indirildi");
+  }
+
+  function accExportTableEl(table) {
+    if (!table) { alert("Tablo bulunamadı"); return; }
+    var headers = [];
+    table.querySelectorAll("thead th").forEach(function (th) {
+      headers.push((th.textContent || "").replace(/\s+/g, " ").trim());
+    });
+    if (!headers.length) headers = ["Kolon"];
+    var rows = [];
+    table.querySelectorAll("tbody tr").forEach(function (tr) {
+      if (tr.querySelector(".empty")) return;
+      var cells = [];
+      tr.querySelectorAll("td").forEach(function (td) {
+        var input = td.querySelector("input, select, textarea");
+        var txt = input
+          ? (input.tagName === "SELECT"
+            ? (input.options[input.selectedIndex] ? input.options[input.selectedIndex].text : input.value)
+            : input.value)
+          : (td.innerText || td.textContent || "");
+        cells.push(String(txt).replace(/\s+/g, " ").trim());
+      });
+      if (cells.length) rows.push(cells);
+    });
+    if (!rows.length) { alert("İndirilecek satır yok"); return; }
+    var title = "";
+    var head = table.closest(".card, .acc-emp-split-col, .acc-emp-leavers-card");
+    if (head) {
+      var t = head.querySelector(".acc-emp-split-title, .card-head span, h3, h4");
+      if (t) title = (t.textContent || "").trim();
+    }
+    var safe = (title || "tablo").toLowerCase()
+      .replace(/[^a-z0-9çğıöşü\s_-]+/gi, "")
+      .replace(/\s+/g, "-")
+      .slice(0, 40);
+    accDownloadCsv("muhasebe-" + safe + "-" + Date.now() + ".csv", headers, rows);
+  }
+
+  function accInjectExportButtons() {
+    var roots = document.querySelectorAll(
+      "#module-accounting-panel .card-head, #module-accounting-panel .acc-emp-split-head, #module-accounting-panel .acc-emp-leavers-head"
+    );
+    roots.forEach(function (head) {
+      if (head.querySelector(".acc-export-btn")) return;
+      var host = head.closest(".card, .acc-emp-split-col, .acc-emp-leavers-card") || head.parentElement;
+      if (!host || !host.querySelector("table")) return;
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-sm acc-export-btn";
+      btn.textContent = "İndir";
+      btn.title = "Bu tabloyu CSV olarak indir";
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        accExportTableEl(host.querySelector("table"));
+      });
+      head.appendChild(btn);
+    });
+  }
+
   window.MakroAccounting = {
     init: function () {
       /* Sadece UI bağla — veri ve kur poll'u onShow'da (arka plan kasmasını önler) */
@@ -4059,6 +4238,7 @@
     refresh: accRefreshAll,
     onShow: function () {
       accModuleVisible = true;
+      accInjectExportButtons();
       accLoadRates().then(accRefreshAll);
       accStartRatesPolling();
     },
