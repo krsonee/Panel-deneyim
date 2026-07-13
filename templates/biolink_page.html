@@ -440,7 +440,7 @@
           <div class="heading link-col-full text-align-{{ align }} hs-{{ b.heading_style or 'classic' }}"><span class="hs-inner">{{ b.label }}</span></div>
         {% elif b.button_type == 'bonus' %}
           <div class="link-col-{{ col }}">
-          <a class="link-btn bonus-card highlight text-align-{{ align }}" href="/p/{{ page.slug }}/go/{{ b.id }}">
+          <a class="link-btn bonus-card highlight text-align-{{ align }}" href="{{ click_prefix }}/go/{{ b.id }}">
             <div class="bonus-top">
               <span class="link-icon">{{ b.display_icon or b.icon or '🎁' }}</span>
               <span class="link-label">{{ b.label }}</span>
@@ -451,7 +451,7 @@
           </div>
         {% else %}
           <div class="link-col-{{ col }}">
-          <a class="link-btn platform-{{ b.button_type }} text-align-{{ align }}{% if b.highlight %} highlight{% endif %}" href="/p/{{ page.slug }}/go/{{ b.id }}">
+          <a class="link-btn platform-{{ b.button_type }} text-align-{{ align }}{% if b.highlight %} highlight{% endif %}" href="{{ click_prefix }}/go/{{ b.id }}">
             <span class="link-icon">
               {% if b.button_type in ['whatsapp','telegram','instagram','twitter','tiktok','youtube'] %}
                 {% set platform = b.button_type %}{% include 'partials/biolink_platform_icon.html' %}

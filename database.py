@@ -805,6 +805,8 @@ def migrate_biolink(conn):
         execute(conn, "ALTER TABLE biolink_pages ADD COLUMN banner_url TEXT NOT NULL DEFAULT ''")
     if "banner_layout" not in cols:
         execute(conn, "ALTER TABLE biolink_pages ADD COLUMN banner_layout TEXT NOT NULL DEFAULT 'top'")
+    if "custom_domain" not in cols:
+        execute(conn, "ALTER TABLE biolink_pages ADD COLUMN custom_domain TEXT NOT NULL DEFAULT ''")
     btn_cols = _table_columns(conn, "biolink_buttons")
     if "heading_style" not in btn_cols:
         execute(conn, "ALTER TABLE biolink_buttons ADD COLUMN heading_style TEXT NOT NULL DEFAULT 'classic'")

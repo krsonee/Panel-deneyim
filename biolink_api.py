@@ -229,6 +229,47 @@ def _valid_slug(slug):
     return bool(re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}[a-z0-9]|[a-z0-9]", slug))
 
 
+def normalize_custom_domain(raw):
+    """example.com veya www.example.com → example.com"""
+    d = (raw or "").strip().lower()
+    d = d.replace("https://", "").replace("http://", "").strip("/").split("/")[0].split(":")[0]
+    if d.startswith("www."):
+        d = d[4:]
+    return d[:253]
+
+
+def _valid_custom_domain(domain):
+    domain = normalize_custom_domain(domain)
+    if not domain or "." not in domain:
+        return False
+    if domain in ("localhost", "127.0.0.1"):
+        return False
+    return bool(re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+", domain))
+
+
+def _domain_lookup_hosts(domain):
+    domain = normalize_custom_domain(domain)
+    if not domain:
+        return []
+    if domain.startswith("www."):
+        return [domain, domain[4:]]
+    return [domain, f"www.{domain}"]
+
+
+def _unique_custom_domain(conn, domain, exclude_id=None):
+    domain = normalize_custom_domain(domain)
+    if not domain:
+        return ""
+    row = fetchone(
+        conn,
+        "SELECT id FROM biolink_pages WHERE custom_domain = ?",
+        (domain,),
+    )
+    if row and (not exclude_id or int(row["id"]) != int(exclude_id)):
+        raise ValueError("Bu domain başka bir bio sayfaya bağlı.")
+    return domain
+
+
 def _unique_slug(conn, base_slug, exclude_id=None):
     base_slug = _slugify(base_slug)
     slug = base_slug
@@ -306,7 +347,9 @@ def _page_row(row):
         d["banner_url"] = raw_banner or DEFAULT_BANNER
         d["banner_layout"] = layout
 
+    d["custom_domain"] = normalize_custom_domain(d.get("custom_domain") or "")
     d["public_path"] = f"/p/{d['slug']}"
+    d["public_url"] = f"https://{d['custom_domain']}/" if d["custom_domain"] else d["public_path"]
     return d
 
 
@@ -387,6 +430,20 @@ def list_buttons(conn, page_id, active_only=False):
     return [_button_row(r) for r in rows]
 
 
+def get_public_page_by_domain(conn, host):
+    domain = normalize_custom_domain((host or "").split(":")[0])
+    if not domain:
+        return None
+    row = fetchone(
+        conn,
+        "SELECT * FROM biolink_pages WHERE custom_domain = ? AND COALESCE(is_active,1) = 1",
+        (domain,),
+    )
+    if not row:
+        return None
+    return get_page(conn, row["id"], with_buttons=True, buttons_active_only=True)
+
+
 def get_public_page(conn, slug):
     slug = (slug or "").strip().lower()
     row = fetchone(conn, "SELECT * FROM biolink_pages WHERE slug = ? AND COALESCE(is_active,1) = 1", (slug,))
@@ -463,7 +520,7 @@ def apply_preview_overrides(page, args):
 
 def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_color="",
                  avatar_url="", banner_url="", banner_layout=None, button_shape="pill",
-                 ga4_measurement_id="", ga4_api_secret="", created_by=""):
+                 ga4_measurement_id="", ga4_api_secret="", custom_domain="", created_by=""):
     title = (title or "").strip()[:200] or "Yeni Sayfa"
     subtitle = (subtitle or "").strip()[:400]
     avatar_url = _store_avatar_url(avatar_url)
@@ -479,6 +536,9 @@ def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_co
     ga4_measurement_id = (ga4_measurement_id or "").strip()[:64]
     ga4_api_secret = (ga4_api_secret or "").strip()[:128]
     created_by = (created_by or "").strip()[:64]
+    stored_domain = _unique_custom_domain(conn, custom_domain)
+    if stored_domain and not _valid_custom_domain(stored_domain):
+        raise ValueError("Geçersiz özel domain (örn. vippmakro.com).")
     now = iso(utcnow())
 
     base = slug.strip() if (slug or "").strip() else title
@@ -489,11 +549,11 @@ def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_co
         """
         INSERT INTO biolink_pages
           (slug, title, subtitle, avatar_url, banner_url, banner_layout, theme, accent_color, button_shape,
-           is_active, view_count, ga4_measurement_id, ga4_api_secret, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?)
+           is_active, view_count, ga4_measurement_id, ga4_api_secret, custom_domain, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?)
         """,
         (final_slug, title, subtitle, avatar_url, banner_url, banner_layout, theme, accent_color, button_shape,
-         ga4_measurement_id, ga4_api_secret, created_by, now, now),
+         ga4_measurement_id, ga4_api_secret, stored_domain, created_by, now, now),
     )
     conn.commit()
     return get_page(conn, page_id)
@@ -539,6 +599,17 @@ def update_page(conn, page_id, data):
             raise ValueError("Bu slug zaten kullanılıyor.")
         new_slug = candidate
 
+    new_domain = row.get("custom_domain") or ""
+    if "custom_domain" in data:
+        raw_domain = (data.get("custom_domain") or "").strip()
+        if raw_domain:
+            candidate_domain = normalize_custom_domain(raw_domain)
+            if not _valid_custom_domain(candidate_domain):
+                raise ValueError("Geçersiz özel domain (örn. vippmakro.com).")
+            new_domain = _unique_custom_domain(conn, candidate_domain, exclude_id=page_id)
+        else:
+            new_domain = ""
+
     now = iso(utcnow())
     stored_avatar = _store_avatar_url(avatar_url)
     stored_banner = _store_banner_url(banner_url)
@@ -549,12 +620,12 @@ def update_page(conn, page_id, data):
         UPDATE biolink_pages
         SET slug = ?, title = ?, subtitle = ?, avatar_url = ?, banner_url = ?, banner_layout = ?,
             theme = ?, accent_color = ?, button_shape = ?, is_active = ?,
-            ga4_measurement_id = ?, ga4_api_secret = ?, updated_at = ?
+            ga4_measurement_id = ?, ga4_api_secret = ?, custom_domain = ?, updated_at = ?
         WHERE id = ?
         """,
         (new_slug, title, subtitle, stored_avatar, stored_banner, stored_layout,
          theme, accent_color, button_shape,
-         is_active, ga4_measurement_id, ga4_api_secret, now, int(page_id)),
+         is_active, ga4_measurement_id, ga4_api_secret, new_domain, now, int(page_id)),
     )
     conn.commit()
     return get_page(conn, page_id)

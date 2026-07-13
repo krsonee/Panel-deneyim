@@ -9,6 +9,64 @@ from database import get_db
 
 MODULE_ACCESS = ("module.biolink", "biolink.pages")
 
+_BIOLINK_DOMAIN_SKIP_PREFIXES = (
+    "/admin", "/api/", "/static/", "/demo", "/health", "/login",
+    "/uploads/biolink/", "/p/", "/favicon.ico", "/robots.txt",
+)
+
+
+def render_public_biolink_page(page, *, preview=False):
+    if preview:
+        page = biolink_api.apply_preview_overrides(page, request.args)
+        theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
+        return render_template(
+            "biolink_page.html", page=page, theme=theme, preview=True,
+            click_prefix=f"/p/{page['slug']}",
+        )
+    biolink_api.send_ga4_event(page, event_name="biolink_page_view")
+    theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
+    domain = biolink_api.normalize_custom_domain(request.host.split(":")[0])
+    on_custom = bool(page.get("custom_domain")) and domain == page["custom_domain"]
+    click_prefix = "" if on_custom else f"/p/{page['slug']}"
+    return render_template(
+        "biolink_page.html", page=page, theme=theme, click_prefix=click_prefix,
+    )
+
+
+def handle_public_biolink_click(page, button_id):
+    with closing(get_db()) as conn:
+        dest = biolink_api.record_click_and_resolve(
+            conn, page["id"], button_id,
+            ip=request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip(),
+            user_agent=request.headers.get("User-Agent", ""),
+            referer=request.headers.get("Referer", ""),
+        )
+    if not dest:
+        return ("Bağlantı bulunamadı veya pasif.", 404)
+    button_label = next((b["label"] for b in page["buttons"] if b["id"] == button_id), "")
+    biolink_api.send_ga4_event(page, event_name="biolink_click", button_label=button_label, destination_url=dest)
+    return redirect(dest, code=302)
+
+
+def handle_custom_domain_biolink():
+    """Özel domain (örn. vippmakro.com) kök adresinde bio sayfa göster."""
+    path = request.path or "/"
+    if any(path.startswith(prefix) for prefix in _BIOLINK_DOMAIN_SKIP_PREFIXES):
+        return None
+    with closing(get_db()) as conn:
+        page = biolink_api.get_public_page_by_domain(conn, request.host)
+    if not page:
+        return None
+    if path in ("", "/"):
+        with closing(get_db()) as conn:
+            biolink_api.record_view(conn, page["slug"])
+        return render_public_biolink_page(page)
+    if path.startswith("/go/"):
+        tail = path[4:].strip("/")
+        if tail.isdigit() and "/" not in tail:
+            return handle_public_biolink_click(page, int(tail))
+    return None
+
 
 def create_biolink_blueprint(permission_required):
     bp = Blueprint("biolink", __name__)
@@ -89,6 +147,7 @@ def create_biolink_blueprint(permission_required):
                     button_shape=data.get("button_shape") or "pill",
                     ga4_measurement_id=data.get("ga4_measurement_id") or "",
                     ga4_api_secret=data.get("ga4_api_secret") or "",
+                    custom_domain=data.get("custom_domain") or "",
                     created_by=username,
                 )
         except ValueError as exc:
@@ -222,30 +281,16 @@ def create_biolink_blueprint(permission_required):
             if not (preview and is_admin):
                 biolink_api.record_view(conn, slug)
         if preview and is_admin:
-            page = biolink_api.apply_preview_overrides(page, request.args)
-            theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
-            return render_template("biolink_page.html", page=page, theme=theme, preview=True)
-        biolink_api.send_ga4_event(page, event_name="biolink_page_view")
-        theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
-        return render_template("biolink_page.html", page=page, theme=theme)
+            return render_public_biolink_page(page, preview=True)
+        return render_public_biolink_page(page)
 
     @bp.route("/p/<slug>/go/<int:button_id>")
     def public_click(slug, button_id):
         with closing(get_db()) as conn:
             page = biolink_api.get_public_page(conn, slug)
-            if not page:
-                return ("Sayfa bulunamadı.", 404)
-            dest = biolink_api.record_click_and_resolve(
-                conn, page["id"], button_id,
-                ip=request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip(),
-                user_agent=request.headers.get("User-Agent", ""),
-                referer=request.headers.get("Referer", ""),
-            )
-        if not dest:
-            return ("Bağlantı bulunamadı veya pasif.", 404)
-        button_label = next((b["label"] for b in page["buttons"] if b["id"] == button_id), "")
-        biolink_api.send_ga4_event(page, event_name="biolink_click", button_label=button_label, destination_url=dest)
-        return redirect(dest, code=302)
+        if not page:
+            return ("Sayfa bulunamadı.", 404)
+        return handle_public_biolink_click(page, button_id)
 
     bp.register_blueprint(api)
     return bp

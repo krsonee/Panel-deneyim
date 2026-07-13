@@ -418,7 +418,9 @@
       var statusCls = p.is_active ? "active" : "inactive";
       return "<tr>" +
         "<td><strong>" + blEsc(p.title) + "</strong></td>" +
-        '<td><a href="/p/' + blEsc(p.slug) + '" target="_blank" rel="noopener">/p/' + blEsc(p.slug) + "</a></td>" +
+        '<td>' + (p.custom_domain
+          ? '<a href="https://' + blEsc(p.custom_domain) + '" target="_blank" rel="noopener">' + blEsc(p.custom_domain) + '</a>'
+          : '<a href="/p/' + blEsc(p.slug) + '" target="_blank" rel="noopener">/p/' + blEsc(p.slug) + "</a>") + "</td>" +
         '<td><span class="biolink-theme-swatch" style="background:' + swatch + ';"></span>' + blEsc((blThemes.find(function (t) { return t.key === p.theme; }) || {}).name || p.theme) + "</td>" +
         "<td>" + (p.view_count || 0) + "</td>" +
         "<td>" + (p.button_count || 0) + " blok / " + (p.total_clicks || 0) + " tık</td>" +
@@ -469,6 +471,8 @@
     document.getElementById("biolink-editor-title").textContent = "Studio — " + page.title;
     document.getElementById("bl-title").value = page.title || "";
     document.getElementById("bl-slug").value = page.slug || "";
+    var domainEl = document.getElementById("bl-domain");
+    if (domainEl) domainEl.value = page.custom_domain || "";
     document.getElementById("bl-theme").value = page.theme || "makrobet";
     document.getElementById("bl-shape").value = page.button_shape || "pill";
     renderThemeGallery();
@@ -483,7 +487,9 @@
     document.getElementById("bl-ga4-secret").value = "";
     document.getElementById("bl-is-active").checked = !!page.is_active;
     var link = document.getElementById("biolink-preview-link");
-    if (link) link.href = "/p/" + page.slug;
+    if (link) {
+      link.href = page.custom_domain ? ("https://" + page.custom_domain) : ("/p/" + page.slug);
+    }
     renderAssetPickers();
     renderQuickPalette();
     setComposerType(blComposerType);
@@ -638,6 +644,7 @@
     var payload = {
       title: document.getElementById("bl-title").value.trim(),
       slug: slug,
+      custom_domain: (document.getElementById("bl-domain") || {}).value.trim(),
       theme: document.getElementById("bl-theme").value,
       button_shape: document.getElementById("bl-shape").value,
       subtitle: document.getElementById("bl-subtitle").value,
@@ -654,7 +661,9 @@
       if (r && r.ok) {
         blToast("Kaydedildi");
         blCurrentPage = r.data.page;
-        document.getElementById("biolink-preview-link").href = "/p/" + blCurrentPage.slug;
+        document.getElementById("biolink-preview-link").href = blCurrentPage.custom_domain
+          ? ("https://" + blCurrentPage.custom_domain)
+          : ("/p/" + blCurrentPage.slug);
         document.getElementById("biolink-editor-title").textContent = "Studio — " + blCurrentPage.title;
         refreshPreview();
         loadPages();
