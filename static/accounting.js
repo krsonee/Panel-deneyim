@@ -178,6 +178,8 @@
 
   function accLoadRatesForDate(dateStr, selector) {
     if (!dateStr) return Promise.resolve();
+    if (accLoadRatesForDate._inflight === dateStr) return Promise.resolve();
+    accLoadRatesForDate._inflight = dateStr;
     return accApi("/api/accounting/exchange-rates?date=" + encodeURIComponent(dateStr)).then(function (res) {
       if (!res || !res.ok || !res.data) return;
       var label = dateStr.split("-").reverse().join(".");
@@ -189,7 +191,9 @@
         selector: selector || "#acc-exp-rate-usd, #acc-exp-rate-eur",
         skip_badge: true
       });
-    }).catch(function () {});
+    }).catch(function () {}).finally(function () {
+      if (accLoadRatesForDate._inflight === dateStr) accLoadRatesForDate._inflight = "";
+    });
   }
 
   function accReadFormRates(usdId, eurId) {
@@ -3788,15 +3792,22 @@
 
     var expDateEl = document.getElementById("acc-exp-date");
     if (expDateEl) {
+      var expDateTimer = null;
       expDateEl.addEventListener("change", function () {
-        accLoadRatesForDate(expDateEl.value, "#acc-exp-rate-usd, #acc-exp-rate-eur");
+        clearTimeout(expDateTimer);
+        expDateTimer = setTimeout(function () {
+          accLoadRatesForDate(expDateEl.value, "#acc-exp-rate-usd, #acc-exp-rate-eur");
+        }, 150);
       });
-      if (expDateEl.value) accLoadRatesForDate(expDateEl.value, "#acc-exp-rate-usd, #acc-exp-rate-eur");
     }
     var txDateEl = document.getElementById("acc-tx-date");
     if (txDateEl) {
+      var txDateTimer = null;
       txDateEl.addEventListener("change", function () {
-        accLoadRatesForDate(txDateEl.value, "#acc-tx-rate-usd, #acc-tx-rate-eur");
+        clearTimeout(txDateTimer);
+        txDateTimer = setTimeout(function () {
+          accLoadRatesForDate(txDateEl.value, "#acc-tx-rate-usd, #acc-tx-rate-eur");
+        }, 150);
       });
     }
 

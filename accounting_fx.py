@@ -17,6 +17,7 @@ _SETTING_EUR = "exchange_eur_try"
 
 _HTTP_HEADERS = {"User-Agent": "MakroPanel/1.0"}
 _FETCH_TIMEOUT = 4
+_HIST_FETCH_TIMEOUT = 2.5
 
 # Kısa süreli önbellek yalnızca arka arkaya gelen istekleri azaltır; kayıt anında kullanılmaz.
 _SOFT_CACHE_SECONDS = 15
@@ -28,6 +29,19 @@ _rate_cache = {
     "date": None,
     "source": "fallback",
 }
+
+# Tarih kuru cache — geçmiş kur değişmez; paneli kilitleyen tekrarlı dış API çağrılarını önler.
+_hist_rate_cache = {}
+_HIST_CACHE_MAX = 128
+_hist_lock = None
+
+
+def _get_hist_lock():
+    global _hist_lock
+    if _hist_lock is None:
+        import threading
+        _hist_lock = threading.Lock()
+    return _hist_lock
 
 
 def parse_currency(value):
@@ -174,7 +188,7 @@ def _fetch_tcmb_for_date(day):
     ddmmyyyy = day.strftime("%d%m%Y")
     url = f"https://www.tcmb.gov.tr/kurlar/{yyyymm}/{ddmmyyyy}.xml"
     req = urllib.request.Request(url, headers=_HTTP_HEADERS)
-    with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=_HIST_FETCH_TIMEOUT) as resp:
         root = ET.fromstring(resp.read())
     usd_try = eur_try = None
     date_label = root.get("Date") or root.get("Tarih") or day.isoformat()
@@ -190,10 +204,11 @@ def _fetch_tcmb_for_date(day):
 
 
 def _fetch_frankfurter_for_date(day):
+    """Frankfurter hafta sonu için otomatik önceki iş gününü döner — tek istekte yeterli."""
     iso = day.isoformat()
     url = f"https://api.frankfurter.app/{iso}?from=USD&to=TRY,EUR"
     req = urllib.request.Request(url, headers=_HTTP_HEADERS)
-    with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=_HIST_FETCH_TIMEOUT) as resp:
         data = json.loads(resp.read().decode())
     usd_try = float(data["rates"]["TRY"])
     eur_per_usd = float(data["rates"]["EUR"])
@@ -204,47 +219,96 @@ def _fetch_frankfurter_for_date(day):
 
 
 def fetch_rates_for_date(date_value):
-    """Belirli bir günün USD/TL ve EUR/TL kurunu getirir.
+    """Belirli bir günün USD/TL ve EUR/TL kurunu getirir (cache'li, fail-fast).
 
-    Hafta sonu / tatilde TCMB bülteni yoksa önceki iş günlerine (max 10 gün) bakar.
-    Bugün veya gelecek tarih için canlı kur kullanılır.
+    Önce Frankfurter (tek istek, tatil/hafta sonu otomatik), sonra TCMB arşiv.
+    Tekrarlayan dış API turları paneli kilitlediği için agresif cache kullanılır.
     """
     day = _parse_iso_date(date_value)
     if day is None:
-        return fetch_exchange_rates(fresh=True)
+        return fetch_exchange_rates(fresh=False)
 
     today = datetime.now(timezone.utc).date()
     if day >= today:
-        return fetch_exchange_rates(fresh=True)
+        return fetch_exchange_rates(fresh=False)
 
+    cache_key = day.isoformat()
+    lock = _get_hist_lock()
+    with lock:
+        cached = _hist_rate_cache.get(cache_key)
+        if cached and cached.get("usd_try") and cached.get("eur_try"):
+            out = dict(cached)
+            out["fetched_at"] = datetime.now(timezone.utc)
+            return out
+
+    result = None
     last_err = None
-    for back in range(0, 11):
-        probe = day - timedelta(days=back)
-        for fetch in (_fetch_tcmb_for_date, _fetch_frankfurter_for_date):
+    # 1) Frankfurter tek çağrı — en hızlı / tatil-dostu
+    try:
+        usd_try, eur_try, label, source = _fetch_frankfurter_for_date(day)
+        result = {
+            "usd_try": usd_try,
+            "eur_try": eur_try,
+            "date": label,
+            "source": source,
+            "as_of": (label if isinstance(label, str) and len(label) == 10 else day.isoformat()),
+            "requested": cache_key,
+        }
+    except _FETCH_ERRORS as exc:
+        last_err = exc
+    except OSError as exc:
+        last_err = exc
+
+    # 2) TCMB — sadece bugün + 2 gün geri (max 3 deneme)
+    if result is None:
+        for back in range(0, 3):
+            probe = day - timedelta(days=back)
             try:
-                usd_try, eur_try, label, source = fetch(probe)
-                return {
-                    "fetched_at": datetime.now(timezone.utc),
+                usd_try, eur_try, label, source = _fetch_tcmb_for_date(probe)
+                result = {
                     "usd_try": usd_try,
                     "eur_try": eur_try,
                     "date": label,
                     "source": source,
                     "as_of": probe.isoformat(),
-                    "requested": day.isoformat(),
+                    "requested": cache_key,
                 }
+                break
             except _FETCH_ERRORS as exc:
                 last_err = exc
                 continue
             except OSError as exc:
                 last_err = exc
                 continue
-    # Son çare: canlı kur
-    live = fetch_exchange_rates(fresh=True)
-    live["requested"] = day.isoformat()
-    live["source"] = f"{live.get('source') or 'live'}+fallback"
-    if last_err:
-        live["note"] = str(last_err)
-    return live
+
+    if result is None:
+        live = fetch_exchange_rates(fresh=False)
+        result = {
+            "usd_try": live.get("usd_try"),
+            "eur_try": live.get("eur_try"),
+            "date": live.get("date"),
+            "source": f"{live.get('source') or 'live'}+fallback",
+            "as_of": cache_key,
+            "requested": cache_key,
+        }
+        if last_err:
+            result["note"] = str(last_err)
+
+    result["fetched_at"] = datetime.now(timezone.utc)
+    with lock:
+        if len(_hist_rate_cache) >= _HIST_CACHE_MAX:
+            # eski anahtarları budama
+            for k in list(_hist_rate_cache.keys())[:32]:
+                _hist_rate_cache.pop(k, None)
+        _hist_rate_cache[cache_key] = {
+            "usd_try": result["usd_try"],
+            "eur_try": result["eur_try"],
+            "date": result.get("date"),
+            "source": result.get("source"),
+            "as_of": result.get("as_of"),
+            "requested": result.get("requested"),
+        }
+    return result
 
 
 def _cache_result(now, usd_try, eur_try, date, source):

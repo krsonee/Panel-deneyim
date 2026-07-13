@@ -623,10 +623,14 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             return {"usd_try": usd, "eur_try": eur}, None
 
         if need_fill:
-            if as_of:
-                auto = fetch_rates_for_date(as_of)
-            else:
-                auto = fetch_exchange_rates(fresh=True)
+            try:
+                if as_of:
+                    auto = fetch_rates_for_date(as_of)
+                else:
+                    # soft cache — her kayıtta dış API turu paneli kilitlemesin
+                    auto = fetch_exchange_rates(fresh=False)
+            except Exception:
+                auto = fetch_exchange_rates(fresh=False)
             if not auto.get("usd_try") or not auto.get("eur_try"):
                 return None, "Kur alınamadı. USD/TL ve EUR/TL değerlerini manuel girin."
             fill_usd = usd if usd else float(auto["usd_try"])
