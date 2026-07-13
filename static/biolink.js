@@ -729,6 +729,8 @@
 
   function savePage() {
     if (!blCurrentPage) return;
+    var btn = document.getElementById("btn-biolink-save");
+    if (btn && btn.dataset.busy === "1") return;
     var slugInput = document.getElementById("bl-slug");
     var rawSlug = slugInput ? slugInput.value.trim() : "";
     var slug = blSlugify(rawSlug);
@@ -753,6 +755,14 @@
     };
     var secret = document.getElementById("bl-ga4-secret").value.trim();
     if (secret) payload.ga4_api_secret = secret;
+    var orig = btn ? (btn.dataset.origText || btn.textContent) : "";
+    if (btn) {
+      btn.dataset.origText = orig;
+      btn.dataset.busy = "1";
+      btn.disabled = true;
+      btn.classList.add("is-busy");
+      btn.textContent = "Kaydediliyor…";
+    }
     blApi("/api/biolink/pages/" + blCurrentPage.id, { method: "PUT", body: payload }).then(function (r) {
       if (r && r.ok) {
         blToast("Kaydedildi");
@@ -762,6 +772,13 @@
         refreshPreview();
         loadPages();
       } else if (r) alert((r.data && r.data.error) || "Kaydedilemedi");
+    }).finally(function () {
+      if (btn) {
+        btn.dataset.busy = "0";
+        btn.disabled = false;
+        btn.classList.remove("is-busy");
+        btn.textContent = btn.dataset.origText || orig || "Kaydet";
+      }
     });
   }
 

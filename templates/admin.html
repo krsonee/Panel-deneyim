@@ -1012,10 +1012,6 @@
       contain: layout style paint;
       overscroll-behavior: contain;
     }
-    .table-scroll tbody tr {
-      content-visibility: auto;
-      contain-intrinsic-size: auto 46px;
-    }
     /* Gizli modüller — DOM boyutu büyük olsa bile render/paint maliyeti sıfır */
     .module-panel[hidden] {
       display: none !important;
@@ -1031,10 +1027,6 @@
       max-height: min(520px, 62vh);
       contain: layout style paint;
       overscroll-behavior: contain;
-    }
-    #makrolink-table tbody tr {
-      content-visibility: auto;
-      contain-intrinsic-size: auto 46px;
     }
     #makrolink-table .ml-cat-badge {
       display: inline-flex; align-items: center; gap: 0.25rem;
@@ -1507,9 +1499,17 @@
     .toast {
       position: fixed; bottom: 1.25rem; right: 1.25rem; padding: 0.65rem 1rem;
       background: var(--surface-2); border: 1px solid var(--green); border-radius: 10px;
-      color: var(--green); font-size: 0.8rem; opacity: 0; transition: 0.25s; z-index: 300;
+      color: var(--green); font-size: 0.8rem; opacity: 0; transition: 0.25s; z-index: 12000;
+      pointer-events: none;
     }
     .toast.show { opacity: 1; }
+    button.is-busy,
+    .btn.is-busy,
+    .btn-add-user.is-busy {
+      opacity: 0.72;
+      cursor: wait !important;
+      filter: saturate(0.85);
+    }
 
     .tools-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
     @media (max-width: 900px) { .tools-grid { grid-template-columns: 1fr; } }
@@ -2641,7 +2641,7 @@
 
   <script src="/static/accounting.js?v=20260713s"></script>
   <script src="/static/mailing.js?v=20260713s"></script>
-  <script src="/static/biolink.js?v=20260713u"></script>
+  <script src="/static/biolink.js?v=20260713v"></script>
   <script src="/static/marketing.js?v=20260712d"></script>
   <script>
     (function () {
@@ -3327,6 +3327,31 @@
       function toast(m) { var t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},2200); }
       window.toast = toast;
 
+      function panelBusyUi() {
+        return !!document.querySelector(".modal-overlay.open, .sidebar-backdrop.show");
+      }
+
+      function withButtonBusy(btn, work, busyText) {
+        if (!btn) return Promise.resolve().then(work);
+        if (btn.dataset.busy === "1") return Promise.resolve();
+        var orig = btn.dataset.origText || btn.textContent;
+        btn.dataset.origText = orig;
+        btn.dataset.busy = "1";
+        btn.disabled = true;
+        btn.classList.add("is-busy");
+        if (busyText) btn.textContent = busyText;
+        return Promise.resolve()
+          .then(work)
+          .catch(function (err) { throw err; })
+          .finally(function () {
+            btn.dataset.busy = "0";
+            btn.disabled = false;
+            btn.classList.remove("is-busy");
+            btn.textContent = btn.dataset.origText || orig;
+          });
+      }
+      window.withButtonBusy = withButtonBusy;
+
       function compareSortValues(a, b, dir) {
         var mul = dir === "asc" ? 1 : -1;
         if (a == null && b == null) return 0;
@@ -3850,7 +3875,12 @@
       function renderSessionsBody() {
         var tbody = document.getElementById("sessions-table");
         var filtered = allSessions.filter(sessionMatchesFilters);
-        document.getElementById("filter-count").textContent = filtered.length + " / " + allSessions.length + " oyuncu";
+        var renderCap = 180;
+        var shown = filtered.length > renderCap ? filtered.slice(0, renderCap) : filtered;
+        document.getElementById("filter-count").textContent =
+          (filtered.length > renderCap
+            ? shown.length + "+"
+            : filtered.length) + " / " + allSessions.length + " oyuncu";
         if (!filtered.length) {
           tbody.innerHTML = allSessions.length
             ? '<tr><td colspan="9" class="empty">Filtreye uygun oyuncu yok</td></tr>'
@@ -3858,7 +3888,7 @@
           updateTableFoot("sessions-table", filtered.length);
           return;
         }
-        var visible = sortTableRows("sessions-table", filtered, sessionSortGetters);
+        var visible = sortTableRows("sessions-table", shown, sessionSortGetters);
         tbody.innerHTML = visible.map(function(s){ return sessionRow(s, { clickable: true, detailBtn: true, tableId: "sessions-table" }); }).join("");
         applyTableColOrder("sessions-table");
         bindJourneyButtons();
@@ -4673,14 +4703,14 @@
       }
 
       function refreshLive() {
-        if (!trackingPollEnabled || document.hidden || liveInFlight) return;
+        if (!trackingPollEnabled || document.hidden || liveInFlight || panelBusyUi()) return;
         var pq = periodQuery();
         if (!hasPerm("tracking.players")) return;
         liveInFlight = true;
         lastLiveAt = Date.now();
         Promise.all([
-          fetchJsonTimed(API + "/api/online", 15000),
-          fetchJsonTimed(API + "/api/sessions" + pq, 18000)
+          fetchJsonTimed(API + "/api/online", 12000),
+          fetchJsonTimed(API + "/api/sessions" + pq + (pq ? "&" : "?") + "limit=200", 15000)
         ]).then(function(results) {
           if (!results[0] || !results[1]) return;
           renderOnlineIfChanged(results[0].users || []);
@@ -4697,7 +4727,7 @@
       }
 
       function refreshDashboard() {
-        if (!trackingPollEnabled || document.hidden || dashInFlight) return;
+        if (!trackingPollEnabled || document.hidden || dashInFlight || panelBusyUi()) return;
         var pq = periodQuery();
         var jobs = [];
         if (hasPerm("tracking.dashboard")) {
@@ -4740,7 +4770,7 @@
       }
 
       function refreshDashboardHeavy() {
-        if (!trackingPollEnabled || document.hidden || heavyInFlight) return;
+        if (!trackingPollEnabled || document.hidden || heavyInFlight || panelBusyUi()) return;
         ensureTrackingConfigs();
         var jobs = [];
         if (hasPerm("tracking.smartico") && smarticoConfigured !== false) {
@@ -4846,7 +4876,7 @@
           }, 2000);
         });
         document.addEventListener("visibilitychange", function() {
-          if (document.hidden || !trackingPollEnabled) return;
+          if (document.hidden || !trackingPollEnabled || panelBusyUi()) return;
           /* Sekmeye dönüşte spam refresh paneli kilitlemesin */
           if (Date.now() - lastLiveAt < 20000) return;
           refreshAll();
@@ -4855,21 +4885,24 @@
 
       bindOptional("add-link-form", "submit", function(e) {
         e.preventDefault();
+        var btn = e.target.querySelector('button[type="submit"]');
         var domain = document.getElementById("input-domain").value.trim();
         if (!domain) { alert("Domain girin."); return; }
-        fetch(API+"/api/links",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            domain:domain,
-            label:document.getElementById("input-label").value.trim(),
-            ref_code:document.getElementById("input-ref").value.trim()
-          })
-        }).then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});}).then(function(res){
-          if(!res.ok){alert(res.data.error);return;}
-          document.getElementById("input-label").value="";
-          document.getElementById("input-domain").value="";
-          document.getElementById("input-ref").value="";
-          refreshAll(); toast("Eklendi!");
-        });
+        withButtonBusy(btn, function () {
+          return fetch(API+"/api/links",{method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({
+              domain:domain,
+              label:document.getElementById("input-label").value.trim(),
+              ref_code:document.getElementById("input-ref").value.trim()
+            })
+          }).then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});}).then(function(res){
+            if(!res.ok){alert(res.data.error || "Eklenemedi");return;}
+            document.getElementById("input-label").value="";
+            document.getElementById("input-domain").value="";
+            document.getElementById("input-ref").value="";
+            refreshAll(); toast("Eklendi!");
+          });
+        }, "Ekleniyor…");
       });
 
       bindOptional("btn-bulk-preview", "click", function() {
@@ -5440,50 +5473,55 @@
         if (e.target === this) this.classList.remove("open");
       });
       bindOptional("btn-save-user-perms", "click", function() {
+        var btn = document.getElementById("btn-save-user-perms");
         var uid = document.getElementById("edit-user-id").value;
         var role = document.getElementById("edit-user-role").value;
         var perms = role === "custom" ? getCheckedPermissions("edit-user-perms") : (roleTemplates[role] ? roleTemplates[role].permissions : []);
         var body = { role: role, permissions: perms, two_factor_required: document.getElementById("edit-user-2fa").checked };
         var np = document.getElementById("edit-user-pass").value;
         if (np) body.password = np;
-        fetch(API+"/api/admin/users/"+uid, {
-          method:"PUT", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify(body)
-        }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
-          .then(function(res) {
-            if (!res.ok) { alert(res.data.error); return; }
-            if (res.data.user && res.data.user.username === document.getElementById("user-role-badge").textContent) {}
-            loadMe(function(){ applyPermissions(); refreshAll(); });
-            loadSettings();
-            document.getElementById("edit-user-modal").classList.remove("open");
-            toast("Yetkiler güncellendi!");
-          });
+        withButtonBusy(btn, function () {
+          return fetch(API+"/api/admin/users/"+uid, {
+            method:"PUT", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify(body)
+          }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+            .then(function(res) {
+              if (!res.ok) { alert(res.data.error || "Kaydedilemedi"); return; }
+              loadMe(function(){ applyPermissions(); refreshAll(); });
+              loadSettings();
+              document.getElementById("edit-user-modal").classList.remove("open");
+              toast("Yetkiler güncellendi!");
+            });
+        }, "Kaydediliyor…");
       });
 
       bindOptional("add-user-form", "submit", function(e) {
         e.preventDefault();
+        var btn = e.target.querySelector('button[type="submit"]');
         var role = document.getElementById("new-user-role").value;
         var perms = role === "custom" ? getCheckedPermissions("new-user-perms") : (roleTemplates[role] ? roleTemplates[role].permissions : []);
-        fetch(API+"/api/admin/users", {
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({
-            username: document.getElementById("new-user-name").value.trim(),
-            password: document.getElementById("new-user-pass").value,
-            display_name: document.getElementById("new-user-display").value.trim(),
-            two_factor_required: document.getElementById("new-user-2fa").checked,
-            role: role,
-            permissions: perms
-          })
-        }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
-          .then(function(res) {
-            if (!res.ok) { alert(res.data.error); return; }
-            document.getElementById("new-user-name").value = "";
-            document.getElementById("new-user-pass").value = "";
-            document.getElementById("new-user-display").value = "";
-            document.getElementById("new-user-2fa").checked = true;
-            loadSettings();
-            toast("Admin eklendi!");
-          });
+        withButtonBusy(btn, function () {
+          return fetch(API+"/api/admin/users", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({
+              username: document.getElementById("new-user-name").value.trim(),
+              password: document.getElementById("new-user-pass").value,
+              display_name: document.getElementById("new-user-display").value.trim(),
+              two_factor_required: document.getElementById("new-user-2fa").checked,
+              role: role,
+              permissions: perms
+            })
+          }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+            .then(function(res) {
+              if (!res.ok) { alert(res.data.error || "Eklenemedi"); return; }
+              document.getElementById("new-user-name").value = "";
+              document.getElementById("new-user-pass").value = "";
+              document.getElementById("new-user-display").value = "";
+              document.getElementById("new-user-2fa").checked = true;
+              loadSettings();
+              toast("Admin eklendi!");
+            });
+        }, "Ekleniyor…");
       });
 
       bindOptional("btn-open-settings", "click", function() {
@@ -5590,7 +5628,11 @@
       window.copyText = function(text){ if(text) navigator.clipboard.writeText(text).then(function(){toast("Kopyalandı!");}); };
       window.deleteLink = function(id){
         if(!confirm("Silinsin mi?")) return;
-        fetch(API+"/api/links/"+id,{method:"DELETE"}).then(function(){refreshAll();toast("Silindi.");});
+        toast("Siliniyor…");
+        fetch(API+"/api/links/"+id,{method:"DELETE"}).then(function(r){
+          if (!r.ok) { toast("Silinemedi"); return; }
+          refreshAll(); toast("Silindi.");
+        }).catch(function(){ toast("Silinemedi"); });
       };
 
       try {
