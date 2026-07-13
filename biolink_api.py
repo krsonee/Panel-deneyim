@@ -65,6 +65,8 @@ BANNER_LAYOUTS = ("top", "towers", "none")
 DEFAULT_BANNER_LAYOUT = "top"
 LAYOUT_COLS = ("full", "left", "right")
 DEFAULT_LAYOUT_COL = "full"
+TEXT_ALIGNS = ("left", "center", "right")
+DEFAULT_TEXT_ALIGN = "left"
 
 HEADING_TYPE = "heading"
 CLICKABLE_TYPE_LIST = ("link", "whatsapp", "telegram", "instagram", "twitter", "tiktok", "youtube", "bonus")
@@ -328,6 +330,8 @@ def _button_row(row):
         d["heading_style"] = d.get("heading_style") or DEFAULT_HEADING_STYLE
         lc = (d.get("layout_col") or DEFAULT_LAYOUT_COL).strip()
         d["layout_col"] = lc if lc in LAYOUT_COLS else DEFAULT_LAYOUT_COL
+    ta = (d.get("text_align") or DEFAULT_TEXT_ALIGN).strip()
+    d["text_align"] = ta if ta in TEXT_ALIGNS else DEFAULT_TEXT_ALIGN
     return d
 
 
@@ -588,13 +592,14 @@ def duplicate_page(conn, page_id, created_by=""):
             highlight=b["highlight"], badge_text=b["badge_text"], is_active=b["is_active"],
             heading_style=b.get("heading_style") or "",
             layout_col=b.get("layout_col") or DEFAULT_LAYOUT_COL,
+            text_align=b.get("text_align") or DEFAULT_TEXT_ALIGN,
         )
     return get_page(conn, new_page["id"])
 
 
 def add_button(conn, page_id, *, button_type="link", label="", url="", icon="",
                 highlight=False, badge_text="", is_active=True, heading_style="",
-                layout_col=DEFAULT_LAYOUT_COL):
+                layout_col=DEFAULT_LAYOUT_COL, text_align=DEFAULT_TEXT_ALIGN):
     button_type, label, url, badge_text = _validate_button(button_type, label, url, badge_text)
     if button_type == "bonus" and not highlight:
         highlight = True
@@ -608,6 +613,8 @@ def add_button(conn, page_id, *, button_type="link", label="", url="", icon="",
         lc = "full"
     elif lc not in LAYOUT_COLS:
         lc = DEFAULT_LAYOUT_COL
+    ta = (text_align or DEFAULT_TEXT_ALIGN).strip()
+    ta = ta if ta in TEXT_ALIGNS else DEFAULT_TEXT_ALIGN
     now = iso(utcnow())
     max_order = scalar(conn, "SELECT COALESCE(MAX(sort_order), -1) FROM biolink_buttons WHERE page_id = ?", (int(page_id),))
     sort_order = int(max_order or -1) + 1
@@ -616,11 +623,11 @@ def add_button(conn, page_id, *, button_type="link", label="", url="", icon="",
         """
         INSERT INTO biolink_buttons
           (page_id, button_type, label, url, icon, highlight, badge_text, is_active,
-           sort_order, click_count, heading_style, layout_col, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+           sort_order, click_count, heading_style, layout_col, text_align, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
         """,
         (int(page_id), button_type, label, url, icon, int(bool(highlight)), badge_text,
-         int(bool(is_active)), sort_order, hs, lc, now, now),
+         int(bool(is_active)), sort_order, hs, lc, ta, now, now),
     )
     execute(conn, "UPDATE biolink_pages SET updated_at = ? WHERE id = ?", (now, int(page_id)))
     conn.commit()
@@ -667,16 +674,22 @@ def update_button(conn, button_id, data):
     else:
         lc = (row.get("layout_col") or DEFAULT_LAYOUT_COL).strip()
         lc = lc if lc in LAYOUT_COLS else DEFAULT_LAYOUT_COL
+    if "text_align" in data:
+        ta = (data.get("text_align") or DEFAULT_TEXT_ALIGN).strip()
+        ta = ta if ta in TEXT_ALIGNS else DEFAULT_TEXT_ALIGN
+    else:
+        ta = (row.get("text_align") or DEFAULT_TEXT_ALIGN).strip()
+        ta = ta if ta in TEXT_ALIGNS else DEFAULT_TEXT_ALIGN
     now = iso(utcnow())
     execute(
         conn,
         """
         UPDATE biolink_buttons
         SET button_type = ?, label = ?, url = ?, icon = ?, highlight = ?, badge_text = ?,
-            is_active = ?, heading_style = ?, layout_col = ?, updated_at = ?
+            is_active = ?, heading_style = ?, layout_col = ?, text_align = ?, updated_at = ?
         WHERE id = ?
         """,
-        (button_type, label, url, icon, highlight, badge_text, is_active, hs, lc, now, int(button_id)),
+        (button_type, label, url, icon, highlight, badge_text, is_active, hs, lc, ta, now, int(button_id)),
     )
     execute(conn, "UPDATE biolink_pages SET updated_at = ? WHERE id = ?", (now, int(row["page_id"])))
     conn.commit()

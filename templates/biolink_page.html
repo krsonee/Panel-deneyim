@@ -295,7 +295,33 @@
   a.platform-tiktok { border-left: 3px solid var(--tt); }
   a.platform-youtube { border-left: 3px solid var(--yt); }
 
-  .link-label { flex: 1; line-height: 1.25; }
+  .link-label { flex: 1; line-height: 1.25; min-width: 0; }
+
+  /* Yazı hizalama */
+  a.link-btn.text-align-left .link-label { text-align: left; }
+  a.link-btn.text-align-center .link-label { text-align: center; }
+  a.link-btn.text-align-right .link-label { text-align: right; }
+
+  a.bonus-card.text-align-left .bonus-top .link-label { text-align: left; flex: 1; }
+  a.bonus-card.text-align-center .bonus-top {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+  }
+  a.bonus-card.text-align-center .bonus-top .link-label { text-align: center; grid-column: 2; }
+  a.bonus-card.text-align-center .bonus-amount { margin-left: 0; grid-column: 3; }
+  a.bonus-card.text-align-center .bonus-cta { text-align: center; }
+  a.bonus-card.text-align-right .bonus-top .link-label { text-align: right; flex: 1; }
+  a.bonus-card.text-align-right .bonus-amount { margin-left: 0; }
+  a.bonus-card.text-align-right .bonus-cta { text-align: right; }
+
+  .heading.text-align-left { justify-content: flex-start; text-align: left; }
+  .heading.text-align-center { justify-content: center; text-align: center; }
+  .heading.text-align-right { justify-content: flex-end; text-align: right; }
+  .heading.text-align-center .hs-inner,
+  .heading.text-align-right .hs-inner,
+  .heading.text-align-left .hs-inner { width: auto; }
+
   .link-badge {
     font-size: 0.62rem; font-weight: 800; text-transform: uppercase;
     padding: 0.22rem 0.55rem; border-radius: 999px;
@@ -409,11 +435,12 @@
     <div class="links">
       {% for b in page.buttons %}
         {% set col = b.layout_col or 'full' %}
+        {% set align = b.text_align or 'left' %}
         {% if b.button_type == 'heading' %}
-          <div class="heading link-col-full hs-{{ b.heading_style or 'classic' }}"><span class="hs-inner">{{ b.label }}</span></div>
+          <div class="heading link-col-full text-align-{{ align }} hs-{{ b.heading_style or 'classic' }}"><span class="hs-inner">{{ b.label }}</span></div>
         {% elif b.button_type == 'bonus' %}
           <div class="link-col-{{ col }}">
-          <a class="link-btn bonus-card highlight" href="/p/{{ page.slug }}/go/{{ b.id }}">
+          <a class="link-btn bonus-card highlight text-align-{{ align }}" href="/p/{{ page.slug }}/go/{{ b.id }}">
             <div class="bonus-top">
               <span class="link-icon">{{ b.display_icon or b.icon or '🎁' }}</span>
               <span class="link-label">{{ b.label }}</span>
@@ -424,7 +451,7 @@
           </div>
         {% else %}
           <div class="link-col-{{ col }}">
-          <a class="link-btn platform-{{ b.button_type }}{% if b.highlight %} highlight{% endif %}" href="/p/{{ page.slug }}/go/{{ b.id }}">
+          <a class="link-btn platform-{{ b.button_type }} text-align-{{ align }}{% if b.highlight %} highlight{% endif %}" href="/p/{{ page.slug }}/go/{{ b.id }}">
             <span class="link-icon">
               {% if b.button_type in ['whatsapp','telegram','instagram','twitter','tiktok','youtube'] %}
                 {% set platform = b.button_type %}{% include 'partials/biolink_platform_icon.html' %}

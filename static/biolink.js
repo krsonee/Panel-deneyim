@@ -903,6 +903,17 @@
     return f ? f.label : key;
   }
 
+  function blTextAlignPicker(b) {
+    var ta = b.text_align || "left";
+    return '<div class="bl-col-layout bl-text-align">' +
+      '<label class="bl-col-layout-lbl">Yazı</label>' +
+      '<select data-bl-field="text_align" data-bl-id="' + b.id + '">' +
+      '<option value="left"' + (ta === "left" ? " selected" : "") + ">Sola</option>" +
+      '<option value="center"' + (ta === "center" ? " selected" : "") + ">Ortala</option>" +
+      '<option value="right"' + (ta === "right" ? " selected" : "") + ">Sağa</option>" +
+      "</select></div>";
+  }
+
   function blLayoutColPicker(b) {
     if (b.button_type === "heading") return "";
     var col = b.layout_col || "full";
@@ -945,6 +956,7 @@
           (b.resolved_url ? '<div class="bl-block-meta">→ ' + blEsc(b.resolved_url) + "</div>" : "") +
           "</div>" +
           '<div class="bl-block-actions">' +
+          blTextAlignPicker(b) +
           blLayoutColPicker(b) +
           '<label class="bl-toggle-pill"><input type="checkbox" ' + (b.is_active ? "checked" : "") + ' data-bl-field="is_active" data-bl-id="' + b.id + '"><span>Aktif</span></label>' +
           '<button type="button" class="btn btn-danger btn-sm bl-block-del" data-bl-btn-del="' + b.id + '">Sil</button>' +
@@ -988,6 +1000,7 @@
         (b.resolved_url ? '<div class="bl-block-meta">→ ' + blEsc(b.resolved_url) + "</div>" : "") +
         "</div>" +
         '<div class="bl-block-actions">' +
+        blTextAlignPicker(b) +
         blLayoutColPicker(b) +
         '<label class="bl-toggle-pill" title="Öne çıkar"><input type="checkbox" ' + (b.highlight ? "checked" : "") + ' data-bl-field="highlight" data-bl-id="' + b.id + '"><span>⭐ Öne çıkar</span></label>' +
         '<label class="bl-toggle-pill"><input type="checkbox" ' + (b.is_active ? "checked" : "") + ' data-bl-field="is_active" data-bl-id="' + b.id + '"><span>Aktif</span></label>' +

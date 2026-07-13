@@ -163,6 +163,7 @@ def create_biolink_blueprint(permission_required):
                     is_active=data.get("is_active", True),
                     heading_style=data.get("heading_style") or "",
                     layout_col=data.get("layout_col") or "full",
+                    text_align=data.get("text_align") or "left",
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
