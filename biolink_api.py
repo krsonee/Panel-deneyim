@@ -58,7 +58,7 @@ BANNER_UPLOAD_MAX_BYTES = 6 * 1024 * 1024
 FAVICON_UPLOAD_MAX_BYTES = 512 * 1024
 
 RESERVED_SLUGS = frozenset({
-    "", "admin", "api", "static", "demo", "r", "p", "health", "favicon.ico",
+    "", "admin", "api", "static", "demo", "r", "p", "site", "health", "favicon.ico",
     "robots.txt", "sitemap.xml", "login", "logout", "mail", "mailing", "go", "new",
 })
 
@@ -374,7 +374,8 @@ def _page_row(row):
 
     d["custom_domain"] = normalize_custom_domain(d.get("custom_domain") or "")
     d["public_path"] = f"/p/{d['slug']}"
-    d["public_url"] = f"https://{d['custom_domain']}/" if d["custom_domain"] else d["public_path"]
+    d["site_path"] = f"/site/{d['slug']}"
+    d["public_url"] = f"https://{d['custom_domain']}/" if d["custom_domain"] else d["site_path"]
     return d
 
 
@@ -934,7 +935,7 @@ def _custom_asset_row(row):
 
 def list_custom_assets(conn, kind=None):
     kind = (kind or "").strip().lower()
-    if kind in ("logo", "banner"):
+    if kind in ("logo", "banner", "favicon"):
         rows = fetchall(
             conn,
             "SELECT * FROM biolink_assets WHERE kind = ? ORDER BY created_at DESC, id DESC",
@@ -947,9 +948,23 @@ def list_custom_assets(conn, kind=None):
 
 def list_brand_assets(conn):
     custom = list_custom_assets(conn)
-    logos = list(BRAND_LOGOS) + [a for a in custom if a["kind"] == "logo"]
-    banners = list(BRAND_BANNERS) + [a for a in custom if a["kind"] == "banner"]
-    favicons = list(BRAND_FAVICONS) + [a for a in custom if a["kind"] == "favicon"]
+    hidden = {
+        (r["asset_key"] or "").strip()
+        for r in (fetchall(conn, "SELECT asset_key FROM biolink_hidden_assets") or [])
+        if (r["asset_key"] or "").strip()
+    }
+    logos = [
+        a for a in list(BRAND_LOGOS)
+        if a.get("key") not in hidden
+    ] + [a for a in custom if a["kind"] == "logo"]
+    banners = [
+        a for a in list(BRAND_BANNERS)
+        if a.get("key") not in hidden
+    ] + [a for a in custom if a["kind"] == "banner"]
+    favicons = [
+        a for a in list(BRAND_FAVICONS)
+        if a.get("key") not in hidden
+    ] + [a for a in custom if a["kind"] == "favicon"]
     return {
         "logos": logos,
         "banners": banners,
@@ -957,7 +972,50 @@ def list_brand_assets(conn):
         "default_logo": DEFAULT_BRAND_LOGO,
         "default_banner": DEFAULT_BANNER,
         "default_favicon": DEFAULT_FAVICON,
+        "hidden_count": len(hidden),
     }
+
+
+def hide_brand_asset(conn, asset_key, kind=""):
+    """Marka (hazır) logo/banner/favicon'u seçiciden gizle — dosya silinmez."""
+    key = (asset_key or "").strip()
+    if not key:
+        raise ValueError("Varlık anahtarı gerekli.")
+    known = {a.get("key") for a in BRAND_LOGOS + BRAND_BANNERS + BRAND_FAVICONS}
+    if key not in known:
+        raise ValueError("Bu hazır varlık bulunamadı.")
+    # Varsayılanları koru
+    protected = set()
+    for a in BRAND_LOGOS + BRAND_BANNERS + BRAND_FAVICONS:
+        if a.get("url") in (DEFAULT_BRAND_LOGO, DEFAULT_BANNER, DEFAULT_FAVICON):
+            protected.add(a.get("key"))
+    if key in protected:
+        raise ValueError("Varsayılan logo/banner/favicon gizlenemez.")
+    kind = (kind or "").strip()[:32]
+    now = iso(utcnow())
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            INSERT INTO biolink_hidden_assets (asset_key, kind, hidden_at) VALUES (?, ?, ?)
+            ON CONFLICT (asset_key) DO UPDATE SET kind = EXCLUDED.kind, hidden_at = EXCLUDED.hidden_at
+            """,
+            (key, kind, now),
+        )
+    else:
+        execute(
+            conn,
+            "INSERT OR REPLACE INTO biolink_hidden_assets (asset_key, kind, hidden_at) VALUES (?, ?, ?)",
+            (key, kind, now),
+        )
+    conn.commit()
+    return True
+
+
+def unhide_all_brand_assets(conn):
+    execute(conn, "DELETE FROM biolink_hidden_assets")
+    conn.commit()
+    return True
 
 
 def upload_asset(conn, kind, file_storage, *, label="", created_by=""):

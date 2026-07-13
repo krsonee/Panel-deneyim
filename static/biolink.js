@@ -289,9 +289,12 @@
     var active = val === a.url ? " active" : "";
     var customCls = a.custom ? " custom" : "";
     var dataAttr = isBanner ? "data-bl-banner" : (isFavicon ? "data-bl-favicon" : "data-bl-logo");
-    var delBtn = a.custom
-      ? '<button type="button" class="bl-asset-del" data-bl-asset-del="' + a.id + '" title="Sil">×</button>'
-      : "";
+    var delBtn = "";
+    if (a.custom && a.id) {
+      delBtn = '<button type="button" class="bl-asset-del" data-bl-asset-del="' + a.id + '" data-bl-asset-kind="' + blEsc(type) + '" title="Yüklenen dosyayı sil">×</button>';
+    } else if (a.key && !a.isNone && a.url !== BL_NONE) {
+      delBtn = '<button type="button" class="bl-asset-del" data-bl-brand-hide="' + blEsc(a.key) + '" data-bl-asset-kind="' + blEsc(type) + '" title="Seçiciden kaldır">×</button>';
+    }
     if (a.isNone || a.url === BL_NONE) {
       var noneIcon = isFavicon ? "◉" : "∅";
       return '<div class="bl-asset-chip-wrap">' +
@@ -308,6 +311,21 @@
   }
 
   function blBindAssetPickers(logoBox, bannerBox, faviconBox) {
+    function bindDel(box) {
+      if (!box) return;
+      box.querySelectorAll("[data-bl-asset-del]").forEach(function (btn) {
+        btn.onclick = function (e) {
+          e.stopPropagation();
+          blDeleteAsset(btn.getAttribute("data-bl-asset-del"), btn.getAttribute("data-bl-asset-kind") || "logo");
+        };
+      });
+      box.querySelectorAll("[data-bl-brand-hide]").forEach(function (btn) {
+        btn.onclick = function (e) {
+          e.stopPropagation();
+          blHideBrandAsset(btn.getAttribute("data-bl-brand-hide"), btn.getAttribute("data-bl-asset-kind") || "");
+        };
+      });
+    }
     if (logoBox) {
       logoBox.querySelectorAll("[data-bl-logo]").forEach(function (btn) {
         btn.onclick = function () {
@@ -316,12 +334,7 @@
           schedulePreviewRefresh();
         };
       });
-      logoBox.querySelectorAll("[data-bl-asset-del]").forEach(function (btn) {
-        btn.onclick = function (e) {
-          e.stopPropagation();
-          blDeleteAsset(btn.getAttribute("data-bl-asset-del"), "logo");
-        };
-      });
+      bindDel(logoBox);
     }
     if (faviconBox) {
       faviconBox.querySelectorAll("[data-bl-favicon]").forEach(function (btn) {
@@ -331,12 +344,7 @@
           schedulePreviewRefresh();
         };
       });
-      faviconBox.querySelectorAll("[data-bl-asset-del]").forEach(function (btn) {
-        btn.onclick = function (e) {
-          e.stopPropagation();
-          blDeleteAsset(btn.getAttribute("data-bl-asset-del"), "favicon");
-        };
-      });
+      bindDel(faviconBox);
     }
     if (bannerBox) {
       bannerBox.querySelectorAll("[data-bl-banner]").forEach(function (btn) {
@@ -352,13 +360,37 @@
           schedulePreviewRefresh();
         };
       });
-      bannerBox.querySelectorAll("[data-bl-asset-del]").forEach(function (btn) {
-        btn.onclick = function (e) {
-          e.stopPropagation();
-          blDeleteAsset(btn.getAttribute("data-bl-asset-del"), "banner");
-        };
-      });
+      bindDel(bannerBox);
     }
+  }
+
+  function blHideBrandAsset(key, kind) {
+    if (!key) return;
+    if (!confirm("Bu hazır varlık seçiciden kaldırılsın mı? (Dosya silinmez, «Varlıkları geri getir» ile döner)")) return;
+    blApi("/api/biolink/assets/hide-brand", { method: "POST", body: { key: key, kind: kind } }).then(function (r) {
+      if (!r || !r.ok) {
+        if (r) alert((r.data && r.data.error) || "Kaldırılamadı");
+        return;
+      }
+      blToast("Seçiciden kaldırıldı");
+      if (r.data && r.data.assets) blAssets = r.data.assets;
+      else return loadAssets();
+      renderAssetPickers();
+      schedulePreviewRefresh();
+    });
+  }
+
+  function blRestoreBrandAssets() {
+    if (!confirm("Gizlenen tüm hazır logo/banner/favicon geri gelsin mi?")) return;
+    blApi("/api/biolink/assets/restore-brand", { method: "POST", body: {} }).then(function (r) {
+      if (!r || !r.ok) {
+        if (r) alert((r.data && r.data.error) || "Geri getirilemedi");
+        return;
+      }
+      blToast("Hazır varlıklar geri geldi");
+      if (r.data && r.data.assets) blAssets = r.data.assets;
+      renderAssetPickers();
+    });
   }
 
   function blUploadAsset(kind, file) {
@@ -393,17 +425,37 @@
         return;
       }
       blToast("Silindi");
-      var fieldId = kind === "logo" ? "bl-avatar" : "bl-banner";
+      var fieldId = kind === "logo" ? "bl-avatar" : (kind === "favicon" ? "bl-favicon" : "bl-banner");
       var field = document.getElementById(fieldId);
       var deletedUrl = "";
-      (blAssets.logos || []).concat(blAssets.banners || []).forEach(function (a) {
+      (blAssets.logos || []).concat(blAssets.banners || []).concat(blAssets.favicons || []).forEach(function (a) {
         if (a.custom && String(a.id) === String(assetId)) deletedUrl = a.url;
       });
       if (field && field.value === deletedUrl) {
-        field.value = kind === "logo" ? (blAssets.default_logo || "") : (blAssets.default_banner || "");
+        if (kind === "logo") field.value = blAssets.default_logo || "";
+        else if (kind === "favicon") field.value = blAssets.default_favicon || "";
+        else field.value = blAssets.default_banner || "";
       }
       loadAssets().then(function () { schedulePreviewRefresh(); });
     });
+  }
+
+  function blSiteUrl(slug) {
+    return "/site/" + encodeURIComponent(slug || "");
+  }
+
+  function blUpdatePageLinks(page) {
+    if (!page) return;
+    var live = document.getElementById("biolink-preview-link");
+    var site = document.getElementById("biolink-site-link");
+    if (live) {
+      live.href = page.custom_domain ? ("https://" + page.custom_domain) : ("/p/" + page.slug);
+      live.textContent = page.custom_domain ? "Domain ↗" : "Panel link ↗";
+    }
+    if (site) {
+      site.href = blSiteUrl(page.slug);
+      site.hidden = false;
+    }
   }
 
   function renderAssetPickers() {
@@ -455,9 +507,12 @@
       var statusCls = p.is_active ? "active" : "inactive";
       return "<tr>" +
         "<td><strong>" + blEsc(p.title) + "</strong></td>" +
-        '<td>' + (p.custom_domain
-          ? '<a href="https://' + blEsc(p.custom_domain) + '" target="_blank" rel="noopener">' + blEsc(p.custom_domain) + '</a>'
-          : '<a href="/p/' + blEsc(p.slug) + '" target="_blank" rel="noopener">/p/' + blEsc(p.slug) + "</a>") + "</td>" +
+        '<td>' +
+          '<a href="' + blSiteUrl(p.slug) + '" target="_blank" rel="noopener" title="Test sitesi">/site/' + blEsc(p.slug) + '</a>' +
+          (p.custom_domain
+            ? '<br><a href="https://' + blEsc(p.custom_domain) + '" target="_blank" rel="noopener" class="muted-sm">' + blEsc(p.custom_domain) + '</a>'
+            : "") +
+        "</td>" +
         '<td><span class="biolink-theme-swatch" style="background:' + swatch + ';"></span>' + blEsc((blThemes.find(function (t) { return t.key === p.theme; }) || {}).name || p.theme) + "</td>" +
         "<td>" + (p.view_count || 0) + "</td>" +
         "<td>" + (p.button_count || 0) + " blok / " + (p.total_clicks || 0) + " tık</td>" +
@@ -529,6 +584,7 @@
     if (link) {
       link.href = page.custom_domain ? ("https://" + page.custom_domain) : ("/p/" + page.slug);
     }
+    blUpdatePageLinks(page);
     renderAssetPickers();
     renderQuickPalette();
     setComposerType(blComposerType);
@@ -706,6 +762,7 @@
         document.getElementById("biolink-preview-link").href = blCurrentPage.custom_domain
           ? ("https://" + blCurrentPage.custom_domain)
           : ("/p/" + blCurrentPage.slug);
+        blUpdatePageLinks(blCurrentPage);
         document.getElementById("biolink-editor-title").textContent = "Studio — " + blCurrentPage.title;
         refreshPreview();
         loadPages();
@@ -1109,6 +1166,8 @@
     document.getElementById("btn-biolink-refresh").onclick = loadPages;
     document.getElementById("btn-biolink-save").onclick = savePage;
     document.getElementById("btn-biolink-close").onclick = closeEditor;
+    var restoreBtn = document.getElementById("btn-biolink-restore-assets");
+    if (restoreBtn) restoreBtn.onclick = blRestoreBrandAssets;
     document.getElementById("btn-biolink-add-button").onclick = addButton;
     var logoFile = document.getElementById("bl-logo-file");
     var bannerFile = document.getElementById("bl-banner-file");

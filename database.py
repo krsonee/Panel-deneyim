@@ -862,6 +862,28 @@ def migrate_biolink(conn):
             """,
         )
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_biolink_assets_kind ON biolink_assets(kind)")
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS biolink_hidden_assets (
+                asset_key TEXT PRIMARY KEY,
+                kind TEXT NOT NULL DEFAULT '',
+                hidden_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS biolink_hidden_assets (
+                asset_key TEXT PRIMARY KEY,
+                kind TEXT NOT NULL DEFAULT '',
+                hidden_at TEXT NOT NULL
+            )
+            """,
+        )
     conn.commit()
 
 

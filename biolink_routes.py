@@ -11,11 +11,11 @@ MODULE_ACCESS = ("module.biolink", "biolink.pages")
 
 _BIOLINK_DOMAIN_SKIP_PREFIXES = (
     "/admin", "/api/", "/static/", "/demo", "/health", "/login",
-    "/uploads/biolink/", "/p/", "/robots.txt",
+    "/uploads/biolink/", "/p/", "/site/", "/robots.txt",
 )
 
 
-def render_public_biolink_page(page, *, preview=False):
+def render_public_biolink_page(page, *, preview=False, site_mode=False):
     if preview:
         page = biolink_api.apply_preview_overrides(page, request.args)
         theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
@@ -27,7 +27,12 @@ def render_public_biolink_page(page, *, preview=False):
     theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
     domain = biolink_api.normalize_custom_domain(request.host.split(":")[0])
     on_custom = bool(page.get("custom_domain")) and domain == page["custom_domain"]
-    click_prefix = "" if on_custom else f"/p/{page['slug']}"
+    if site_mode:
+        click_prefix = f"/site/{page['slug']}"
+    elif on_custom:
+        click_prefix = ""
+    else:
+        click_prefix = f"/p/{page['slug']}"
     return render_template(
         "biolink_page.html", page=page, theme=theme, click_prefix=click_prefix,
     )
@@ -122,6 +127,28 @@ def create_biolink_blueprint(permission_required):
         if not ok:
             return jsonify({"error": "Dosya bulunamadı."}), 404
         return jsonify({"ok": True})
+
+    @api.route("/assets/hide-brand", methods=["POST"])
+    @perm(*MODULE_ACCESS)
+    def hide_brand_asset():
+        data = request.get_json(silent=True) or {}
+        try:
+            with closing(get_db()) as conn:
+                biolink_api.hide_brand_asset(
+                    conn, data.get("key") or "", kind=data.get("kind") or "",
+                )
+                assets = biolink_api.list_brand_assets(conn)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, "assets": assets})
+
+    @api.route("/assets/restore-brand", methods=["POST"])
+    @perm(*MODULE_ACCESS)
+    def restore_brand_assets():
+        with closing(get_db()) as conn:
+            biolink_api.unhide_all_brand_assets(conn)
+            assets = biolink_api.list_brand_assets(conn)
+        return jsonify({"ok": True, "assets": assets})
 
     @api.route("/pages", methods=["GET"])
     @perm(*MODULE_ACCESS)
@@ -294,6 +321,32 @@ def create_biolink_blueprint(permission_required):
         if not page:
             return ("Sayfa bulunamadı.", 404)
         return handle_public_biolink_click(page, button_id)
+
+    @bp.route("/site/<slug>")
+    def site_page(slug):
+        """DNS oturana kadar gerçek site gibi test adresi: /site/vipmakro"""
+        with closing(get_db()) as conn:
+            page = biolink_api.get_public_page(conn, slug)
+            if not page:
+                return render_template("biolink_404.html"), 404
+            biolink_api.record_view(conn, slug)
+        return render_public_biolink_page(page, site_mode=True)
+
+    @bp.route("/site/<slug>/go/<int:button_id>")
+    def site_click(slug, button_id):
+        with closing(get_db()) as conn:
+            page = biolink_api.get_public_page(conn, slug)
+        if not page:
+            return ("Sayfa bulunamadı.", 404)
+        return handle_public_biolink_click(page, button_id)
+
+    @bp.route("/site/<slug>/favicon.ico")
+    def site_favicon(slug):
+        with closing(get_db()) as conn:
+            page = biolink_api.get_public_page(conn, slug)
+        if not page:
+            return ("", 404)
+        return redirect(biolink_api.resolve_favicon_url(page), code=302)
 
     bp.register_blueprint(api)
     return bp
