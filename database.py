@@ -711,6 +711,7 @@ def migrate_biolink(conn):
                 sort_order INTEGER NOT NULL DEFAULT 0,
                 click_count INTEGER NOT NULL DEFAULT 0,
                 heading_style TEXT NOT NULL DEFAULT 'classic',
+                layout_col TEXT NOT NULL DEFAULT 'full',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
@@ -771,6 +772,7 @@ def migrate_biolink(conn):
                 sort_order INTEGER NOT NULL DEFAULT 0,
                 click_count INTEGER NOT NULL DEFAULT 0,
                 heading_style TEXT NOT NULL DEFAULT 'classic',
+                layout_col TEXT NOT NULL DEFAULT 'full',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (page_id) REFERENCES biolink_pages(id)
@@ -804,6 +806,8 @@ def migrate_biolink(conn):
     btn_cols = _table_columns(conn, "biolink_buttons")
     if "heading_style" not in btn_cols:
         execute(conn, "ALTER TABLE biolink_buttons ADD COLUMN heading_style TEXT NOT NULL DEFAULT 'classic'")
+    if "layout_col" not in btn_cols:
+        execute(conn, "ALTER TABLE biolink_buttons ADD COLUMN layout_col TEXT NOT NULL DEFAULT 'full'")
     if uses_postgres():
         execute(
             conn,

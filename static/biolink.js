@@ -592,6 +592,11 @@
       schedulePreviewRefresh();
       return;
     }
+    if (input.tagName === "SELECT") {
+      saveBlockField(id, field, value, input, false);
+      schedulePreviewRefresh();
+      return;
+    }
     var key = id + ":" + field;
     clearTimeout(blBlockSaveTimers[key]);
     blBlockSaveTimers[key] = setTimeout(function () {
@@ -780,8 +785,10 @@
 
     box.addEventListener("change", function (e) {
       var input = e.target.closest("[data-bl-field]");
-      if (!input || input.type !== "checkbox") return;
-      handleBlockFieldInput(input);
+      if (!input) return;
+      if (input.type === "checkbox" || input.tagName === "SELECT") {
+        handleBlockFieldInput(input);
+      }
     });
 
     box.addEventListener("focusout", function (e) {
@@ -896,6 +903,18 @@
     return f ? f.label : key;
   }
 
+  function blLayoutColPicker(b) {
+    if (b.button_type === "heading") return "";
+    var col = b.layout_col || "full";
+    return '<div class="bl-col-layout">' +
+      '<label class="bl-col-layout-lbl">Yerleşim</label>' +
+      '<select data-bl-field="layout_col" data-bl-id="' + b.id + '">' +
+      '<option value="full"' + (col === "full" ? " selected" : "") + ">Tam genişlik</option>" +
+      '<option value="left"' + (col === "left" ? " selected" : "") + ">Sol yarım</option>" +
+      '<option value="right"' + (col === "right" ? " selected" : "") + ">Sağ yarım</option>" +
+      "</select></div>";
+  }
+
   function renderButtonsList(buttons) {
     var box = document.getElementById("biolink-buttons-list");
     if (!box) return;
@@ -926,6 +945,7 @@
           (b.resolved_url ? '<div class="bl-block-meta">→ ' + blEsc(b.resolved_url) + "</div>" : "") +
           "</div>" +
           '<div class="bl-block-actions">' +
+          blLayoutColPicker(b) +
           '<label class="bl-toggle-pill"><input type="checkbox" ' + (b.is_active ? "checked" : "") + ' data-bl-field="is_active" data-bl-id="' + b.id + '"><span>Aktif</span></label>' +
           '<button type="button" class="btn btn-danger btn-sm bl-block-del" data-bl-btn-del="' + b.id + '">Sil</button>' +
           "</div></div></div>";
@@ -968,6 +988,7 @@
         (b.resolved_url ? '<div class="bl-block-meta">→ ' + blEsc(b.resolved_url) + "</div>" : "") +
         "</div>" +
         '<div class="bl-block-actions">' +
+        blLayoutColPicker(b) +
         '<label class="bl-toggle-pill" title="Öne çıkar"><input type="checkbox" ' + (b.highlight ? "checked" : "") + ' data-bl-field="highlight" data-bl-id="' + b.id + '"><span>⭐ Öne çıkar</span></label>' +
         '<label class="bl-toggle-pill"><input type="checkbox" ' + (b.is_active ? "checked" : "") + ' data-bl-field="is_active" data-bl-id="' + b.id + '"><span>Aktif</span></label>' +
         '<button type="button" class="btn btn-danger btn-sm bl-block-del" data-bl-btn-del="' + b.id + '">Sil</button>' +

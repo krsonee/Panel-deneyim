@@ -162,6 +162,7 @@ def create_biolink_blueprint(permission_required):
                     badge_text=data.get("badge_text") or "",
                     is_active=data.get("is_active", True),
                     heading_style=data.get("heading_style") or "",
+                    layout_col=data.get("layout_col") or "full",
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400

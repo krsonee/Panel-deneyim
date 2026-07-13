@@ -135,11 +135,20 @@
   @keyframes watermarkPulse { 0%,100%{opacity:0.05} 50%{opacity:0.08} }
 
   .wrap {
-    width: 100%; max-width: 420px;
+    width: 100%; max-width: 720px;
     display: flex; flex-direction: column; align-items: center;
     position: relative; z-index: 1;
     animation: fadeUp 0.55s ease-out;
   }
+  /* Üst bölüm — her zaman ortada tek sütun (logo, başlık, banner) */
+  .page-hero {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .page-hero .banner-wrap { width: 100%; }
   @keyframes fadeUp {
     from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: none; }
@@ -217,7 +226,36 @@
     font-size: 0.88rem; color: var(--muted); text-align: center; margin: 0 0 1.75rem;
     max-width: 340px; line-height: 1.5;
   }
-  .links { width: 100%; display: flex; flex-direction: column; gap: 0.7rem; }
+  .links {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    align-items: start;
+  }
+  /* Tam genişlik = ortada tek sütun (720 grid'in ortasında dar şerit) */
+  .link-col-full,
+  .links > .heading {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: min(100%, 420px);
+  }
+  .link-col-full > a { width: 100%; display: flex; }
+  .link-col-left { grid-column: 1; min-width: 0; }
+  .link-col-right { grid-column: 2; min-width: 0; }
+
+  @media (max-width: 560px) {
+    .wrap { max-width: 420px; }
+    .links { grid-template-columns: 1fr; }
+    .link-col-full,
+    .links > .heading,
+    .link-col-left,
+    .link-col-right {
+      grid-column: 1 / -1;
+      width: 100%;
+      max-width: none;
+    }
+  }
 
   a.link-btn {
     display: flex; align-items: center; gap: 0.75rem;
@@ -283,7 +321,42 @@
   a.bonus-card .bonus-cta { font-size: 0.72rem; color: var(--muted); }
   a.bonus-card .bonus-cta span { color: var(--accent); font-weight: 700; }
 
-  .footer { margin-top: 2rem; display: flex; flex-direction: column; align-items: center; gap: 0.55rem; }
+  /* Yarım sütun — kompakt kart */
+  .link-col-left a.link-btn,
+  .link-col-right a.link-btn,
+  .link-col-left a.bonus-card,
+  .link-col-right a.bonus-card {
+    padding: 0.75rem 0.8rem;
+    font-size: 0.82rem;
+    gap: 0.55rem;
+  }
+  .link-col-left a.bonus-card,
+  .link-col-right a.bonus-card {
+    padding: 0.7rem 0.75rem;
+  }
+  .link-col-left .link-icon,
+  .link-col-right .link-icon {
+    width: 34px; height: 34px; font-size: 0.95rem;
+  }
+  .link-col-left .link-label,
+  .link-col-right .link-label {
+    font-size: 0.78rem;
+    line-height: 1.2;
+  }
+  .link-col-left a.link-btn::after,
+  .link-col-right a.link-btn::after { display: none; }
+  .link-col-left .bonus-top,
+  .link-col-right .bonus-top { flex-wrap: wrap; gap: 0.35rem; }
+  .link-col-left .bonus-amount,
+  .link-col-right .bonus-amount { margin-left: 0; font-size: 0.62rem; }
+  .link-col-left .bonus-cta,
+  .link-col-right .bonus-cta { font-size: 0.62rem; }
+
+  .footer {
+    margin-top: 2rem;
+    display: flex; flex-direction: column; align-items: center; gap: 0.55rem;
+    width: 100%; max-width: 420px;
+  }
   .share-btn {
     display: inline-flex; align-items: center; gap: 0.4rem;
     background: rgba(255,255,255,0.04); border: 1px solid var(--card-border); color: var(--muted);
@@ -312,6 +385,7 @@
   {% endif %}
 
   <div class="wrap">
+    <div class="page-hero">
     {% if page.logo_url %}
     <img class="brand-logo-top" src="{{ page.logo_url }}" alt="Makrobet">
     {% endif %}
@@ -330,12 +404,15 @@
 
     <h1>{{ page.title }}</h1>
     {% if page.subtitle %}<p class="subtitle">{{ page.subtitle }}</p>{% endif %}
+    </div>
 
     <div class="links">
       {% for b in page.buttons %}
+        {% set col = b.layout_col or 'full' %}
         {% if b.button_type == 'heading' %}
-          <div class="heading hs-{{ b.heading_style or 'classic' }}"><span class="hs-inner">{{ b.label }}</span></div>
+          <div class="heading link-col-full hs-{{ b.heading_style or 'classic' }}"><span class="hs-inner">{{ b.label }}</span></div>
         {% elif b.button_type == 'bonus' %}
+          <div class="link-col-{{ col }}">
           <a class="link-btn bonus-card highlight" href="/p/{{ page.slug }}/go/{{ b.id }}">
             <div class="bonus-top">
               <span class="link-icon">{{ b.display_icon or b.icon or '🎁' }}</span>
@@ -344,7 +421,9 @@
             </div>
             <div class="bonus-cta"><span>Katıl →</span> Promosyonu görüntüle</div>
           </a>
+          </div>
         {% else %}
+          <div class="link-col-{{ col }}">
           <a class="link-btn platform-{{ b.button_type }}{% if b.highlight %} highlight{% endif %}" href="/p/{{ page.slug }}/go/{{ b.id }}">
             <span class="link-icon">
               {% if b.button_type in ['whatsapp','telegram','instagram','twitter','tiktok','youtube'] %}
@@ -356,6 +435,7 @@
             <span class="link-label">{{ b.label }}</span>
             {% if b.badge_text and b.button_type != 'whatsapp' %}<span class="link-badge">{{ b.badge_text }}</span>{% endif %}
           </a>
+          </div>
         {% endif %}
       {% endfor %}
     </div>

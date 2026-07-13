@@ -420,6 +420,29 @@
   margin-top: 0.1rem;
   border-top: 1px solid rgba(255,255,255,0.07);
 }
+.bl-col-layout {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-right: auto;
+}
+.bl-col-layout-lbl {
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.bl-col-layout select {
+  font-size: 0.68rem;
+  padding: 0.28rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  max-width: 118px;
+}
 .bl-toggle-pill {
   font-size: 0.64rem;
   display: inline-flex;
