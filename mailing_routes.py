@@ -1305,6 +1305,69 @@ def create_mailing_click_blueprint():
     return bp
 
 
+def _purge_all_mail_contacts_once():
+    """Bir kerelik: tüm mail kontakları + bağlı gönderim/tıklama kayıtlarını sil.
+
+    Panel kasmasını bitirmek için deploy'da çalışır; mail_settings ile tekrarlanmaz.
+    """
+    flag = "purge_all_contacts_v20260713a"
+    try:
+        with closing(get_db()) as conn:
+            if (get_mail_setting(conn, flag, "") or "").strip() == "1":
+                return 0
+            before = 0
+            try:
+                before = int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0)
+            except Exception:
+                before = -1
+            if uses_postgres():
+                execute(
+                    conn,
+                    """
+                    TRUNCATE TABLE
+                      mail_campaign_recipients,
+                      mail_click_links,
+                      mail_ivr_events,
+                      mail_sends,
+                      mail_contacts
+                    RESTART IDENTITY CASCADE
+                    """,
+                )
+                try:
+                    execute(conn, "TRUNCATE TABLE mail_import_jobs RESTART IDENTITY CASCADE")
+                except Exception:
+                    execute(conn, "DELETE FROM mail_import_jobs")
+                try:
+                    execute(conn, "UPDATE mail_contact_tags SET contact_count = 0")
+                except Exception:
+                    pass
+            else:
+                for table in (
+                    "mail_campaign_recipients",
+                    "mail_click_links",
+                    "mail_ivr_events",
+                    "mail_sends",
+                    "mail_contacts",
+                    "mail_import_jobs",
+                ):
+                    try:
+                        execute(conn, f"DELETE FROM {table}")
+                    except Exception:
+                        pass
+                try:
+                    execute(conn, "UPDATE mail_contact_tags SET contact_count = 0")
+                except Exception:
+                    pass
+            upsert_mail_setting(conn, flag, "1")
+            conn.commit()
+            _invalidate_mail_stats_cache()
+            print(f"🧹 mail contacts purged once (before≈{before})")
+            return before
+    except Exception as exc:
+        print(f"⚠️  mail contacts purge failed: {exc}")
+        return -1
+
+
 def create_mailing_blueprint(permission_required):
     from mail_campaign_worker import ensure_campaign_scheduler
 
@@ -1313,6 +1376,10 @@ def create_mailing_blueprint(permission_required):
         _cancel_all_active_imports()
     except Exception as exc:
         print(f"⚠️  startup import cancel: {exc}")
+    try:
+        _purge_all_mail_contacts_once()
+    except Exception as exc:
+        print(f"⚠️  startup contacts purge: {exc}")
     bp = Blueprint("mailing", __name__, url_prefix="/api/mailing")
 
     def mail_perm(*keys):

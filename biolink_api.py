@@ -15,6 +15,7 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import closing
 from urllib.parse import urlparse
 
 from werkzeug.utils import secure_filename
@@ -23,6 +24,7 @@ from database import (
     execute,
     fetchall,
     fetchone,
+    get_db,
     insert_returning_id,
     iso,
     scalar,
@@ -321,6 +323,9 @@ def _store_banner_url(val):
     val = (val or "").strip()[:500]
     if val == NONE_MARKER:
         return NONE_MARKER
+    # Varsayılan banner yok — boş = bannersız
+    if not val or not DEFAULT_BANNER:
+        return val or NONE_MARKER
     return val or DEFAULT_BANNER
 
 
@@ -360,7 +365,7 @@ def _page_row(row):
     d["avatar_url"] = raw_avatar
     d["logo_url"] = "" if d["hide_logo"] else (raw_avatar or DEFAULT_BRAND_LOGO)
 
-    d["hide_banner"] = raw_banner == NONE_MARKER or layout == "none"
+    d["hide_banner"] = raw_banner == NONE_MARKER or layout == "none" or not (raw_banner or DEFAULT_BANNER)
     if d["hide_banner"]:
         d["banner_url"] = ""
         d["banner_layout"] = "none"
@@ -1016,6 +1021,43 @@ def unhide_all_brand_assets(conn):
     execute(conn, "DELETE FROM biolink_hidden_assets")
     conn.commit()
     return True
+
+
+def clear_all_page_banners_once():
+    """Deploy'da bir kez: tüm bio sayfalarından banner'ı kaldır + yüklenen banner asset'lerini sil."""
+    from database import get_mail_setting, upsert_mail_setting
+
+    flag = "biolink_banners_cleared_v20260713a"
+    try:
+        with closing(get_db()) as conn:
+            # mail_settings tablosu her ortamda var; ortak one-shot flag için kullan
+            if (get_mail_setting(conn, flag, "") or "").strip() == "1":
+                return 0
+            execute(
+                conn,
+                "UPDATE biolink_pages SET banner_url = ?, banner_layout = 'none'",
+                (NONE_MARKER,),
+            )
+            # Yüklenen custom banner dosyalarını sil
+            rows = fetchall(conn, "SELECT id, stored_name FROM biolink_assets WHERE kind = 'banner'") or []
+            for row in rows:
+                d = dict(row)
+                stored = os.path.basename(d.get("stored_name") or "")
+                if stored:
+                    path = os.path.join(BIOLINK_UPLOAD_DIR, stored)
+                    if os.path.isfile(path):
+                        try:
+                            os.remove(path)
+                        except OSError:
+                            pass
+            execute(conn, "DELETE FROM biolink_assets WHERE kind = 'banner'")
+            upsert_mail_setting(conn, flag, "1")
+            conn.commit()
+            print(f"🧹 biolink banners cleared ({len(rows)} uploaded + all page refs)")
+            return len(rows)
+    except Exception as exc:
+        print(f"⚠️  biolink banner clear failed: {exc}")
+        return -1
 
 
 def upload_asset(conn, kind, file_storage, *, label="", created_by=""):

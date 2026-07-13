@@ -78,6 +78,12 @@ def handle_custom_domain_biolink():
 def create_biolink_blueprint(permission_required):
     bp = Blueprint("biolink", __name__)
 
+    # Banner GIF'ler kaldırıldı — mevcut sayfalardaki banner referanslarını temizle (bir kez)
+    try:
+        biolink_api.clear_all_page_banners_once()
+    except Exception as exc:
+        print(f"⚠️  biolink banner clear: {exc}")
+
     def perm(*keys):
         return permission_required(*keys)
 
