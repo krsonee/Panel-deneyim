@@ -1,4 +1,29 @@
 /* Bio Sayfa — admin editör (modern studio) */
+.bl-page-addr,
+.bl-page-addr:link,
+.bl-page-addr:visited {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text, #e2e8f0) !important;
+  text-decoration: none !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+  padding-bottom: 1px;
+}
+.bl-page-addr:hover {
+  color: var(--accent, #38bdf8) !important;
+  border-bottom-color: var(--accent, #38bdf8);
+}
+[data-theme="light"] .bl-page-addr,
+[data-theme="light"] .bl-page-addr:link,
+[data-theme="light"] .bl-page-addr:visited {
+  color: #0f172a !important;
+}
 .biolink-editor-grid {
   display: grid;
   grid-template-columns: 1.25fr 0.75fr;

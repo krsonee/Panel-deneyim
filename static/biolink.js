@@ -440,21 +440,24 @@
     });
   }
 
-  function blSiteUrl(slug) {
-    return "/site/" + encodeURIComponent(slug || "");
+  function blPublicUrl(page) {
+    if (!page) return "#";
+    if (page.custom_domain) return "https://" + page.custom_domain;
+    return "/p/" + encodeURIComponent(page.slug || "");
+  }
+
+  function blPublicLabel(page) {
+    if (!page) return "";
+    if (page.custom_domain) return page.custom_domain;
+    return "/p/" + (page.slug || "");
   }
 
   function blUpdatePageLinks(page) {
     if (!page) return;
     var live = document.getElementById("biolink-preview-link");
-    var site = document.getElementById("biolink-site-link");
     if (live) {
-      live.href = page.custom_domain ? ("https://" + page.custom_domain) : ("/p/" + page.slug);
-      live.textContent = page.custom_domain ? "Domain ↗" : "Panel link ↗";
-    }
-    if (site) {
-      site.href = blSiteUrl(page.slug);
-      site.hidden = false;
+      live.href = blPublicUrl(page);
+      live.textContent = page.custom_domain ? "Canlı sayfa ↗" : "Sayfa linki ↗";
     }
   }
 
@@ -507,12 +510,9 @@
       var statusCls = p.is_active ? "active" : "inactive";
       return "<tr>" +
         "<td><strong>" + blEsc(p.title) + "</strong></td>" +
-        '<td>' +
-          '<a href="' + blSiteUrl(p.slug) + '" target="_blank" rel="noopener" title="Test sitesi">/site/' + blEsc(p.slug) + '</a>' +
-          (p.custom_domain
-            ? '<br><a href="https://' + blEsc(p.custom_domain) + '" target="_blank" rel="noopener" class="muted-sm">' + blEsc(p.custom_domain) + '</a>'
-            : "") +
-        "</td>" +
+        '<td><a class="bl-page-addr" href="' + blEsc(blPublicUrl(p)) + '" target="_blank" rel="noopener">' +
+          blEsc(blPublicLabel(p)) +
+        "</a></td>" +
         '<td><span class="biolink-theme-swatch" style="background:' + swatch + ';"></span>' + blEsc((blThemes.find(function (t) { return t.key === p.theme; }) || {}).name || p.theme) + "</td>" +
         "<td>" + (p.view_count || 0) + "</td>" +
         "<td>" + (p.button_count || 0) + " blok / " + (p.total_clicks || 0) + " tık</td>" +
@@ -581,9 +581,7 @@
     document.getElementById("bl-ga4-secret").value = "";
     document.getElementById("bl-is-active").checked = !!page.is_active;
     var link = document.getElementById("biolink-preview-link");
-    if (link) {
-      link.href = page.custom_domain ? ("https://" + page.custom_domain) : ("/p/" + page.slug);
-    }
+    if (link) link.href = blPublicUrl(page);
     blUpdatePageLinks(page);
     renderAssetPickers();
     renderQuickPalette();
@@ -759,9 +757,6 @@
       if (r && r.ok) {
         blToast("Kaydedildi");
         blCurrentPage = r.data.page;
-        document.getElementById("biolink-preview-link").href = blCurrentPage.custom_domain
-          ? ("https://" + blCurrentPage.custom_domain)
-          : ("/p/" + blCurrentPage.slug);
         blUpdatePageLinks(blCurrentPage);
         document.getElementById("biolink-editor-title").textContent = "Studio — " + blCurrentPage.title;
         refreshPreview();
