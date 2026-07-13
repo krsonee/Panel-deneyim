@@ -13,6 +13,10 @@
   var blComposerType = "link";
   var blEmojiTarget = null;
   var blPreviewTimer = null;
+  var blStatsTimer = null;
+  var blBlockSaveTimers = {};
+  var blBlockLastSaved = {};
+  var blBlockEventsBound = false;
   var BL_NONE = "__none__";
 
   var BL_EMOJIS = [
@@ -484,8 +488,8 @@
     renderQuickPalette();
     setComposerType(blComposerType);
     renderButtonsList(page.buttons || []);
-    refreshPreview();
-    loadStats(page.id);
+        refreshPreview();
+        scheduleLoadStats();
     box.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
@@ -521,13 +525,87 @@
 
   function schedulePreviewRefresh() {
     clearTimeout(blPreviewTimer);
-    blPreviewTimer = setTimeout(refreshPreview, 300);
+    blPreviewTimer = setTimeout(refreshPreview, 500);
+  }
+
+  function scheduleLoadStats() {
+    clearTimeout(blStatsTimer);
+    blStatsTimer = setTimeout(function () {
+      if (blCurrentPage) loadStats(blCurrentPage.id);
+    }, 900);
+  }
+
+  function patchBlockCard(updated) {
+    if (!updated) return false;
+    var card = document.querySelector('.bl-block-card[data-bl-id="' + updated.id + '"]');
+    if (!card) return false;
+    var meta = card.querySelector(".bl-block-meta");
+    if (updated.resolved_url) {
+      var txt = "→ " + updated.resolved_url;
+      if (meta) meta.textContent = txt;
+      else {
+        var main = card.querySelector(".bl-block-main");
+        if (!main) return false;
+        meta = document.createElement("div");
+        meta.className = "bl-block-meta";
+        meta.textContent = txt;
+        main.appendChild(meta);
+      }
+    } else if (meta) {
+      meta.remove();
+    }
+    return true;
+  }
+
+  function saveBlockField(id, field, value, input, isToggle) {
+    var saveKey = id + ":" + field;
+    if (!isToggle && blBlockLastSaved[saveKey] === value) return;
+    var payload = {};
+    payload[field] = value;
+    blApi("/api/biolink/buttons/" + id, { method: "PUT", body: payload }).then(function (r) {
+      if (r && r.ok) {
+        blBlockLastSaved[saveKey] = value;
+        updateLocalButton(r.data.button);
+        if (field === "url" || field === "badge_text" || field === "label") {
+          if (!patchBlockCard(r.data.button)) renderButtonsList(blCurrentPage.buttons);
+        }
+        schedulePreviewRefresh();
+        scheduleLoadStats();
+      } else {
+        if (isToggle && input) input.checked = !input.checked;
+        if (r) alert((r.data && r.data.error) || "Güncellenemedi");
+      }
+    });
+  }
+
+  function handleBlockFieldInput(input) {
+    var id = input.getAttribute("data-bl-id");
+    var field = input.getAttribute("data-bl-field");
+    var value = input.type === "checkbox" ? input.checked : input.value;
+    if (blCurrentPage && blCurrentPage.buttons) {
+      blCurrentPage.buttons.forEach(function (b) {
+        if (String(b.id) === String(id)) b[field] = value;
+      });
+    }
+    if (input.type === "checkbox") {
+      saveBlockField(id, field, value, input, true);
+      schedulePreviewRefresh();
+      return;
+    }
+    var key = id + ":" + field;
+    clearTimeout(blBlockSaveTimers[key]);
+    blBlockSaveTimers[key] = setTimeout(function () {
+      saveBlockField(id, field, value, input, false);
+    }, 450);
+    schedulePreviewRefresh();
   }
 
   function refreshPreview() {
     if (!blCurrentPage) return;
     var frame = document.getElementById("biolink-preview-frame");
     if (!frame) return;
+    var editor = document.getElementById("biolink-editor");
+    if (editor && editor.style.display === "none") return;
     var q = blPreviewDraftParams();
     q.set("_", String(Date.now()));
     frame.src = "/p/" + encodeURIComponent(blCurrentPage.slug) + "?" + q.toString();
@@ -686,11 +764,101 @@
         blCurrentPage.buttons.push(r.data.button);
         renderButtonsList(blCurrentPage.buttons);
         renderComposerFields();
-        refreshPreview();
+        schedulePreviewRefresh();
         loadPages();
-        loadStats(blCurrentPage.id);
+        scheduleLoadStats();
         blToast("Blok eklendi");
       } else if (r) alert((r.data && r.data.error) || "Eklenemedi");
+    });
+  }
+
+  function bindBlockListEvents() {
+    if (blBlockEventsBound) return;
+    var box = document.getElementById("biolink-buttons-list");
+    if (!box) return;
+    blBlockEventsBound = true;
+
+    box.addEventListener("change", function (e) {
+      var input = e.target.closest("[data-bl-field]");
+      if (!input || input.type !== "checkbox") return;
+      handleBlockFieldInput(input);
+    });
+
+    box.addEventListener("focusout", function (e) {
+      var input = e.target.closest("[data-bl-field]");
+      if (!input || input.type === "checkbox") return;
+      var id = input.getAttribute("data-bl-id");
+      var field = input.getAttribute("data-bl-field");
+      var key = id + ":" + field;
+      clearTimeout(blBlockSaveTimers[key]);
+      if (blBlockLastSaved[key] === input.value) return;
+      saveBlockField(id, field, input.value, input, false);
+    });
+
+    box.addEventListener("click", function (e) {
+      var delBtn = e.target.closest("[data-bl-btn-del]");
+      if (delBtn) {
+        blApi("/api/biolink/buttons/" + delBtn.getAttribute("data-bl-btn-del"), { method: "DELETE" }).then(function (r) {
+          if (r && r.ok) {
+            blCurrentPage.buttons = blCurrentPage.buttons.filter(function (b) {
+              return String(b.id) !== String(delBtn.getAttribute("data-bl-btn-del"));
+            });
+            renderButtonsList(blCurrentPage.buttons);
+            schedulePreviewRefresh();
+            loadPages();
+            scheduleLoadStats();
+          }
+        });
+        return;
+      }
+      var upBtn = e.target.closest("[data-bl-up]");
+      if (upBtn) { moveButton(parseInt(upBtn.getAttribute("data-bl-up"), 10), -1); return; }
+      var downBtn = e.target.closest("[data-bl-down]");
+      if (downBtn) { moveButton(parseInt(downBtn.getAttribute("data-bl-down"), 10), 1); return; }
+
+      var hsChip = e.target.closest("[data-bl-hs-for] [data-hs]");
+      if (hsChip) {
+        var scroller = hsChip.closest("[data-bl-hs-for]");
+        var bid = scroller.getAttribute("data-bl-hs-for");
+        var style = hsChip.getAttribute("data-hs");
+        blApi("/api/biolink/buttons/" + bid, { method: "PUT", body: { heading_style: style } }).then(function (r) {
+          if (r && r.ok) {
+            updateLocalButton(r.data.button);
+            renderButtonsList(blCurrentPage.buttons);
+            schedulePreviewRefresh();
+          } else if (r) alert((r.data && r.data.error) || "Stil güncellenemedi");
+        });
+        return;
+      }
+
+      var emojiBtn = e.target.closest("[data-bl-emoji-inline]");
+      if (emojiBtn) {
+        e.stopPropagation();
+        var emId = emojiBtn.getAttribute("data-bl-emoji-inline");
+        blEmojiTarget = "inline-" + emId;
+        var pop = document.getElementById("bl-emoji-popover");
+        if (!pop) return;
+        pop.innerHTML = BL_EMOJIS.map(function (em) {
+          return '<button type="button" data-bl-em="' + em + '">' + em + "</button>";
+        }).join("");
+        pop.hidden = false;
+        var rect = emojiBtn.getBoundingClientRect();
+        pop.style.top = Math.min(rect.bottom + 6, window.innerHeight - 230) + "px";
+        pop.style.left = Math.min(rect.left, window.innerWidth - 290) + "px";
+        pop.querySelectorAll("[data-bl-em]").forEach(function (emBtn) {
+          emBtn.onclick = function () {
+            blApi("/api/biolink/buttons/" + emId, { method: "PUT", body: { icon: emBtn.getAttribute("data-bl-em") } }).then(function (r) {
+              if (r && r.ok) {
+                updateLocalButton(r.data.button);
+                var card = document.querySelector('.bl-block-card[data-bl-id="' + emId + '"] input[data-bl-field="icon"]');
+                if (card) card.value = r.data.button.icon || "";
+                schedulePreviewRefresh();
+              }
+            });
+            hideEmojiPopover();
+          };
+        });
+      }
     });
   }
 
@@ -745,7 +913,8 @@
 
       if (isHeading) {
         var hs = b.heading_style || "classic";
-        return '<div class="' + cardCls + '" style="--bl-color:' + meta.color + '">' + order +
+        return '<div class="' + cardCls + '" data-bl-id="' + b.id + '" style="--bl-color:' + meta.color + '">' + order +
+          '<div class="bl-block-content">' +
           '<div class="bl-block-main">' +
           '<span class="bl-block-type-badge">' + meta.icon + " " + blEsc(meta.label) +
           ' · <em>' + blEsc(blHeadingStyleName(hs)) + "</em></span>" +
@@ -753,10 +922,13 @@
           '<input value="' + blEsc(b.label) + '" data-bl-field="label" data-bl-id="' + b.id + '" placeholder="Bölüm başlığı">' +
           '<div class="full"><label class="muted-sm">Ayırıcı stili</label>' +
           renderHeadingStylePicker(hs, 'data-bl-hs-for="' + b.id + '"') +
-          "</div></div></div>" +
+          "</div></div>" +
+          (b.resolved_url ? '<div class="bl-block-meta">→ ' + blEsc(b.resolved_url) + "</div>" : "") +
+          "</div>" +
           '<div class="bl-block-actions">' +
-          '<label class="bl-toggle-pill"><input type="checkbox" ' + (b.is_active ? "checked" : "") + ' data-bl-field="is_active" data-bl-id="' + b.id + '"> Aktif</label>' +
-          '<button type="button" class="btn btn-danger btn-sm" data-bl-btn-del="' + b.id + '">Sil</button></div></div>';
+          '<label class="bl-toggle-pill"><input type="checkbox" ' + (b.is_active ? "checked" : "") + ' data-bl-field="is_active" data-bl-id="' + b.id + '"><span>Aktif</span></label>' +
+          '<button type="button" class="btn btn-danger btn-sm bl-block-del" data-bl-btn-del="' + b.id + '">Sil</button>' +
+          "</div></div></div>";
       }
 
       var urlLabel = fieldLabel(b.button_type, "url");
@@ -788,108 +960,21 @@
       }
 
       var badgeIcon = blPlatformIconHtml(b.button_type) || blEsc(meta.icon || "🔗");
-      return '<div class="' + cardCls + '" style="--bl-color:' + meta.color + '">' + order +
+      return '<div class="' + cardCls + '" data-bl-id="' + b.id + '" style="--bl-color:' + meta.color + '">' + order +
+        '<div class="bl-block-content">' +
         '<div class="bl-block-main">' +
         '<span class="bl-block-type-badge">' + badgeIcon + " " + blEsc(meta.label) + "</span>" +
         fieldsHtml +
         (b.resolved_url ? '<div class="bl-block-meta">→ ' + blEsc(b.resolved_url) + "</div>" : "") +
         "</div>" +
         '<div class="bl-block-actions">' +
-        '<div class="bl-block-toggles">' +
         '<label class="bl-toggle-pill" title="Öne çıkar"><input type="checkbox" ' + (b.highlight ? "checked" : "") + ' data-bl-field="highlight" data-bl-id="' + b.id + '"><span>⭐ Öne çıkar</span></label>' +
         '<label class="bl-toggle-pill"><input type="checkbox" ' + (b.is_active ? "checked" : "") + ' data-bl-field="is_active" data-bl-id="' + b.id + '"><span>Aktif</span></label>' +
-        "</div>" +
-        '<button type="button" class="btn btn-danger btn-sm bl-block-del" data-bl-btn-del="' + b.id + '">Sil</button></div></div>';
+        '<button type="button" class="btn btn-danger btn-sm bl-block-del" data-bl-btn-del="' + b.id + '">Sil</button>' +
+        "</div></div></div>";
     }).join("");
 
-    bindBlockEvents(box);
-  }
-
-  function bindBlockEvents(box) {
-    box.querySelectorAll("[data-bl-field]").forEach(function (input) {
-      var evt = input.type === "checkbox" ? "change" : "blur";
-      input.addEventListener(evt, function () {
-        var id = input.getAttribute("data-bl-id");
-        var field = input.getAttribute("data-bl-field");
-        var value = input.type === "checkbox" ? input.checked : input.value;
-        var payload = {};
-        payload[field] = value;
-        blApi("/api/biolink/buttons/" + id, { method: "PUT", body: payload }).then(function (r) {
-          if (r && r.ok) {
-            updateLocalButton(r.data.button);
-            if (field === "url" || field === "badge_text" || field === "label") {
-              renderButtonsList(blCurrentPage.buttons);
-            }
-            refreshPreview();
-            loadStats(blCurrentPage.id);
-          } else if (r) alert((r.data && r.data.error) || "Güncellenemedi");
-        });
-      });
-    });
-    box.querySelectorAll("[data-bl-btn-del]").forEach(function (btn) {
-      btn.onclick = function () {
-        blApi("/api/biolink/buttons/" + btn.getAttribute("data-bl-btn-del"), { method: "DELETE" }).then(function (r) {
-          if (r && r.ok) {
-            blCurrentPage.buttons = blCurrentPage.buttons.filter(function (b) {
-              return String(b.id) !== String(btn.getAttribute("data-bl-btn-del"));
-            });
-            renderButtonsList(blCurrentPage.buttons);
-            refreshPreview();
-            loadPages();
-            loadStats(blCurrentPage.id);
-          }
-        });
-      };
-    });
-    box.querySelectorAll("[data-bl-up]").forEach(function (btn) {
-      btn.onclick = function () { moveButton(parseInt(btn.getAttribute("data-bl-up"), 10), -1); };
-    });
-    box.querySelectorAll("[data-bl-down]").forEach(function (btn) {
-      btn.onclick = function () { moveButton(parseInt(btn.getAttribute("data-bl-down"), 10), 1); };
-    });
-    box.querySelectorAll("[data-bl-hs-for]").forEach(function (scroller) {
-      var bid = scroller.getAttribute("data-bl-hs-for");
-      scroller.querySelectorAll("[data-hs]").forEach(function (chip) {
-        chip.onclick = function () {
-          var style = chip.getAttribute("data-hs");
-          blApi("/api/biolink/buttons/" + bid, { method: "PUT", body: { heading_style: style } }).then(function (r) {
-            if (r && r.ok) {
-              updateLocalButton(r.data.button);
-              renderButtonsList(blCurrentPage.buttons);
-              refreshPreview();
-            } else if (r) alert((r.data && r.data.error) || "Stil güncellenemedi");
-          });
-        };
-      });
-    });
-    box.querySelectorAll("[data-bl-emoji-inline]").forEach(function (btn) {
-      btn.onclick = function (e) {
-        e.stopPropagation();
-        var id = btn.getAttribute("data-bl-emoji-inline");
-        blEmojiTarget = "inline-" + id;
-        var pop = document.getElementById("bl-emoji-popover");
-        if (!pop) return;
-        pop.innerHTML = BL_EMOJIS.map(function (em) {
-          return '<button type="button" data-bl-em="' + em + '">' + em + "</button>";
-        }).join("");
-        pop.hidden = false;
-        var rect = btn.getBoundingClientRect();
-        pop.style.top = Math.min(rect.bottom + 6, window.innerHeight - 230) + "px";
-        pop.style.left = Math.min(rect.left, window.innerWidth - 290) + "px";
-        pop.querySelectorAll("[data-bl-em]").forEach(function (emBtn) {
-          emBtn.onclick = function () {
-            blApi("/api/biolink/buttons/" + id, { method: "PUT", body: { icon: emBtn.getAttribute("data-bl-em") } }).then(function (r) {
-              if (r && r.ok) {
-                updateLocalButton(r.data.button);
-                renderButtonsList(blCurrentPage.buttons);
-                refreshPreview();
-              }
-            });
-            hideEmojiPopover();
-          };
-        });
-      };
-    });
+    bindBlockListEvents();
   }
 
   function updateLocalButton(updated) {
@@ -913,7 +998,7 @@
     blApi("/api/biolink/pages/" + blCurrentPage.id + "/buttons/reorder", {
       method: "POST",
       body: { order: list.map(function (b) { return b.id; }) },
-    }).then(function () { refreshPreview(); loadPages(); });
+    }).then(function () { schedulePreviewRefresh(); loadPages(); });
   }
 
   function loadStats(pageId) {
@@ -993,6 +1078,7 @@
       if (blLoaded) return;
       blLoaded = true;
       bindEvents();
+      bindBlockListEvents();
       renderQuickPalette();
       setComposerType("whatsapp");
       loadThemes();
