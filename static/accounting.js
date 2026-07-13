@@ -127,16 +127,14 @@
       accMoney(tryV, "TRY") + " · " + accMoney(usdV, "USD") + " · " + accMoney(eurV, "EUR") + "</small>";
   }
 
-  function accFxPreviewText(amount, currency, rateUsd, rateEur) {
+  function accFxPreviewText(amount, currency, rateUsd, rateEur, asOfDate) {
     amount = parseFloat(amount);
     if (!amount || amount <= 0) return Promise.resolve("");
     var body = { amount: amount, currency: currency };
-    if (rateUsd && rateEur) {
-      body.rate_usd_try = rateUsd;
-      body.rate_eur_try = rateEur;
-    } else {
-      body.auto_rate = true;
-    }
+    if (asOfDate) body.expense_date = asOfDate;
+    if (rateUsd) body.rate_usd_try = rateUsd;
+    if (rateEur) body.rate_eur_try = rateEur;
+    if (!rateUsd || !rateEur) body.auto_rate = true;
     return accApi("/api/accounting/convert", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -148,12 +146,13 @@
     });
   }
 
-  function accBindFxPreview(amountId, currencyId, previewId, rateUsdId, rateEurId) {
+  function accBindFxPreview(amountId, currencyId, previewId, rateUsdId, rateEurId, dateId) {
     var amountEl = document.getElementById(amountId);
     var curEl = document.getElementById(currencyId);
     var previewEl = document.getElementById(previewId);
     var rateUsdEl = rateUsdId ? document.getElementById(rateUsdId) : null;
     var rateEurEl = rateEurId ? document.getElementById(rateEurId) : null;
+    var dateEl = dateId ? document.getElementById(dateId) : null;
     if (!amountEl || !curEl || !previewEl) return;
     var timer = null;
     function update() {
@@ -163,7 +162,8 @@
           amountEl.value,
           curEl.value,
           rateUsdEl ? rateUsdEl.value : "",
-          rateEurEl ? rateEurEl.value : ""
+          rateEurEl ? rateEurEl.value : "",
+          dateEl ? dateEl.value : ""
         ).then(function (txt) {
           previewEl.textContent = txt || "";
         });
@@ -173,6 +173,23 @@
     curEl.addEventListener("change", update);
     if (rateUsdEl) rateUsdEl.addEventListener("input", update);
     if (rateEurEl) rateEurEl.addEventListener("input", update);
+    if (dateEl) dateEl.addEventListener("change", update);
+  }
+
+  function accLoadRatesForDate(dateStr, selector) {
+    if (!dateStr) return Promise.resolve();
+    return accApi("/api/accounting/exchange-rates?date=" + encodeURIComponent(dateStr)).then(function (res) {
+      if (!res || !res.ok || !res.data) return;
+      var label = dateStr.split("-").reverse().join(".");
+      accUpdateRatePlaceholders({
+        usd_try: res.data.usd_try,
+        eur_try: res.data.eur_try,
+        source: res.data.source,
+        date_label: label,
+        selector: selector || "#acc-exp-rate-usd, #acc-exp-rate-eur",
+        skip_badge: true
+      });
+    }).catch(function () {});
   }
 
   function accReadFormRates(usdId, eurId) {
@@ -181,14 +198,10 @@
     var body = {};
     var usdVal = usdEl && usdEl.value.trim();
     var eurVal = eurEl && eurEl.value.trim();
-    if (usdVal && eurVal) {
-      body.rate_usd_try = usdVal;
-      body.rate_eur_try = eurVal;
-    } else if (usdVal) {
-      body.rate_usd_try = usdVal;
-    } else {
-      body.auto_rate = true;
-    }
+    if (usdVal) body.rate_usd_try = usdVal;
+    if (eurVal) body.rate_eur_try = eurVal;
+    /* Eksik kur(lar) backend'de form tarihine göre doldurulur */
+    if (!usdVal || !eurVal) body.auto_rate = true;
     return body;
   }
 
@@ -234,19 +247,27 @@
     }
   }
 
-  function accUpdateRatePlaceholders() {
-    var usd = accFormatRate(accRates.usd_try);
-    var eur = accFormatRate(accRates.eur_try);
-    var suffix = accRates.source && accRates.source !== "fallback" ? accRateTimeLabel() : " (yükleniyor…)";
-    document.querySelectorAll(".acc-form-rate").forEach(function (el) {
-      el.placeholder = "Boş = kayıt anı kuru (" + usd + " / " + eur + ")" + suffix;
+  function accUpdateRatePlaceholders(opts) {
+    opts = opts || {};
+    var usd = accFormatRate(opts.usd_try != null ? opts.usd_try : accRates.usd_try);
+    var eur = accFormatRate(opts.eur_try != null ? opts.eur_try : accRates.eur_try);
+    var dateHint = opts.date_label ? (" · " + opts.date_label) : "";
+    var suffix = (opts.source || accRates.source) && (opts.source || accRates.source) !== "fallback"
+      ? (dateHint || accRateTimeLabel())
+      : " (yükleniyor…)";
+    var text = "Boş = tarihteki kur (" + usd + " / " + eur + ")" + suffix;
+    var selector = opts.selector || ".acc-form-rate";
+    document.querySelectorAll(selector).forEach(function (el) {
+      el.placeholder = text;
     });
     var badge = document.getElementById("acc-live-rates-badge");
-    if (badge) {
-      if (accRates.usd_try && accRates.eur_try) {
-        var srcNote = accRates.source === "fallback" ? " (yaklaşık)" : "";
-        badge.textContent = "USD/TL " + accFormatRate(accRates.usd_try) +
-          " · EUR/TL " + accFormatRate(accRates.eur_try) + srcNote + accRateTimeLabel();
+    if (badge && !opts.skip_badge) {
+      var u = opts.usd_try != null ? opts.usd_try : accRates.usd_try;
+      var e = opts.eur_try != null ? opts.eur_try : accRates.eur_try;
+      if (u && e) {
+        var srcNote = (opts.source || accRates.source) === "fallback" ? " (yaklaşık)" : "";
+        badge.textContent = "USD/TL " + accFormatRate(u) +
+          " · EUR/TL " + accFormatRate(e) + srcNote + (dateHint || accRateTimeLabel());
       } else {
         badge.textContent = "Kur yükleniyor…";
       }
@@ -3761,10 +3782,23 @@
       if (el) el.addEventListener("input", accUpdateOfficeRemaining);
     });
     accUpdateEmpFormUi();
-    accBindFxPreview("acc-tx-amount", "acc-tx-currency", "acc-tx-fx-preview", "acc-tx-rate-usd", "acc-tx-rate-eur");
-    accBindFxPreview("acc-exp-amount", "acc-exp-currency", "acc-exp-fx-preview", "acc-exp-rate-usd", "acc-exp-rate-eur");
+    accBindFxPreview("acc-tx-amount", "acc-tx-currency", "acc-tx-fx-preview", "acc-tx-rate-usd", "acc-tx-rate-eur", "acc-tx-date");
+    accBindFxPreview("acc-exp-amount", "acc-exp-currency", "acc-exp-fx-preview", "acc-exp-rate-usd", "acc-exp-rate-eur", "acc-exp-date");
     accBindFxPreview("acc-emp-salary", "acc-emp-currency", "acc-emp-fx-preview", "acc-emp-rate-usd", "acc-emp-rate-eur");
-  }
+
+    var expDateEl = document.getElementById("acc-exp-date");
+    if (expDateEl) {
+      expDateEl.addEventListener("change", function () {
+        accLoadRatesForDate(expDateEl.value, "#acc-exp-rate-usd, #acc-exp-rate-eur");
+      });
+      if (expDateEl.value) accLoadRatesForDate(expDateEl.value, "#acc-exp-rate-usd, #acc-exp-rate-eur");
+    }
+    var txDateEl = document.getElementById("acc-tx-date");
+    if (txDateEl) {
+      txDateEl.addEventListener("change", function () {
+        accLoadRatesForDate(txDateEl.value, "#acc-tx-rate-usd, #acc-tx-rate-eur");
+      });
+    }
 
   function accInitPeriodFilter() {
     var modeEl = document.getElementById("acc-filter-period");

@@ -12,6 +12,7 @@ from accounting_fx import (
     CURRENCIES,
     convert_to_all,
     fetch_exchange_rates,
+    fetch_rates_for_date,
     parse_currency,
 )
 from accounting_payroll import (
@@ -589,25 +590,57 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             return None
         return {"usd_try": usd, "eur_try": eur}
 
+    def request_as_of_date(data):
+        if not isinstance(data, dict):
+            return None
+        for key in (
+            "expense_date",
+            "transaction_date",
+            "tx_date",
+            "payment_date",
+            "entry_date",
+            "date",
+            "as_of",
+        ):
+            parsed = parse_date(data.get(key))
+            if parsed:
+                return parsed
+        return None
+
     def rates_from_request(data, stored=None):
+        """Kur çözümleme:
+        - İki alan da dolu → manuel
+        - Biri boş / auto_rate / yeni kayıt → form tarihindeki kurdan eksikleri doldur
+        - Güncellemede hiç kur yok ve auto_rate yok → eski kaydı koru
+        """
         usd = parse_rate(data.get("rate_usd_try"))
         eur = parse_rate(data.get("rate_eur_try"))
-        if (usd and not eur) or (eur and not usd):
-            return None, "USD/TL ve EUR/TL birlikte girilmeli veya ikisi de boş bırakılmalı."
+        as_of = request_as_of_date(data)
+        partial = (usd is not None and eur is None) or (eur is not None and usd is None)
+        need_fill = stored is None or bool(data.get("auto_rate")) or partial
+
         if usd and eur:
             return {"usd_try": usd, "eur_try": eur}, None
-        # Yeni kayıt veya formda kur bilerek boş bırakıldı → kayıt anındaki canlı kur
-        if data.get("auto_rate") or stored is None:
-            auto = fetch_exchange_rates(fresh=True)
-            if auto.get("source") == "fallback":
+
+        if need_fill:
+            if as_of:
+                auto = fetch_rates_for_date(as_of)
+            else:
+                auto = fetch_exchange_rates(fresh=True)
+            if not auto.get("usd_try") or not auto.get("eur_try"):
+                return None, "Kur alınamadı. USD/TL ve EUR/TL değerlerini manuel girin."
+            fill_usd = usd if usd else float(auto["usd_try"])
+            fill_eur = eur if eur else float(auto["eur_try"])
+            if fill_usd <= 0 or fill_eur <= 0:
                 return None, "Güncel kur alınamadı. USD/TL ve EUR/TL değerlerini manuel girin."
-            return {"usd_try": auto["usd_try"], "eur_try": auto["eur_try"]}, None
+            return {"usd_try": round(fill_usd, 6), "eur_try": round(fill_eur, 6)}, None
+
         # Güncelleme: kur gönderilmediyse kayıtlı kuru koru
         prev = stored_rates(stored)
         if prev:
             return prev, None
         auto = fetch_exchange_rates(fresh=True)
-        if auto.get("source") == "fallback":
+        if not auto.get("usd_try") or not auto.get("eur_try") or auto.get("source") == "fallback":
             return None, "Güncel kur alınamadı. USD/TL ve EUR/TL değerlerini manuel girin."
         return {"usd_try": auto["usd_try"], "eur_try": auto["eur_try"]}, None
 
@@ -868,9 +901,14 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
     @bp.route("/exchange-rates", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def exchange_rates():
+        as_of = parse_date(request.args.get("date") or request.args.get("as_of"))
         try:
+            if as_of:
+                return jsonify(rates_json(fetch_rates_for_date(as_of)))
             return jsonify(rates_json(fetch_exchange_rates()))
         except Exception:
+            if as_of:
+                return jsonify(rates_json(fetch_rates_for_date(as_of)))
             return jsonify(rates_json(fetch_exchange_rates(force=True)))
 
     @bp.route("/convert", methods=["POST"])

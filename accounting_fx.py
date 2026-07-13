@@ -158,6 +158,95 @@ def _fetch_live_rates():
     raise RuntimeError("; ".join(errors[-3:]) if errors else "no providers")
 
 
+def _parse_iso_date(value):
+    raw = (value or "").strip()[:10]
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _fetch_tcmb_for_date(day):
+    """TCMB arşiv XML — hafta sonu/tatilde bülten yoksa ValueError."""
+    yyyymm = day.strftime("%Y%m")
+    ddmmyyyy = day.strftime("%d%m%Y")
+    url = f"https://www.tcmb.gov.tr/kurlar/{yyyymm}/{ddmmyyyy}.xml"
+    req = urllib.request.Request(url, headers=_HTTP_HEADERS)
+    with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
+        root = ET.fromstring(resp.read())
+    usd_try = eur_try = None
+    date_label = root.get("Date") or root.get("Tarih") or day.isoformat()
+    for cur in root.findall("Currency"):
+        kod = cur.get("Kod")
+        if kod == "USD":
+            usd_try = _mid_rate(cur.findtext("ForexBuying"), cur.findtext("ForexSelling"))
+        elif kod == "EUR":
+            eur_try = _mid_rate(cur.findtext("ForexBuying"), cur.findtext("ForexSelling"))
+    if not usd_try or not eur_try:
+        raise ValueError("tcmb archive missing rates")
+    return usd_try, eur_try, date_label, "tcmb-archive"
+
+
+def _fetch_frankfurter_for_date(day):
+    iso = day.isoformat()
+    url = f"https://api.frankfurter.app/{iso}?from=USD&to=TRY,EUR"
+    req = urllib.request.Request(url, headers=_HTTP_HEADERS)
+    with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
+        data = json.loads(resp.read().decode())
+    usd_try = float(data["rates"]["TRY"])
+    eur_per_usd = float(data["rates"]["EUR"])
+    if usd_try <= 0 or eur_per_usd <= 0:
+        raise ValueError("frankfurter historical invalid")
+    eur_try = round(usd_try / eur_per_usd, 6)
+    return usd_try, eur_try, data.get("date") or iso, "frankfurter-historical"
+
+
+def fetch_rates_for_date(date_value):
+    """Belirli bir günün USD/TL ve EUR/TL kurunu getirir.
+
+    Hafta sonu / tatilde TCMB bülteni yoksa önceki iş günlerine (max 10 gün) bakar.
+    Bugün veya gelecek tarih için canlı kur kullanılır.
+    """
+    day = _parse_iso_date(date_value)
+    if day is None:
+        return fetch_exchange_rates(fresh=True)
+
+    today = datetime.now(timezone.utc).date()
+    if day >= today:
+        return fetch_exchange_rates(fresh=True)
+
+    last_err = None
+    for back in range(0, 11):
+        probe = day - timedelta(days=back)
+        for fetch in (_fetch_tcmb_for_date, _fetch_frankfurter_for_date):
+            try:
+                usd_try, eur_try, label, source = fetch(probe)
+                return {
+                    "fetched_at": datetime.now(timezone.utc),
+                    "usd_try": usd_try,
+                    "eur_try": eur_try,
+                    "date": label,
+                    "source": source,
+                    "as_of": probe.isoformat(),
+                    "requested": day.isoformat(),
+                }
+            except _FETCH_ERRORS as exc:
+                last_err = exc
+                continue
+            except OSError as exc:
+                last_err = exc
+                continue
+    # Son çare: canlı kur
+    live = fetch_exchange_rates(fresh=True)
+    live["requested"] = day.isoformat()
+    live["source"] = f"{live.get('source') or 'live'}+fallback"
+    if last_err:
+        live["note"] = str(last_err)
+    return live
+
+
 def _cache_result(now, usd_try, eur_try, date, source):
     global _rate_cache
     _rate_cache = {
