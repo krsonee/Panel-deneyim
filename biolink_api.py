@@ -50,8 +50,10 @@ BIOLINK_UPLOAD_DIR = os.path.join(APP_ROOT, "uploads", "biolink")
 BIOLINK_UPLOAD_URL_PREFIX = "/uploads/biolink"
 LOGO_UPLOAD_EXTS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"})
 BANNER_UPLOAD_EXTS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif"})
+FAVICON_UPLOAD_EXTS = frozenset({".ico", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"})
 LOGO_UPLOAD_MAX_BYTES = 2 * 1024 * 1024
 BANNER_UPLOAD_MAX_BYTES = 6 * 1024 * 1024
+FAVICON_UPLOAD_MAX_BYTES = 512 * 1024
 
 RESERVED_SLUGS = frozenset({
     "", "admin", "api", "static", "demo", "r", "p", "health", "favicon.ico",
@@ -320,6 +322,25 @@ def _store_banner_url(val):
     return val or DEFAULT_BANNER
 
 
+def _store_favicon_url(val):
+    val = (val or "").strip()[:500]
+    if val == NONE_MARKER:
+        return NONE_MARKER
+    return val
+
+
+def resolve_favicon_url(page):
+    """Boş favicon → sayfa logosu → varsayılan Makrobet logosu."""
+    if not page:
+        return DEFAULT_BRAND_LOGO
+    raw = (page.get("favicon_url") or "").strip()
+    if raw and raw != NONE_MARKER:
+        return raw
+    if not page.get("hide_logo") and (page.get("logo_url") or "").strip():
+        return page["logo_url"]
+    return DEFAULT_BRAND_LOGO
+
+
 def _page_row(row):
     if not row:
         return None
@@ -346,6 +367,10 @@ def _page_row(row):
     else:
         d["banner_url"] = raw_banner or DEFAULT_BANNER
         d["banner_layout"] = layout
+
+    raw_favicon = (d.get("favicon_url") or "").strip()
+    d["favicon_url"] = raw_favicon
+    d["resolved_favicon"] = resolve_favicon_url(d)
 
     d["custom_domain"] = normalize_custom_domain(d.get("custom_domain") or "")
     d["public_path"] = f"/p/{d['slug']}"
@@ -515,16 +540,25 @@ def apply_preview_overrides(page, args):
                 page["banner_layout"] = bl
     if "accent_color" in args:
         page["accent_color"] = (args.get("accent_color") or "").strip()[:32]
+    if "favicon_url" in args:
+        fav = (args.get("favicon_url") or "").strip()[:500]
+        if fav == NONE_MARKER:
+            page["favicon_url"] = NONE_MARKER
+        else:
+            page["favicon_url"] = fav
+        page["resolved_favicon"] = resolve_favicon_url(page)
     return page
 
 
 def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_color="",
                  avatar_url="", banner_url="", banner_layout=None, button_shape="pill",
-                 ga4_measurement_id="", ga4_api_secret="", custom_domain="", created_by=""):
+                 ga4_measurement_id="", ga4_api_secret="", custom_domain="", favicon_url="",
+                 created_by=""):
     title = (title or "").strip()[:200] or "Yeni Sayfa"
     subtitle = (subtitle or "").strip()[:400]
     avatar_url = _store_avatar_url(avatar_url)
     banner_url = _store_banner_url(banner_url)
+    favicon_url = _store_favicon_url(favicon_url)
     banner_layout = (banner_layout or DEFAULT_BANNER_LAYOUT).strip()
     if banner_layout not in BANNER_LAYOUTS:
         banner_layout = DEFAULT_BANNER_LAYOUT
@@ -549,11 +583,12 @@ def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_co
         """
         INSERT INTO biolink_pages
           (slug, title, subtitle, avatar_url, banner_url, banner_layout, theme, accent_color, button_shape,
-           is_active, view_count, ga4_measurement_id, ga4_api_secret, custom_domain, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?)
+           is_active, view_count, ga4_measurement_id, ga4_api_secret, custom_domain, favicon_url,
+           created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?)
         """,
         (final_slug, title, subtitle, avatar_url, banner_url, banner_layout, theme, accent_color, button_shape,
-         ga4_measurement_id, ga4_api_secret, stored_domain, created_by, now, now),
+         ga4_measurement_id, ga4_api_secret, stored_domain, favicon_url, created_by, now, now),
     )
     conn.commit()
     return get_page(conn, page_id)
@@ -581,6 +616,7 @@ def update_page(conn, page_id, data):
     subtitle = pick("subtitle", row["subtitle"], 400)
     avatar_url = pick("avatar_url", row.get("avatar_url") or "", 500)
     banner_url = pick("banner_url", row.get("banner_url") or "", 500)
+    favicon_url = pick("favicon_url", row.get("favicon_url") or "", 500)
     banner_layout = pick("banner_layout", row.get("banner_layout") or DEFAULT_BANNER_LAYOUT, choices=set(BANNER_LAYOUTS))
     theme = pick("theme", row["theme"], choices=set(THEMES.keys()))
     accent_color = pick("accent_color", row["accent_color"], 32)
@@ -613,6 +649,7 @@ def update_page(conn, page_id, data):
     now = iso(utcnow())
     stored_avatar = _store_avatar_url(avatar_url)
     stored_banner = _store_banner_url(banner_url)
+    stored_favicon = _store_favicon_url(favicon_url)
     stored_layout = "none" if stored_banner == NONE_MARKER else banner_layout
     execute(
         conn,
@@ -620,12 +657,12 @@ def update_page(conn, page_id, data):
         UPDATE biolink_pages
         SET slug = ?, title = ?, subtitle = ?, avatar_url = ?, banner_url = ?, banner_layout = ?,
             theme = ?, accent_color = ?, button_shape = ?, is_active = ?,
-            ga4_measurement_id = ?, ga4_api_secret = ?, custom_domain = ?, updated_at = ?
+            ga4_measurement_id = ?, ga4_api_secret = ?, custom_domain = ?, favicon_url = ?, updated_at = ?
         WHERE id = ?
         """,
         (new_slug, title, subtitle, stored_avatar, stored_banner, stored_layout,
          theme, accent_color, button_shape,
-         is_active, ga4_measurement_id, ga4_api_secret, new_domain, now, int(page_id)),
+         is_active, ga4_measurement_id, ga4_api_secret, new_domain, stored_favicon, now, int(page_id)),
     )
     conn.commit()
     return get_page(conn, page_id)
@@ -912,18 +949,21 @@ def list_brand_assets(conn):
     custom = list_custom_assets(conn)
     logos = list(BRAND_LOGOS) + [a for a in custom if a["kind"] == "logo"]
     banners = list(BRAND_BANNERS) + [a for a in custom if a["kind"] == "banner"]
+    favicons = list(BRAND_LOGOS) + [a for a in custom if a["kind"] in ("logo", "favicon")]
     return {
         "logos": logos,
         "banners": banners,
+        "favicons": favicons,
         "default_logo": DEFAULT_BRAND_LOGO,
         "default_banner": DEFAULT_BANNER,
+        "default_favicon": DEFAULT_BRAND_LOGO,
     }
 
 
 def upload_asset(conn, kind, file_storage, *, label="", created_by=""):
     kind = (kind or "").strip().lower()
-    if kind not in ("logo", "banner"):
-        raise ValueError("Tür logo veya banner olmalı.")
+    if kind not in ("logo", "banner", "favicon"):
+        raise ValueError("Tür logo, banner veya favicon olmalı.")
     if not file_storage or not (file_storage.filename or "").strip():
         raise ValueError("Dosya seçilmedi.")
 
@@ -931,18 +971,25 @@ def upload_asset(conn, kind, file_storage, *, label="", created_by=""):
     if not orig:
         raise ValueError("Geçersiz dosya adı.")
     ext = os.path.splitext(orig)[1].lower()
-    allowed = LOGO_UPLOAD_EXTS if kind == "logo" else BANNER_UPLOAD_EXTS
+    if kind == "favicon":
+        allowed = FAVICON_UPLOAD_EXTS
+        max_size = FAVICON_UPLOAD_MAX_BYTES
+    elif kind == "logo":
+        allowed = LOGO_UPLOAD_EXTS
+        max_size = LOGO_UPLOAD_MAX_BYTES
+    else:
+        allowed = BANNER_UPLOAD_EXTS
+        max_size = BANNER_UPLOAD_MAX_BYTES
     if ext not in allowed:
         raise ValueError("Desteklenmeyen format: " + ", ".join(sorted(allowed)))
 
     file_storage.stream.seek(0, os.SEEK_END)
     size = int(file_storage.stream.tell() or 0)
     file_storage.stream.seek(0)
-    max_size = LOGO_UPLOAD_MAX_BYTES if kind == "logo" else BANNER_UPLOAD_MAX_BYTES
     if size <= 0:
         raise ValueError("Boş dosya yüklenemez.")
     if size > max_size:
-        raise ValueError(f"Dosya çok büyük (max {max_size // (1024 * 1024)} MB).")
+        raise ValueError(f"Dosya çok büyük (max {max_size // (1024 * 1024) or 1} MB).")
 
     _ensure_biolink_upload_dir()
     stored = f"{kind}_{utcnow().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}{ext}"

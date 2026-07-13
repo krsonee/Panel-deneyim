@@ -37,6 +37,16 @@
             <div><label for="bl-title">Sayfa Başlığı</label><input id="bl-title" placeholder="MAKROVIP DESTEK HATTI" autocomplete="off"></div>
             <div><label for="bl-slug">Slug (URL)</label><input id="bl-slug" placeholder="vipmakro" autocomplete="off"></div>
             <div><label for="bl-domain">Özel Domain</label><input id="bl-domain" placeholder="vipmakro.com" autocomplete="off"><span class="muted-sm" style="display:block;margin-top:0.25rem;">DNS: Namecheap A kaydı → <code>216.24.57.1</code>, Render’da custom domain ekle.</span></div>
+            <div class="full">
+              <label>Favicon (sekme ikonu)</label>
+              <div class="bl-asset-toolbar">
+                <button type="button" class="btn btn-sm" id="btn-bl-upload-favicon">+ Favicon yükle</button>
+                <input type="file" id="bl-favicon-file" accept="image/x-icon,image/png,image/jpeg,image/webp,image/gif,image/svg+xml,.ico" hidden>
+                <span class="muted-sm bl-upload-status" id="bl-favicon-upload-status"></span>
+              </div>
+              <div class="bl-asset-picks bl-favicon-picks" id="bl-favicon-picks"></div>
+              <input id="bl-favicon" placeholder="Boş = sayfa logosu kullanılır" autocomplete="off" style="margin-top:0.45rem;">
+            </div>
             <div><label for="bl-shape">Buton Stili</label>
               <select id="bl-shape">
                 <option value="pill">Pill — yuvarlak</option>

@@ -260,6 +260,15 @@
   }
 
   function blNoneAsset(kind) {
+    if (kind === "favicon") {
+      return {
+        key: "default",
+        label: "Varsayılan (logo)",
+        url: "",
+        custom: false,
+        isNone: true,
+      };
+    }
     return {
       key: "none",
       label: kind === "logo" ? "Logo yok" : "Banner yok",
@@ -271,30 +280,34 @@
 
   function blAssetChipHtml(a, type) {
     var isBanner = type === "banner";
+    var isFavicon = type === "favicon";
     var val = isBanner
       ? ((document.getElementById("bl-banner") || {}).value || "")
-      : ((document.getElementById("bl-avatar") || {}).value || "");
+      : isFavicon
+        ? ((document.getElementById("bl-favicon") || {}).value || "")
+        : ((document.getElementById("bl-avatar") || {}).value || "");
     var active = val === a.url ? " active" : "";
     var customCls = a.custom ? " custom" : "";
-    var dataAttr = isBanner ? "data-bl-banner" : "data-bl-logo";
+    var dataAttr = isBanner ? "data-bl-banner" : (isFavicon ? "data-bl-favicon" : "data-bl-logo");
     var delBtn = a.custom
       ? '<button type="button" class="bl-asset-del" data-bl-asset-del="' + a.id + '" title="Sil">×</button>'
       : "";
     if (a.isNone || a.url === BL_NONE) {
+      var noneIcon = isFavicon ? "◉" : "∅";
       return '<div class="bl-asset-chip-wrap">' +
         '<button type="button" class="bl-asset-chip none' + (isBanner ? " banner" : "") + active + '" ' +
-        dataAttr + '="' + BL_NONE + '" title="' + blEsc(a.label) + '">' +
-        '<span class="bl-asset-none-icon">∅</span>' +
+        dataAttr + '="' + blEsc(a.url) + '" title="' + blEsc(a.label) + '">' +
+        '<span class="bl-asset-none-icon">' + noneIcon + '</span>' +
         '<span>' + blEsc(a.label) + "</span></button></div>";
     }
     return '<div class="bl-asset-chip-wrap">' +
       '<button type="button" class="bl-asset-chip' + (isBanner ? " banner" : "") + active + customCls + '" ' +
       dataAttr + '="' + blEsc(a.url) + '" title="' + blEsc(a.label) + '">' +
-      '<img src="' + blEsc(a.url) + '" alt="">' +
+      (a.url ? '<img src="' + blEsc(a.url) + '" alt="">' : "") +
       '<span>' + blEsc(a.label) + "</span></button>" + delBtn + "</div>";
   }
 
-  function blBindAssetPickers(logoBox, bannerBox) {
+  function blBindAssetPickers(logoBox, bannerBox, faviconBox) {
     if (logoBox) {
       logoBox.querySelectorAll("[data-bl-logo]").forEach(function (btn) {
         btn.onclick = function () {
@@ -307,6 +320,21 @@
         btn.onclick = function (e) {
           e.stopPropagation();
           blDeleteAsset(btn.getAttribute("data-bl-asset-del"), "logo");
+        };
+      });
+    }
+    if (faviconBox) {
+      faviconBox.querySelectorAll("[data-bl-favicon]").forEach(function (btn) {
+        btn.onclick = function () {
+          document.getElementById("bl-favicon").value = btn.getAttribute("data-bl-favicon") || "";
+          renderAssetPickers();
+          schedulePreviewRefresh();
+        };
+      });
+      faviconBox.querySelectorAll("[data-bl-asset-del]").forEach(function (btn) {
+        btn.onclick = function (e) {
+          e.stopPropagation();
+          blDeleteAsset(btn.getAttribute("data-bl-asset-del"), "favicon");
         };
       });
     }
@@ -335,7 +363,8 @@
 
   function blUploadAsset(kind, file) {
     if (!file) return;
-    var statusEl = document.getElementById(kind === "logo" ? "bl-logo-upload-status" : "bl-banner-upload-status");
+    var statusId = kind === "logo" ? "bl-logo-upload-status" : (kind === "favicon" ? "bl-favicon-upload-status" : "bl-banner-upload-status");
+    var statusEl = document.getElementById(statusId);
     if (statusEl) statusEl.textContent = "Yükleniyor…";
     var fd = new FormData();
     fd.append("kind", kind);
@@ -347,6 +376,7 @@
         blToast("Dosya yüklendi");
         var asset = r.data.asset;
         if (kind === "logo") document.getElementById("bl-avatar").value = asset.url;
+        else if (kind === "favicon") document.getElementById("bl-favicon").value = asset.url;
         else document.getElementById("bl-banner").value = asset.url;
         return loadAssets().then(function () { schedulePreviewRefresh(); });
       }
@@ -379,10 +409,17 @@
   function renderAssetPickers() {
     var logoBox = document.getElementById("bl-logo-picks");
     var bannerBox = document.getElementById("bl-banner-picks");
+    var faviconBox = document.getElementById("bl-favicon-picks");
 
     if (logoBox) {
       logoBox.innerHTML = [blNoneAsset("logo")].concat(blAssets.logos || []).map(function (a) {
         return blAssetChipHtml(a, "logo");
+      }).join("");
+    }
+
+    if (faviconBox) {
+      faviconBox.innerHTML = [blNoneAsset("favicon")].concat(blAssets.favicons || []).map(function (a) {
+        return blAssetChipHtml(a, "favicon");
       }).join("");
     }
 
@@ -392,7 +429,7 @@
       }).join("");
     }
 
-    blBindAssetPickers(logoBox, bannerBox);
+    blBindAssetPickers(logoBox, bannerBox, faviconBox);
   }
 
   function loadPages() {
@@ -473,6 +510,8 @@
     document.getElementById("bl-slug").value = page.slug || "";
     var domainEl = document.getElementById("bl-domain");
     if (domainEl) domainEl.value = page.custom_domain || "";
+    var faviconEl = document.getElementById("bl-favicon");
+    if (faviconEl) faviconEl.value = page.favicon_url || "";
     document.getElementById("bl-theme").value = page.theme || "makrobet";
     document.getElementById("bl-shape").value = page.button_shape || "pill";
     renderThemeGallery();
@@ -522,6 +561,8 @@
     if (el) q.set("avatar_url", (el.value || "").trim());
     el = document.getElementById("bl-banner");
     if (el) q.set("banner_url", (el.value || "").trim());
+    el = document.getElementById("bl-favicon");
+    if (el) q.set("favicon_url", (el.value || "").trim());
     el = document.getElementById("bl-banner-layout");
     if (el && el.value) q.set("banner_layout", el.value);
     el = document.getElementById("bl-accent");
@@ -645,6 +686,7 @@
       title: document.getElementById("bl-title").value.trim(),
       slug: slug,
       custom_domain: (document.getElementById("bl-domain") || {}).value.trim(),
+      favicon_url: (document.getElementById("bl-favicon") || {}).value.trim(),
       theme: document.getElementById("bl-theme").value,
       button_shape: document.getElementById("bl-shape").value,
       subtitle: document.getElementById("bl-subtitle").value,
@@ -1070,10 +1112,13 @@
     document.getElementById("btn-biolink-add-button").onclick = addButton;
     var logoFile = document.getElementById("bl-logo-file");
     var bannerFile = document.getElementById("bl-banner-file");
+    var faviconFile = document.getElementById("bl-favicon-file");
     var btnLogoUp = document.getElementById("btn-bl-upload-logo");
     var btnBannerUp = document.getElementById("btn-bl-upload-banner");
+    var btnFaviconUp = document.getElementById("btn-bl-upload-favicon");
     if (btnLogoUp && logoFile) btnLogoUp.onclick = function () { logoFile.click(); };
     if (btnBannerUp && bannerFile) btnBannerUp.onclick = function () { bannerFile.click(); };
+    if (btnFaviconUp && faviconFile) btnFaviconUp.onclick = function () { faviconFile.click(); };
     if (logoFile) {
       logoFile.addEventListener("change", function () {
         if (logoFile.files && logoFile.files[0]) blUploadAsset("logo", logoFile.files[0]);
@@ -1086,11 +1131,17 @@
         bannerFile.value = "";
       });
     }
-    ["bl-title", "bl-subtitle", "bl-avatar", "bl-banner", "bl-accent"].forEach(function (id) {
+    if (faviconFile) {
+      faviconFile.addEventListener("change", function () {
+        if (faviconFile.files && faviconFile.files[0]) blUploadAsset("favicon", faviconFile.files[0]);
+        faviconFile.value = "";
+      });
+    }
+    ["bl-title", "bl-subtitle", "bl-avatar", "bl-banner", "bl-favicon", "bl-accent"].forEach(function (id) {
       var el = document.getElementById(id);
       if (!el) return;
       el.addEventListener("input", function () {
-        if (id === "bl-avatar" || id === "bl-banner") renderAssetPickers();
+        if (id === "bl-avatar" || id === "bl-banner" || id === "bl-favicon") renderAssetPickers();
         schedulePreviewRefresh();
       });
     });

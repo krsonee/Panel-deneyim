@@ -11,7 +11,7 @@ MODULE_ACCESS = ("module.biolink", "biolink.pages")
 
 _BIOLINK_DOMAIN_SKIP_PREFIXES = (
     "/admin", "/api/", "/static/", "/demo", "/health", "/login",
-    "/uploads/biolink/", "/p/", "/favicon.ico", "/robots.txt",
+    "/uploads/biolink/", "/p/", "/robots.txt",
 )
 
 
@@ -57,6 +57,8 @@ def handle_custom_domain_biolink():
         page = biolink_api.get_public_page_by_domain(conn, request.host)
     if not page:
         return None
+    if path == "/favicon.ico":
+        return redirect(biolink_api.resolve_favicon_url(page), code=302)
     if path in ("", "/"):
         with closing(get_db()) as conn:
             biolink_api.record_view(conn, page["slug"])
@@ -148,6 +150,7 @@ def create_biolink_blueprint(permission_required):
                     ga4_measurement_id=data.get("ga4_measurement_id") or "",
                     ga4_api_secret=data.get("ga4_api_secret") or "",
                     custom_domain=data.get("custom_domain") or "",
+                    favicon_url=data.get("favicon_url") or "",
                     created_by=username,
                 )
         except ValueError as exc:

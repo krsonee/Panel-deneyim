@@ -10,7 +10,8 @@
 <meta property="og:description" content="{{ page.subtitle }}">
 {% if page.banner_url %}<meta property="og:image" content="{{ page.banner_url }}">{% elif page.logo_url %}<meta property="og:image" content="{{ page.logo_url }}">{% elif theme.brand_logo_src %}<meta property="og:image" content="{{ theme.brand_logo_src }}">{% endif %}
 <meta property="og:type" content="website">
-<link rel="icon" href="data:,">
+<link rel="icon" href="{{ page.resolved_favicon }}">
+<link rel="apple-touch-icon" href="{{ page.resolved_favicon }}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">

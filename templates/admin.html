@@ -1016,6 +1016,17 @@
       content-visibility: auto;
       contain-intrinsic-size: auto 46px;
     }
+    /* Gizli modüller — DOM boyutu büyük olsa bile render/paint maliyeti sıfır */
+    .module-panel[hidden] {
+      display: none !important;
+      content-visibility: hidden;
+      contain: strict;
+      pointer-events: none;
+    }
+    .module-panel:not([hidden]) {
+      content-visibility: visible;
+      contain: layout style;
+    }
     #makrolink-table-scroll {
       max-height: min(520px, 62vh);
       contain: layout style paint;
@@ -2630,7 +2641,7 @@
 
   <script src="/static/accounting.js?v=20260712m"></script>
   <script src="/static/mailing.js?v=20260712v"></script>
-  <script src="/static/biolink.js?v=20260713h"></script>
+  <script src="/static/biolink.js?v=20260713i"></script>
   <script src="/static/marketing.js?v=20260712d"></script>
   <script>
     (function () {
@@ -3790,19 +3801,25 @@
           if (!s) return;
           var timeEl = tr.querySelector(".time[data-seconds]");
           if (timeEl) {
-            timeEl.setAttribute("data-seconds", s.total_seconds);
-            timeEl.textContent = fmtTime(s.total_seconds);
+            var sec = String(s.total_seconds);
+            if (timeEl.getAttribute("data-seconds") !== sec) {
+              timeEl.setAttribute("data-seconds", sec);
+              timeEl.textContent = fmtTime(s.total_seconds);
+            }
           }
-          var statusEl = tr.querySelector('[data-col="status"]');
-          if (statusEl) {
-            statusEl.innerHTML = s.is_online
-              ? '<span class="tag online">Online</span>'
-              : '<span class="tag offline">Offline</span>';
+          var wantOnline = !!s.is_online;
+          var wasOnline = tr.classList.contains("online");
+          if (wantOnline !== wasOnline) {
+            tr.classList.toggle("online", wantOnline);
+            tr.setAttribute("data-status", wantOnline ? "online" : "offline");
+            var statusEl = tr.querySelector('[data-col="status"]');
+            if (statusEl) {
+              statusEl.innerHTML = wantOnline
+                ? '<span class="tag online">Online</span>'
+                : '<span class="tag offline">Offline</span>';
+            }
           }
-          var gamesEl = tr.querySelector('[data-col="games"]');
-          if (gamesEl) gamesEl.innerHTML = renderGames(s.games);
-          tr.classList.toggle("online", !!s.is_online);
-          tr.setAttribute("data-status", s.is_online ? "online" : "offline");
+          /* games sadece structural değişimde full re-render alır — dyn path'te dokunma */
         });
       }
 
@@ -3865,16 +3882,22 @@
       }
 
       function tickTimes() {
-        document.querySelectorAll("tr.online .time[data-seconds]").forEach(function(el) {
-          var s = parseInt(el.getAttribute("data-seconds")||"0",10)+1;
-          el.setAttribute("data-seconds", s);
+        if (!trackingPollEnabled || document.hidden) return;
+        var nodes = document.querySelectorAll("#online-table tr.online .time[data-seconds], #sessions-table tr.online .time[data-seconds]");
+        for (var i = 0; i < nodes.length; i++) {
+          var el = nodes[i];
+          var s = (parseInt(el.getAttribute("data-seconds") || "0", 10) || 0) + 1;
+          el.setAttribute("data-seconds", String(s));
           el.textContent = fmtTime(s);
-        });
+        }
       }
 
       var lastLinks = [];
-      var REFRESH_LIVE_MS = 5000;
-      var REFRESH_DASH_MS = 30000;
+      /* Canlı: 10sn · Hafif dashboard: 45sn · Ağır (MakroLink/Smartico/Blink): 90sn */
+      var REFRESH_LIVE_MS = 10000;
+      var REFRESH_DASH_MS = 45000;
+      var REFRESH_HEAVY_MS = 90000;
+      var heavyInFlight = false;
       var lastOnlineSig = "";
       var lastOnlineStructSig = "";
       var lastOnlineDynSig = "";
