@@ -1178,7 +1178,7 @@ def _maybe_sync_missing_tags_async(*, force=False, interval_sec=21600):
         try:
             with closing(get_db()) as conn:
                 # İlk tur: yeni id'lerden geriye doğru da örnekle (son importlar)
-                result = _sync_missing_tags_from_contacts(conn, max_rows=300000, batch_size=2500)
+                result = _sync_missing_tags_from_contacts(conn, max_rows=25000, batch_size=1000)
                 # Son kontaklardan da örnek (eski id'ler atlanırsa)
                 rows = fetchall(
                     conn,
@@ -1193,26 +1193,8 @@ def _maybe_sync_missing_tags_async(*, force=False, interval_sec=21600):
                 except Exception:
                     pass
                 _TAG_SYNC_STATE["last_added"] = int(result.get("added") or 0) + int(added2 or 0)
-                # Yeni eklenenler + contact_count=0 kalanlar (stale 0 bug'ı)
-                zero_rows = fetchall(
-                    conn,
-                    "SELECT name, contact_count FROM mail_contact_tags",
-                ) or []
-                need_recount = set()
-                for r in zero_rows:
-                    nm = (r["name"] or "").strip()
-                    if not nm:
-                        continue
-                    try:
-                        cc = int(r["contact_count"] or 0) if "contact_count" in (r.keys() if hasattr(r, "keys") else []) else 0
-                    except Exception:
-                        cc = 0
-                    if cc <= 0:
-                        need_recount.add(nm)
-                if _TAG_SYNC_STATE["last_added"]:
-                    need_recount.update(names or [])
-                if need_recount:
-                    _refresh_tag_counts_async(list(need_recount))
+                # Otomatik zero-tag LIKE recount kaldırıldı — milyonluk DB'yi kitler.
+                # Etiket sayıları import/retag sırasında güncellenir.
             _TAG_SYNC_STATE["ts"] = time.time()
             _invalidate_mail_stats_cache()
             print(
@@ -1430,34 +1412,36 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_DASH)
     def dashboard():
         with closing(get_db()) as conn:
-            contacts = scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0
-            active_contacts = scalar(
-                conn, "SELECT COUNT(*) FROM mail_contacts WHERE unsubscribed = 0"
-            ) or 0
+            # Milyonlarca kontak/sends üzerinde exact COUNT paneli kitler
+            contacts, contacts_approx = _approx_contact_total(conn)
+            active_contacts = contacts  # exact unsubscribed COUNT pahalı — KPI'da approx
             templates = scalar(conn, "SELECT COUNT(*) FROM mail_templates") or 0
             campaigns = scalar(conn, "SELECT COUNT(*) FROM mail_campaigns") or 0
-            sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends") or 0
-            sends_sim = scalar(
-                conn, "SELECT COUNT(*) FROM mail_sends WHERE status IN ('simulated','sent')"
-            ) or 0
-            sends_queued = scalar(
-                conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'queued'"
-            ) or 0
-            sends_failed = scalar(
-                conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'failed'"
-            ) or 0
-            opened = scalar(
-                conn, "SELECT COUNT(*) FROM mail_sends WHERE opened_at IS NOT NULL"
-            ) or 0
-            clicked = scalar(
-                conn, "SELECT COUNT(*) FROM mail_sends WHERE clicked_at IS NOT NULL"
-            ) or 0
+            if uses_postgres():
+                try:
+                    sends_total = int(scalar(
+                        conn,
+                        "SELECT reltuples::bigint FROM pg_class WHERE relname = 'mail_sends'",
+                    ) or 0)
+                    if sends_total < 0:
+                        sends_total = 0
+                except Exception:
+                    sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends") or 0
+            else:
+                sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends") or 0
+            # Detaylı send durumları büyük tabloda pahalı — 0 göster, Reports'ta bakılsın
+            sends_sim = 0
+            sends_queued = 0
+            sends_failed = 0
+            opened = 0
+            clicked = 0
             ivr_events = scalar(conn, "SELECT COUNT(*) FROM mail_ivr_events") or 0
             domains = _rows(fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC"))
             provider = get_mail_setting(conn, "provider_mode", "stub")
         return jsonify({
             "kpi": {
                 "contacts": contacts,
+                "contacts_approx": bool(contacts_approx),
                 "active_contacts": active_contacts,
                 "templates": templates,
                 "campaigns": campaigns,
@@ -1485,43 +1469,21 @@ def create_mailing_blueprint(permission_required):
         sync_tags = (request.args.get("sync_tags") or "").strip() in ("1", "true", "yes")
         now = time.time()
         if not refresh and not sync_tags and _STATS_CACHE["payload"] and (now - _STATS_CACHE["ts"]) < 60:
-            # Arka planda eksik etiket senkronu (throttle) — yanıtı bloklama
-            _maybe_sync_missing_tags_async(force=False)
-            cached = _STATS_CACHE["payload"]
-            zeros = [
-                t["name"] for t in (cached.get("by_tag") or [])
-                if int(t.get("count") or 0) <= 0 and (t.get("name") or "").strip()
-            ]
-            if zeros and int(cached.get("total") or 0) > 0:
-                _refresh_tag_counts_async(zeros)
-                out = dict(cached)
-                out["pending_tag_recount"] = zeros
-                return jsonify(out)
-            return jsonify(cached)
+            # Cache hit — arka plan sync/recount YOK (milyonluk LIKE taramaları paneli kitler)
+            return jsonify(_STATS_CACHE["payload"])
 
         with closing(get_db()) as conn:
             total, total_approx = _approx_contact_total(conn)
-            # EXISTS üzerinde 3M satır taramak paneli patates yapıyordu
-            mailed = int(scalar(
-                conn,
-                "SELECT COUNT(DISTINCT contact_id) FROM mail_sends WHERE contact_id IS NOT NULL",
-            ) or 0)
-            mailed = min(mailed, total)
-            never_mailed = max(total - mailed, 0)
-            # Sayfa açılışında registry dışı etiketleri yakala (throttle / force)
-            _maybe_sync_missing_tags_async(force=sync_tags or refresh)
-            by_tag = _contact_tag_counts(conn, live=refresh)
-            # Stale 0: bir etiket dolu diğerleri 0 kalabiliyordu — sadece 0'ları yeniden say
+            # COUNT(DISTINCT contact_id) büyük mail_sends'te paneli kitler — approx/skip
+            mailed = 0
+            never_mailed = total
+            # sync yalnız açık istekte; CRM açılışında otomatik tarama yok
+            if sync_tags:
+                _maybe_sync_missing_tags_async(force=True)
+            # live=True = her etiket için full-table LIKE — milyonluk DB'de yasak
+            by_tag = _contact_tag_counts(conn, live=False)
             pending_recount = []
-            if total > 0 and by_tag:
-                pending_recount = [
-                    t["name"] for t in by_tag
-                    if int(t.get("count") or 0) <= 0 and (t.get("name") or "").strip()
-                ]
-                if pending_recount and not refresh:
-                    _refresh_tag_counts_async(pending_recount)
-                elif not refresh and sum(t["count"] for t in by_tag) == 0:
-                    _refresh_tag_counts_async()
+            # Yenile'de bile otomatik N× LIKE recount başlatma; registry contact_count yeter
         payload = {
             "total": total,
             "total_approx": bool(total_approx),
@@ -1533,8 +1495,7 @@ def create_mailing_blueprint(permission_required):
             "cached": not refresh,
         }
         with _STATS_LOCK:
-            # 0'lı etiketler sayılırken cache'i kısa tut
-            _STATS_CACHE["ts"] = time.time() - (55 if pending_recount else 0)
+            _STATS_CACHE["ts"] = time.time()
             _STATS_CACHE["payload"] = payload
         return jsonify(payload)
 

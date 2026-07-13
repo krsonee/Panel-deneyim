@@ -612,9 +612,10 @@
   function mailLoadTab(tab) {
     if (tab === "dashboard") mailLoadDashboard();
     else if (tab === "crm") {
+      // syncTags/recount milyonlarca satırda DB'yi kilitler — sadece cache'li özet
       mailLoadContacts();
       mailLoadTags();
-      mailLoadContactStats({ syncTags: true });
+      mailLoadContactStats();
     }
     else if (tab === "templates") mailLoadTemplates();
     else if (tab === "campaigns") {
@@ -813,16 +814,13 @@
       setText("mail-crm-stat-total", fmtNum(s.total));
       setText("mail-crm-stat-mailed", fmtNum(s.mailed));
       setText("mail-crm-stat-never", fmtNum(s.never_mailed));
-      mailRenderTagStats(s.by_tag || [], { pendingRecount: s.pending_tag_recount || [] });
+      mailRenderTagStats(s.by_tag || [], { pendingRecount: [] });
       mailFillCampTagSelect();
-      mailLoadTags();
-      // 0 görünen etiketler arka planda sayılıyor — kısa süre sonra yeniden çek
+      // Tag listesini her stats çağrısında yeniden çekme — gereksiz DB yükü
+      if (opts.refresh || opts.syncTags) mailLoadTags();
+      // Otomatik recount poll kaldırıldı: milyonlarca satırda paneli kitler.
+      // Etiket sayılarını yenilemek için CRM "Yenile" butonu (refresh=1) kullanılır.
       if (mailTagRecountTimer) { clearTimeout(mailTagRecountTimer); mailTagRecountTimer = null; }
-      if ((s.pending_tag_recount || []).length && !opts._recountPoll) {
-        mailTagRecountTimer = setTimeout(function () {
-          mailLoadContactStats({ _recountPoll: true, syncTags: false });
-        }, 6000);
-      }
     });
   }
 
@@ -1574,12 +1572,12 @@
     bindClick("mail-contacts-refresh", function () {
       mailLoadContacts();
       mailLoadTags();
-      mailLoadContactStats({ refresh: true, syncTags: true });
+      mailLoadContactStats({ refresh: true });
     });
     bindClick("mail-crm-tag-refresh", function () {
       var hint = document.getElementById("mail-crm-tag-stats-hint");
-      if (hint) hint.textContent = "Sayılar hesaplanıyor (büyük listede 1–2 dk sürebilir)…";
-      mailLoadContactStats({ refresh: true, syncTags: true }).then(function () {
+      if (hint) hint.textContent = "Özet yenileniyor…";
+      mailLoadContactStats({ refresh: true }).then(function () {
         if (hint) hint.textContent = "Aynı kontak birden fazla etikette sayılabilir";
       });
     });
