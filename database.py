@@ -89,10 +89,21 @@ def get_db():
             # Havuz tukendi/bozuldu: dogrudan yeni baglanti dene (fallback).
             import psycopg2
 
-            return psycopg2.connect(
+            conn = psycopg2.connect(
                 database_url, cursor_factory=RealDictCursor, connect_timeout=10
             )
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SET statement_timeout = '12000'")
+            except Exception:
+                pass
+            return conn
         conn.cursor_factory = RealDictCursor
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET statement_timeout = '12000'")
+        except Exception:
+            pass
         return _PooledConnection(conn, pool)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row

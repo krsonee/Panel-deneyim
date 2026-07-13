@@ -2639,8 +2639,8 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260713r"></script>
-  <script src="/static/mailing.js?v=20260713r"></script>
+  <script src="/static/accounting.js?v=20260713s"></script>
+  <script src="/static/mailing.js?v=20260713s"></script>
   <script src="/static/biolink.js?v=20260713j"></script>
   <script src="/static/marketing.js?v=20260712d"></script>
   <script>
@@ -3058,6 +3058,11 @@
           updateRoleDesc("edit-user-role", "edit-user-role-desc");
           var savedMod = localStorage.getItem("makropanel_module");
           var startMod = data.default_module || "tracking";
+          // Acil: Mailing otomatik açılınca ağır API'ler paneli kilitliyordu
+          if (savedMod === "mailing") {
+            try { localStorage.setItem("makropanel_module", "tracking"); } catch (e) {}
+            savedMod = "tracking";
+          }
           if (savedMod && availableModules.indexOf(savedMod) >= 0) startMod = savedMod;
           else if (availableModules.indexOf(startMod) < 0 && availableModules.length) startMod = availableModules[0];
           switchModule(startMod);

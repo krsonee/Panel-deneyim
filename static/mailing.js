@@ -2253,12 +2253,12 @@
     },
     onShow: function () {
       if (!mailLoaded) this.init();
-      mailRefreshImportStatus({ force: true }).then(function (hasActive) {
-        var tab = "dashboard";
-        try { tab = localStorage.getItem(MAIL_TAB_STORAGE_KEY) || "dashboard"; } catch (e) { /* ignore */ }
-        if (hasActive || mailImportBusy) tab = "crm";
-        switchMailTab(tab);
-      });
+      // Import varsa bile CRM zorlama — CRM açılışı DB'yi kilitliyordu
+      var tab = "dashboard";
+      try { tab = localStorage.getItem(MAIL_TAB_STORAGE_KEY) || "dashboard"; } catch (e) { /* ignore */ }
+      if (tab === "crm") tab = "dashboard";
+      switchMailTab(tab);
+      mailRefreshImportStatus({ force: true });
     },
     onHide: function () {
       if (mailCampPollTimer) {

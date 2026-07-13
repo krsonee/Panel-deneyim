@@ -130,81 +130,79 @@ def _extract_email_from_row(row):
 
 
 def _reconcile_stale_import_job(conn, row):
-    """Takılı kalmış pending/running işleri toparlar."""
+    """Takılı pending/running işleri kapatır — ASLA yeniden başlatmaz.
+
+    Eski davranış (restart) milyon kontak importunu her status poll'da
+    tekrar başlatıp Postgres'i kilitliyordu; panel tamamen donuyordu.
+    """
     job = _row(row)
     status = job.get("status")
     path = _import_job_path(job["id"], job.get("filename"))
-    file_ok = os.path.isfile(path) and os.path.getsize(path) > 0
     age_sec = _import_job_age_seconds(job.get("updated_at") or job.get("created_at"))
 
-    if status == "pending":
-        if age_sec < IMPORT_STALE_PENDING_SECONDS:
-            return job
-        if file_ok and not job.get("processed_rows"):
-            now = iso(utcnow())
-            execute(
-                conn,
-                "UPDATE mail_import_jobs SET status = 'running', updated_at = ? WHERE id = ? AND status = 'pending'",
-                (now, job["id"]),
-            )
-            conn.commit()
-            tag = (job.get("tag") or "").strip()
-            threading.Thread(target=_run_import_job, args=(job["id"], path, tag), daemon=True).start()
-            job["status"] = "running"
-            job["updated_at"] = now
-            return job
-        if file_ok:
-            return job
-        err = (
-            "Dosya yüklemesi tamamlanamadı veya bağlantı kesildi. "
-            "Büyük dosyalarda ağ/proxy zaman aşımı olabilir — dosyayı parçalara bölüp tekrar dene."
-        )
-        now = iso(utcnow())
-        execute(
-            conn,
-            "UPDATE mail_import_jobs SET status = 'error', error = ?, updated_at = ? WHERE id = ?",
-            (err, now, job["id"]),
-        )
-        conn.commit()
-        try:
-            if os.path.isfile(path):
-                os.remove(path)
-        except Exception:
-            pass
-        job["status"] = "error"
-        job["error"] = err
-        job["updated_at"] = now
+    if status not in ("pending", "running", "cancelling"):
         return job
 
-    if status == "running" and age_sec >= IMPORT_STALE_RUNNING_SECONDS:
-        if file_ok:
-            now = iso(utcnow())
-            execute(
-                conn,
-                "UPDATE mail_import_jobs SET updated_at = ? WHERE id = ? AND status = 'running'",
-                (now, job["id"]),
-            )
-            conn.commit()
-            tag = (job.get("tag") or "").strip()
-            threading.Thread(target=_run_import_job, args=(job["id"], path, tag), daemon=True).start()
-            job["updated_at"] = now
-            return job
-        err = (
-            "İçe aktarma sunucu yeniden başlatıldığında kesildi veya ilerleme kayboldu. "
-            "Dosya artık sunucuda yok — lütfen listeyi tekrar yükleyin."
-        )
-        now = iso(utcnow())
-        execute(
-            conn,
-            "UPDATE mail_import_jobs SET status = 'error', error = ?, updated_at = ? WHERE id = ? AND status = 'running'",
-            (err, now, job["id"]),
-        )
-        conn.commit()
-        job["status"] = "error"
-        job["error"] = err
-        job["updated_at"] = now
+    # Kısa ömürlü job'lara dokunma (aktif worker henüz yazıyor olabilir)
+    grace = 90 if status == "running" else 45
+    if age_sec < grace:
+        return job
 
+    err = (
+        "İçe aktarma sunucu yeniden başlatıldığında veya zaman aşımında durduruldu. "
+        "Paneli kilitlememek için otomatik yeniden başlatılmadı — dosyayı tekrar yükleyin."
+    )
+    now = iso(utcnow())
+    execute(
+        conn,
+        "UPDATE mail_import_jobs SET status = 'error', error = ?, updated_at = ? "
+        "WHERE id = ? AND status IN ('pending','running','cancelling')",
+        (err, now, job["id"]),
+    )
+    conn.commit()
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+    except Exception:
+        pass
+    job["status"] = "error"
+    job["error"] = err
+    job["updated_at"] = now
     return job
+
+
+def _cancel_all_active_imports(reason="Panel koruması: aktif içe aktarma durduruldu."):
+    """Açık pending/running import'ları error'a çek — DB kilidini kes."""
+    try:
+        with closing(get_db()) as conn:
+            rows = fetchall(
+                conn,
+                "SELECT id, filename FROM mail_import_jobs "
+                "WHERE status IN ('pending','running','cancelling')",
+            ) or []
+            if not rows:
+                return 0
+            now = iso(utcnow())
+            for row in rows:
+                job = _row(row)
+                execute(
+                    conn,
+                    "UPDATE mail_import_jobs SET status = 'error', error = ?, updated_at = ? WHERE id = ?",
+                    (reason, now, job["id"]),
+                )
+                path = _import_job_path(job["id"], job.get("filename"))
+                try:
+                    if os.path.isfile(path):
+                        os.remove(path)
+                except Exception:
+                    pass
+            conn.commit()
+            print(f"🛑 mail import cancel: {len(rows)} job durduruldu")
+            return len(rows)
+    except Exception as exc:
+        print(f"⚠️  mail import cancel failed: {exc}")
+        return 0
+
 
 MODULE_ACCESS = ("module.mailing",)
 MAIL_DASH = ("mailing.dashboard",)
@@ -997,12 +995,14 @@ def _ensure_tag(conn, name, now=None):
 
 
 def _tag_usage_count(conn, name):
-    """Canlı etiket kullanım sayısı."""
+    """Etiket kullanım sayısı — registry contact_count (LIKE taraması yok)."""
     name = (name or "").strip()
     if not name:
         return 0
-    clause, params = _tag_match_clause(name)
-    return int(scalar(conn, f"SELECT COUNT(*) FROM mail_contacts WHERE {clause}", params) or 0)
+    cached = _registry_tag_count(conn, name)
+    if cached is not None:
+        return int(cached)
+    return 0
 
 
 def _delete_tag(conn, name, *, force=False):
@@ -1067,20 +1067,22 @@ _TAG_SYNC_STATE = {"ts": 0.0, "running": False, "last_added": 0}
 
 
 def _approx_contact_total(conn):
-    """3M satırda COUNT(*) yavaş — PG approx veya cache."""
+    """3M satırda COUNT(*) yavaş — PG approx; exact fallback YOK (panel kitler)."""
     if uses_postgres():
         try:
             n = scalar(
                 conn,
                 "SELECT reltuples::bigint FROM pg_class WHERE relname = 'mail_contacts'",
             )
-            if n is not None and int(n) >= 0:
-                # reltuples 0 olabilir (yeni tablo) — o zaman exact
-                if int(n) > 1000:
-                    return int(n), True
+            if n is not None:
+                return max(int(n), 0), True
         except Exception:
             pass
-    return int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0), False
+        return 0, True
+    try:
+        return int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0), False
+    except Exception:
+        return 0, False
 
 
 def _registry_tag_count(conn, name):
@@ -1164,49 +1166,8 @@ def _sync_missing_tags_from_contacts(conn, *, max_rows=250000, batch_size=2000):
 
 
 def _maybe_sync_missing_tags_async(*, force=False, interval_sec=21600):
-    """CRM açılışında tam tarama yapma — arka planda throttle'lı senkron."""
-    import time
-
-    now = time.time()
-    if _TAG_SYNC_STATE["running"]:
-        return
-    if not force and _TAG_SYNC_STATE["ts"] and (now - _TAG_SYNC_STATE["ts"]) < interval_sec:
-        return
-
-    def _job():
-        _TAG_SYNC_STATE["running"] = True
-        try:
-            with closing(get_db()) as conn:
-                # İlk tur: yeni id'lerden geriye doğru da örnekle (son importlar)
-                result = _sync_missing_tags_from_contacts(conn, max_rows=25000, batch_size=1000)
-                # Son kontaklardan da örnek (eski id'ler atlanırsa)
-                rows = fetchall(
-                    conn,
-                    "SELECT tags FROM mail_contacts ORDER BY id DESC LIMIT 5000",
-                )
-                names = set()
-                for row in rows or []:
-                    names.update(_parse_tags(_row(row).get("tags")))
-                added2 = _harvest_tags_into_registry(conn, names)
-                try:
-                    conn.commit()
-                except Exception:
-                    pass
-                _TAG_SYNC_STATE["last_added"] = int(result.get("added") or 0) + int(added2 or 0)
-                # Otomatik zero-tag LIKE recount kaldırıldı — milyonluk DB'yi kitler.
-                # Etiket sayıları import/retag sırasında güncellenir.
-            _TAG_SYNC_STATE["ts"] = time.time()
-            _invalidate_mail_stats_cache()
-            print(
-                f"🏷️  tag sync: scanned={result.get('scanned')} "
-                f"added={_TAG_SYNC_STATE['last_added']}"
-            )
-        except Exception as exc:
-            print(f"⚠️  tag sync: {exc}")
-        finally:
-            _TAG_SYNC_STATE["running"] = False
-
-    threading.Thread(target=_job, daemon=True, name="mail-tag-sync").start()
+    """Devre dışı — milyon satır taraması paneli kilitliyordu."""
+    return
 
 
 def _recount_tag(conn, name):
@@ -1231,34 +1192,25 @@ def _recount_tag(conn, name):
 
 
 def _contact_tag_counts(conn, *, force=False, live=False):
-    """Etiket sayıları — contact_count kolonundan (anlık). live=True ile yeniden sayar."""
+    """Etiket sayıları — yalnız registry contact_count. live recount KAPALI."""
     import time
 
     now = time.time()
-    if not force and not live and _TAG_COUNT_CACHE["rows"] is not None and (now - _TAG_COUNT_CACHE["ts"]) < 180:
+    if not force and _TAG_COUNT_CACHE["rows"] is not None and (now - _TAG_COUNT_CACHE["ts"]) < 180:
         return _TAG_COUNT_CACHE["rows"]
 
     registry_rows = fetchall(conn, "SELECT * FROM mail_contact_tags ORDER BY name ASC")
     counts = {}
-    has_count_col = False
     for r in registry_rows or []:
         name = (r["name"] or "").strip()
         if not name:
             continue
         keys = r.keys() if hasattr(r, "keys") else []
         if "contact_count" in keys:
-            has_count_col = True
             counts[name] = int(r["contact_count"] or 0)
         else:
             counts[name] = 0
-
-    if live or force or not has_count_col:
-        for name in list(counts.keys()):
-            counts[name] = _recount_tag(conn, name)
-        try:
-            conn.commit()
-        except Exception:
-            pass
+    # live=True bile olsa LIKE recount yok — panel koruması
 
     rows = sorted(
         [{"name": name, "count": int(counts[name] or 0)} for name in counts],
@@ -1280,53 +1232,8 @@ _TAG_RECOUNT_STATE = {"running": False, "queued": set()}
 
 
 def _refresh_tag_counts_async(tag_names=None):
-    """Ağır sayımı arka planda yap — CRM'i kilitlemesin."""
-    names = list(tag_names) if tag_names else None
-
-    def _job():
-        _TAG_RECOUNT_STATE["running"] = True
-        try:
-            with closing(get_db()) as conn:
-                if names:
-                    for name in names:
-                        name = (name or "").strip()
-                        if not name:
-                            continue
-                        exists = scalar(
-                            conn,
-                            "SELECT COUNT(*) FROM mail_contact_tags WHERE name = ?",
-                            (name,),
-                        )
-                        if not exists:
-                            continue
-                        n = _recount_tag(conn, name)
-                        print(f"🏷️  recount «{name}» → {n}")
-                    # Sadece gerçekten 0 kalanları temizle (canlı doğrulamalı)
-                    cleaned = _cleanup_empty_tags(conn, names)
-                else:
-                    _contact_tag_counts(conn, live=True)
-                    cleaned = _cleanup_empty_tags(conn)
-                conn.commit()
-            _invalidate_mail_stats_cache()
-            if cleaned:
-                print(f"🧹 boş etiket silindi: {', '.join(cleaned)}")
-        except Exception as exc:
-            print(f"⚠️  tag count refresh: {exc}")
-        finally:
-            _TAG_RECOUNT_STATE["running"] = False
-            _TAG_RECOUNT_STATE["queued"].clear()
-
-    # Aynı etiketler için paralel job üretme
-    if names:
-        key = frozenset((n or "").strip() for n in names if (n or "").strip())
-        if key and key <= _TAG_RECOUNT_STATE["queued"] and _TAG_RECOUNT_STATE["running"]:
-            return
-        _TAG_RECOUNT_STATE["queued"].update(key)
-    elif _TAG_RECOUNT_STATE["running"]:
-        return
-
-    threading.Thread(target=_job, daemon=True, name="mail-tag-count-refresh").start()
-
+    """Devre dışı — etiket başına full-table LIKE paneli kilitliyordu."""
+    return
 
 
 def _stub_send(conn, *, channel, to_email, subject, contact=None, campaign_id=None,
@@ -1402,6 +1309,10 @@ def create_mailing_blueprint(permission_required):
     from mail_campaign_worker import ensure_campaign_scheduler
 
     ensure_campaign_scheduler()
+    try:
+        _cancel_all_active_imports()
+    except Exception as exc:
+        print(f"⚠️  startup import cancel: {exc}")
     bp = Blueprint("mailing", __name__, url_prefix="/api/mailing")
 
     def mail_perm(*keys):
@@ -2211,12 +2122,22 @@ def create_mailing_blueprint(permission_required):
             max_recipients = None
         with closing(get_db()) as conn:
             where_sql, params = _campaign_selection_where(tag_filter, exclude_sent)
-            total = scalar(conn, f"SELECT COUNT(*) FROM mail_contacts WHERE {where_sql}", tuple(params)) or 0
+            total = None
+            # Tag filtreliyse registry sayısı; değilse approx. Exact COUNT yasak.
+            if tag_filter and not exclude_sent:
+                total = _registry_tag_count(conn, tag_filter)
+            if total is None:
+                try:
+                    total, _approx = _approx_contact_total(conn)
+                except Exception:
+                    total = 0
+            total = int(total or 0)
         will_attach = min(total, max_recipients) if max_recipients else total
         return jsonify({
             "matching_count": total,
             "will_attach": will_attach,
             "max_recipients": max_recipients,
+            "approx": True,
         })
 
     @bp.route("/campaigns/<int:campaign_id>", methods=["PATCH"])
