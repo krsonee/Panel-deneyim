@@ -35,7 +35,7 @@ def _get_pg_pool():
                 from psycopg2 import pool as pg_pool
 
                 _pg_pool = pg_pool.ThreadedConnectionPool(
-                    1, 8, get_database_url(), connect_timeout=10
+                    2, 16, get_database_url(), connect_timeout=8
                 )
     return _pg_pool
 
@@ -77,6 +77,19 @@ class _PooledConnection:
         return getattr(self._conn, name)
 
 
+def _apply_pg_session_guards(conn):
+    """Uzun sorgu / kilit / yarım transaction panel kilidini önler."""
+    try:
+        with conn.cursor() as cur:
+            # 12sn çok agresifti — muhasebe/raporlar timeout olup paneli kırıyordu.
+            # 25sn yeterli koruma; asıl koruma sessions LIMIT + pool.
+            cur.execute("SET statement_timeout = '25000'")
+            cur.execute("SET lock_timeout = '8000'")
+            cur.execute("SET idle_in_transaction_session_timeout = '15000'")
+    except Exception:
+        pass
+
+
 def get_db():
     database_url = get_database_url()
     if uses_postgres():
@@ -90,20 +103,12 @@ def get_db():
             import psycopg2
 
             conn = psycopg2.connect(
-                database_url, cursor_factory=RealDictCursor, connect_timeout=10
+                database_url, cursor_factory=RealDictCursor, connect_timeout=8
             )
-            try:
-                with conn.cursor() as cur:
-                    cur.execute("SET statement_timeout = '12000'")
-            except Exception:
-                pass
+            _apply_pg_session_guards(conn)
             return conn
         conn.cursor_factory = RealDictCursor
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SET statement_timeout = '12000'")
-        except Exception:
-            pass
+        _apply_pg_session_guards(conn)
         return _PooledConnection(conn, pool)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row

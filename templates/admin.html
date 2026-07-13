@@ -1879,17 +1879,17 @@
         <div class="topbar">
           <div>
             <h2>Link Takip & Analiz <span class="role-badge" id="user-role-badge"></span></h2>
-            <p>Sunucu: {{ server_url }} · 3 sn'de bir otomatik güncellenir</p>
+            <p>Sunucu: {{ server_url }} · Canlı veri ~30 sn’de bir güncellenir</p>
           </div>
           <div class="live-pill" id="poll-status">Canlı akış aktif</div>
           <div class="period-bar">
             <label for="filter-period" class="muted" style="font-size:0.72rem;">Tarih:</label>
             <select id="filter-period">
-              <option value="all">Tüm Zamanlar</option>
-              <option value="today">Bugün</option>
+              <option value="today" selected>Bugün</option>
               <option value="yesterday">Dün</option>
               <option value="7days">Son 7 Gün</option>
               <option value="30days">Son 30 Gün</option>
+              <option value="all">Tüm Zamanlar</option>
               <option value="custom">Özel Aralık</option>
             </select>
             <span id="filter-custom-range" class="custom-range-inline" style="display:none;">
@@ -2660,7 +2660,7 @@
         btn.classList.add("copied");
         setTimeout(function() { btn.innerHTML = original; btn.classList.remove("copied"); }, 1200);
       }
-      var currentPeriod = "all";
+      var currentPeriod = "today";
       var currentCustomPeriod = "";
       var TABLE_PAGE_SIZE = 25;
       var cachedLinks = [];
@@ -3931,6 +3931,25 @@
       var lastFilterSig = "";
       var liveInFlight = false;
       var dashInFlight = false;
+      var lastLiveAt = 0;
+
+      function fetchJsonTimed(url, timeoutMs) {
+        var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+        var timer = null;
+        if (ctrl) {
+          timer = setTimeout(function () {
+            try { ctrl.abort(); } catch (e) { /* ignore */ }
+          }, timeoutMs || 18000);
+        }
+        return fetch(url, ctrl ? { signal: ctrl.signal } : undefined)
+          .then(function (r) {
+            if (r.status === 401) { location.href = "/admin/login"; return null; }
+            return r.json();
+          })
+          .finally(function () {
+            if (timer) clearTimeout(timer);
+          });
+      }
 
       function listSig(items, keys) {
         if (!items || !items.length) return "[]";
@@ -4656,15 +4675,22 @@
         var pq = periodQuery();
         if (!hasPerm("tracking.players")) return;
         liveInFlight = true;
+        lastLiveAt = Date.now();
         Promise.all([
-          fetch(API+"/api/online").then(function(r){ if(r.status===401){location.href="/admin/login";return null;} return r.json(); }),
-          fetch(API+"/api/sessions"+pq).then(function(r){ return r.json(); })
+          fetchJsonTimed(API + "/api/online", 15000),
+          fetchJsonTimed(API + "/api/sessions" + pq, 18000)
         ]).then(function(results) {
           if (!results[0] || !results[1]) return;
           renderOnlineIfChanged(results[0].users || []);
           renderSessionsIfChanged(results[1].sessions || []);
           updateFilters(allSessions, lastLinks);
           touchPollStatus();
+          if (results[1].capped) {
+            var fc = document.getElementById("filter-count");
+            if (fc && fc.textContent.indexOf("son") < 0) {
+              /* capped notice already via count — no spam */
+            }
+          }
         }).catch(function(){}).finally(function(){ liveInFlight = false; });
       }
 
@@ -4818,7 +4844,10 @@
           }, 2000);
         });
         document.addEventListener("visibilitychange", function() {
-          if (!document.hidden && trackingPollEnabled) refreshAll();
+          if (document.hidden || !trackingPollEnabled) return;
+          /* Sekmeye dönüşte spam refresh paneli kilitlemesin */
+          if (Date.now() - lastLiveAt < 20000) return;
+          refreshAll();
         });
       }
 

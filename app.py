@@ -1497,12 +1497,13 @@ def online_users():
             INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
             WHERE vs.last_seen_at >= ?
             ORDER BY vs.last_seen_at DESC
+            LIMIT 250
             """,
             (cutoff,),
         )
 
     users = [session_to_dict(row, now, light=True) for row in rows]
-    return jsonify({"count": len(users), "users": users})
+    return jsonify({"count": len(users), "users": users, "capped": len(users) >= 250})
 
 
 @app.route("/api/sessions", methods=["GET"])
@@ -1511,6 +1512,13 @@ def all_sessions():
     now = utcnow()
     period = request.args.get("period", "all")
     date_sql, date_params = sessions_date_clause(period)
+    # Sınırsız SELECT paneli ve Postgres'i kilitliyordu — sabit üst sınır.
+    limit = 500
+    try:
+        req_limit = int(request.args.get("limit") or limit)
+        limit = max(50, min(req_limit, 800))
+    except (TypeError, ValueError):
+        pass
     with closing(get_db()) as conn:
         rows = fetchall(
             conn,
@@ -1519,12 +1527,18 @@ def all_sessions():
             INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
             WHERE 1=1{date_sql}
             ORDER BY vs.last_seen_at DESC
+            LIMIT {int(limit)}
             """,
             date_params,
         )
 
     sessions = [session_to_dict(row, now, light=True) for row in rows]
-    return jsonify({"sessions": sessions, "period": period})
+    return jsonify({
+        "sessions": sessions,
+        "period": period,
+        "limit": limit,
+        "capped": len(sessions) >= limit,
+    })
 
 
 @app.route("/api/reports/referrals", methods=["GET"])
