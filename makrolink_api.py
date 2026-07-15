@@ -177,6 +177,85 @@ def _sync_makrolink_tracking(conn, *, target_domain, code, label, affiliate_id="
         _sync_tracked_link(conn, target_domain, aff, f"{label} (affid)")
 
 
+MAX_ONLINE_GROUP = 150
+
+
+def expand_online_domain_group(raw):
+    """Canlı casino domain grubu: 'makrobet804-820' veya satır/virgül ile tek domainler.
+
+    Aralık sözdizimi app.expand_domain_line ile aynı: prefix + start-end → prefixN.com
+    """
+    if isinstance(raw, list):
+        lines = raw
+    else:
+        lines = str(raw or "").replace(",", "\n").split("\n")
+
+    domains = []
+    seen = set()
+    for line in lines:
+        line = (line or "").strip()
+        if not line or line.startswith("#"):
+            continue
+        compact = re.sub(r"\s+", "", line)
+        range_match = re.match(r"^([a-zA-Z][a-zA-Z0-9]*?)(\d+)-(\d+)$", compact, re.I)
+        if range_match:
+            prefix = range_match.group(1).lower()
+            start = int(range_match.group(2))
+            end = int(range_match.group(3))
+            if start > end:
+                start, end = end, start
+            count = end - start + 1
+            if count > MAX_ONLINE_GROUP:
+                raise ValueError(
+                    f"Online domain grubu en fazla {MAX_ONLINE_GROUP} domain olabilir "
+                    f"({count} istendi). Dar bir canlı pencere kullan: örn. makrobet804-820"
+                )
+            for num in range(start, end + 1):
+                d = f"{prefix}{num}.com"
+                if d not in seen:
+                    seen.add(d)
+                    domains.append(d)
+            continue
+        d = _normalize_domain(line)
+        if d and d not in seen:
+            seen.add(d)
+            domains.append(d)
+
+    if len(domains) > MAX_ONLINE_GROUP:
+        raise ValueError(
+            f"Online domain grubu en fazla {MAX_ONLINE_GROUP} domain olabilir ({len(domains)})."
+        )
+    return domains
+
+
+def get_online_domain_group_raw(conn):
+    return (get_setting(conn, "online_domain_group", "") or "").strip()
+
+
+def get_online_domains(conn):
+    """Ayarlardaki canlı gruptan domain listesi (boş = online sync yok)."""
+    try:
+        return expand_online_domain_group(get_online_domain_group_raw(conn))
+    except ValueError:
+        return []
+
+
+def _sync_makrolink_to_online_group(conn, *, code, label, affiliate_id=""):
+    """Link'in kod + Affid'ini canlı domain grubundaki TÜM domainlere yazar."""
+    domains = get_online_domains(conn)
+    if not domains:
+        return 0
+    for domain in domains:
+        _sync_makrolink_tracking(
+            conn,
+            target_domain=domain,
+            code=code,
+            label=label,
+            affiliate_id=affiliate_id,
+        )
+    return len(domains)
+
+
 def _clean_host(host):
     host = (host or "").strip().lower()
     host = host.replace("https://", "").replace("http://", "").strip("/").split("/")[0]
@@ -216,12 +295,23 @@ def get_config(conn, include_secrets=False):
 
     mid = (get_setting(conn, "ga4_measurement_id", "") or "").strip()
     secret = (get_setting(conn, "ga4_api_secret", "") or "").strip()
+    group_raw = get_online_domain_group_raw(conn)
+    try:
+        online_domains = expand_online_domain_group(group_raw) if group_raw else []
+        online_group_error = ""
+    except ValueError as exc:
+        online_domains = []
+        online_group_error = str(exc)
 
     cfg = {
         "public_host": default_host,
         "short_hosts": hosts,
         "public_scheme": scheme,
         "aff_base": aff_base or DEFAULT_AFF_BASE,
+        "online_domain_group": group_raw,
+        "online_domains": online_domains,
+        "online_domain_count": len(online_domains),
+        "online_group_error": online_group_error,
         "ga4_measurement_id": mid,
         "ga4_configured": bool(mid and secret),
     }
@@ -240,6 +330,7 @@ def save_config(
     aff_base=None,
     ga4_measurement_id=None,
     ga4_api_secret=None,
+    online_domain_group=None,
 ):
     if short_hosts is not None:
         if isinstance(short_hosts, list):
@@ -273,6 +364,13 @@ def save_config(
         if not base or not _valid_url(base + "/x"):
             raise ValueError("Geçerli Smartico aff base gerekli (örn. https://go.aff.makroaffi.com).")
         upsert_setting(conn, "aff_base", base)
+
+    if online_domain_group is not None:
+        raw_group = str(online_domain_group or "").strip()
+        # Validate (boş serbest)
+        if raw_group:
+            expand_online_domain_group(raw_group)
+        upsert_setting(conn, "online_domain_group", raw_group)
 
     if ga4_measurement_id is not None:
         mid = (ga4_measurement_id or "").strip().upper()
@@ -424,6 +522,11 @@ def create_link(
     ref_code = (ref_code or "").strip()[:128]
     created_by = (created_by or "").strip()[:64]
     target_domain = _normalize_domain(target_domain) if target_domain else ""
+    # Per-link domain yerine canlı grup kullanılır; kayıtta grup özetini sakla (geriye dönük alan)
+    if not target_domain:
+        group_raw = get_online_domain_group_raw(conn)
+        if group_raw:
+            target_domain = ("group:" + group_raw)[:200]
     category = normalize_category(category, allow_empty=False)
     now = iso(utcnow())
 
@@ -487,14 +590,13 @@ def create_link(
         )
         link_id = cur.lastrowid
 
-    if target_domain:
-        _sync_makrolink_tracking(
-            conn,
-            target_domain=target_domain,
-            code=code,
-            label=label,
-            affiliate_id=affiliate_id,
-        )
+    # Online: canlı domain grubundaki tüm casino domainlerine Affid + kod yaz
+    _sync_makrolink_to_online_group(
+        conn,
+        code=code,
+        label=label,
+        affiliate_id=affiliate_id,
+    )
 
     conn.commit()
     row = fetchone(conn, "SELECT * FROM makrolink_links WHERE id = ?", (link_id,))
@@ -572,10 +674,11 @@ def update_link(
     ref = ref_code if ref_code is not None else row.get("ref_code")
     ref = (ref or "").strip()[:128]
 
-    if target_domain is not None:
+    if target_domain is not None and str(target_domain).strip() and not str(target_domain).strip().startswith("group:"):
         new_target_domain = _normalize_domain(target_domain)
     else:
-        new_target_domain = row.get("target_domain") or ""
+        group_raw = get_online_domain_group_raw(conn)
+        new_target_domain = (("group:" + group_raw)[:200] if group_raw else (row.get("target_domain") or ""))
 
     if category is not None:
         new_category = normalize_category(category, allow_empty=True)
@@ -593,14 +696,12 @@ def update_link(
         """,
         (dest, lab, new_code, aff, ref, new_target_domain, new_category, now, int(link_id)),
     )
-    if new_target_domain:
-        _sync_makrolink_tracking(
-            conn,
-            target_domain=new_target_domain,
-            code=new_code,
-            label=lab,
-            affiliate_id=aff,
-        )
+    _sync_makrolink_to_online_group(
+        conn,
+        code=new_code,
+        label=lab,
+        affiliate_id=aff,
+    )
     conn.commit()
     return _row_to_dict(conn, fetchone(conn, "SELECT * FROM makrolink_links WHERE id = ?", (int(link_id),)))
 
@@ -742,29 +843,48 @@ def test_ga4(conn):
 
 
 def resync_all_tracking(conn):
-    """Aktif MakroLink'lerdeki Hedef Domain + Affid'i tracked_links'e yeniden yazar."""
+    """Aktif MakroLink'lerin Affid+kodunu canlı domain grubundaki tüm domainlere yazar."""
+    domains = get_online_domains(conn)
+    if not domains:
+        return {
+            "ok": False,
+            "error": "Önce Ayarlar’da canlı casino domain grubunu yaz (örn. makrobet804-820).",
+            "synced": 0,
+            "domains": 0,
+        }
     rows = fetchall(
         conn,
         """
-        SELECT code, label, affiliate_id, target_domain
+        SELECT code, label, affiliate_id
         FROM makrolink_links
         WHERE COALESCE(is_active, 1) = 1
-          AND COALESCE(target_domain, '') != ''
         """,
     )
     synced = 0
     for row in rows:
         r = dict(row)
-        _sync_makrolink_tracking(
+        _sync_makrolink_to_online_group(
             conn,
-            target_domain=r.get("target_domain") or "",
             code=r.get("code") or "",
             label=r.get("label") or "",
             affiliate_id=r.get("affiliate_id") or "",
         )
         synced += 1
+    # Link kayıtlarında grup işaretini güncelle
+    group_raw = get_online_domain_group_raw(conn)
+    marker = ("group:" + group_raw)[:200] if group_raw else ""
+    if marker:
+        execute(
+            conn,
+            """
+            UPDATE makrolink_links
+            SET target_domain = ?, updated_at = ?
+            WHERE COALESCE(is_active, 1) = 1
+            """,
+            (marker, iso(utcnow())),
+        )
     conn.commit()
-    return {"ok": True, "synced": synced}
+    return {"ok": True, "synced": synced, "domains": len(domains)}
 
 
 def record_click_and_resolve(conn, code, ip="", user_agent="", referer="", short_host=""):

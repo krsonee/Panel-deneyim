@@ -1978,7 +1978,7 @@
             <div class="hint" style="margin:0.5rem 0 0.75rem;padding:0.55rem 0.7rem;border:1px solid rgba(245,158,11,0.35);border-radius:8px;background:rgba(245,158,11,0.08);color:var(--text);font-size:0.78rem;line-height:1.45;">
               <strong>Önemli:</strong> MakroLink tablosundaki <em>tıklama</em> = short URL’ye gelen her hit.<br>
               Üstteki <em>Online oyuncu</em> = casino sitesinde <code>tracker.js</code> çalışan oturumlar.<br>
-              Smartico’ya giden link online üretmez; online için hedef domain’de takip kodu + <strong>Hedef Domain</strong> seçimi şart.
+              Domain 804→805→806 değişince linkleri tek tek güncelleme — aşağıdaki <strong>canlı domain grubunu</strong> güncelle + <em>Takip eşle</em>.
             </div>
             <form id="makrolink-config-form">
               <div class="form-row-4">
@@ -1993,12 +1993,18 @@
                 <label for="makrolink-hosts">Kısa domain listesi <span class="muted">(satır veya virgül)</span></label>
                 <textarea id="makrolink-hosts" rows="3" placeholder="makrovip.com&#10;sada.com&#10;asdf.com" style="width:100%;"></textarea>
               </div>
+              <div style="margin-top:0.65rem;">
+                <label for="makrolink-online-group">Canlı casino domain grubu <span class="muted">(online takip — max 150)</span></label>
+                <textarea id="makrolink-online-group" rows="2" placeholder="makrobet804-820" style="width:100%;"></textarea>
+                <p class="muted-sm" style="margin:0.35rem 0 0;">Örn. <code>makrobet804-820</code> → 804.com…820.com. Yeni link Affid’i bu gruba yazılır. Domain patlayınca aralığı kaydır, Kaydet + Takip eşle.</p>
+                <p class="muted-sm" id="makrolink-online-group-status" style="margin:0.2rem 0 0;"></p>
+              </div>
               <div class="form-row-4" style="margin-top:0.65rem;">
                 <div><label for="makrolink-ga4-id">GA4 Measurement ID</label><input id="makrolink-ga4-id" placeholder="G-XXXXXXXX" autocomplete="off"></div>
                 <div><label for="makrolink-ga4-secret">GA4 API Secret</label><input id="makrolink-ga4-secret" type="password" placeholder="boş = değiştirme" autocomplete="off"></div>
                 <div style="align-self:end;display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
                   <button type="button" class="btn btn-sm" id="btn-makrolink-ga4-test">GA4 test</button>
-                  <button type="button" class="btn btn-sm" id="btn-makrolink-resync" title="Hedef Domain + Affid → tracked_links">Takip eşle</button>
+                  <button type="button" class="btn btn-sm" id="btn-makrolink-resync" title="Tüm aktif link Affid → canlı gruba">Takip eşle</button>
                   <span class="muted" id="makrolink-ga4-status" style="font-size:0.72rem;"></span>
                 </div>
               </div>
@@ -2030,14 +2036,11 @@
                     <option value="IVR">IVR</option>
                   </select>
                 </div>
-                <div><label for="makrolink-target-domain">Hedef Domain (online takip)</label>
-                  <select id="makrolink-target-domain"><option value="">— Casino domain seç (önerilir) —</option></select>
-                </div>
               </div>
               <div style="margin-top:0.55rem;display:flex;justify-content:flex-end;">
                 <button type="submit" class="btn btn-primary" id="btn-makrolink-create">Kısalt &amp; kopyala</button>
               </div>
-              <p class="muted-sm" style="margin-top:0.4rem;">Kategori sonradan tablodan da değiştirilebilir. Hedef domain seçersen, bu linkten gelen ziyaretçiler takip listesinde bu etiketle görünür.</p>
+              <p class="muted-sm" style="margin-top:0.4rem;">Online takip: Ayarlar’daki <strong>canlı domain grubu</strong> + Affid. Link başına domain seçmeye gerek yok.</p>
             </form>
             <div id="makrolink-created-box" style="display:none;margin-top:0.75rem;padding:0.65rem 0.75rem;border:1px solid var(--border, #333);border-radius:8px;">
               <div class="muted" style="font-size:0.72rem;margin-bottom:0.25rem;">Son oluşturulan kısa link</div>
@@ -2601,16 +2604,16 @@
           <div><label for="makrolink-edit-label">Etiket</label><input id="makrolink-edit-label" autocomplete="off"></div>
           <div><label for="makrolink-edit-code">Özel kod</label><input id="makrolink-edit-code" autocomplete="off" placeholder="gencmarketingmakro"></div>
           <div><label for="makrolink-edit-category">Kategori</label><select id="makrolink-edit-category"></select></div>
-          <div><label for="makrolink-edit-target-domain">Hedef domain</label><select id="makrolink-edit-target-domain"><option value="">— Seçin —</option></select></div>
         </div>
         <div style="margin-top:0.65rem;">
           <label for="makrolink-edit-dest">Smartico go.aff linki</label>
           <input id="makrolink-edit-dest" autocomplete="off" placeholder="https://go.aff.makroaffi.com/…">
         </div>
         <div class="form-row-4" style="margin-top:0.65rem;">
-          <div><label for="makrolink-edit-affid">Affiliate ID (not)</label><input id="makrolink-edit-affid" autocomplete="off"></div>
+          <div><label for="makrolink-edit-affid">Smartico Affiliate ID</label><input id="makrolink-edit-affid" autocomplete="off"></div>
           <div><label for="makrolink-edit-ref">Ref notu</label><input id="makrolink-edit-ref" autocomplete="off"></div>
         </div>
+        <p class="muted-sm" style="margin-top:0.5rem;">Online eşleme Ayarlar’daki canlı domain grubundan yapılır; link başına domain yok.</p>
         <div style="margin-top:1rem;display:flex;gap:0.5rem;justify-content:flex-end;">
           <button type="button" class="btn btn-sm" id="makrolink-edit-cancel">İptal</button>
           <button type="button" class="btn btn-primary btn-sm" id="makrolink-edit-save">Kaydet</button>
@@ -4484,17 +4487,7 @@
       }
 
       function makrolinkFillTargetDomainSelect(selId, selected) {
-        var sel = document.getElementById(selId);
-        if (!sel) return;
-        var cur = selected != null ? selected : sel.value;
-        var opts = selId === "makrolink-target-domain"
-          ? '<option value="">— Seçin (opsiyonel) —</option>'
-          : '<option value="">— Seçin —</option>';
-        opts += (makrolinkTargetDomains || []).map(function(dom) {
-          return '<option value="' + esc(dom) + '"' + (dom === cur ? " selected" : "") + ">" + esc(dom) + "</option>";
-        }).join("");
-        sel.innerHTML = opts;
-        if (cur) sel.value = cur;
+        /* Hedef domain dropdown kaldırıldı — canlı grup ayarı kullanılıyor. */
       }
 
       function makrolinkSyncEditCategorySelect(cur) {
@@ -4520,7 +4513,6 @@
         document.getElementById("makrolink-edit-affid").value = link.affiliate_id || "";
         document.getElementById("makrolink-edit-ref").value = link.ref_code || "";
         makrolinkSyncEditCategorySelect((link.category || "").trim());
-        makrolinkFillTargetDomainSelect("makrolink-edit-target-domain", link.target_domain || "");
         document.getElementById("makrolink-edit-modal").classList.add("open");
       }
 
@@ -4548,8 +4540,7 @@
             destination_url: dest,
             category: category,
             affiliate_id: document.getElementById("makrolink-edit-affid").value.trim(),
-            ref_code: document.getElementById("makrolink-edit-ref").value.trim(),
-            target_domain: document.getElementById("makrolink-edit-target-domain").value
+            ref_code: document.getElementById("makrolink-edit-ref").value.trim()
           })
         }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
           .then(function(res) {
@@ -4693,6 +4684,18 @@
             if (affEl) affEl.value = d.aff_base || "https://go.aff.makroaffi.com";
             var hostsEl = document.getElementById("makrolink-hosts");
             if (hostsEl) hostsEl.value = (d.short_hosts || []).join("\n");
+            var groupEl = document.getElementById("makrolink-online-group");
+            if (groupEl) groupEl.value = d.online_domain_group || "";
+            var gst = document.getElementById("makrolink-online-group-status");
+            if (gst) {
+              if (d.online_group_error) gst.textContent = d.online_group_error;
+              else if (d.online_domain_count) {
+                var list = d.online_domains || [];
+                var first = list[0] || "";
+                var last = list.length > 1 ? list[list.length - 1] : "";
+                gst.textContent = d.online_domain_count + " domain" + (first ? (" · " + first + (last && last !== first ? " … " + last : "")) : "");
+              } else gst.textContent = "Grup boş — online Affid eşlemesi yapılmaz (tıklama/GA yine çalışır).";
+            }
             var gaId = document.getElementById("makrolink-ga4-id");
             if (gaId) gaId.value = d.ga4_measurement_id || "";
             var st = document.getElementById("makrolink-ga4-status");
@@ -4701,14 +4704,7 @@
       }
 
       function loadMakrolinkTargetDomains() {
-        if (!hasPerm("tracking.makrolink")) return;
-        fetch(API + "/api/makrolink/target-domains").then(function(r) { return r.status === 401 ? null : r.json(); })
-          .then(function(d) {
-            if (!d) return;
-            makrolinkTargetDomains = d.domains || [];
-            makrolinkFillTargetDomainSelect("makrolink-target-domain");
-            makrolinkFillTargetDomainSelect("makrolink-edit-target-domain");
-          }).catch(function() {});
+        /* no-op: canlı grup Ayarlar’dan yüklenir */
       }
 
       function refreshLive() {
@@ -5180,6 +5176,9 @@
             short_hosts: document.getElementById("makrolink-hosts")
               ? document.getElementById("makrolink-hosts").value
               : "",
+            online_domain_group: document.getElementById("makrolink-online-group")
+              ? document.getElementById("makrolink-online-group").value
+              : "",
             ga4_measurement_id: document.getElementById("makrolink-ga4-id")
               ? document.getElementById("makrolink-ga4-id").value.trim()
               : "",
@@ -5192,8 +5191,7 @@
             if (!res.ok) { alert(res.data.error || "Kaydedilemedi."); return; }
             var sec = document.getElementById("makrolink-ga4-secret");
             if (sec) sec.value = "";
-            document.getElementById("makrolink-settings-box").style.display = "none";
-            toast("MakroLink ayarları kaydedildi");
+            toast("MakroLink ayarları kaydedildi — domain grubu değiştiyse Takip eşle’ye bas");
             loadMakroLinkConfig();
             loadMakroLinks();
           });
@@ -5217,7 +5215,7 @@
       });
 
       bindOptional("btn-makrolink-resync", "click", function() {
-        if (!confirm("Aktif MakroLink’lerin Hedef Domain + Affid kayıtlarını online takibe yeniden yazayım mı?")) return;
+        if (!confirm("Tüm aktif MakroLink Affid/kodlarını canlı domain grubuna yazayım mı?")) return;
         var st = document.getElementById("makrolink-ga4-status");
         if (st) st.textContent = "Eşleniyor…";
         fetch(API + "/api/makrolink/resync-tracking", { method: "POST" })
@@ -5229,8 +5227,9 @@
               return;
             }
             var n = (res.data && res.data.synced) || 0;
-            if (st) st.textContent = n + " link eşlendi";
-            toast(n + " MakroLink takip eşlemesi yenilendi");
+            var dcount = (res.data && res.data.domains) || 0;
+            if (st) st.textContent = n + " link × " + dcount + " domain";
+            toast(n + " link, " + dcount + " domaine eşlendi");
           })
           .catch(function() {
             if (st) st.textContent = "Eşleme isteği başarısız";
@@ -5257,41 +5256,34 @@
             code: code,
             affiliate_id: document.getElementById("makrolink-affid").value.trim(),
             ref_code: document.getElementById("makrolink-ref").value.trim(),
-            category: category,
-            target_domain: document.getElementById("makrolink-target-domain").value
+            category: category
           })
         }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
           .then(function(res) {
             if (btn) { btn.disabled = false; btn.textContent = "Kısalt & kopyala"; }
             if (!res.ok) { alert(res.data.error || "Oluşturulamadı."); return; }
-            document.getElementById("makrolink-dest").value = "";
-            document.getElementById("makrolink-label").value = "";
-            document.getElementById("makrolink-code").value = "";
-            document.getElementById("makrolink-affid").value = "";
-            document.getElementById("makrolink-ref").value = "";
-            var catEl = document.getElementById("makrolink-category");
-            if (catEl) catEl.value = "";
-            document.getElementById("makrolink-target-domain").value = "";
             var link = res.data.link || {};
-            var shortUrl = link.short_url || "";
+            document.getElementById("makrolink-create-form").reset();
+            makrolinkSyncCreateCategorySelect();
             var box = document.getElementById("makrolink-created-box");
-            var a = document.getElementById("makrolink-created-url");
-            a.href = shortUrl;
-            a.textContent = shortUrl;
-            document.getElementById("makrolink-created-test").textContent = "/r/" + (link.code || "");
-            box.style.display = "";
-            if (shortUrl && navigator.clipboard && navigator.clipboard.writeText) {
-              navigator.clipboard.writeText(shortUrl).then(function() {
-                toast("Kısa link kopyalandı");
-              }).catch(function() { toast("Link oluşturuldu"); });
-            } else {
-              toast("Link oluşturuldu");
+            if (box) box.style.display = "block";
+            var urlA = document.getElementById("makrolink-created-url");
+            if (urlA) {
+              urlA.href = link.short_url || "#";
+              urlA.textContent = link.short_url || "";
             }
+            var testEl = document.getElementById("makrolink-created-test");
+            if (testEl) testEl.textContent = link.test_url || link.panel_url || "";
+            toast("Kısa link oluşturuldu");
+            lastMakrolinkSig = "";
             loadMakroLinks();
+            try {
+              if (link.short_url && navigator.clipboard) navigator.clipboard.writeText(link.short_url);
+            } catch (err) {}
           })
           .catch(function() {
             if (btn) { btn.disabled = false; btn.textContent = "Kısalt & kopyala"; }
-            alert("İstek başarısız.");
+            alert("Oluşturulamadı.");
           });
       });
 

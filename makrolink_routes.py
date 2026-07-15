@@ -5,7 +5,7 @@ from contextlib import closing
 from flask import Blueprint, jsonify, redirect, request
 
 import makrolink_api
-from database import fetchall, get_db
+from database import get_db
 
 MODULE_ACCESS = ("tracking.makrolink",)
 
@@ -48,6 +48,9 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
                         if ("ga4_api_secret" in data and str(data.get("ga4_api_secret") or "").strip())
                         else None
                     ),
+                    online_domain_group=data.get("online_domain_group")
+                    if "online_domain_group" in data
+                    else None,
                 )
             return jsonify(cfg)
         except ValueError as exc:
@@ -87,13 +90,15 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
     @api.route("/target-domains", methods=["GET"])
     @perm(*MODULE_ACCESS)
     def target_domains():
-        """Zaten takip edilen domainlerin (tracked_links) hafif listesi — MakroLink oluşturma
-        formundaki 'Hedef Domain' seçim kutusunu doldurmak için. Tam domain yönetimi
-        (/api/links) süper admin katmanına kilitlidir, bu picker listesi ise MakroLink'e
-        erişimi olan herkes için (operatör dahil) açık kalmalıdır."""
+        """Canlı casino domain grubu (Ayarlar). Eski dropdown yerine bu liste kullanılır."""
         with closing(get_db()) as conn:
-            rows = fetchall(conn, "SELECT DISTINCT domain FROM tracked_links ORDER BY domain")
-        return jsonify({"domains": [r["domain"] for r in rows]})
+            cfg = makrolink_api.get_config(conn)
+        return jsonify({
+            "domains": cfg.get("online_domains") or [],
+            "online_domain_group": cfg.get("online_domain_group") or "",
+            "count": cfg.get("online_domain_count") or 0,
+            "error": cfg.get("online_group_error") or "",
+        })
 
     @api.route("/links", methods=["POST"])
     @perm(*MODULE_ACCESS)
