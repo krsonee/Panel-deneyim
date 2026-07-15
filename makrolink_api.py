@@ -765,6 +765,9 @@ def resync_all_tracking(conn):
         synced += 1
     conn.commit()
     return {"ok": True, "synced": synced}
+
+
+def record_click_and_resolve(conn, code, ip="", user_agent="", referer="", short_host=""):
     link = get_link_by_code(conn, code, active_only=True)
     if not link:
         return None
