@@ -162,6 +162,21 @@ def _sync_tracked_link(conn, domain, ref_code, label):
         )
 
 
+def _sync_makrolink_tracking(conn, *, target_domain, code, label, affiliate_id=""):
+    """Online takip için hedef domain'e hem kısa kodu hem Smartico affid'i kaydet.
+
+    Casino sitede tracker.js varsa:
+    - ?ref=makrolink-kodu  → kısa kod eşleşir
+    - ?affid=12345         → Affiliate ID notu eşleşir (Smartico genelde bunu taşır)
+    """
+    if not target_domain:
+        return
+    _sync_tracked_link(conn, target_domain, code, label)
+    aff = (affiliate_id or "").strip()
+    if aff and aff.lower() != (code or "").strip().lower():
+        _sync_tracked_link(conn, target_domain, aff, f"{label} (affid)")
+
+
 def _clean_host(host):
     host = (host or "").strip().lower()
     host = host.replace("https://", "").replace("http://", "").strip("/").split("/")[0]
@@ -473,7 +488,13 @@ def create_link(
         link_id = cur.lastrowid
 
     if target_domain:
-        _sync_tracked_link(conn, target_domain, code, label)
+        _sync_makrolink_tracking(
+            conn,
+            target_domain=target_domain,
+            code=code,
+            label=label,
+            affiliate_id=affiliate_id,
+        )
 
     conn.commit()
     row = fetchone(conn, "SELECT * FROM makrolink_links WHERE id = ?", (link_id,))
@@ -573,7 +594,13 @@ def update_link(
         (dest, lab, new_code, aff, ref, new_target_domain, new_category, now, int(link_id)),
     )
     if new_target_domain:
-        _sync_tracked_link(conn, new_target_domain, new_code, lab)
+        _sync_makrolink_tracking(
+            conn,
+            target_domain=new_target_domain,
+            code=new_code,
+            label=lab,
+            affiliate_id=aff,
+        )
     conn.commit()
     return _row_to_dict(conn, fetchone(conn, "SELECT * FROM makrolink_links WHERE id = ?", (int(link_id),)))
 
@@ -630,7 +657,114 @@ def send_ga4_click(cfg, *, link_code, aff_slug, short_host, destination_url, cli
     threading.Thread(target=_run, daemon=True).start()
 
 
-def record_click_and_resolve(conn, code, ip="", user_agent="", referer="", short_host=""):
+def test_ga4(conn):
+    """GA4 Measurement Protocol doğrulama (debug endpoint, senkron)."""
+    cfg = get_config(conn, include_secrets=True)
+    mid = (cfg.get("ga4_measurement_id") or "").strip()
+    secret = (cfg.get("ga4_api_secret") or "").strip()
+    if not mid:
+        return {"ok": False, "error": "GA4 Measurement ID eksik (G-…)."}
+    if not secret:
+        return {"ok": False, "error": "GA4 API Secret eksik. Ayarlara kaydet."}
+
+    payload = {
+        "client_id": f"makrolink-test.{secrets.token_hex(4)}",
+        "events": [
+            {
+                "name": "makrolink_ga4_test",
+                "params": {
+                    "debug_mode": 1,
+                    "engagement_time_msec": 1,
+                    "short_host": (cfg.get("public_host") or "")[:100],
+                },
+            }
+        ],
+    }
+    debug_url = (
+        "https://www.google-analytics.com/debug/mp/collect"
+        f"?measurement_id={urllib.parse.quote(mid)}"
+        f"&api_secret={urllib.parse.quote(secret)}"
+    )
+    live_url = (
+        "https://www.google-analytics.com/mp/collect"
+        f"?measurement_id={urllib.parse.quote(mid)}"
+        f"&api_secret={urllib.parse.quote(secret)}"
+    )
+    body = json.dumps(payload).encode("utf-8")
+    try:
+        req = urllib.request.Request(
+            debug_url,
+            data=body,
+            headers={"Content-Type": "application/json", "User-Agent": "MakroLink/1.0"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            parsed = {"raw": raw[:500]}
+        messages = parsed.get("validationMessages") or []
+        if messages:
+            return {
+                "ok": False,
+                "error": "; ".join(
+                    (m.get("description") or m.get("validationCode") or str(m)) for m in messages
+                )[:400],
+                "debug": parsed,
+            }
+        # Debug OK → gerçek bir test eventi de gönder (Realtime'da görünsün)
+        try:
+            live_req = urllib.request.Request(
+                live_url,
+                data=body,
+                headers={"Content-Type": "application/json", "User-Agent": "MakroLink/1.0"},
+                method="POST",
+            )
+            with urllib.request.urlopen(live_req, timeout=6) as live_resp:
+                live_resp.read()
+        except Exception:
+            pass
+        return {
+            "ok": True,
+            "message": "GA4 kabul etti. Realtime’da ‘makrolink_ga4_test’ olayını kontrol et (1–2 dk).",
+            "measurement_id": mid,
+        }
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")[:300]
+        except Exception:
+            pass
+        return {"ok": False, "error": f"HTTP {exc.code}: {detail or exc.reason}"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
+def resync_all_tracking(conn):
+    """Aktif MakroLink'lerdeki Hedef Domain + Affid'i tracked_links'e yeniden yazar."""
+    rows = fetchall(
+        conn,
+        """
+        SELECT code, label, affiliate_id, target_domain
+        FROM makrolink_links
+        WHERE COALESCE(is_active, 1) = 1
+          AND COALESCE(target_domain, '') != ''
+        """,
+    )
+    synced = 0
+    for row in rows:
+        r = dict(row)
+        _sync_makrolink_tracking(
+            conn,
+            target_domain=r.get("target_domain") or "",
+            code=r.get("code") or "",
+            label=r.get("label") or "",
+            affiliate_id=r.get("affiliate_id") or "",
+        )
+        synced += 1
+    conn.commit()
+    return {"ok": True, "synced": synced}
     link = get_link_by_code(conn, code, active_only=True)
     if not link:
         return None

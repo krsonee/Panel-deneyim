@@ -53,6 +53,24 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @api.route("/ga4/test", methods=["POST"])
+    @perm(*MODULE_ACCESS)
+    @admin_only
+    def ga4_test():
+        with closing(get_db()) as conn:
+            result = makrolink_api.test_ga4(conn)
+        status = 200 if result.get("ok") else 400
+        return jsonify(result), status
+
+    @api.route("/resync-tracking", methods=["POST"])
+    @perm(*MODULE_ACCESS)
+    @admin_only
+    def resync_tracking():
+        """Mevcut MakroLink'leri tracked_links ile yeniden eşle (online için)."""
+        with closing(get_db()) as conn:
+            result = makrolink_api.resync_all_tracking(conn)
+        return jsonify(result)
+
     @api.route("/categories", methods=["GET"])
     @perm(*MODULE_ACCESS)
     def get_categories():

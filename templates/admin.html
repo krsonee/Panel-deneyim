@@ -1965,7 +1965,7 @@
 
         <section class="card" data-perm="tracking.makrolink">
           <div class="card-head">
-            <span>MakroLink <span class="muted" style="font-weight:400;font-size:0.72rem;">(makrovip.com · kısa link · tıklama)</span></span>
+            <span>MakroLink <span class="muted" style="font-weight:400;font-size:0.72rem;">(kısa link · tıklama sayacı)</span></span>
             <div class="card-actions">
               <input id="makrolink-search" placeholder="🔎 Link ara…" style="width:150px;" autocomplete="off">
               <span class="muted" id="makrolink-updated" style="font-size:0.72rem;"></span>
@@ -1974,7 +1974,12 @@
             </div>
           </div>
           <div class="card-body" id="makrolink-settings-box" data-admin-only="1" style="display:none;">
-            <p class="hint">Kısa domainler Render custom domain + CNAME. Hepsi aynı kodu açar. GA tek property — Measurement Protocol.</p>
+            <p class="hint">Kısa domainler Render custom domain + CNAME. Hepsi aynı kodu açar. GA tek property — Measurement Protocol (tıklamada sunucu gönderir).</p>
+            <div class="hint" style="margin:0.5rem 0 0.75rem;padding:0.55rem 0.7rem;border:1px solid rgba(245,158,11,0.35);border-radius:8px;background:rgba(245,158,11,0.08);color:var(--text);font-size:0.78rem;line-height:1.45;">
+              <strong>Önemli:</strong> MakroLink tablosundaki <em>tıklama</em> = short URL’ye gelen her hit.<br>
+              Üstteki <em>Online oyuncu</em> = casino sitesinde <code>tracker.js</code> çalışan oturumlar.<br>
+              Smartico’ya giden link online üretmez; online için hedef domain’de takip kodu + <strong>Hedef Domain</strong> seçimi şart.
+            </div>
             <form id="makrolink-config-form">
               <div class="form-row-4">
                 <div><label for="makrolink-host">Varsayılan short host</label><input id="makrolink-host" placeholder="makrovip.com" autocomplete="off"></div>
@@ -1991,7 +1996,11 @@
               <div class="form-row-4" style="margin-top:0.65rem;">
                 <div><label for="makrolink-ga4-id">GA4 Measurement ID</label><input id="makrolink-ga4-id" placeholder="G-XXXXXXXX" autocomplete="off"></div>
                 <div><label for="makrolink-ga4-secret">GA4 API Secret</label><input id="makrolink-ga4-secret" type="password" placeholder="boş = değiştirme" autocomplete="off"></div>
-                <div style="align-self:end;"><span class="muted" id="makrolink-ga4-status" style="font-size:0.72rem;"></span></div>
+                <div style="align-self:end;display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
+                  <button type="button" class="btn btn-sm" id="btn-makrolink-ga4-test">GA4 test</button>
+                  <button type="button" class="btn btn-sm" id="btn-makrolink-resync" title="Hedef Domain + Affid → tracked_links">Takip eşle</button>
+                  <span class="muted" id="makrolink-ga4-status" style="font-size:0.72rem;"></span>
+                </div>
               </div>
             </form>
           </div>
@@ -2005,7 +2014,7 @@
                 <div><label for="makrolink-code">Özel kod</label><input id="makrolink-code" placeholder="örn. slotbuse-ftd" required autocomplete="off"></div>
               </div>
               <div class="form-row-4" style="margin-top:0.5rem;">
-                <div><label for="makrolink-affid">Affiliate ID (not)</label><input id="makrolink-affid" placeholder="opsiyonel not" autocomplete="off"></div>
+                <div><label for="makrolink-affid">Smartico Affiliate ID</label><input id="makrolink-affid" placeholder="örn. 12345 (online eşleme için)" autocomplete="off"></div>
                 <div><label for="makrolink-ref">Ref notu</label><input id="makrolink-ref" placeholder="opsiyonel" autocomplete="off"></div>
                 <div><label for="makrolink-category">Kategori</label>
                   <select id="makrolink-category" required>
@@ -2021,8 +2030,8 @@
                     <option value="IVR">IVR</option>
                   </select>
                 </div>
-                <div><label for="makrolink-target-domain">Hedef Domain (takip için)</label>
-                  <select id="makrolink-target-domain"><option value="">— Seçin (opsiyonel) —</option></select>
+                <div><label for="makrolink-target-domain">Hedef Domain (online takip)</label>
+                  <select id="makrolink-target-domain"><option value="">— Casino domain seç (önerilir) —</option></select>
                 </div>
               </div>
               <div style="margin-top:0.55rem;display:flex;justify-content:flex-end;">
@@ -5185,7 +5194,46 @@
             if (sec) sec.value = "";
             document.getElementById("makrolink-settings-box").style.display = "none";
             toast("MakroLink ayarları kaydedildi");
+            loadMakroLinkConfig();
             loadMakroLinks();
+          });
+      });
+
+      bindOptional("btn-makrolink-ga4-test", "click", function() {
+        var st = document.getElementById("makrolink-ga4-status");
+        if (st) st.textContent = "Test ediliyor…";
+        fetch(API + "/api/makrolink/ga4/test", { method: "POST" })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (st) st.textContent = res.ok
+              ? (res.data.message || "GA4 OK")
+              : (res.data.error || "GA4 hata");
+            if (res.ok) toast("GA4 test OK");
+            else alert(res.data.error || "GA4 test başarısız");
+          })
+          .catch(function() {
+            if (st) st.textContent = "İstek başarısız";
+          });
+      });
+
+      bindOptional("btn-makrolink-resync", "click", function() {
+        if (!confirm("Aktif MakroLink’lerin Hedef Domain + Affid kayıtlarını online takibe yeniden yazayım mı?")) return;
+        var st = document.getElementById("makrolink-ga4-status");
+        if (st) st.textContent = "Eşleniyor…";
+        fetch(API + "/api/makrolink/resync-tracking", { method: "POST" })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (!res.ok) {
+              alert((res.data && res.data.error) || "Eşleme başarısız");
+              if (st) st.textContent = "Eşleme hata";
+              return;
+            }
+            var n = (res.data && res.data.synced) || 0;
+            if (st) st.textContent = n + " link eşlendi";
+            toast(n + " MakroLink takip eşlemesi yenilendi");
+          })
+          .catch(function() {
+            if (st) st.textContent = "Eşleme isteği başarısız";
           });
       });
 
