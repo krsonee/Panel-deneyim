@@ -74,6 +74,18 @@ DEFAULT_LAYOUT_COL = "full"
 TEXT_ALIGNS = ("left", "center", "right")
 DEFAULT_TEXT_ALIGN = "left"
 
+POPUP_FREQUENCIES = frozenset({"session", "day", "always"})
+DEFAULT_POPUP = {
+    "enabled": False,
+    "title": "",
+    "body": "",
+    "image_url": "",
+    "cta_label": "Devam",
+    "cta_url": "",
+    "delay_ms": 500,
+    "frequency": "session",
+}
+
 HEADING_TYPE = "heading"
 CLICKABLE_TYPE_LIST = ("link", "whatsapp", "telegram", "instagram", "twitter", "tiktok", "youtube", "bonus")
 CLICKABLE_TYPES = frozenset(CLICKABLE_TYPE_LIST)
@@ -108,11 +120,47 @@ def theme_vars(theme_key, accent_override=""):
     out["accent2"] = t.get("accent2") or out["accent"]
     out["style"] = t.get("style") or "classic"
     out["category"] = t.get("category") or ""
-    # Tüm temalarda Makrobet marka logosu
-    out["brand_logo"] = True
-    out["brand_logo_src"] = DEFAULT_BRAND_LOGO
+    # Tema sabit marka logosu — sayfa "Logo yok" seçiminden bağımsız
+    out["brand_logo"] = bool(t.get("brand_logo", True))
+    out["brand_logo_src"] = DEFAULT_BRAND_LOGO if out["brand_logo"] else ""
     out["default_banner"] = DEFAULT_BANNER
     return out
+
+
+def normalize_popup(raw):
+    """popup_json / form dict → güvenli popup ayarları."""
+    base = dict(DEFAULT_POPUP)
+    if raw is None or raw == "":
+        return base
+    data = raw
+    if isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return base
+    if not isinstance(data, dict):
+        return base
+    base["enabled"] = bool(data.get("enabled"))
+    base["title"] = str(data.get("title") or "").strip()[:120]
+    base["body"] = str(data.get("body") or "").strip()[:600]
+    base["image_url"] = str(data.get("image_url") or "").strip()[:500]
+    base["cta_label"] = str(data.get("cta_label") or "").strip()[:60] or "Devam"
+    cta = str(data.get("cta_url") or "").strip()[:500]
+    if cta and cta != "#" and "://" not in cta and not cta.startswith("/"):
+        cta = "https://" + cta
+    base["cta_url"] = cta
+    try:
+        delay = int(data.get("delay_ms") if data.get("delay_ms") is not None else 500)
+    except (TypeError, ValueError):
+        delay = 500
+    base["delay_ms"] = max(0, min(delay, 15000))
+    freq = str(data.get("frequency") or "session").strip().lower()
+    base["frequency"] = freq if freq in POPUP_FREQUENCIES else "session"
+    return base
+
+
+def popup_to_json(popup):
+    return json.dumps(normalize_popup(popup), ensure_ascii=False, separators=(",", ":"))
 
 
 def uses_brand_icon(button_type):
@@ -377,6 +425,9 @@ def _page_row(row):
     d["favicon_url"] = raw_favicon
     d["resolved_favicon"] = resolve_favicon_url(d)
 
+    d["popup"] = normalize_popup(d.get("popup_json") or "")
+    d.pop("popup_json", None)
+
     d["custom_domain"] = normalize_custom_domain(d.get("custom_domain") or "")
     d["public_path"] = f"/p/{d['slug']}"
     d["site_path"] = f"/site/{d['slug']}"
@@ -555,18 +606,39 @@ def apply_preview_overrides(page, args):
         else:
             page["favicon_url"] = fav
         page["resolved_favicon"] = resolve_favicon_url(page)
+    if "popup" in args or any(k.startswith("popup_") for k in args.keys()):
+        cur = dict(page.get("popup") or DEFAULT_POPUP)
+        if "popup" in args:
+            try:
+                raw = args.get("popup")
+                if isinstance(raw, str):
+                    raw = json.loads(raw) if raw.strip() else {}
+                if isinstance(raw, dict):
+                    cur.update(raw)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                pass
+        for key in ("enabled", "title", "body", "image_url", "cta_label", "cta_url", "delay_ms", "frequency"):
+            arg_key = "popup_" + key
+            if arg_key in args:
+                val = args.get(arg_key)
+                if key == "enabled":
+                    cur[key] = str(val).lower() in ("1", "true", "yes", "on")
+                else:
+                    cur[key] = val
+        page["popup"] = normalize_popup(cur)
     return page
 
 
 def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_color="",
                  avatar_url="", banner_url="", banner_layout=None, button_shape="pill",
                  ga4_measurement_id="", ga4_api_secret="", custom_domain="", favicon_url="",
-                 created_by=""):
+                 popup=None, created_by=""):
     title = (title or "").strip()[:200] or "Yeni Sayfa"
     subtitle = (subtitle or "").strip()[:400]
     avatar_url = _store_avatar_url(avatar_url)
     banner_url = _store_banner_url(banner_url)
     favicon_url = _store_favicon_url(favicon_url)
+    stored_popup = popup_to_json(popup)
     banner_layout = (banner_layout or DEFAULT_BANNER_LAYOUT).strip()
     if banner_layout not in BANNER_LAYOUTS:
         banner_layout = DEFAULT_BANNER_LAYOUT
@@ -591,12 +663,12 @@ def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_co
         """
         INSERT INTO biolink_pages
           (slug, title, subtitle, avatar_url, banner_url, banner_layout, theme, accent_color, button_shape,
-           is_active, view_count, ga4_measurement_id, ga4_api_secret, custom_domain, favicon_url,
+           is_active, view_count, ga4_measurement_id, ga4_api_secret, custom_domain, favicon_url, popup_json,
            created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (final_slug, title, subtitle, avatar_url, banner_url, banner_layout, theme, accent_color, button_shape,
-         ga4_measurement_id, ga4_api_secret, stored_domain, favicon_url, created_by, now, now),
+         ga4_measurement_id, ga4_api_secret, stored_domain, favicon_url, stored_popup, created_by, now, now),
     )
     conn.commit()
     return get_page(conn, page_id)
@@ -659,18 +731,24 @@ def update_page(conn, page_id, data):
     stored_banner = _store_banner_url(banner_url)
     stored_favicon = _store_favicon_url(favicon_url)
     stored_layout = "none" if stored_banner == NONE_MARKER else banner_layout
+    if "popup" in data:
+        stored_popup = popup_to_json(data.get("popup"))
+    else:
+        stored_popup = popup_to_json(normalize_popup(row.get("popup_json") or ""))
     execute(
         conn,
         """
         UPDATE biolink_pages
         SET slug = ?, title = ?, subtitle = ?, avatar_url = ?, banner_url = ?, banner_layout = ?,
             theme = ?, accent_color = ?, button_shape = ?, is_active = ?,
-            ga4_measurement_id = ?, ga4_api_secret = ?, custom_domain = ?, favicon_url = ?, updated_at = ?
+            ga4_measurement_id = ?, ga4_api_secret = ?, custom_domain = ?, favicon_url = ?,
+            popup_json = ?, updated_at = ?
         WHERE id = ?
         """,
         (new_slug, title, subtitle, stored_avatar, stored_banner, stored_layout,
          theme, accent_color, button_shape,
-         is_active, ga4_measurement_id, ga4_api_secret, new_domain, stored_favicon, now, int(page_id)),
+         is_active, ga4_measurement_id, ga4_api_secret, new_domain, stored_favicon,
+         stored_popup, now, int(page_id)),
     )
     conn.commit()
     return get_page(conn, page_id)
@@ -699,6 +777,7 @@ def duplicate_page(conn, page_id, created_by=""):
         banner_url=src.get("banner_url") or DEFAULT_BANNER,
         banner_layout=src.get("banner_layout") or DEFAULT_BANNER_LAYOUT,
         button_shape=src["button_shape"],
+        popup=src.get("popup"),
         created_by=created_by,
     )
     for b in src.get("buttons", []):

@@ -580,6 +580,7 @@
     document.getElementById("bl-ga4-id").value = page.ga4_measurement_id || "";
     document.getElementById("bl-ga4-secret").value = "";
     document.getElementById("bl-is-active").checked = !!page.is_active;
+    blFillPopupForm(page.popup || {});
     var link = document.getElementById("biolink-preview-link");
     if (link) link.href = blPublicUrl(page);
     blUpdatePageLinks(page);
@@ -621,7 +622,50 @@
     if (el && el.value) q.set("banner_layout", el.value);
     el = document.getElementById("bl-accent");
     if (el && el.value) q.set("accent_color", el.value);
+    var popup = blReadPopupForm();
+    q.set("popup", JSON.stringify(popup));
     return q;
+  }
+
+  function blFillPopupForm(popup) {
+    popup = popup || {};
+    var en = document.getElementById("bl-popup-enabled");
+    if (en) en.checked = !!popup.enabled;
+    var title = document.getElementById("bl-popup-title");
+    if (title) title.value = popup.title || "";
+    var body = document.getElementById("bl-popup-body");
+    if (body) body.value = popup.body || "";
+    var img = document.getElementById("bl-popup-image");
+    if (img) img.value = popup.image_url || "";
+    var ctaL = document.getElementById("bl-popup-cta-label");
+    if (ctaL) ctaL.value = popup.cta_label || "Devam";
+    var ctaU = document.getElementById("bl-popup-cta-url");
+    if (ctaU) ctaU.value = popup.cta_url || "";
+    var delay = document.getElementById("bl-popup-delay");
+    if (delay) delay.value = popup.delay_ms != null ? popup.delay_ms : 500;
+    var freq = document.getElementById("bl-popup-freq");
+    if (freq) freq.value = popup.frequency || "session";
+    blSyncPopupFieldsVisibility();
+  }
+
+  function blReadPopupForm() {
+    return {
+      enabled: !!(document.getElementById("bl-popup-enabled") || {}).checked,
+      title: ((document.getElementById("bl-popup-title") || {}).value || "").trim(),
+      body: ((document.getElementById("bl-popup-body") || {}).value || "").trim(),
+      image_url: ((document.getElementById("bl-popup-image") || {}).value || "").trim(),
+      cta_label: ((document.getElementById("bl-popup-cta-label") || {}).value || "").trim() || "Devam",
+      cta_url: ((document.getElementById("bl-popup-cta-url") || {}).value || "").trim(),
+      delay_ms: parseInt(((document.getElementById("bl-popup-delay") || {}).value || "500"), 10) || 500,
+      frequency: ((document.getElementById("bl-popup-freq") || {}).value || "session"),
+    };
+  }
+
+  function blSyncPopupFieldsVisibility() {
+    var fields = document.getElementById("bl-popup-fields");
+    var en = document.getElementById("bl-popup-enabled");
+    if (!fields || !en) return;
+    fields.style.opacity = en.checked ? "1" : "0.55";
   }
 
   function schedulePreviewRefresh() {
@@ -752,6 +796,7 @@
       accent_color: document.getElementById("bl-accent").value,
       ga4_measurement_id: document.getElementById("bl-ga4-id").value.trim(),
       is_active: document.getElementById("bl-is-active").checked,
+      popup: blReadPopupForm(),
     };
     var secret = document.getElementById("bl-ga4-secret").value.trim();
     if (secret) payload.ga4_api_secret = secret;
@@ -1208,7 +1253,8 @@
         faviconFile.value = "";
       });
     }
-    ["bl-title", "bl-subtitle", "bl-avatar", "bl-banner", "bl-favicon", "bl-accent"].forEach(function (id) {
+    ["bl-title", "bl-subtitle", "bl-avatar", "bl-banner", "bl-favicon", "bl-accent",
+      "bl-popup-title", "bl-popup-body", "bl-popup-image", "bl-popup-cta-label", "bl-popup-cta-url", "bl-popup-delay"].forEach(function (id) {
       var el = document.getElementById(id);
       if (!el) return;
       el.addEventListener("input", function () {
@@ -1216,6 +1262,15 @@
         schedulePreviewRefresh();
       });
     });
+    var popupEn = document.getElementById("bl-popup-enabled");
+    if (popupEn) {
+      popupEn.addEventListener("change", function () {
+        blSyncPopupFieldsVisibility();
+        schedulePreviewRefresh();
+      });
+    }
+    var popupFreq = document.getElementById("bl-popup-freq");
+    if (popupFreq) popupFreq.addEventListener("change", schedulePreviewRefresh);
     var shapeEl = document.getElementById("bl-shape");
     if (shapeEl) shapeEl.addEventListener("change", schedulePreviewRefresh);
     var layoutEl = document.getElementById("bl-banner-layout");

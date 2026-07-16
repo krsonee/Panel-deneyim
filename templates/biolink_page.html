@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/biolink-skins.css?v=20260712a">
+<link rel="stylesheet" href="/static/biolink-skins.css?v=20260716a">
 {% if page.ga4_measurement_id %}
 <script async src="https://www.googletagmanager.com/gtag/js?id={{ page.ga4_measurement_id }}"></script>
 <script>
@@ -82,9 +82,12 @@
     background: radial-gradient(circle, rgba(255,213,62,0.2), transparent 70%);
     animation: floatC 13s ease-in-out infinite;
   }
-  body.anim-makrobet .brand-watermark {
+  .brand-watermark {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -52%);
     width: min(280px, 70vw); opacity: 0.06; filter: saturate(0.9);
+    pointer-events: none;
+  }
+  body.anim-makrobet .brand-watermark {
     animation: watermarkPulse 8s ease-in-out infinite;
   }
 
@@ -401,11 +404,67 @@
   }
   .share-btn:hover { color: var(--text); border-color: var(--accent); }
   .powered { font-size: 0.65rem; color: var(--muted); opacity: 0.55; }
+
+  /* Açılış popup */
+  .bl-popup-overlay {
+    position: fixed; inset: 0; z-index: 80;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1.25rem;
+    background: rgba(0,0,0,0.62);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    opacity: 0; pointer-events: none;
+    transition: opacity .28s ease;
+  }
+  .bl-popup-overlay.is-open { opacity: 1; pointer-events: auto; }
+  .bl-popup {
+    width: min(420px, 100%);
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 22px;
+    padding: 1.25rem 1.2rem 1.1rem;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+    transform: translateY(14px) scale(0.97);
+    transition: transform .28s ease;
+    text-align: center;
+    position: relative;
+  }
+  .bl-popup-overlay.is-open .bl-popup { transform: translateY(0) scale(1); }
+  .bl-popup-close {
+    position: absolute; top: 0.55rem; right: 0.65rem;
+    width: 34px; height: 34px; border-radius: 999px;
+    border: 1px solid var(--card-border);
+    background: transparent; color: var(--muted);
+    font-size: 1.15rem; line-height: 1; cursor: pointer;
+  }
+  .bl-popup-close:hover { color: var(--text); border-color: var(--accent); }
+  .bl-popup-img {
+    width: 100%; max-height: 200px; object-fit: cover;
+    border-radius: 14px; margin-bottom: 0.85rem;
+    display: block;
+  }
+  .bl-popup h2 {
+    margin: 0 0 0.45rem; font-size: 1.2rem; font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .bl-popup p {
+    margin: 0 0 1rem; color: var(--muted); font-size: 0.92rem;
+    line-height: 1.45; white-space: pre-wrap;
+  }
+  .bl-popup-cta {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 70%; padding: 0.78rem 1.2rem;
+    border-radius: var(--radius);
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #0b1220; font-weight: 700; text-decoration: none;
+    font-size: 0.95rem;
+  }
+  .bl-popup-cta:hover { filter: brightness(1.05); }
 </style>
 </head>
 <body class="skel-{{ theme.style or 'classic' }}{% if theme.animated %} animated-bg anim-{{ theme.animation }}{% endif %} banner-layout-{{ page.banner_layout or 'top' }}">
   <div class="bg-layer" aria-hidden="true">
-    {% if theme.brand_logo_src and page.logo_url %}
+    {% if theme.brand_logo and theme.brand_logo_src %}
     <img class="brand-watermark" src="{{ theme.brand_logo_src }}" alt="">
     {% endif %}
     <div class="bg-glow g1"></div>
@@ -482,6 +541,28 @@
       <span class="powered">{{ page.title }}</span>
     </div>
   </div>
+
+  {% set popup = page.popup or {} %}
+  {% if popup.enabled and (popup.title or popup.body or popup.image_url) %}
+  <div class="bl-popup-overlay" id="bl-popup" hidden
+       data-delay="{{ popup.delay_ms|int }}"
+       data-freq="{{ popup.frequency or 'session' }}"
+       data-key="blpop-{{ page.id or page.slug }}"
+       data-preview="{{ '1' if preview else '0' }}">
+    <div class="bl-popup" role="dialog" aria-modal="true" aria-label="{{ popup.title or 'Duyuru' }}">
+      <button type="button" class="bl-popup-close" id="bl-popup-close" aria-label="Kapat">×</button>
+      {% if popup.image_url %}
+      <img class="bl-popup-img" src="{{ popup.image_url }}" alt="">
+      {% endif %}
+      {% if popup.title %}<h2>{{ popup.title }}</h2>{% endif %}
+      {% if popup.body %}<p>{{ popup.body }}</p>{% endif %}
+      {% if popup.cta_url %}
+      <a class="bl-popup-cta" href="{{ popup.cta_url }}" target="_blank" rel="noopener noreferrer">{{ popup.cta_label or 'Devam' }}</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <script>
     function biolinkShare() {
       var url = window.location.href;
@@ -494,6 +575,51 @@
         });
       }
     }
+
+    (function initBiolinkPopup() {
+      var el = document.getElementById("bl-popup");
+      if (!el) return;
+      var key = el.getAttribute("data-key") || "blpop";
+      var freq = el.getAttribute("data-freq") || "session";
+      var preview = el.getAttribute("data-preview") === "1";
+      var delay = parseInt(el.getAttribute("data-delay") || "500", 10) || 0;
+      function seen() {
+        if (preview || freq === "always") return false;
+        try {
+          if (freq === "day") {
+            var dayKey = key + "-day";
+            var today = new Date().toISOString().slice(0, 10);
+            return localStorage.getItem(dayKey) === today;
+          }
+          return sessionStorage.getItem(key) === "1";
+        } catch (e) { return false; }
+      }
+      function mark() {
+        if (preview || freq === "always") return;
+        try {
+          if (freq === "day") {
+            localStorage.setItem(key + "-day", new Date().toISOString().slice(0, 10));
+          } else {
+            sessionStorage.setItem(key, "1");
+          }
+        } catch (e) {}
+      }
+      function openPopup() {
+        el.hidden = false;
+        requestAnimationFrame(function () { el.classList.add("is-open"); });
+        mark();
+      }
+      function closePopup() {
+        el.classList.remove("is-open");
+        setTimeout(function () { el.hidden = true; }, 280);
+      }
+      var closeBtn = document.getElementById("bl-popup-close");
+      if (closeBtn) closeBtn.addEventListener("click", closePopup);
+      el.addEventListener("click", function (e) {
+        if (e.target === el) closePopup();
+      });
+      if (!seen()) setTimeout(openPopup, Math.max(0, delay));
+    })();
   </script>
 </body>
 </html>

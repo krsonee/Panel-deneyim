@@ -96,6 +96,29 @@
             <div><label for="bl-accent">Vurgu Rengi</label><input id="bl-accent" type="color" style="height:38px;padding:2px;width:100%;"></div>
             <div><label for="bl-ga4-id">GA4 Measurement ID</label><input id="bl-ga4-id" placeholder="G-XXXXXXXX (vipmakro.com sayfa görüntüleme)" autocomplete="off"></div>
             <div><label for="bl-ga4-secret">GA4 API Secret</label><input id="bl-ga4-secret" type="password" placeholder="Admin → Data streams → Measurement Protocol" autocomplete="off"></div>
+            <div class="full bl-popup-settings">
+              <label class="bl-live-toggle" style="margin-bottom:0.55rem;">
+                <input type="checkbox" id="bl-popup-enabled"> Açılış popup’ı aktif
+              </label>
+              <div class="bl-popup-fields" id="bl-popup-fields">
+                <div class="biolink-page-meta" style="margin:0;">
+                  <div><label for="bl-popup-title">Popup başlık</label><input id="bl-popup-title" placeholder="Hoş geldin!" autocomplete="off"></div>
+                  <div><label for="bl-popup-freq">Gösterim</label>
+                    <select id="bl-popup-freq">
+                      <option value="session">Oturumda 1 kez</option>
+                      <option value="day">Günde 1 kez</option>
+                      <option value="always">Her ziyarette</option>
+                    </select>
+                  </div>
+                  <div class="full"><label for="bl-popup-body">Popup metin</label><textarea id="bl-popup-body" rows="2" placeholder="Kısa duyuru / kampanya metni…"></textarea></div>
+                  <div class="full"><label for="bl-popup-image">Popup görsel URL</label><input id="bl-popup-image" placeholder="https://…/kampanya.jpg" autocomplete="off"></div>
+                  <div><label for="bl-popup-cta-label">Buton yazısı</label><input id="bl-popup-cta-label" placeholder="Devam" autocomplete="off"></div>
+                  <div><label for="bl-popup-cta-url">Buton linki</label><input id="bl-popup-cta-url" placeholder="https://…" autocomplete="off"></div>
+                  <div><label for="bl-popup-delay">Gecikme (ms)</label><input id="bl-popup-delay" type="number" min="0" max="15000" step="100" value="500"></div>
+                </div>
+                <p class="muted-sm" style="margin:0.45rem 0 0;">Sayfa açılınca ziyaretçiye modal gösterilir. Önizlemede her zaman açılır.</p>
+              </div>
+            </div>
           </div>
           <div class="biolink-save-row">
             <button type="button" class="btn btn-primary" id="btn-biolink-save">Kaydet</button>
