@@ -185,6 +185,9 @@
       if (!r || !r.ok) return;
       blThemes = r.data.themes || [];
       blHeadingStyles = r.data.heading_styles || [];
+      if (r.data.popup_shapes && r.data.popup_shapes.length) {
+        BL_POPUP_SHAPES = r.data.popup_shapes;
+      }
       var catSel = document.getElementById("bl-theme-cat");
       if (catSel) {
         var cats = [];
@@ -199,6 +202,7 @@
         catSel.onchange = function () { renderThemeGallery(); };
       }
       renderThemeGallery();
+      renderPopupShapeGallery();
     });
   }
 
@@ -395,7 +399,9 @@
 
   function blUploadAsset(kind, file) {
     if (!file) return;
-    var statusId = kind === "logo" ? "bl-logo-upload-status" : (kind === "favicon" ? "bl-favicon-upload-status" : "bl-banner-upload-status");
+    var statusId = kind === "logo" ? "bl-logo-upload-status"
+      : (kind === "favicon" ? "bl-favicon-upload-status"
+        : (kind === "popup" ? "bl-popup-upload-status" : "bl-banner-upload-status"));
     var statusEl = document.getElementById(statusId);
     if (statusEl) statusEl.textContent = "Yükleniyor…";
     var fd = new FormData();
@@ -409,7 +415,17 @@
         var asset = r.data.asset;
         if (kind === "logo") document.getElementById("bl-avatar").value = asset.url;
         else if (kind === "favicon") document.getElementById("bl-favicon").value = asset.url;
-        else document.getElementById("bl-banner").value = asset.url;
+        else if (kind === "popup") {
+          var popupMedia = document.getElementById("bl-popup-image");
+          if (popupMedia) popupMedia.value = asset.url;
+          var mtype = document.getElementById("bl-popup-media-type");
+          var name = (file.name || "").toLowerCase();
+          if (mtype) {
+            if (/\.(mp4|webm|mov)$/.test(name)) mtype.value = "video";
+            else if (/\.gif$/.test(name)) mtype.value = "gif";
+            else mtype.value = "image";
+          }
+        } else document.getElementById("bl-banner").value = asset.url;
         return loadAssets().then(function () { schedulePreviewRefresh(); });
       }
       if (r) alert((r.data && r.data.error) || "Yüklenemedi");
@@ -627,6 +643,46 @@
     return q;
   }
 
+  var BL_POPUP_SHAPES = [
+    { key: "rounded", label: "Yuvarlak" },
+    { key: "square", label: "Kare" },
+    { key: "soft", label: "Yumuşak" },
+    { key: "pill", label: "Hap" },
+    { key: "circle", label: "Daire" },
+    { key: "diamond", label: "Elmas" },
+    { key: "hexagon", label: "Altıgen" },
+    { key: "octagon", label: "Sekizgen" },
+    { key: "triangle", label: "Üçgen" },
+    { key: "ticket", label: "Bilet" },
+    { key: "speech", label: "Balon" },
+    { key: "arch", label: "Kemer" },
+    { key: "stamp", label: "Pul" },
+    { key: "glass", label: "Cam" },
+    { key: "neon", label: "Neon" },
+    { key: "wide", label: "Geniş" },
+    { key: "compact", label: "Kompakt" },
+  ];
+
+  function renderPopupShapeGallery() {
+    var box = document.getElementById("bl-popup-shape-gallery");
+    var hidden = document.getElementById("bl-popup-shape");
+    if (!box) return;
+    var selected = (hidden && hidden.value) || "rounded";
+    box.innerHTML = BL_POPUP_SHAPES.map(function (s) {
+      var active = s.key === selected ? " active" : "";
+      return '<button type="button" class="bl-popup-shape-chip' + active + '" data-bl-popup-shape="' + blEsc(s.key) + '" title="' + blEsc(s.label) + '">' +
+        '<span class="bl-popup-shape-demo shape-' + blEsc(s.key) + '"></span>' +
+        '<span>' + blEsc(s.label) + "</span></button>";
+    }).join("");
+    box.querySelectorAll("[data-bl-popup-shape]").forEach(function (btn) {
+      btn.onclick = function () {
+        if (hidden) hidden.value = btn.getAttribute("data-bl-popup-shape") || "rounded";
+        renderPopupShapeGallery();
+        schedulePreviewRefresh();
+      };
+    });
+  }
+
   function blFillPopupForm(popup) {
     popup = popup || {};
     var en = document.getElementById("bl-popup-enabled");
@@ -636,7 +692,13 @@
     var body = document.getElementById("bl-popup-body");
     if (body) body.value = popup.body || "";
     var img = document.getElementById("bl-popup-image");
-    if (img) img.value = popup.image_url || "";
+    if (img) img.value = popup.media_url || popup.image_url || "";
+    var shape = document.getElementById("bl-popup-shape");
+    if (shape) shape.value = popup.shape || "rounded";
+    var size = document.getElementById("bl-popup-size");
+    if (size) size.value = popup.size || "md";
+    var mtype = document.getElementById("bl-popup-media-type");
+    if (mtype) mtype.value = popup.media_type || "auto";
     var ctaL = document.getElementById("bl-popup-cta-label");
     if (ctaL) ctaL.value = popup.cta_label || "Devam";
     var ctaU = document.getElementById("bl-popup-cta-url");
@@ -645,15 +707,21 @@
     if (delay) delay.value = popup.delay_ms != null ? popup.delay_ms : 500;
     var freq = document.getElementById("bl-popup-freq");
     if (freq) freq.value = popup.frequency || "session";
+    renderPopupShapeGallery();
     blSyncPopupFieldsVisibility();
   }
 
   function blReadPopupForm() {
+    var media = ((document.getElementById("bl-popup-image") || {}).value || "").trim();
     return {
       enabled: !!(document.getElementById("bl-popup-enabled") || {}).checked,
       title: ((document.getElementById("bl-popup-title") || {}).value || "").trim(),
       body: ((document.getElementById("bl-popup-body") || {}).value || "").trim(),
-      image_url: ((document.getElementById("bl-popup-image") || {}).value || "").trim(),
+      image_url: media,
+      media_url: media,
+      media_type: ((document.getElementById("bl-popup-media-type") || {}).value || "auto"),
+      shape: ((document.getElementById("bl-popup-shape") || {}).value || "rounded"),
+      size: ((document.getElementById("bl-popup-size") || {}).value || "md"),
       cta_label: ((document.getElementById("bl-popup-cta-label") || {}).value || "").trim() || "Devam",
       cta_url: ((document.getElementById("bl-popup-cta-url") || {}).value || "").trim(),
       delay_ms: parseInt(((document.getElementById("bl-popup-delay") || {}).value || "500"), 10) || 500,
@@ -1229,12 +1297,15 @@
     var logoFile = document.getElementById("bl-logo-file");
     var bannerFile = document.getElementById("bl-banner-file");
     var faviconFile = document.getElementById("bl-favicon-file");
+    var popupFile = document.getElementById("bl-popup-file");
     var btnLogoUp = document.getElementById("btn-bl-upload-logo");
     var btnBannerUp = document.getElementById("btn-bl-upload-banner");
     var btnFaviconUp = document.getElementById("btn-bl-upload-favicon");
+    var btnPopupUp = document.getElementById("btn-bl-upload-popup");
     if (btnLogoUp && logoFile) btnLogoUp.onclick = function () { logoFile.click(); };
     if (btnBannerUp && bannerFile) btnBannerUp.onclick = function () { bannerFile.click(); };
     if (btnFaviconUp && faviconFile) btnFaviconUp.onclick = function () { faviconFile.click(); };
+    if (btnPopupUp && popupFile) btnPopupUp.onclick = function () { popupFile.click(); };
     if (logoFile) {
       logoFile.addEventListener("change", function () {
         if (logoFile.files && logoFile.files[0]) blUploadAsset("logo", logoFile.files[0]);
@@ -1253,6 +1324,12 @@
         faviconFile.value = "";
       });
     }
+    if (popupFile) {
+      popupFile.addEventListener("change", function () {
+        if (popupFile.files && popupFile.files[0]) blUploadAsset("popup", popupFile.files[0]);
+        popupFile.value = "";
+      });
+    }
     ["bl-title", "bl-subtitle", "bl-avatar", "bl-banner", "bl-favicon", "bl-accent",
       "bl-popup-title", "bl-popup-body", "bl-popup-image", "bl-popup-cta-label", "bl-popup-cta-url", "bl-popup-delay"].forEach(function (id) {
       var el = document.getElementById(id);
@@ -1269,8 +1346,11 @@
         schedulePreviewRefresh();
       });
     }
-    var popupFreq = document.getElementById("bl-popup-freq");
-    if (popupFreq) popupFreq.addEventListener("change", schedulePreviewRefresh);
+    ["bl-popup-freq", "bl-popup-size", "bl-popup-media-type"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener("change", schedulePreviewRefresh);
+    });
+    renderPopupShapeGallery();
     var shapeEl = document.getElementById("bl-shape");
     if (shapeEl) shapeEl.addEventListener("change", schedulePreviewRefresh);
     var layoutEl = document.getElementById("bl-banner-layout");

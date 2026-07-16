@@ -693,3 +693,61 @@
 .bl-block-type-badge em { font-style: normal; color: var(--accent); font-weight: 600; }
 .heading-fields .full { grid-column: 1 / -1; }
 .heading-fields label.muted-sm { display: block; margin-bottom: 0.25rem; }
+
+.bl-popup-settings {
+  margin-top: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border, #243044);
+}
+.bl-popup-shape-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+.bl-popup-shape-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.28rem;
+  min-width: 64px;
+  padding: 0.4rem 0.35rem;
+  border-radius: 10px;
+  border: 1px solid var(--border, #243044);
+  background: var(--surface-2, #0f1623);
+  color: var(--muted, #94a3b8);
+  font-size: 0.62rem;
+  cursor: pointer;
+}
+.bl-popup-shape-chip:hover {
+  border-color: var(--accent, #38bdf8);
+  color: var(--text, #e2e8f0);
+}
+.bl-popup-shape-chip.active {
+  border-color: var(--accent, #38bdf8);
+  color: var(--text, #e2e8f0);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #38bdf8) 45%, transparent);
+}
+.bl-popup-shape-demo {
+  width: 34px;
+  height: 26px;
+  background: linear-gradient(135deg, #38bdf8, #a78bfa);
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.bl-popup-shape-demo.shape-rounded { border-radius: 8px; }
+.bl-popup-shape-demo.shape-square { border-radius: 2px; }
+.bl-popup-shape-demo.shape-soft { border-radius: 12px; }
+.bl-popup-shape-demo.shape-pill { border-radius: 999px; }
+.bl-popup-shape-demo.shape-circle { width: 26px; height: 26px; border-radius: 50%; }
+.bl-popup-shape-demo.shape-diamond { clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); }
+.bl-popup-shape-demo.shape-hexagon { clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%); }
+.bl-popup-shape-demo.shape-octagon { clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%); }
+.bl-popup-shape-demo.shape-triangle { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }
+.bl-popup-shape-demo.shape-ticket { border-radius: 4px; border-style: dashed; }
+.bl-popup-shape-demo.shape-speech { border-radius: 8px 8px 8px 2px; }
+.bl-popup-shape-demo.shape-arch { border-radius: 999px 999px 6px 6px; }
+.bl-popup-shape-demo.shape-stamp { border: 2px dashed #fbbf24; background: transparent; }
+.bl-popup-shape-demo.shape-glass { background: rgba(255,255,255,0.18); border-radius: 8px; }
+.bl-popup-shape-demo.shape-neon { border-radius: 8px; box-shadow: 0 0 8px #38bdf8; }
+.bl-popup-shape-demo.shape-wide { width: 42px; border-radius: 6px; }
+.bl-popup-shape-demo.shape-compact { width: 22px; border-radius: 6px; }

@@ -111,12 +111,41 @@
                     </select>
                   </div>
                   <div class="full"><label for="bl-popup-body">Popup metin</label><textarea id="bl-popup-body" rows="2" placeholder="Kısa duyuru / kampanya metni…"></textarea></div>
-                  <div class="full"><label for="bl-popup-image">Popup görsel URL</label><input id="bl-popup-image" placeholder="https://…/kampanya.jpg" autocomplete="off"></div>
+                  <div class="full">
+                    <label>Popup şekli / şema</label>
+                    <input type="hidden" id="bl-popup-shape" value="rounded">
+                    <div class="bl-popup-shape-gallery" id="bl-popup-shape-gallery"></div>
+                  </div>
+                  <div><label for="bl-popup-size">Boyut</label>
+                    <select id="bl-popup-size">
+                      <option value="sm">Küçük</option>
+                      <option value="md" selected>Orta</option>
+                      <option value="lg">Büyük</option>
+                    </select>
+                  </div>
+                  <div><label for="bl-popup-media-type">Medya türü</label>
+                    <select id="bl-popup-media-type">
+                      <option value="auto">Otomatik (URL’den)</option>
+                      <option value="image">Görsel (JPG/PNG/WebP)</option>
+                      <option value="gif">GIF</option>
+                      <option value="video">Video (MP4/WebM)</option>
+                      <option value="embed">YouTube / Vimeo</option>
+                    </select>
+                  </div>
+                  <div class="full">
+                    <label>Popup medya (görsel / GIF / MP4 / YouTube)</label>
+                    <div class="bl-asset-toolbar">
+                      <button type="button" class="btn btn-sm" id="btn-bl-upload-popup">+ Medya yükle</button>
+                      <input type="file" id="bl-popup-file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.gif" hidden>
+                      <span class="muted-sm bl-upload-status" id="bl-popup-upload-status"></span>
+                    </div>
+                    <input id="bl-popup-image" placeholder="veya URL: .jpg .gif .mp4 / YouTube linki…" autocomplete="off" style="margin-top:0.45rem;">
+                  </div>
                   <div><label for="bl-popup-cta-label">Buton yazısı</label><input id="bl-popup-cta-label" placeholder="Devam" autocomplete="off"></div>
                   <div><label for="bl-popup-cta-url">Buton linki</label><input id="bl-popup-cta-url" placeholder="https://…" autocomplete="off"></div>
                   <div><label for="bl-popup-delay">Gecikme (ms)</label><input id="bl-popup-delay" type="number" min="0" max="15000" step="100" value="500"></div>
                 </div>
-                <p class="muted-sm" style="margin:0.45rem 0 0;">Sayfa açılınca ziyaretçiye modal gösterilir. Önizlemede her zaman açılır.</p>
+                <p class="muted-sm" style="margin:0.45rem 0 0;">JPG/PNG/GIF/MP4 yükleyebilir veya YouTube/Vimeo linki yapıştırabilirsin. Önizlemede popup her zaman açılır.</p>
               </div>
             </div>
           </div>

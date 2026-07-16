@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/biolink-skins.css?v=20260716a">
+<link rel="stylesheet" href="/static/biolink-skins.css?v=20260716b">
 {% if page.ga4_measurement_id %}
 <script async src="https://www.googletagmanager.com/gtag/js?id={{ page.ga4_measurement_id }}"></script>
 <script>
@@ -425,23 +425,113 @@
     padding: 1.25rem 1.2rem 1.1rem;
     box-shadow: 0 24px 60px rgba(0,0,0,0.45);
     transform: translateY(14px) scale(0.97);
-    transition: transform .28s ease;
+    transition: transform .28s ease, border-radius .2s ease;
     text-align: center;
     position: relative;
+    overflow: hidden;
   }
+  .bl-popup.size-sm { width: min(320px, 100%); }
+  .bl-popup.size-md { width: min(420px, 100%); }
+  .bl-popup.size-lg { width: min(560px, 100%); }
   .bl-popup-overlay.is-open .bl-popup { transform: translateY(0) scale(1); }
+  .bl-popup.shape-square { border-radius: 8px; }
+  .bl-popup.shape-rounded { border-radius: 22px; }
+  .bl-popup.shape-soft { border-radius: 32px; }
+  .bl-popup.shape-pill { border-radius: 999px; padding: 1.6rem 1.5rem; }
+  .bl-popup.shape-circle {
+    width: min(380px, 88vw); aspect-ratio: 1;
+    border-radius: 50%;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 2.2rem 1.6rem 1.8rem;
+  }
+  .bl-popup.shape-diamond {
+    border-radius: 18px;
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    padding: 18% 16% 16%;
+  }
+  .bl-popup.shape-hexagon {
+    border-radius: 0;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    padding: 14% 18%;
+  }
+  .bl-popup.shape-octagon {
+    border-radius: 0;
+    clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%);
+    padding: 14% 12%;
+  }
+  .bl-popup.shape-triangle {
+    border-radius: 0;
+    clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+    padding: 28% 14% 12%;
+  }
+  .bl-popup.shape-ticket {
+    border-radius: 12px;
+    border-style: dashed;
+    border-width: 2px;
+    background-image: radial-gradient(circle at left 50%, transparent 10px, var(--card-bg) 11px),
+                      radial-gradient(circle at right 50%, transparent 10px, var(--card-bg) 11px);
+    background-size: 51% 100%, 51% 100%;
+    background-position: left, right;
+    background-repeat: no-repeat;
+  }
+  .bl-popup.shape-speech {
+    border-radius: 22px 22px 22px 6px;
+    margin-bottom: 10px;
+  }
+  .bl-popup.shape-speech::after {
+    content: "";
+    position: absolute; left: 28px; bottom: -12px;
+    border: 12px solid transparent;
+    border-top-color: var(--card-bg);
+    border-left: 0;
+  }
+  .bl-popup.shape-arch { border-radius: 999px 999px 18px 18px; }
+  .bl-popup.shape-stamp {
+    border-radius: 10px;
+    border: 2px dashed var(--accent);
+    box-shadow: none;
+  }
+  .bl-popup.shape-glass {
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-color: rgba(255,255,255,0.22);
+  }
+  .bl-popup.shape-neon {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 28px color-mix(in srgb, var(--accent) 45%, transparent),
+                0 24px 60px rgba(0,0,0,0.45);
+  }
+  .bl-popup.shape-wide { width: min(640px, 96vw); border-radius: 18px; }
+  .bl-popup.shape-compact { width: min(300px, 92vw); border-radius: 16px; padding: 1rem; }
   .bl-popup-close {
-    position: absolute; top: 0.55rem; right: 0.65rem;
+    position: absolute; top: 0.55rem; right: 0.65rem; z-index: 2;
     width: 34px; height: 34px; border-radius: 999px;
     border: 1px solid var(--card-border);
-    background: transparent; color: var(--muted);
+    background: rgba(0,0,0,0.35); color: var(--muted);
     font-size: 1.15rem; line-height: 1; cursor: pointer;
   }
   .bl-popup-close:hover { color: var(--text); border-color: var(--accent); }
-  .bl-popup-img {
-    width: 100%; max-height: 200px; object-fit: cover;
+  .bl-popup-media {
+    width: 100%; max-height: 260px; object-fit: cover;
     border-radius: 14px; margin-bottom: 0.85rem;
-    display: block;
+    display: block; background: #000;
+  }
+  .bl-popup.shape-circle .bl-popup-media,
+  .bl-popup.shape-diamond .bl-popup-media,
+  .bl-popup.shape-hexagon .bl-popup-media,
+  .bl-popup.shape-octagon .bl-popup-media,
+  .bl-popup.shape-triangle .bl-popup-media {
+    max-height: 140px; border-radius: 10px;
+  }
+  .bl-popup-embed {
+    position: relative; width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: 14px; overflow: hidden;
+    margin-bottom: 0.85rem; background: #000;
+  }
+  .bl-popup-embed iframe {
+    position: absolute; inset: 0; width: 100%; height: 100%; border: 0;
   }
   .bl-popup h2 {
     margin: 0 0 0.45rem; font-size: 1.2rem; font-weight: 800;
@@ -543,16 +633,22 @@
   </div>
 
   {% set popup = page.popup or {} %}
-  {% if popup.enabled and (popup.title or popup.body or popup.image_url) %}
+  {% if popup.enabled and popup.has_content %}
   <div class="bl-popup-overlay" id="bl-popup" hidden
        data-delay="{{ popup.delay_ms|int }}"
        data-freq="{{ popup.frequency or 'session' }}"
        data-key="blpop-{{ page.id or page.slug }}"
        data-preview="{{ '1' if preview else '0' }}">
-    <div class="bl-popup" role="dialog" aria-modal="true" aria-label="{{ popup.title or 'Duyuru' }}">
+    <div class="bl-popup shape-{{ popup.shape or 'rounded' }} size-{{ popup.size or 'md' }}" role="dialog" aria-modal="true" aria-label="{{ popup.title or 'Duyuru' }}">
       <button type="button" class="bl-popup-close" id="bl-popup-close" aria-label="Kapat">×</button>
-      {% if popup.image_url %}
-      <img class="bl-popup-img" src="{{ popup.image_url }}" alt="">
+      {% if popup.has_media %}
+        {% if popup.media_kind == 'video' %}
+      <video class="bl-popup-media" src="{{ popup.media_url }}" autoplay muted loop playsinline controls></video>
+        {% elif popup.media_kind == 'embed' and popup.embed_src %}
+      <div class="bl-popup-embed"><iframe src="{{ popup.embed_src }}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen loading="lazy" title="Popup video"></iframe></div>
+        {% else %}
+      <img class="bl-popup-media" src="{{ popup.media_url }}" alt="" loading="lazy">
+        {% endif %}
       {% endif %}
       {% if popup.title %}<h2>{{ popup.title }}</h2>{% endif %}
       {% if popup.body %}<p>{{ popup.body }}</p>{% endif %}
@@ -611,6 +707,8 @@
       }
       function closePopup() {
         el.classList.remove("is-open");
+        el.querySelectorAll("video").forEach(function (v) { try { v.pause(); } catch (e) {} });
+        el.querySelectorAll("iframe").forEach(function (f) { f.src = f.src; });
         setTimeout(function () { el.hidden = true; }, 280);
       }
       var closeBtn = document.getElementById("bl-popup-close");

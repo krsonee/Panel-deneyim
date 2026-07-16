@@ -101,6 +101,7 @@ def create_biolink_blueprint(permission_required):
         return jsonify({
             "themes": biolink_api.theme_list(),
             "heading_styles": biolink_api.heading_style_list(),
+            "popup_shapes": biolink_api.popup_shape_catalog(),
         })
 
     @api.route("/assets", methods=["GET"])

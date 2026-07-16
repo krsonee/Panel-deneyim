@@ -75,11 +75,42 @@ TEXT_ALIGNS = ("left", "center", "right")
 DEFAULT_TEXT_ALIGN = "left"
 
 POPUP_FREQUENCIES = frozenset({"session", "day", "always"})
+POPUP_SHAPES = (
+    ("rounded", "Yuvarlak"),
+    ("square", "Kare"),
+    ("soft", "Yumuşak"),
+    ("pill", "Hap"),
+    ("circle", "Daire"),
+    ("diamond", "Elmas"),
+    ("hexagon", "Altıgen"),
+    ("octagon", "Sekizgen"),
+    ("triangle", "Üçgen"),
+    ("ticket", "Bilet"),
+    ("speech", "Balon"),
+    ("arch", "Kemer"),
+    ("stamp", "Pul"),
+    ("glass", "Cam"),
+    ("neon", "Neon"),
+    ("wide", "Geniş"),
+    ("compact", "Kompakt"),
+)
+POPUP_SHAPE_KEYS = frozenset(k for k, _ in POPUP_SHAPES)
+POPUP_SIZES = frozenset({"sm", "md", "lg"})
+POPUP_MEDIA_TYPES = frozenset({"auto", "image", "gif", "video", "embed"})
+POPUP_UPLOAD_EXTS = frozenset({
+    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg",
+    ".mp4", ".webm", ".mov",
+})
+POPUP_UPLOAD_MAX_BYTES = 18 * 1024 * 1024
 DEFAULT_POPUP = {
     "enabled": False,
     "title": "",
     "body": "",
     "image_url": "",
+    "media_url": "",
+    "media_type": "auto",
+    "shape": "rounded",
+    "size": "md",
     "cta_label": "Devam",
     "cta_url": "",
     "delay_ms": 500,
@@ -127,6 +158,86 @@ def theme_vars(theme_key, accent_override=""):
     return out
 
 
+def _normalize_media_url(val):
+    url = str(val or "").strip()[:500]
+    if not url:
+        return ""
+    if url.startswith("/") or url.startswith("data:"):
+        return url
+    if "://" not in url:
+        url = "https://" + url
+    return url
+
+
+def detect_popup_media_kind(url, media_type="auto"):
+    """auto/image/gif/video/embed → image | video | embed."""
+    mt = (media_type or "auto").strip().lower()
+    if mt in ("image", "gif"):
+        return "image"
+    if mt == "video":
+        return "video"
+    if mt == "embed":
+        return "embed"
+    u = (url or "").strip().lower()
+    if not u:
+        return "image"
+    if any(x in u for x in ("youtube.com/", "youtu.be/", "youtube-nocookie.com/", "vimeo.com/")):
+        return "embed"
+    path = u.split("?")[0].split("#")[0]
+    if path.endswith((".mp4", ".webm", ".mov", ".m4v", ".ogg")):
+        return "video"
+    return "image"
+
+
+def popup_embed_src(url):
+    """YouTube / Vimeo URL → iframe src."""
+    u = (url or "").strip()
+    if not u:
+        return ""
+    try:
+        parsed = urlparse(u if "://" in u else "https://" + u)
+    except Exception:
+        return ""
+    host = (parsed.netloc or "").lower().replace("www.", "")
+    path = parsed.path or ""
+    qs = urllib.parse.parse_qs(parsed.query or "")
+    if host in ("youtu.be",):
+        vid = path.strip("/").split("/")[0]
+        return f"https://www.youtube.com/embed/{vid}?autoplay=1&mute=1&rel=0" if vid else ""
+    if "youtube" in host:
+        if "/embed/" in path:
+            return u if "://" in u else "https://" + u
+        if "/shorts/" in path:
+            vid = path.split("/shorts/")[-1].split("/")[0]
+            return f"https://www.youtube.com/embed/{vid}?autoplay=1&mute=1&rel=0" if vid else ""
+        vid = (qs.get("v") or [""])[0]
+        if vid:
+            return f"https://www.youtube.com/embed/{vid}?autoplay=1&mute=1&rel=0"
+    if "vimeo.com" in host:
+        parts = [p for p in path.split("/") if p and p.isdigit()]
+        if parts:
+            return f"https://player.vimeo.com/video/{parts[0]}?autoplay=1&muted=1"
+    return ""
+
+
+def enrich_popup(popup):
+    """Render için medya türü / embed src ekle."""
+    p = normalize_popup(popup)
+    media = p.get("media_url") or p.get("image_url") or ""
+    kind = detect_popup_media_kind(media, p.get("media_type") or "auto")
+    p["media_kind"] = kind
+    p["media_url"] = media
+    p["image_url"] = media  # geri uyumluluk
+    p["embed_src"] = popup_embed_src(media) if kind == "embed" else ""
+    p["has_media"] = bool(media)
+    p["has_content"] = bool(p.get("title") or p.get("body") or media)
+    return p
+
+
+def popup_shape_catalog():
+    return [{"key": k, "label": lab} for k, lab in POPUP_SHAPES]
+
+
 def normalize_popup(raw):
     """popup_json / form dict → güvenli popup ayarları."""
     base = dict(DEFAULT_POPUP)
@@ -143,7 +254,15 @@ def normalize_popup(raw):
     base["enabled"] = bool(data.get("enabled"))
     base["title"] = str(data.get("title") or "").strip()[:120]
     base["body"] = str(data.get("body") or "").strip()[:600]
-    base["image_url"] = str(data.get("image_url") or "").strip()[:500]
+    media = _normalize_media_url(data.get("media_url") or data.get("image_url") or "")
+    base["media_url"] = media
+    base["image_url"] = media
+    mt = str(data.get("media_type") or "auto").strip().lower()
+    base["media_type"] = mt if mt in POPUP_MEDIA_TYPES else "auto"
+    shape = str(data.get("shape") or "rounded").strip().lower()
+    base["shape"] = shape if shape in POPUP_SHAPE_KEYS else "rounded"
+    size = str(data.get("size") or "md").strip().lower()
+    base["size"] = size if size in POPUP_SIZES else "md"
     base["cta_label"] = str(data.get("cta_label") or "").strip()[:60] or "Devam"
     cta = str(data.get("cta_url") or "").strip()[:500]
     if cta and cta != "#" and "://" not in cta and not cta.startswith("/"):
@@ -425,7 +544,7 @@ def _page_row(row):
     d["favicon_url"] = raw_favicon
     d["resolved_favicon"] = resolve_favicon_url(d)
 
-    d["popup"] = normalize_popup(d.get("popup_json") or "")
+    d["popup"] = enrich_popup(d.get("popup_json") or "")
     d.pop("popup_json", None)
 
     d["custom_domain"] = normalize_custom_domain(d.get("custom_domain") or "")
@@ -625,7 +744,7 @@ def apply_preview_overrides(page, args):
                     cur[key] = str(val).lower() in ("1", "true", "yes", "on")
                 else:
                     cur[key] = val
-        page["popup"] = normalize_popup(cur)
+        page["popup"] = enrich_popup(cur)
     return page
 
 
@@ -1021,7 +1140,7 @@ def _custom_asset_row(row):
 
 def list_custom_assets(conn, kind=None):
     kind = (kind or "").strip().lower()
-    if kind in ("logo", "banner", "favicon"):
+    if kind in ("logo", "banner", "favicon", "popup"):
         rows = fetchall(
             conn,
             "SELECT * FROM biolink_assets WHERE kind = ? ORDER BY created_at DESC, id DESC",
@@ -1051,14 +1170,17 @@ def list_brand_assets(conn):
         a for a in list(BRAND_FAVICONS)
         if a.get("key") not in hidden
     ] + [a for a in custom if a["kind"] == "favicon"]
+    popups = [a for a in custom if a["kind"] == "popup"]
     return {
         "logos": logos,
         "banners": banners,
         "favicons": favicons,
+        "popups": popups,
         "default_logo": DEFAULT_BRAND_LOGO,
         "default_banner": DEFAULT_BANNER,
         "default_favicon": DEFAULT_FAVICON,
         "hidden_count": len(hidden),
+        "popup_shapes": popup_shape_catalog(),
     }
 
 
@@ -1143,8 +1265,8 @@ def clear_all_page_banners_once():
 
 def upload_asset(conn, kind, file_storage, *, label="", created_by=""):
     kind = (kind or "").strip().lower()
-    if kind not in ("logo", "banner", "favicon"):
-        raise ValueError("Tür logo, banner veya favicon olmalı.")
+    if kind not in ("logo", "banner", "favicon", "popup"):
+        raise ValueError("Tür logo, banner, favicon veya popup olmalı.")
     if not file_storage or not (file_storage.filename or "").strip():
         raise ValueError("Dosya seçilmedi.")
 
@@ -1158,6 +1280,9 @@ def upload_asset(conn, kind, file_storage, *, label="", created_by=""):
     elif kind == "logo":
         allowed = LOGO_UPLOAD_EXTS
         max_size = LOGO_UPLOAD_MAX_BYTES
+    elif kind == "popup":
+        allowed = POPUP_UPLOAD_EXTS
+        max_size = POPUP_UPLOAD_MAX_BYTES
     else:
         allowed = BANNER_UPLOAD_EXTS
         max_size = BANNER_UPLOAD_MAX_BYTES
