@@ -2008,6 +2008,15 @@
                   <span class="muted" id="makrolink-ga4-status" style="font-size:0.72rem;"></span>
                 </div>
               </div>
+              <div style="margin-top:0.85rem;padding-top:0.75rem;border-top:1px solid var(--border,#243044);">
+                <label style="display:block;margin-bottom:0.35rem;">MakroLink kategorileri</label>
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;margin-bottom:0.5rem;">
+                  <input id="makrolink-cat-new" placeholder="Yeni kategori adı…" style="min-width:180px;flex:1;" autocomplete="off">
+                  <button type="button" class="btn btn-sm btn-primary" id="btn-makrolink-cat-add">Ekle</button>
+                </div>
+                <div id="makrolink-cat-list" style="display:flex;flex-wrap:wrap;gap:0.35rem;"></div>
+                <p class="muted-sm" style="margin:0.4rem 0 0;">Eklenenler oluşturma / filtre / düzenleme listelerine düşer. Silmek listeyi temizler; eski linklerin etiketi kalabilir.</p>
+              </div>
             </form>
           </div>
           <div class="card-body">
@@ -4677,18 +4686,65 @@
           return r.json();
         }).then(function(d) {
           if (!d) return;
-          if (d.categories && d.categories.length) makrolinkCategories = d.categories;
-          makrolinkRebuildCatOptionsHtml();
+          if (d.categories && d.categories.length) makrolinkApplyCategories(d.categories);
+          else {
+            makrolinkRebuildCatOptionsHtml();
+            makrolinkSyncCategoryFilterSelect();
+            makrolinkSyncCreateCategorySelect();
+            makrolinkRenderCatManager();
+          }
           try {
             var savedCat = localStorage.getItem("makrolink_cat_filter");
             var catSel = document.getElementById("makrolink-filter-category");
             if (catSel && savedCat !== null && savedCat !== undefined) catSel.value = savedCat;
           } catch (e) { /* ignore */ }
-          makrolinkSyncCategoryFilterSelect();
           makrolinkUpdateFilterUi((document.getElementById("makrolink-filter-category") || {}).value || "");
-          makrolinkSyncCreateCategorySelect();
           makrolinkApplyLinks(d.links || [], false);
         }).catch(function() {}).finally(function() { makrolinkInFlight = false; });
+      }
+
+      function makrolinkApplyCategories(cats) {
+        if (!cats || !cats.length) return;
+        makrolinkCategories = cats.slice();
+        makrolinkRebuildCatOptionsHtml();
+        makrolinkSyncCategoryFilterSelect();
+        makrolinkSyncCreateCategorySelect();
+        makrolinkRenderCatManager();
+      }
+
+      function makrolinkRenderCatManager() {
+        var box = document.getElementById("makrolink-cat-list");
+        if (!box) return;
+        if (!makrolinkCategories.length) {
+          box.innerHTML = '<span class="muted-sm">Kategori yok</span>';
+          return;
+        }
+        box.innerHTML = makrolinkCategories.map(function(c) {
+          return '<span class="tag" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.25rem 0.45rem;">' +
+            esc(c) +
+            '<button type="button" class="icon-btn makrolink-cat-del" data-cat="' + esc(c) + '" title="Sil" style="width:18px;height:18px;font-size:0.85rem;line-height:1;">×</button>' +
+            "</span>";
+        }).join("");
+        box.querySelectorAll(".makrolink-cat-del").forEach(function(btn) {
+          btn.onclick = function() {
+            var name = btn.getAttribute("data-cat") || "";
+            if (!name) return;
+            if (!confirm('"' + name + '" kategorisi silinsin mi?')) return;
+            fetch(API + "/api/makrolink/categories/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: name })
+            }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+              .then(function(res) {
+                if (!res.ok) { alert((res.data && res.data.error) || "Silinemedi"); return; }
+                toast("Kategori silindi");
+                makrolinkApplyCategories((res.data && res.data.categories) || []);
+                lastMakrolinkSig = "";
+                loadMakroLinks();
+              })
+              .catch(function() { alert("İstek başarısız"); });
+          };
+        });
       }
 
       function loadMakroLinkConfig() {
@@ -4714,6 +4770,7 @@
                 gst.textContent = d.online_domain_count + " domain" + (first ? (" · " + first + (last && last !== first ? " … " + last : "")) : "");
               } else gst.textContent = "Grup boş — online Affid eşlemesi yapılmaz (tıklama/GA yine çalışır).";
             }
+            if (d.categories && d.categories.length) makrolinkApplyCategories(d.categories);
             var gaId = document.getElementById("makrolink-ga4-id");
             if (gaId) gaId.value = d.ga4_measurement_id || "";
             var st = document.getElementById("makrolink-ga4-status");
@@ -5180,6 +5237,31 @@
           }, 600);
         }, { passive: true });
       })();
+
+      bindOptional("btn-makrolink-cat-add", "click", function() {
+        var inp = document.getElementById("makrolink-cat-new");
+        var name = (inp && inp.value || "").trim();
+        if (!name) { alert("Kategori adı yaz."); return; }
+        fetch(API + "/api/makrolink/categories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (!res.ok) { alert((res.data && res.data.error) || "Eklenemedi"); return; }
+            if (inp) inp.value = "";
+            toast(res.data.exists ? "Zaten var" : "Kategori eklendi");
+            makrolinkApplyCategories((res.data && res.data.categories) || []);
+          })
+          .catch(function() { alert("İstek başarısız"); });
+      });
+      bindOptional("makrolink-cat-new", "keydown", function(e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          var btn = document.getElementById("btn-makrolink-cat-add");
+          if (btn) btn.click();
+        }
+      });
 
       bindOptional("makrolink-config-form", "submit", function(e) {
         e.preventDefault();

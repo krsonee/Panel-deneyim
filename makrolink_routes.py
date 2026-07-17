@@ -77,7 +77,32 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
     @api.route("/categories", methods=["GET"])
     @perm(*MODULE_ACCESS)
     def get_categories():
-        return jsonify({"categories": makrolink_api.list_categories()})
+        with closing(get_db()) as conn:
+            return jsonify({"categories": makrolink_api.list_categories(conn)})
+
+    @api.route("/categories", methods=["POST"])
+    @perm(*MODULE_ACCESS)
+    @admin_only
+    def create_category():
+        data = request.get_json(silent=True) or {}
+        try:
+            with closing(get_db()) as conn:
+                result = makrolink_api.add_category(conn, data.get("name") or "")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, **result}), 201
+
+    @api.route("/categories/delete", methods=["POST"])
+    @perm(*MODULE_ACCESS)
+    @admin_only
+    def delete_category():
+        data = request.get_json(silent=True) or {}
+        try:
+            with closing(get_db()) as conn:
+                result = makrolink_api.remove_category(conn, data.get("name") or "")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, **result})
 
     @api.route("/links", methods=["GET"])
     @perm(*MODULE_ACCESS)
@@ -85,7 +110,8 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
         q = request.args.get("q") or ""
         with closing(get_db()) as conn:
             items = makrolink_api.list_links(conn, q_text=q)
-        return jsonify({"links": items, "categories": makrolink_api.list_categories()})
+            cats = makrolink_api.list_categories(conn)
+        return jsonify({"links": items, "categories": cats})
 
     @api.route("/target-domains", methods=["GET"])
     @perm(*MODULE_ACCESS)

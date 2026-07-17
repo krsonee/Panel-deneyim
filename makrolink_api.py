@@ -36,8 +36,8 @@ DEFAULT_AFF_BASE = "https://go.aff.makroaffi.com"
 CODE_ALPHABET = string.ascii_letters + string.digits
 CODE_LEN = 7
 
-# MakroLink kategori listesi (oluşturma + manuel atama)
-LINK_CATEGORIES = (
+# Varsayılan MakroLink kategorileri (DB boşsa seed)
+DEFAULT_LINK_CATEGORIES = (
     "Marketing",
     "Call Center",
     "Sosyal Medya",
@@ -48,36 +48,111 @@ LINK_CATEGORIES = (
     "Instagram",
     "IVR",
 )
-_LINK_CATEGORY_MAP = {c.lower(): c for c in LINK_CATEGORIES}
+# Geriye dönük alias
+LINK_CATEGORIES = DEFAULT_LINK_CATEGORIES
+
+_CATEGORY_ALIASES = {
+    "twiter": "Twitter",
+    "seo & meta": "Seo&Meta",
+    "seo and meta": "Seo&Meta",
+    "callcenter": "Call Center",
+    "call-center": "Call Center",
+    "sosyalmedya": "Sosyal Medya",
+}
 
 
-def normalize_category(value, *, allow_empty=True):
+def _clean_category_name(name):
+    name = re.sub(r"\s+", " ", (name or "").strip())
+    if not name or len(name) > 48:
+        return ""
+    if not re.fullmatch(r"[A-Za-z0-9ÇçĞğİıÖöŞşÜü &_+./\-]+", name):
+        return ""
+    return name
+
+
+def list_categories(conn=None):
+    """DB'deki kategori listesi; yoksa varsayılanlar (+ ilk erişimde seed)."""
+    if conn is None:
+        return list(DEFAULT_LINK_CATEGORIES)
+    raw = (get_setting(conn, "categories", "") or "").strip()
+    cats = []
+    if raw:
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                for c in data:
+                    cleaned = _clean_category_name(str(c))
+                    if cleaned and cleaned.lower() not in {x.lower() for x in cats}:
+                        cats.append(cleaned)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            cats = []
+    if not cats:
+        cats = list(DEFAULT_LINK_CATEGORIES)
+        upsert_setting(conn, "categories", json.dumps(cats, ensure_ascii=False))
+    return cats
+
+
+def save_categories(conn, categories):
+    cats = []
+    for c in categories or []:
+        cleaned = _clean_category_name(str(c))
+        if cleaned and cleaned.lower() not in {x.lower() for x in cats}:
+            cats.append(cleaned)
+    if not cats:
+        raise ValueError("En az bir kategori kalmalı.")
+    upsert_setting(conn, "categories", json.dumps(cats, ensure_ascii=False))
+    return cats
+
+
+def add_category(conn, name):
+    cleaned = _clean_category_name(name)
+    if not cleaned:
+        raise ValueError("Geçersiz kategori adı (max 48 karakter, özel karakter yok).")
+    cats = list_categories(conn)
+    for c in cats:
+        if c.lower() == cleaned.lower():
+            return {"categories": cats, "added": c, "exists": True}
+    cats.append(cleaned)
+    save_categories(conn, cats)
+    return {"categories": cats, "added": cleaned, "exists": False}
+
+
+def remove_category(conn, name):
+    cleaned = _clean_category_name(name)
+    if not cleaned:
+        raise ValueError("Kategori adı gerekli.")
+    cats = list_categories(conn)
+    new_cats = [c for c in cats if c.lower() != cleaned.lower()]
+    if len(new_cats) == len(cats):
+        raise ValueError("Kategori bulunamadı.")
+    if not new_cats:
+        raise ValueError("Son kategoriyi silemezsin.")
+    save_categories(conn, new_cats)
+    # Linklerdeki kategori adı kalabilir (filtrede görünür); zorunlu temizleme yok
+    return {"categories": new_cats, "removed": cleaned}
+
+
+def normalize_category(value, *, allow_empty=True, conn=None):
     raw = (value or "").strip()
     if not raw:
         if allow_empty:
             return ""
         raise ValueError("Kategori gerekli.")
-    canon = _LINK_CATEGORY_MAP.get(raw.lower())
+    cats = list_categories(conn)
+    cmap = {c.lower(): c for c in cats}
+    canon = cmap.get(raw.lower())
     if not canon:
-        # Yaygın yazım hataları
-        aliases = {
-            "twiter": "Twitter",
-            "seo & meta": "Seo&Meta",
-            "seo and meta": "Seo&Meta",
-            "callcenter": "Call Center",
-            "call-center": "Call Center",
-            "sosyalmedya": "Sosyal Medya",
-        }
-        canon = aliases.get(raw.lower())
+        alias = _CATEGORY_ALIASES.get(raw.lower())
+        if alias and alias.lower() in cmap:
+            canon = cmap[alias.lower()]
+        elif alias:
+            # Alias varsayılan isimde ama listeden silinmiş olabilir
+            canon = None
     if not canon:
         raise ValueError(
-            "Geçersiz kategori. Seçenekler: " + ", ".join(LINK_CATEGORIES)
+            "Geçersiz kategori. Seçenekler: " + ", ".join(cats)
         )
     return canon
-
-
-def list_categories():
-    return list(LINK_CATEGORIES)
 
 RESERVED_PATHS = frozenset({
     "", "admin", "api", "static", "demo", "r", "health", "favicon.ico",
@@ -314,6 +389,7 @@ def get_config(conn, include_secrets=False):
         "online_group_error": online_group_error,
         "ga4_measurement_id": mid,
         "ga4_configured": bool(mid and secret),
+        "categories": list_categories(conn),
     }
     if include_secrets:
         cfg["ga4_api_secret"] = secret
@@ -706,7 +782,7 @@ def create_link(
         group_raw = get_online_domain_group_raw(conn)
         if group_raw:
             target_domain = ("group:" + group_raw)[:200]
-    category = normalize_category(category, allow_empty=False)
+    category = normalize_category(category, allow_empty=False, conn=conn)
     now = iso(utcnow())
 
     # smartico_link_id sadece gerçek go.aff hedeflerinde
@@ -864,7 +940,7 @@ def update_link(
         new_target_domain = (("group:" + group_raw)[:200] if group_raw else (row.get("target_domain") or ""))
 
     if category is not None:
-        new_category = normalize_category(category, allow_empty=True)
+        new_category = normalize_category(category, allow_empty=True, conn=conn)
     else:
         new_category = row.get("category") or ""
 
