@@ -155,6 +155,25 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
             return jsonify({"error": "Link bulunamadı."}), 404
         return jsonify({"ok": True})
 
+    @api.route("/links/bulk-rewrite-host", methods=["POST"])
+    @perm(*MODULE_ACCESS)
+    def bulk_rewrite_host():
+        """Sadece makrobet804→805 tarzı hedefleri değiştir; Smartico ve diğer domainlere dokunma."""
+        data = request.get_json(silent=True) or {}
+        try:
+            with closing(get_db()) as conn:
+                result = makrolink_api.bulk_rewrite_destination_hosts(
+                    conn,
+                    prefix=data.get("prefix") or "makrobet",
+                    from_num=data.get("from_num"),
+                    to_num=data.get("to_num"),
+                    from_host=data.get("from_host") or "",
+                    to_host=data.get("to_host") or "",
+                )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, **result})
+
     # ── Public redirect ────────────────────────────────────────
     @bp.route("/r/<code>")
     def redirect_short(code):

@@ -2013,8 +2013,8 @@
           <div class="card-body">
             <form id="makrolink-create-form">
               <div class="form-row-4">
-                <div class="form-span-2"><label for="makrolink-dest">Smartico go.aff linki</label>
-                  <input id="makrolink-dest" placeholder="https://go.aff.makroaffi.com/46ix1iwv  veya  46ix1iwv" required autocomplete="off">
+                <div class="form-span-2"><label for="makrolink-dest">Hedef link <span class="muted">(Smartico veya site URL)</span></label>
+                  <input id="makrolink-dest" placeholder="go.aff…/slug  veya  https://makrobet804.com/promotions" required autocomplete="off">
                 </div>
                 <div><label for="makrolink-label">Etiket</label><input id="makrolink-label" placeholder="örn. slotbuse FTD" required autocomplete="off"></div>
                 <div><label for="makrolink-code">Özel kod</label><input id="makrolink-code" placeholder="örn. slotbuse-ftd" required autocomplete="off"></div>
@@ -2040,7 +2040,7 @@
               <div style="margin-top:0.55rem;display:flex;justify-content:flex-end;">
                 <button type="submit" class="btn btn-primary" id="btn-makrolink-create">Kısalt &amp; kopyala</button>
               </div>
-              <p class="muted-sm" style="margin-top:0.4rem;">Online takip: Ayarlar’daki <strong>canlı domain grubu</strong> + Affid. Link başına domain seçmeye gerek yok.</p>
+              <p class="muted-sm" style="margin-top:0.4rem;">Smartico slug/go.aff veya herhangi bir site URL’si kısaltılabilir. Online takip: Ayarlar’daki <strong>canlı domain grubu</strong> + Affid.</p>
             </form>
             <div id="makrolink-created-box" style="display:none;margin-top:0.75rem;padding:0.65rem 0.75rem;border:1px solid var(--border, #333);border-radius:8px;">
               <div class="muted" style="font-size:0.72rem;margin-bottom:0.25rem;">Son oluşturulan kısa link</div>
@@ -2050,10 +2050,10 @@
                 <span class="muted" style="font-size:0.72rem;">DNS yokken test: <code id="makrolink-created-test"></code></span>
               </div>
             </div>
-            <p class="hint" style="margin-top:0.5rem;">Akış: <code>makrovip.com/xxx</code> → <code>go.aff.makroaffi.com/…</code> → site (804/805 Smartico’da). Eski bl.ink linklerine dokunulmaz.</p>
+            <p class="hint" style="margin-top:0.5rem;">Akış: <code>makrovip.com/xxx</code> → Smartico go.aff <em>veya</em> doğrudan site URL (örn. makrobet804.com/promotions). Eski bl.ink’e dokunulmaz.</p>
           </div>
           <div class="table-wrap">
-            <div class="makrolink-table-toolbar">
+            <div class="makrolink-table-toolbar" style="flex-wrap:wrap;gap:0.45rem;align-items:end;">
               <label for="makrolink-filter-category">Kategori</label>
               <select id="makrolink-filter-category" title="Kategoriye göre filtrele">
                 <option value="">Tüm kategoriler</option>
@@ -2062,6 +2062,24 @@
               <span class="makrolink-filter-active" id="makrolink-filter-active">
                 Filtre: <span class="tag" id="makrolink-filter-active-label"></span>
               </span>
+              <span style="flex:1 1 100%;height:0;"></span>
+              <div style="display:flex;flex-wrap:wrap;gap:0.4rem;align-items:end;padding:0.5rem 0.55rem;border:1px solid var(--border,#243044);border-radius:8px;background:rgba(56,189,248,0.06);width:100%;">
+                <div>
+                  <label for="makrolink-bulk-prefix" style="font-size:0.68rem;">Önek</label>
+                  <input id="makrolink-bulk-prefix" value="makrobet" style="width:110px;" autocomplete="off" title="örn. makrobet">
+                </div>
+                <div>
+                  <label for="makrolink-bulk-from" style="font-size:0.68rem;">Eski no</label>
+                  <input id="makrolink-bulk-from" placeholder="804" style="width:72px;" inputmode="numeric" autocomplete="off">
+                </div>
+                <div>
+                  <label for="makrolink-bulk-to" style="font-size:0.68rem;">Yeni no</label>
+                  <input id="makrolink-bulk-to" placeholder="805" style="width:72px;" inputmode="numeric" autocomplete="off">
+                </div>
+                <button type="button" class="btn btn-sm btn-primary" id="btn-makrolink-bulk-rewrite">Hedef domainleri güncelle</button>
+                <span class="muted-sm" id="makrolink-bulk-status" style="align-self:center;"></span>
+                <span class="muted-sm" style="flex:1 1 100%;margin:0;">Sadece <code>makrobet804.com/…</code> hedefleri değişir. Smartico go.aff ve diğer domainler <strong>değişmez</strong>.</span>
+              </div>
             </div>
             <div class="scroll-hint">Tabloyu yatay kaydırın</div>
             <div class="table-scroll" id="makrolink-table-scroll">
@@ -4528,7 +4546,7 @@
         var category = (document.getElementById("makrolink-edit-category") || {}).value || "";
         if (!label) { alert("Etiket gerekli."); return; }
         if (!code) { alert("Özel kod gerekli."); return; }
-        if (!dest) { alert("Smartico go.aff linki gerekli."); return; }
+        if (!dest) { alert("Hedef link gerekli (Smartico veya site URL)."); return; }
         var btn = document.getElementById("makrolink-edit-save");
         if (btn) { btn.disabled = true; btn.textContent = "Kaydediliyor…"; }
         fetch(API + "/api/makrolink/links/" + id, {
@@ -5236,13 +5254,52 @@
           });
       });
 
+      bindOptional("btn-makrolink-bulk-rewrite", "click", function() {
+        var prefix = ((document.getElementById("makrolink-bulk-prefix") || {}).value || "makrobet").trim();
+        var fromNum = ((document.getElementById("makrolink-bulk-from") || {}).value || "").trim();
+        var toNum = ((document.getElementById("makrolink-bulk-to") || {}).value || "").trim();
+        var st = document.getElementById("makrolink-bulk-status");
+        if (!fromNum || !toNum) {
+          alert("Eski ve yeni numara gir (örn. 804 → 805).");
+          return;
+        }
+        if (!confirm(
+          "Sadece hedefi " + prefix + fromNum + ".… olan linkler → " + prefix + toNum + ".… olacak.\n" +
+          "Smartico ve diğer domainler değişmez. Devam?"
+        )) return;
+        if (st) st.textContent = "Güncelleniyor…";
+        fetch(API + "/api/makrolink/links/bulk-rewrite-host", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prefix: prefix, from_num: fromNum, to_num: toNum })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (!res.ok) {
+              if (st) st.textContent = "";
+              alert((res.data && res.data.error) || "Güncellenemedi");
+              return;
+            }
+            var n = (res.data && res.data.updated) || 0;
+            var skipS = (res.data && res.data.skipped_smartico) || 0;
+            var skipO = (res.data && res.data.skipped_other) || 0;
+            if (st) st.textContent = n + " güncellendi · Smartico " + skipS + " atlandı · diğer " + skipO;
+            toast(n ? (n + " hedef domain güncellendi") : "Eşleşen hedef yok");
+            lastMakrolinkSig = "";
+            loadMakroLinks();
+          })
+          .catch(function() {
+            if (st) st.textContent = "";
+            alert("İstek başarısız");
+          });
+      });
+
       bindOptional("makrolink-create-form", "submit", function(e) {
         e.preventDefault();
         var dest = document.getElementById("makrolink-dest").value.trim();
         var label = document.getElementById("makrolink-label").value.trim();
         var code = document.getElementById("makrolink-code").value.trim();
         var category = ((document.getElementById("makrolink-category") || {}).value || "").trim();
-        if (!dest) { alert("Smartico go.aff linki gerekli."); return; }
+        if (!dest) { alert("Hedef link gerekli (Smartico veya site URL)."); return; }
         if (!label) { alert("Etiket gerekli."); return; }
         if (!code) { alert("Özel kod gerekli."); return; }
         if (!category) { alert("Kategori seç."); return; }

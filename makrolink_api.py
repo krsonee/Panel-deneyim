@@ -408,6 +408,27 @@ def _valid_url(url):
     return p.scheme in ("http", "https") and bool(p.netloc)
 
 
+def _aff_host(conn):
+    base = (get_config(conn).get("aff_base") or DEFAULT_AFF_BASE).rstrip("/")
+    if not base.startswith("http"):
+        base = "https://" + base
+    return (urlparse(base).netloc or "").lower().removeprefix("www.")
+
+
+def is_smartico_destination(conn, url):
+    """Hedef Smartico go.aff mi?"""
+    u = (url or "").strip()
+    if not u:
+        return False
+    if re.fullmatch(r"[A-Za-z0-9_-]{4,64}", u) and "://" not in u and "/" not in u:
+        return True
+    if not u.startswith("http"):
+        u = "https://" + u.lstrip("/")
+    host = (urlparse(u).netloc or "").lower().removeprefix("www.")
+    aff = _aff_host(conn)
+    return bool(aff and (host == aff or host.endswith("." + aff) or "go.aff." in host))
+
+
 def normalize_smartico_aff_url(conn, raw):
     raw = (raw or "").strip()
     if not raw:
@@ -433,6 +454,164 @@ def normalize_smartico_aff_url(conn, raw):
     if p.fragment:
         out += "#" + p.fragment
     return out
+
+
+def normalize_destination_url(conn, raw):
+    """Smartico go.aff VEYA herhangi bir site URL'si (örn. makrobet804.com/promotions)."""
+    raw = (raw or "").strip()
+    if not raw:
+        raise ValueError("Hedef link gerekli.")
+
+    # Saf slug → Smartico
+    if re.fullmatch(r"[A-Za-z0-9_-]{4,64}", raw) and "://" not in raw and "/" not in raw:
+        return normalize_smartico_aff_url(conn, raw)
+
+    if not raw.startswith("http"):
+        raw = "https://" + raw.lstrip("/")
+
+    if not _valid_url(raw):
+        raise ValueError("Geçerli hedef URL gerekli (https://…).")
+
+    if is_smartico_destination(conn, raw):
+        return normalize_smartico_aff_url(conn, raw)
+
+    # Özel site: path/query koru, host normalize
+    p = urlparse(raw)
+    host = (p.netloc or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    path = p.path or "/"
+    out = f"{p.scheme}://{host}{path}"
+    if p.query:
+        out += "?" + p.query
+    if p.fragment:
+        out += "#" + p.fragment
+    return out
+
+
+def _host_matches_casino_token(host, token):
+    """Sadece birebir host etiketi: makrobet804.com / www.makrobet804.com.
+
+    Eşleşmez: go.aff…, vipmakro.com, makrobet804x.com, foo-makrobet804.com
+    """
+    host = (host or "").lower().strip()
+    token = (token or "").lower().strip()
+    if not host or not token:
+        return False
+    if host.startswith("www."):
+        host = host[4:]
+    labels = host.split(".")
+    return bool(labels) and labels[0] == token
+
+
+def _rewrite_host_token(host, from_token, to_token):
+    host = (host or "").lower().strip()
+    had_www = host.startswith("www.")
+    bare = host[4:] if had_www else host
+    labels = bare.split(".")
+    if not labels or labels[0] != from_token:
+        return None
+    labels[0] = to_token
+    new_bare = ".".join(labels)
+    return ("www." + new_bare) if had_www else new_bare
+
+
+def bulk_rewrite_destination_hosts(conn, *, prefix="makrobet", from_num=None, to_num=None,
+                                   from_host="", to_host=""):
+    """Sadece seçilen casino host'unu değiştir.
+
+    - Smartico go.aff → ASLA değişmez
+    - Diğer domainler (vipmakro, rastgele siteler) → ASLA değişmez
+    - Sadece host'un ilk etiketi birebir `makrobet804` olanlar (örn. makrobet804.com/promotions)
+    """
+    prefix = re.sub(r"[^a-z0-9-]", "", (prefix or "makrobet").strip().lower()) or "makrobet"
+    from_host = _normalize_domain(from_host) if from_host else ""
+    to_host = _normalize_domain(to_host) if to_host else ""
+
+    use_num = from_num is not None and to_num is not None and str(from_num) != "" and str(to_num) != ""
+    if use_num:
+        try:
+            from_n = int(from_num)
+            to_n = int(to_num)
+        except (TypeError, ValueError):
+            raise ValueError("Eski/yeni numara sayı olmalı (örn. 804 → 805).")
+        if from_n < 1 or to_n < 1 or from_n > 99999 or to_n > 99999:
+            raise ValueError("Numara 1–99999 arasında olmalı.")
+        if from_n == to_n:
+            raise ValueError("Eski ve yeni numara aynı olamaz.")
+        from_token = f"{prefix}{from_n}"
+        to_token = f"{prefix}{to_n}"
+    else:
+        if not from_host or not to_host:
+            raise ValueError("Önek+numara veya eski/yeni domain gir.")
+        if from_host == to_host:
+            raise ValueError("Eski ve yeni domain aynı olamaz.")
+        from_token = from_host.split(".")[0]
+        to_token = to_host.split(".")[0]
+        # Tam host modunda da sadece birebir host (path değil)
+        if "." in from_host and from_host.split(".")[0] != from_token:
+            raise ValueError("Geçersiz eski domain.")
+
+    rows = fetchall(
+        conn,
+        "SELECT id, destination_url FROM makrolink_links WHERE COALESCE(is_active, 1) = 1",
+    ) or []
+    now = iso(utcnow())
+    updated = []
+    skipped_smartico = 0
+    skipped_other = 0
+    for row in rows:
+        d = dict(row)
+        dest = (d.get("destination_url") or "").strip()
+        if not dest:
+            continue
+        if is_smartico_destination(conn, dest):
+            skipped_smartico += 1
+            continue
+        p = urlparse(dest if "://" in dest else "https://" + dest)
+        host = (p.netloc or "").lower()
+        if not host:
+            skipped_other += 1
+            continue
+
+        if use_num or not from_host:
+            if not _host_matches_casino_token(host, from_token):
+                skipped_other += 1
+                continue
+            new_host = _rewrite_host_token(host, from_token, to_token)
+        else:
+            # Tam host: sadece birebir eşleşme (www farkı tolere)
+            bare = host[4:] if host.startswith("www.") else host
+            if bare != from_host:
+                skipped_other += 1
+                continue
+            new_host = to_host
+
+        if not new_host or new_host == host:
+            skipped_other += 1
+            continue
+
+        path = p.path or "/"
+        new_url = f"{p.scheme or 'https'}://{new_host}{path}"
+        if p.query:
+            new_url += "?" + p.query
+        if p.fragment:
+            new_url += "#" + p.fragment
+        execute(
+            conn,
+            "UPDATE makrolink_links SET destination_url = ?, updated_at = ? WHERE id = ?",
+            (new_url, now, int(d["id"])),
+        )
+        updated.append({"id": int(d["id"]), "from": dest, "to": new_url})
+    conn.commit()
+    return {
+        "updated": len(updated),
+        "skipped_smartico": skipped_smartico,
+        "skipped_other": skipped_other,
+        "from_token": from_token if use_num else from_host,
+        "to_token": to_token if use_num else to_host,
+        "items": updated[:50],
+    }
 
 
 def short_url(conn, code, host=None):
@@ -505,9 +684,9 @@ def create_link(
     target_domain=None,
     category="",
 ):
-    destination_url = normalize_smartico_aff_url(conn, destination_url)
+    destination_url = normalize_destination_url(conn, destination_url)
     if not _valid_url(destination_url):
-        raise ValueError("Geçerli Smartico go.aff URL gerekli.")
+        raise ValueError("Geçerli hedef URL gerekli.")
 
     label = (label or "").strip()[:200]
     if not label:
@@ -530,9 +709,13 @@ def create_link(
     category = normalize_category(category, allow_empty=False)
     now = iso(utcnow())
 
-    slug = urlparse(destination_url).path.strip("/").split("/")[0]
-    if not smartico_link_id and slug:
-        smartico_link_id = slug[:64]
+    # smartico_link_id sadece gerçek go.aff hedeflerinde
+    if is_smartico_destination(conn, destination_url):
+        slug = urlparse(destination_url).path.strip("/").split("/")[0]
+        if not smartico_link_id and slug:
+            smartico_link_id = slug[:64]
+    else:
+        smartico_link_id = ""
 
     revive_id = None
     existing = fetchone(conn, "SELECT id, is_active FROM makrolink_links WHERE code = ?", (code,))
@@ -633,7 +816,7 @@ def update_link(
         raise ValueError("Pasif link düzenlenemez.")
 
     if destination_url is not None:
-        dest = normalize_smartico_aff_url(conn, destination_url)
+        dest = normalize_destination_url(conn, destination_url)
     else:
         dest = row["destination_url"]
     if not _valid_url(dest):
