@@ -1595,6 +1595,10 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
     # ── Güncel fatura borç ──
 
     INVOICE_DEBT_TYPES = frozenset({"opening", "invoice", "payment"})
+    _USDT_KUR_RE = re.compile(
+        r"(?:usdt\s*kur|kur)\s*[:=]?\s*([\d]+(?:[.,]\d+)?)",
+        re.IGNORECASE,
+    )
 
     def _parse_signed_money(raw):
         try:
@@ -1602,28 +1606,197 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
         except (TypeError, ValueError):
             return None
 
-    def _invoice_debt_balances(conn):
+    def _parse_tr_rate(raw):
+        if raw is None or raw == "":
+            return None
+        if isinstance(raw, (int, float)):
+            val = float(raw)
+            return val if val > 0 else None
+        text = str(raw).strip().replace(" ", "").replace(",", ".")
+        try:
+            val = float(text)
+        except (TypeError, ValueError):
+            return None
+        return val if val > 0 else None
+
+    def _parse_usdt_kur_from_note(note):
+        m = _USDT_KUR_RE.search(note or "")
+        if not m:
+            return None
+        return _parse_tr_rate(m.group(1))
+
+    def _day_fx_for_debt(entry_date):
+        rates = fetch_rates_for_date(entry_date) or {}
+        usd_try = float(rates.get("usd_try") or 0)
+        eur_try = float(rates.get("eur_try") or 0)
+        if usd_try <= 0 or eur_try <= 0:
+            live = fetch_exchange_rates(fresh=False) or {}
+            usd_try = float(live.get("usd_try") or 0)
+            eur_try = float(live.get("eur_try") or 0)
+        if usd_try <= 0 or eur_try <= 0:
+            return None
+        return {
+            "usd_try": round(usd_try, 6),
+            "eur_try": round(eur_try, 6),
+            # 1 EUR = X USDT
+            "eur_usdt": round(eur_try / usd_try, 6),
+            "source": rates.get("source") or "live",
+        }
+
+    def _build_invoice_debt_amounts(entry_type, entry_date, data, existing=None):
+        """Ödeme: USDT + manuel USDT/TRY → TRY ve günün EUR/USDT ile EUR.
+
+        Açılış/fatura: EUR (asıl borç); isteğe bağlı USDT/TRY.
+        """
+        existing = existing or {}
+        usdt_in = data.get("amount_usdt") if "amount_usdt" in data else existing.get("amount_usdt")
+        eur_in = data.get("amount_eur") if "amount_eur" in data else existing.get("amount_eur")
+        try_in = data.get("amount_try") if "amount_try" in data else existing.get("amount_try")
+        usdt = abs(_parse_signed_money(usdt_in) or 0)
+        eur = abs(_parse_signed_money(eur_in) or 0)
+        try_amt = abs(_parse_signed_money(try_in) or 0)
+
+        rate_usdt_try = _parse_tr_rate(
+            data.get("rate_usdt_try") if "rate_usdt_try" in data else existing.get("rate_usdt_try")
+        )
+        if rate_usdt_try is None:
+            rate_usdt_try = _parse_usdt_kur_from_note(
+                data.get("note") if "note" in data else existing.get("note")
+            )
+
+        rate_usd_try = 0.0
+        rate_eur_try = 0.0
+        rate_eur_usdt = 0.0
+
+        if entry_type == "payment":
+            if usdt <= 0:
+                return None, "Ödeme için USDT tutarı girin."
+            if not rate_usdt_try:
+                return None, "Ödeme için USDT/TRY kurunu girin."
+            fx = _day_fx_for_debt(entry_date)
+            if not fx:
+                return None, "Seçilen tarih için EUR/USDT kuru alınamadı."
+            rate_usd_try = fx["usd_try"]
+            rate_eur_try = fx["eur_try"]
+            rate_eur_usdt = fx["eur_usdt"]
+            try_amt = round(usdt * rate_usdt_try, 2)
+            # USDT → EUR: usdt / (EUR başına USDT)
+            eur = round(usdt / rate_eur_usdt, 2)
+            usdt, eur, try_amt = -usdt, -eur, -try_amt
+        else:
+            if eur <= 0 and usdt <= 0 and try_amt <= 0:
+                return None, "En az bir tutar girin."
+            if usdt > 0 and rate_usdt_try and try_amt <= 0:
+                try_amt = round(usdt * rate_usdt_try, 2)
+            fx = _day_fx_for_debt(entry_date)
+            if fx:
+                rate_usd_try = fx["usd_try"]
+                rate_eur_try = fx["eur_try"]
+                rate_eur_usdt = fx["eur_usdt"]
+
+        return {
+            "amount_eur": eur,
+            "amount_usdt": usdt,
+            "amount_try": try_amt,
+            "rate_usdt_try": float(rate_usdt_try or 0),
+            "rate_eur_usdt": float(rate_eur_usdt or 0),
+            "rate_usd_try": float(rate_usd_try or 0),
+            "rate_eur_try": float(rate_eur_try or 0),
+        }, None
+
+    def _invoice_debt_summary(conn):
         row = fetchone(
             conn,
             """
             SELECT
               COALESCE(SUM(amount_eur), 0) AS bal_eur,
-              COALESCE(SUM(amount_usdt), 0) AS bal_usdt,
-              COALESCE(SUM(amount_try), 0) AS bal_try
+              COALESCE(SUM(CASE WHEN entry_type = 'payment' THEN amount_eur ELSE 0 END), 0) AS paid_eur,
+              COALESCE(SUM(CASE WHEN entry_type = 'payment' THEN amount_usdt ELSE 0 END), 0) AS paid_usdt,
+              COALESCE(SUM(CASE WHEN entry_type = 'payment' THEN amount_try ELSE 0 END), 0) AS paid_try
             FROM acc_invoice_debt_entries
             """,
         )
         d = dict(row) if row else {}
+        bal_eur = round(float(d.get("bal_eur") or 0), 2)
+        paid_eur = round(abs(float(d.get("paid_eur") or 0)), 2)
+        paid_usdt = round(abs(float(d.get("paid_usdt") or 0)), 2)
+        paid_try = round(abs(float(d.get("paid_try") or 0)), 2)
+
+        fx = fetch_exchange_rates(fresh=False) or {}
+        usd_try = float(fx.get("usd_try") or 0)
+        eur_try = float(fx.get("eur_try") or 0)
+        if usd_try > 0 and eur_try > 0:
+            bal_usdt = round(bal_eur * (eur_try / usd_try), 2)
+            bal_try = round(bal_eur * eur_try, 2)
+        else:
+            bal_usdt = 0.0
+            bal_try = 0.0
+
         return {
-            "eur": round(float(d.get("bal_eur") or 0), 2),
-            "usdt": round(float(d.get("bal_usdt") or 0), 2),
-            "try": round(float(d.get("bal_try") or 0), 2),
+            "balances": {"eur": bal_eur, "usdt": bal_usdt, "try": bal_try},
+            "paid": {"eur": paid_eur, "usdt": paid_usdt, "try": paid_try},
+            "fx": {
+                "usd_try": usd_try or None,
+                "eur_try": eur_try or None,
+                "eur_usdt": round(eur_try / usd_try, 6) if usd_try > 0 and eur_try > 0 else None,
+            },
         }
+
+    def _repair_invoice_debt_payments(conn):
+        """Eski ödemeleri (yalnızca USDT) not/kur ile EUR+TRY'ye tamamla."""
+        rows = fetchall(
+            conn,
+            """
+            SELECT * FROM acc_invoice_debt_entries
+            WHERE entry_type = 'payment'
+              AND ABS(COALESCE(amount_usdt, 0)) > 0
+              AND (
+                ABS(COALESCE(amount_eur, 0)) < 0.0001
+                OR ABS(COALESCE(amount_try, 0)) < 0.0001
+                OR COALESCE(rate_eur_usdt, 0) <= 0
+              )
+            """,
+        ) or []
+        fixed = 0
+        for row in rows:
+            data = dict(row)
+            built, err = _build_invoice_debt_amounts(
+                "payment",
+                data.get("entry_date"),
+                {
+                    "amount_usdt": abs(float(data.get("amount_usdt") or 0)),
+                    "rate_usdt_try": data.get("rate_usdt_try") or None,
+                    "note": data.get("note") or "",
+                },
+                existing=data,
+            )
+            if err or not built:
+                continue
+            execute(
+                conn,
+                """
+                UPDATE acc_invoice_debt_entries
+                SET amount_eur = ?, amount_usdt = ?, amount_try = ?,
+                    rate_usdt_try = ?, rate_eur_usdt = ?, rate_usd_try = ?, rate_eur_try = ?
+                WHERE id = ?
+                """,
+                (
+                    built["amount_eur"], built["amount_usdt"], built["amount_try"],
+                    built["rate_usdt_try"], built["rate_eur_usdt"],
+                    built["rate_usd_try"], built["rate_eur_try"],
+                    data["id"],
+                ),
+            )
+            fixed += 1
+        if fixed:
+            conn.commit()
+        return fixed
 
     @bp.route("/invoice-debt", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def list_invoice_debt():
         with closing(get_db()) as conn:
+            _repair_invoice_debt_payments(conn)
             rows = fetchall(
                 conn,
                 """
@@ -1631,8 +1804,13 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
                 ORDER BY entry_date ASC, id ASC
                 """,
             ) or []
-            balances = _invoice_debt_balances(conn)
-        return jsonify({"entries": [dict(r) for r in rows], "balances": balances})
+            summary = _invoice_debt_summary(conn)
+        return jsonify({
+            "entries": [dict(r) for r in rows],
+            "balances": summary["balances"],
+            "paid": summary["paid"],
+            "fx": summary["fx"],
+        })
 
     @bp.route("/invoice-debt", methods=["POST"])
     @acc_perm(*MODULE_ACCESS)
@@ -1644,35 +1822,39 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             return jsonify({"error": "Tür: opening, invoice veya payment olmalı."}), 400
         if not entry_date:
             return jsonify({"error": "Geçerli tarih girin."}), 400
-        eur = _parse_signed_money(data.get("amount_eur"))
-        usdt = _parse_signed_money(data.get("amount_usdt"))
-        try_amt = _parse_signed_money(data.get("amount_try"))
-        if eur is None or usdt is None or try_amt is None:
-            return jsonify({"error": "Tutarlar sayı olmalı."}), 400
-        # Formdan mutlak değer gelir; tür işaretini belirler
-        if entry_type == "payment":
-            eur, usdt, try_amt = -abs(eur), -abs(usdt), -abs(try_amt)
-        else:
-            eur, usdt, try_amt = abs(eur), abs(usdt), abs(try_amt)
-        if eur == 0 and usdt == 0 and try_amt == 0:
-            return jsonify({"error": "En az bir tutar girin."}), 400
         note = (data.get("note") or "").strip()[:300]
         link_url = (data.get("link_url") or "").strip()[:500]
+        built, err = _build_invoice_debt_amounts(entry_type, entry_date, data)
+        if err:
+            return jsonify({"error": err}), 400
         now = iso(utcnow())
         with closing(get_db()) as conn:
             eid = insert_returning_id(
                 conn,
                 """
                 INSERT INTO acc_invoice_debt_entries
-                  (entry_date, entry_type, amount_eur, amount_usdt, amount_try, note, link_url, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                  (entry_date, entry_type, amount_eur, amount_usdt, amount_try,
+                   rate_usdt_try, rate_eur_usdt, rate_usd_try, rate_eur_try,
+                   note, link_url, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (entry_date, entry_type, eur, usdt, try_amt, note, link_url, now),
+                (
+                    entry_date, entry_type,
+                    built["amount_eur"], built["amount_usdt"], built["amount_try"],
+                    built["rate_usdt_try"], built["rate_eur_usdt"],
+                    built["rate_usd_try"], built["rate_eur_try"],
+                    note, link_url, now,
+                ),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_invoice_debt_entries WHERE id = ?", (eid,))
-            balances = _invoice_debt_balances(conn)
-        return jsonify({"entry": dict(row), "balances": balances}), 201
+            summary = _invoice_debt_summary(conn)
+        return jsonify({
+            "entry": dict(row),
+            "balances": summary["balances"],
+            "paid": summary["paid"],
+            "fx": summary["fx"],
+        }), 201
 
     @bp.route("/invoice-debt/<int:entry_id>", methods=["PUT"])
     @acc_perm(*MODULE_ACCESS)
@@ -1687,33 +1869,46 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             entry_type = (data.get("entry_type") or existing.get("entry_type") or "invoice").strip().lower()
             if entry_type not in INVOICE_DEBT_TYPES:
                 return jsonify({"error": "Tür: opening, invoice veya payment olmalı."}), 400
-            eur = _parse_signed_money(data.get("amount_eur") if "amount_eur" in data else existing.get("amount_eur"))
-            usdt = _parse_signed_money(data.get("amount_usdt") if "amount_usdt" in data else existing.get("amount_usdt"))
-            try_amt = _parse_signed_money(data.get("amount_try") if "amount_try" in data else existing.get("amount_try"))
-            if eur is None or usdt is None or try_amt is None:
-                return jsonify({"error": "Tutarlar sayı olmalı."}), 400
-            # PUT'ta tutarlar mutlak gelirse türe göre işaretle; signed gelirse koru
-            if data.get("amounts_absolute"):
-                if entry_type == "payment":
-                    eur, usdt, try_amt = -abs(eur), -abs(usdt), -abs(try_amt)
-                else:
-                    eur, usdt, try_amt = abs(eur), abs(usdt), abs(try_amt)
             note = (data.get("note") if "note" in data else existing.get("note") or "").strip()[:300]
             link_url = (data.get("link_url") if "link_url" in data else existing.get("link_url") or "").strip()[:500]
+            # Form her zaman mutlak tutar + kur gönderir
+            payload = dict(data)
+            payload["note"] = note
+            if data.get("amounts_absolute", True):
+                for key in ("amount_eur", "amount_usdt", "amount_try"):
+                    if key in payload and payload[key] is not None:
+                        parsed = _parse_signed_money(payload[key])
+                        if parsed is not None:
+                            payload[key] = abs(parsed)
+            built, err = _build_invoice_debt_amounts(entry_type, entry_date, payload, existing=existing)
+            if err:
+                return jsonify({"error": err}), 400
             execute(
                 conn,
                 """
                 UPDATE acc_invoice_debt_entries
                 SET entry_date = ?, entry_type = ?, amount_eur = ?, amount_usdt = ?, amount_try = ?,
+                    rate_usdt_try = ?, rate_eur_usdt = ?, rate_usd_try = ?, rate_eur_try = ?,
                     note = ?, link_url = ?
                 WHERE id = ?
                 """,
-                (entry_date, entry_type, eur, usdt, try_amt, note, link_url, entry_id),
+                (
+                    entry_date, entry_type,
+                    built["amount_eur"], built["amount_usdt"], built["amount_try"],
+                    built["rate_usdt_try"], built["rate_eur_usdt"],
+                    built["rate_usd_try"], built["rate_eur_try"],
+                    note, link_url, entry_id,
+                ),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM acc_invoice_debt_entries WHERE id = ?", (entry_id,))
-            balances = _invoice_debt_balances(conn)
-        return jsonify({"entry": dict(row), "balances": balances})
+            summary = _invoice_debt_summary(conn)
+        return jsonify({
+            "entry": dict(row),
+            "balances": summary["balances"],
+            "paid": summary["paid"],
+            "fx": summary["fx"],
+        })
 
     @bp.route("/invoice-debt/<int:entry_id>", methods=["DELETE"])
     @acc_perm(*MODULE_ACCESS)
@@ -1721,8 +1916,8 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
         with closing(get_db()) as conn:
             execute(conn, "DELETE FROM acc_invoice_debt_entries WHERE id = ?", (entry_id,))
             conn.commit()
-            balances = _invoice_debt_balances(conn)
-        return jsonify({"ok": True, "balances": balances})
+            summary = _invoice_debt_summary(conn)
+        return jsonify({"ok": True, "balances": summary["balances"], "paid": summary["paid"], "fx": summary["fx"]})
 
     # ── Kasa takip ──
 

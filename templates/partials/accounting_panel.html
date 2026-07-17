@@ -1081,7 +1081,7 @@
     <section class="card">
       <div class="card-head">
         <span>Güncel Fatura Borç</span>
-        <span class="muted" style="font-size:0.72rem;">Toplam borç + yeni fatura − ödemeler = anlık bakiye</span>
+        <span class="muted" style="font-size:0.72rem;">Fatura EUR · ödeme USDT · kur ile TRY/EUR düşümü</span>
       </div>
     </section>
 
@@ -1098,6 +1098,18 @@
         <div class="val" id="acc-debt-bal-try">—</div>
         <div class="lbl">Güncel Borç (TRY)</div>
       </div>
+      <div class="kpi">
+        <div class="val" id="acc-debt-paid-eur">—</div>
+        <div class="lbl">Ödenen (EURO)</div>
+      </div>
+      <div class="kpi">
+        <div class="val" id="acc-debt-paid-usdt">—</div>
+        <div class="lbl">Ödenen (USDT)</div>
+      </div>
+      <div class="kpi">
+        <div class="val" id="acc-debt-paid-try">—</div>
+        <div class="lbl">Ödenen (TRY)</div>
+      </div>
     </section>
 
     <section class="card">
@@ -1112,15 +1124,17 @@
           <select id="acc-debt-type" required>
             <option value="opening">Toplam / Açılış Borcu</option>
             <option value="invoice">Yeni Fatura</option>
-            <option value="payment">Ödeme</option>
+            <option value="payment" selected>Ödeme (USDT)</option>
           </select>
         </div>
         <div><label>Tarih</label><input type="date" id="acc-debt-date" required></div>
-        <div><label>EURO</label><input type="number" id="acc-debt-eur" step="0.01" placeholder="0,00"></div>
-        <div><label>USDT</label><input type="number" id="acc-debt-usdt" step="0.01" placeholder="0,00"></div>
-        <div><label>TRY</label><input type="number" id="acc-debt-try" step="0.01" placeholder="0,00"></div>
-        <div><label>Not / Kur</label><input type="text" id="acc-debt-note" placeholder="Örn. Usdt Kur: 46,82" maxlength="300"></div>
+        <div id="acc-debt-eur-wrap"><label>EURO</label><input type="number" id="acc-debt-eur" step="0.01" min="0" placeholder="0,00"></div>
+        <div><label>USDT</label><input type="number" id="acc-debt-usdt" step="0.01" min="0" placeholder="0,00"></div>
+        <div id="acc-debt-kur-wrap"><label>USDT/TRY Kur</label><input type="number" id="acc-debt-usdt-kur" step="0.0001" min="0.0001" placeholder="Örn. 46,82"></div>
+        <div id="acc-debt-try-wrap"><label>TRY</label><input type="number" id="acc-debt-try" step="0.01" min="0" placeholder="0,00"></div>
+        <div class="form-span-2"><label>Not</label><input type="text" id="acc-debt-note" placeholder="Opsiyonel not" maxlength="300"></div>
         <div class="form-span-2"><label>İşlem Linki</label><input type="url" id="acc-debt-link" placeholder="https://tronscan.org/…" maxlength="500"></div>
+        <div style="grid-column:1/-1"><p class="acc-fx-preview" id="acc-debt-fx-preview"></p></div>
         <div style="display:flex;align-items:end;">
           <button type="submit" class="btn btn-primary" id="acc-debt-submit">Ekle</button>
         </div>
@@ -1133,7 +1147,7 @@
         <span class="muted" id="acc-debt-count" style="font-size:0.72rem;"></span>
       </div>
       <div class="table-wrap">
-        <div class="scroll-hint">Pembe satır = toplam/açılış borcu · Negatif satırlar = ödemeler</div>
+        <div class="scroll-hint">Pembe = açılış/fatura · Ödeme satırında EUR günün EUR/USDT kuruyla düşer · TRY = USDT × manuel kur</div>
         <div class="table-scroll" id="acc-debt-table-scroll">
           <table class="acc-debt-table">
             <thead>
@@ -1142,7 +1156,7 @@
                 <th>USDT</th>
                 <th>TRY</th>
                 <th>Tarih</th>
-                <th>Not / Kur</th>
+                <th>Kurlar</th>
                 <th>Link</th>
                 <th></th>
               </tr>

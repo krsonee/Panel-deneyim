@@ -23,6 +23,8 @@
   var accInvoiceCalcData = null;
   var accInvoiceDebtEntries = [];
   var accInvoiceDebtBalances = { eur: 0, usdt: 0, try: 0 };
+  var accInvoiceDebtPaid = { eur: 0, usdt: 0, try: 0 };
+  var accDebtDayFx = { usd_try: null, eur_try: null, eur_usdt: null };
   var accExpensePaidFromOptions = [];
   var accTxFilterPm = localStorage.getItem("acc_tx_filter_pm") || "";
 
@@ -3571,6 +3573,87 @@
     return sign + sym + Math.abs(n).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
+  function accDebtFmtRate(n, digits) {
+    n = parseFloat(n);
+    if (!n || n <= 0) return "";
+    return n.toLocaleString("tr-TR", {
+      minimumFractionDigits: digits || 2,
+      maximumFractionDigits: digits || 4
+    });
+  }
+
+  function accDebtIsPaymentMode() {
+    var typeEl = document.getElementById("acc-debt-type");
+    return typeEl && typeEl.value === "payment";
+  }
+
+  function accSyncDebtFormMode() {
+    var payment = accDebtIsPaymentMode();
+    var eurWrap = document.getElementById("acc-debt-eur-wrap");
+    var tryWrap = document.getElementById("acc-debt-try-wrap");
+    var kurWrap = document.getElementById("acc-debt-kur-wrap");
+    var eurEl = document.getElementById("acc-debt-eur");
+    var tryEl = document.getElementById("acc-debt-try");
+    if (eurWrap) eurWrap.style.display = payment ? "none" : "";
+    if (tryWrap) tryWrap.style.display = payment ? "none" : "";
+    if (kurWrap) kurWrap.style.display = "";
+    if (eurEl) eurEl.required = !payment;
+    if (tryEl) tryEl.readOnly = payment;
+    if (eurEl) eurEl.readOnly = payment;
+    accUpdateDebtFxPreview();
+  }
+
+  function accLoadDebtDayFx(dateStr) {
+    if (!dateStr) return Promise.resolve();
+    return accApi("/api/accounting/exchange-rates?date=" + encodeURIComponent(dateStr)).then(function (res) {
+      if (!res || !res.ok || !res.data) return;
+      var usd = parseFloat(res.data.usd_try) || 0;
+      var eur = parseFloat(res.data.eur_try) || 0;
+      accDebtDayFx = {
+        usd_try: usd || null,
+        eur_try: eur || null,
+        eur_usdt: usd > 0 && eur > 0 ? eur / usd : null
+      };
+      accUpdateDebtFxPreview();
+    });
+  }
+
+  function accUpdateDebtFxPreview() {
+    var preview = document.getElementById("acc-debt-fx-preview");
+    if (!preview) return;
+    var usdt = Math.abs(parseFloat((document.getElementById("acc-debt-usdt") || {}).value) || 0);
+    var kur = parseFloat((document.getElementById("acc-debt-usdt-kur") || {}).value) || 0;
+    var payment = accDebtIsPaymentMode();
+    if (!payment) {
+      preview.textContent = "Açılış / yeni fatura için EURO borcunu girin. Ödeme türünde USDT + kur ile otomatik çevrilir.";
+      return;
+    }
+    if (!usdt) {
+      preview.textContent = "USDT tutarı ve gönderim anındaki USDT/TRY kurunu girin.";
+      return;
+    }
+    if (!kur) {
+      preview.textContent = "USDT/TRY kurunu girin — TRY otomatik hesaplanır.";
+      return;
+    }
+    var tryAmt = usdt * kur;
+    var eurUsdt = accDebtDayFx.eur_usdt;
+    if (!eurUsdt && accRates.usd_try && accRates.eur_try) {
+      eurUsdt = accRates.eur_try / accRates.usd_try;
+    }
+    if (!eurUsdt) {
+      preview.textContent = "TRY ≈ " + accDebtMoney(tryAmt, "TRY") + " · EUR/USDT kuru yükleniyor…";
+      return;
+    }
+    var eurAmt = usdt / eurUsdt;
+    preview.textContent =
+      "Ödeme → −" + accDebtMoney(eurAmt, "EUR") +
+      " · −" + accDebtMoney(usdt, "USDT") +
+      " · −" + accDebtMoney(tryAmt, "TRY") +
+      " · EUR/USDT " + accDebtFmtRate(eurUsdt, 4) +
+      " · USDT/TRY " + accDebtFmtRate(kur, 4);
+  }
+
   function accSetDebtFormMode(editing) {
     var title = document.getElementById("acc-debt-form-title");
     var submit = document.getElementById("acc-debt-submit");
@@ -3583,15 +3666,19 @@
   function accResetDebtForm() {
     var editId = document.getElementById("acc-debt-edit-id");
     if (editId) editId.value = "";
-    ["acc-debt-eur", "acc-debt-usdt", "acc-debt-try", "acc-debt-note", "acc-debt-link"].forEach(function (id) {
+    ["acc-debt-eur", "acc-debt-usdt", "acc-debt-try", "acc-debt-usdt-kur", "acc-debt-note", "acc-debt-link"].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.value = "";
     });
     var typeEl = document.getElementById("acc-debt-type");
     if (typeEl) typeEl.value = "payment";
     var dateEl = document.getElementById("acc-debt-date");
-    if (dateEl && !dateEl.value) dateEl.value = accToday();
+    if (dateEl) {
+      if (!dateEl.value) dateEl.value = accToday();
+      accLoadDebtDayFx(dateEl.value);
+    }
     accSetDebtFormMode(false);
+    accSyncDebtFormMode();
     accRenderInvoiceDebt();
   }
 
@@ -3604,6 +3691,7 @@
     var eurEl = document.getElementById("acc-debt-eur");
     var usdtEl = document.getElementById("acc-debt-usdt");
     var tryEl = document.getElementById("acc-debt-try");
+    var kurEl = document.getElementById("acc-debt-usdt-kur");
     var noteEl = document.getElementById("acc-debt-note");
     var linkEl = document.getElementById("acc-debt-link");
     if (typeEl) typeEl.value = row.entry_type || "invoice";
@@ -3611,18 +3699,34 @@
     if (eurEl) eurEl.value = Math.abs(parseFloat(row.amount_eur) || 0) || "";
     if (usdtEl) usdtEl.value = Math.abs(parseFloat(row.amount_usdt) || 0) || "";
     if (tryEl) tryEl.value = Math.abs(parseFloat(row.amount_try) || 0) || "";
+    if (kurEl) kurEl.value = row.rate_usdt_try > 0 ? row.rate_usdt_try : "";
     if (noteEl) noteEl.value = row.note || "";
     if (linkEl) linkEl.value = row.link_url || "";
+    if (dateEl && dateEl.value) accLoadDebtDayFx(dateEl.value);
     accSetDebtFormMode(true);
+    accSyncDebtFormMode();
     accRenderInvoiceDebt();
   }
 
-  function accUpdateDebtBalances(balances) {
+  function accUpdateDebtBalances(balances, paid) {
     accInvoiceDebtBalances = balances || { eur: 0, usdt: 0, try: 0 };
+    accInvoiceDebtPaid = paid || { eur: 0, usdt: 0, try: 0 };
     var b = accInvoiceDebtBalances;
+    var p = accInvoiceDebtPaid;
     accSetText("acc-debt-bal-eur", accDebtMoney(b.eur, "EUR"));
     accSetText("acc-debt-bal-usdt", accDebtMoney(b.usdt, "USDT"));
     accSetText("acc-debt-bal-try", accDebtMoney(b.try, "TRY"));
+    accSetText("acc-debt-paid-eur", accDebtMoney(p.eur, "EUR"));
+    accSetText("acc-debt-paid-usdt", accDebtMoney(p.usdt, "USDT"));
+    accSetText("acc-debt-paid-try", accDebtMoney(p.try, "TRY"));
+  }
+
+  function accDebtRatesHtml(r) {
+    var parts = [];
+    if (r.rate_usdt_try > 0) parts.push("USDT/TRY " + accDebtFmtRate(r.rate_usdt_try, 4));
+    if (r.rate_eur_usdt > 0) parts.push("EUR/USDT " + accDebtFmtRate(r.rate_eur_usdt, 4));
+    if (r.note) parts.push(accEsc(r.note));
+    return parts.length ? '<span class="acc-debt-note">' + parts.join(" · ") + "</span>" : '<span class="muted">—</span>';
   }
 
   function accRenderInvoiceDebt() {
@@ -3649,7 +3753,7 @@
         '<td class="mono">' + accDebtMoney(r.amount_usdt, "USDT") + "</td>" +
         '<td class="mono">' + accDebtMoney(r.amount_try, "TRY") + "</td>" +
         '<td class="mono">' + accFmtExpenseDate(r.entry_date) + "</td>" +
-        '<td class="acc-debt-note">' + (r.note ? accEsc(r.note) : '<span class="muted">—</span>') + "</td>" +
+        "<td>" + accDebtRatesHtml(r) + "</td>" +
         '<td class="acc-debt-link">' + linkHtml + "</td>" +
         '<td class="acc-exp-row-actions">' +
           '<button type="button" class="btn btn-sm" data-edit-debt="' + r.id + '" title="Düzenle">✎</button> ' +
@@ -3681,7 +3785,7 @@
           if (r && r.ok) {
             var editId = document.getElementById("acc-debt-edit-id");
             if (editId && editId.value === delId) accResetDebtForm();
-            if (r.data && r.data.balances) accUpdateDebtBalances(r.data.balances);
+            if (r.data) accUpdateDebtBalances(r.data.balances, r.data.paid);
             accLoadInvoiceDebt();
             accToast("Silindi");
           } else if (r) alert((r.data && r.data.error) || "Hata");
@@ -3694,7 +3798,7 @@
     return accApi("/api/accounting/invoice-debt").then(function (res) {
       if (!res || !res.ok) return;
       accInvoiceDebtEntries = res.data.entries || [];
-      accUpdateDebtBalances(res.data.balances || {});
+      accUpdateDebtBalances(res.data.balances || {}, res.data.paid || {});
       accRenderInvoiceDebt();
     });
   }
@@ -3737,6 +3841,8 @@
     else if (tab === "invoice_debt") {
       var debtDate = document.getElementById("acc-debt-date");
       if (debtDate && !debtDate.value) debtDate.value = accToday();
+      if (debtDate && debtDate.value) accLoadDebtDayFx(debtDate.value);
+      accSyncDebtFormMode();
       accLoadInvoiceDebt();
     }
     else if (tab === "invoice_calc") accLoadInvoiceCalc();
@@ -3945,6 +4051,7 @@
         amount_eur: document.getElementById("acc-debt-eur").value || 0,
         amount_usdt: document.getElementById("acc-debt-usdt").value || 0,
         amount_try: document.getElementById("acc-debt-try").value || 0,
+        rate_usdt_try: document.getElementById("acc-debt-usdt-kur").value || 0,
         note: (document.getElementById("acc-debt-note").value || "").trim(),
         link_url: (document.getElementById("acc-debt-link").value || "").trim(),
         amounts_absolute: true
@@ -3957,7 +4064,7 @@
       }).then(function (r) {
         if (r && r.ok) {
           accResetDebtForm();
-          if (r.data && r.data.balances) accUpdateDebtBalances(r.data.balances);
+          if (r.data) accUpdateDebtBalances(r.data.balances, r.data.paid);
           accLoadInvoiceDebt();
           accToast(editId ? "Kayıt güncellendi" : "Kayıt eklendi");
         } else if (r) alert((r.data && r.data.error) || "Hata");
@@ -3966,6 +4073,19 @@
 
     var debtCancel = document.getElementById("acc-debt-edit-cancel");
     if (debtCancel) debtCancel.onclick = accResetDebtForm;
+
+    var debtTypeEl = document.getElementById("acc-debt-type");
+    if (debtTypeEl) debtTypeEl.addEventListener("change", accSyncDebtFormMode);
+    ["acc-debt-usdt", "acc-debt-usdt-kur"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener("input", accUpdateDebtFxPreview);
+    });
+    var debtDateEl = document.getElementById("acc-debt-date");
+    if (debtDateEl) {
+      debtDateEl.addEventListener("change", function () {
+        accLoadDebtDayFx(debtDateEl.value);
+      });
+    }
 
     var expFilterQ = document.getElementById("acc-exp-filter-q");
     if (expFilterQ) {
