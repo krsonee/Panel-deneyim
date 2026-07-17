@@ -21,6 +21,10 @@
   var ACC_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
 
   var accInvoiceCalcData = null;
+  var accInvoiceDebtEntries = [];
+  var accInvoiceDebtBalances = { eur: 0, usdt: 0, try: 0 };
+  var accExpensePaidFromOptions = [];
+  var accTxFilterPm = localStorage.getItem("acc_tx_filter_pm") || "";
 
   var accHidePassivePm = localStorage.getItem("acc_hide_passive_pm") === "1";
   var accCanViewOfficeSalaries = false;
@@ -372,6 +376,39 @@
   function accPeriodQuery() {
     var p = accResolvePeriod();
     return p ? "?period=" + encodeURIComponent(p) : "";
+  }
+
+  function accTxQuery() {
+    var q = accPeriodQuery();
+    var pm = accTxFilterPm || "";
+    if (!pm) {
+      var sel = document.getElementById("acc-tx-filter-pm");
+      if (sel) pm = sel.value || "";
+    }
+    if (pm) q += (q ? "&" : "?") + "payment_method_id=" + encodeURIComponent(pm);
+    return q;
+  }
+
+  function accRefreshTxFilterSelect() {
+    var sel = document.getElementById("acc-tx-filter-pm");
+    if (!sel) return;
+    var keep = accTxFilterPm || sel.value || "";
+    var opts = '<option value="">Tüm yöntemler</option>';
+    (accPaymentMethods || []).forEach(function (p) {
+      var label = (p.name || "") + " · " + accTxTypeLabel(p.tx_type);
+      if (p.period_active === false) label += " — Pasif";
+      opts += '<option value="' + p.id + '">' + accEsc(label) + "</option>";
+    });
+    sel.innerHTML = opts;
+    if (keep && Array.prototype.some.call(sel.options, function (o) { return o.value === String(keep); })) {
+      sel.value = String(keep);
+    } else {
+      sel.value = "";
+      accTxFilterPm = "";
+      localStorage.removeItem("acc_tx_filter_pm");
+    }
+    var clearBtn = document.getElementById("acc-tx-filter-clear");
+    if (clearBtn) clearBtn.hidden = !sel.value;
   }
 
   function accSelectedMonthPeriod() {
@@ -1172,6 +1209,7 @@
       if (res.data.period_label) accUpdateCommPeriodLabel(res.data.period_label);
       accUpdateHidePassivePmUi();
       accRefreshTxPaymentSelect();
+      accRefreshTxFilterSelect();
       accBindPaymentMethodTable("acc-pm-table-deposit", accPaymentMethods, "deposit");
       accBindPaymentMethodTable("acc-pm-table-withdrawal", accPaymentMethods, "withdrawal");
     });
@@ -1291,7 +1329,7 @@
   }
 
   function accLoadTransactions() {
-    return accApi("/api/accounting/transactions" + accPeriodQuery()).then(function (res) {
+    return accApi("/api/accounting/transactions" + accTxQuery()).then(function (res) {
       if (!res || !res.ok) return;
       if (res.data.period_label) {
         accUpdatePeriodLabel(res.data.period_label);
@@ -1591,13 +1629,49 @@
     if (section) section.classList.toggle("acc-exp-form-editing", !!editing);
   }
 
+  function accLoadExpensePaidFromOptions() {
+    return accApi("/api/accounting/expense-paid-from-options" + accPeriodQuery()).then(function (res) {
+      if (!res || !res.ok) return;
+      accExpensePaidFromOptions = res.data.options || [];
+      accRefreshExpensePaidFromSelect();
+    });
+  }
+
+  function accRefreshExpensePaidFromSelect(keepValue) {
+    var sel = document.getElementById("acc-exp-paid-from");
+    if (!sel) return;
+    var keep = keepValue != null ? String(keepValue) : (sel.value || "");
+    var groups = {};
+    var order = [];
+    (accExpensePaidFromOptions || []).forEach(function (o) {
+      var g = o.group || "Diğer";
+      if (!groups[g]) { groups[g] = []; order.push(g); }
+      groups[g].push(o);
+    });
+    var html = '<option value="">— Seçin —</option>';
+    order.forEach(function (g) {
+      html += '<optgroup label="' + accEsc(g) + '">';
+      groups[g].forEach(function (o) {
+        html += '<option value="' + accEsc(o.value) + '">' + accEsc(o.label || o.value) + "</option>";
+      });
+      html += "</optgroup>";
+    });
+    if (keep && !(accExpensePaidFromOptions || []).some(function (o) { return o.value === keep; })) {
+      html += '<option value="' + accEsc(keep) + '">' + accEsc(keep) + " (eski)</option>";
+    }
+    sel.innerHTML = html;
+    if (keep) sel.value = keep;
+  }
+
   function accResetExpenseForm() {
     var editId = document.getElementById("acc-exp-edit-id");
     if (editId) editId.value = "";
     var amount = document.getElementById("acc-exp-amount");
     var desc = document.getElementById("acc-exp-desc");
+    var paidFrom = document.getElementById("acc-exp-paid-from");
     if (amount) amount.value = "";
     if (desc) desc.value = "";
+    if (paidFrom) paidFrom.value = "";
     accClearFormRates("acc-exp-rate-usd", "acc-exp-rate-eur");
     var preview = document.getElementById("acc-exp-fx-preview");
     if (preview) preview.textContent = "";
@@ -1615,6 +1689,7 @@
     var rateUsdEl = document.getElementById("acc-exp-rate-usd");
     var rateEurEl = document.getElementById("acc-exp-rate-eur");
     var descEl = document.getElementById("acc-exp-desc");
+    var paidFromEl = document.getElementById("acc-exp-paid-from");
     if (editId) editId.value = String(row.id);
     if (dateEl) dateEl.value = row.expense_date || "";
     if (catEl && row.category_id) catEl.value = String(row.category_id);
@@ -1623,6 +1698,8 @@
     if (rateUsdEl) rateUsdEl.value = row.rate_usd_try > 0 ? row.rate_usd_try : "";
     if (rateEurEl) rateEurEl.value = row.rate_eur_try > 0 ? row.rate_eur_try : "";
     if (descEl) descEl.value = row.description || "";
+    accRefreshExpensePaidFromSelect(row.paid_from || "");
+    if (paidFromEl) paidFromEl.value = row.paid_from || "";
     accSetExpenseFormMode(true);
     accRenderExpenses();
     var section = document.getElementById("acc-exp-form-section");
@@ -1642,17 +1719,18 @@
     var rows = accSortRows("acc-exp", filtered, {
       expense_date: function (r) { return r.expense_date; },
       category_name: function (r) { return r.category_name; },
+      paid_from: function (r) { return r.paid_from; },
       description: function (r) { return r.description; },
       amount: function (r) { return r.amount; },
       rate_usd_try: function (r) { return r.rate_usd_try; }
     });
     if (!allRows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty acc-exp-empty">Bu dönemde gider kaydı yok</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty acc-exp-empty">Bu dönemde gider kaydı yok</td></tr>';
       accUpdateFoot("acc-exp", 0, "gider");
       return;
     }
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty acc-exp-empty">Filtreye uygun kayıt yok</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty acc-exp-empty">Filtreye uygun kayıt yok</td></tr>';
       accUpdateFoot("acc-exp", 0, "gider");
       accUpdateSortHeaders("acc-exp");
       return;
@@ -1662,9 +1740,11 @@
         ? parseFloat(r.rate_usd_try).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })
         : "—";
       var editing = editingId === r.id;
+      var paid = (r.paid_from || "").trim();
       return '<tr class="acc-exp-row' + (editing ? " acc-exp-row-editing" : "") + '" data-exp-row="' + r.id + '">' +
         '<td class="mono acc-exp-td-date">' + accFmtExpenseDate(r.expense_date) + "</td>" +
         '<td><span class="acc-exp-cat ' + accExpenseCatClass(r.category_name) + '">' + accEsc(r.category_name) + "</span></td>" +
+        '<td>' + (paid ? accEsc(paid) : '<span class="muted">—</span>') + "</td>" +
         '<td class="acc-exp-td-desc">' + accExpenseDescHtml(r.description) + "</td>" +
         '<td class="acc-exp-td-money">' + accExpenseMoneyHtml(r) + "</td>" +
         '<td class="mono acc-exp-td-kur">' + kur + "</td>" +
@@ -3478,6 +3558,147 @@
     });
   }
 
+  function accDebtTypeLabel(t) {
+    if (t === "opening") return "Toplam / Açılış";
+    if (t === "payment") return "Ödeme";
+    return "Yeni Fatura";
+  }
+
+  function accDebtMoney(n, currency) {
+    n = parseFloat(n) || 0;
+    var sym = currency === "EUR" ? "€" : (currency === "USDT" ? "$" : "₺");
+    var sign = n < 0 ? "-" : "";
+    return sign + sym + Math.abs(n).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function accSetDebtFormMode(editing) {
+    var title = document.getElementById("acc-debt-form-title");
+    var submit = document.getElementById("acc-debt-submit");
+    var cancel = document.getElementById("acc-debt-edit-cancel");
+    if (title) title.textContent = editing ? "Kaydı Düzenle" : "Yeni Kayıt";
+    if (submit) submit.textContent = editing ? "Güncelle" : "Ekle";
+    if (cancel) cancel.hidden = !editing;
+  }
+
+  function accResetDebtForm() {
+    var editId = document.getElementById("acc-debt-edit-id");
+    if (editId) editId.value = "";
+    ["acc-debt-eur", "acc-debt-usdt", "acc-debt-try", "acc-debt-note", "acc-debt-link"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+    var typeEl = document.getElementById("acc-debt-type");
+    if (typeEl) typeEl.value = "payment";
+    var dateEl = document.getElementById("acc-debt-date");
+    if (dateEl && !dateEl.value) dateEl.value = accToday();
+    accSetDebtFormMode(false);
+    accRenderInvoiceDebt();
+  }
+
+  function accStartDebtEdit(row) {
+    if (!row) return;
+    var editId = document.getElementById("acc-debt-edit-id");
+    if (editId) editId.value = String(row.id);
+    var typeEl = document.getElementById("acc-debt-type");
+    var dateEl = document.getElementById("acc-debt-date");
+    var eurEl = document.getElementById("acc-debt-eur");
+    var usdtEl = document.getElementById("acc-debt-usdt");
+    var tryEl = document.getElementById("acc-debt-try");
+    var noteEl = document.getElementById("acc-debt-note");
+    var linkEl = document.getElementById("acc-debt-link");
+    if (typeEl) typeEl.value = row.entry_type || "invoice";
+    if (dateEl) dateEl.value = row.entry_date || "";
+    if (eurEl) eurEl.value = Math.abs(parseFloat(row.amount_eur) || 0) || "";
+    if (usdtEl) usdtEl.value = Math.abs(parseFloat(row.amount_usdt) || 0) || "";
+    if (tryEl) tryEl.value = Math.abs(parseFloat(row.amount_try) || 0) || "";
+    if (noteEl) noteEl.value = row.note || "";
+    if (linkEl) linkEl.value = row.link_url || "";
+    accSetDebtFormMode(true);
+    accRenderInvoiceDebt();
+  }
+
+  function accUpdateDebtBalances(balances) {
+    accInvoiceDebtBalances = balances || { eur: 0, usdt: 0, try: 0 };
+    var b = accInvoiceDebtBalances;
+    accSetText("acc-debt-bal-eur", accDebtMoney(b.eur, "EUR"));
+    accSetText("acc-debt-bal-usdt", accDebtMoney(b.usdt, "USDT"));
+    accSetText("acc-debt-bal-try", accDebtMoney(b.try, "TRY"));
+  }
+
+  function accRenderInvoiceDebt() {
+    var tbody = document.getElementById("acc-debt-table");
+    if (!tbody) return;
+    var editIdEl = document.getElementById("acc-debt-edit-id");
+    var editingId = editIdEl && editIdEl.value ? parseInt(editIdEl.value, 10) : null;
+    var rows = accInvoiceDebtEntries || [];
+    var countEl = document.getElementById("acc-debt-count");
+    if (countEl) countEl.textContent = rows.length ? rows.length + " kayıt" : "";
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">Henüz kayıt yok — önce toplam borcu ekleyin</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function (r) {
+      var cls = "acc-debt-" + (r.entry_type || "invoice");
+      if (editingId === r.id) cls += " acc-debt-editing";
+      var link = (r.link_url || "").trim();
+      var linkHtml = link
+        ? '<a href="' + accEsc(link) + '" target="_blank" rel="noopener">Aç</a>'
+        : '<span class="muted">—</span>';
+      return '<tr class="' + cls + '" data-debt-row="' + r.id + '" title="' + accEsc(accDebtTypeLabel(r.entry_type)) + '">' +
+        '<td class="mono">' + accDebtMoney(r.amount_eur, "EUR") + "</td>" +
+        '<td class="mono">' + accDebtMoney(r.amount_usdt, "USDT") + "</td>" +
+        '<td class="mono">' + accDebtMoney(r.amount_try, "TRY") + "</td>" +
+        '<td class="mono">' + accFmtExpenseDate(r.entry_date) + "</td>" +
+        '<td class="acc-debt-note">' + (r.note ? accEsc(r.note) : '<span class="muted">—</span>') + "</td>" +
+        '<td class="acc-debt-link">' + linkHtml + "</td>" +
+        '<td class="acc-exp-row-actions">' +
+          '<button type="button" class="btn btn-sm" data-edit-debt="' + r.id + '" title="Düzenle">✎</button> ' +
+          '<button type="button" class="btn btn-sm btn-danger" data-del-debt="' + r.id + '" title="Sil">×</button>' +
+        "</td></tr>";
+    }).join("");
+    tbody.querySelectorAll("[data-edit-debt]").forEach(function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        var id = parseInt(btn.getAttribute("data-edit-debt"), 10);
+        var row = rows.find(function (r) { return r.id === id; });
+        if (row) accStartDebtEdit(row);
+      };
+    });
+    tbody.querySelectorAll("[data-debt-row]").forEach(function (tr) {
+      tr.onclick = function (e) {
+        if (e.target.closest("button") || e.target.closest("a")) return;
+        var id = parseInt(tr.getAttribute("data-debt-row"), 10);
+        var row = rows.find(function (r) { return r.id === id; });
+        if (row) accStartDebtEdit(row);
+      };
+    });
+    tbody.querySelectorAll("[data-del-debt]").forEach(function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        if (!confirm("Bu kayıt silinsin mi?")) return;
+        var delId = btn.getAttribute("data-del-debt");
+        accApi("/api/accounting/invoice-debt/" + delId, { method: "DELETE" }).then(function (r) {
+          if (r && r.ok) {
+            var editId = document.getElementById("acc-debt-edit-id");
+            if (editId && editId.value === delId) accResetDebtForm();
+            if (r.data && r.data.balances) accUpdateDebtBalances(r.data.balances);
+            accLoadInvoiceDebt();
+            accToast("Silindi");
+          } else if (r) alert((r.data && r.data.error) || "Hata");
+        });
+      };
+    });
+  }
+
+  function accLoadInvoiceDebt() {
+    return accApi("/api/accounting/invoice-debt").then(function (res) {
+      if (!res || !res.ok) return;
+      accInvoiceDebtEntries = res.data.entries || [];
+      accUpdateDebtBalances(res.data.balances || {});
+      accRenderInvoiceDebt();
+    });
+  }
+
   var ACC_MONTH_LOCKED_TABS = ["invoices", "invoice_calc", "pl"];
 
   function accApplyTabPeriodMode(tab) {
@@ -3509,10 +3730,15 @@
     if (tab === "dashboard") accLoadDashboard();
     else if (tab === "transactions") { accSyncTxDateToPeriod(); accLoadPaymentMethods(); accLoadTransactions(); }
     else if (tab === "commissions") accLoadPaymentMethods();
-    else if (tab === "expenses") { accLoadCategories(); accLoadExpenses(); }
+    else if (tab === "expenses") { accLoadCategories(); accLoadExpensePaidFromOptions(); accLoadExpenses(); }
     else if (tab === "vault") accLoadVault();
     else if (tab === "payroll") { accLoadEmpOptions(); accLoadEmployees(); }
     else if (tab === "invoices") accLoadInvoice();
+    else if (tab === "invoice_debt") {
+      var debtDate = document.getElementById("acc-debt-date");
+      if (debtDate && !debtDate.value) debtDate.value = accToday();
+      accLoadInvoiceDebt();
+    }
     else if (tab === "invoice_calc") accLoadInvoiceCalc();
     else if (tab === "personnel") accLoadPersonnel();
     else if (tab === "pl") accLoadPlReport();
@@ -3523,10 +3749,11 @@
     accSyncTxDateToPeriod();
     if (accActiveTab === "transactions") { accLoadPaymentMethods(); accLoadTransactions(); }
     else if (accActiveTab === "commissions") accLoadPaymentMethods();
-    else if (accActiveTab === "expenses") { accLoadCategories(); accLoadExpenses(); }
+    else if (accActiveTab === "expenses") { accLoadCategories(); accLoadExpensePaidFromOptions(); accLoadExpenses(); }
     else if (accActiveTab === "vault") accLoadVault();
     else if (accActiveTab === "payroll") { accLoadEmpOptions(); accLoadEmployees(); }
     else if (accActiveTab === "invoices") accLoadInvoice();
+    else if (accActiveTab === "invoice_debt") accLoadInvoiceDebt();
     else if (accActiveTab === "invoice_calc") accLoadInvoiceCalc();
     else if (accActiveTab === "personnel") accLoadPersonnel();
     else if (accActiveTab === "pl") accLoadPlReport();
@@ -3538,10 +3765,33 @@
   }
 
   function accInitForms() {
-    ["acc-tx-date", "acc-exp-date", "acc-vault-date", "acc-emp-start", "acc-pers-start"].forEach(function (id) {
+    ["acc-tx-date", "acc-exp-date", "acc-vault-date", "acc-emp-start", "acc-pers-start", "acc-debt-date"].forEach(function (id) {
       var el = document.getElementById(id);
       if (el && !el.value) el.value = accToday();
     });
+
+    var txFilterPm = document.getElementById("acc-tx-filter-pm");
+    if (txFilterPm) {
+      if (accTxFilterPm) txFilterPm.value = accTxFilterPm;
+      txFilterPm.addEventListener("change", function () {
+        accTxFilterPm = txFilterPm.value || "";
+        if (accTxFilterPm) localStorage.setItem("acc_tx_filter_pm", accTxFilterPm);
+        else localStorage.removeItem("acc_tx_filter_pm");
+        var clearBtn = document.getElementById("acc-tx-filter-clear");
+        if (clearBtn) clearBtn.hidden = !accTxFilterPm;
+        accLoadTransactions();
+      });
+    }
+    var txFilterClear = document.getElementById("acc-tx-filter-clear");
+    if (txFilterClear) {
+      txFilterClear.addEventListener("click", function () {
+        accTxFilterPm = "";
+        localStorage.removeItem("acc_tx_filter_pm");
+        if (txFilterPm) txFilterPm.value = "";
+        txFilterClear.hidden = true;
+        accLoadTransactions();
+      });
+    }
 
     accBindForm("acc-tx-form", function (e) {
       e.preventDefault();
@@ -3658,12 +3908,14 @@
       e.preventDefault();
       var editIdEl = document.getElementById("acc-exp-edit-id");
       var editId = editIdEl && editIdEl.value ? editIdEl.value.trim() : "";
+      var paidFromEl = document.getElementById("acc-exp-paid-from");
       var body = Object.assign({
         expense_date: document.getElementById("acc-exp-date").value,
         category_id: document.getElementById("acc-exp-category").value,
         amount: document.getElementById("acc-exp-amount").value,
         currency: document.getElementById("acc-exp-currency").value,
-        description: document.getElementById("acc-exp-desc").value.trim()
+        description: document.getElementById("acc-exp-desc").value.trim(),
+        paid_from: paidFromEl ? (paidFromEl.value || "").trim() : ""
       }, accReadFormRates("acc-exp-rate-usd", "acc-exp-rate-eur"));
       var url = editId ? "/api/accounting/expenses/" + editId : "/api/accounting/expenses";
       accApi(url, {
@@ -3682,6 +3934,38 @@
 
     var expCancel = document.getElementById("acc-exp-edit-cancel");
     if (expCancel) expCancel.onclick = accResetExpenseForm;
+
+    accBindForm("acc-debt-form", function (e) {
+      e.preventDefault();
+      var editIdEl = document.getElementById("acc-debt-edit-id");
+      var editId = editIdEl && editIdEl.value ? editIdEl.value.trim() : "";
+      var body = {
+        entry_date: document.getElementById("acc-debt-date").value,
+        entry_type: document.getElementById("acc-debt-type").value,
+        amount_eur: document.getElementById("acc-debt-eur").value || 0,
+        amount_usdt: document.getElementById("acc-debt-usdt").value || 0,
+        amount_try: document.getElementById("acc-debt-try").value || 0,
+        note: (document.getElementById("acc-debt-note").value || "").trim(),
+        link_url: (document.getElementById("acc-debt-link").value || "").trim(),
+        amounts_absolute: true
+      };
+      var url = editId ? "/api/accounting/invoice-debt/" + editId : "/api/accounting/invoice-debt";
+      accApi(url, {
+        method: editId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      }).then(function (r) {
+        if (r && r.ok) {
+          accResetDebtForm();
+          if (r.data && r.data.balances) accUpdateDebtBalances(r.data.balances);
+          accLoadInvoiceDebt();
+          accToast(editId ? "Kayıt güncellendi" : "Kayıt eklendi");
+        } else if (r) alert((r.data && r.data.error) || "Hata");
+      });
+    });
+
+    var debtCancel = document.getElementById("acc-debt-edit-cancel");
+    if (debtCancel) debtCancel.onclick = accResetDebtForm;
 
     var expFilterQ = document.getElementById("acc-exp-filter-q");
     if (expFilterQ) {

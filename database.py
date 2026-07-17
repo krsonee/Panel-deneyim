@@ -1229,6 +1229,70 @@ def migrate_schema(conn):
         except Exception:
             pass
         print(f"⚠️  migrate_accounting_pl hata (atlanıyor, panel yine açılır): {exc}")
+    try:
+        migrate_accounting_expense_paid_from(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_accounting_expense_paid_from hata: {exc}")
+    try:
+        migrate_accounting_invoice_debt(conn)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  migrate_accounting_invoice_debt hata: {exc}")
+
+
+def migrate_accounting_expense_paid_from(conn):
+    """Cari gider — ödenen kasa / payment yöntemi alanı."""
+    cols = _table_columns(conn, "acc_expenses")
+    if "paid_from" not in cols:
+        execute(conn, "ALTER TABLE acc_expenses ADD COLUMN paid_from TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+
+def migrate_accounting_invoice_debt(conn):
+    """Güncel fatura borç defteri (EUR / USDT / TRY)."""
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_invoice_debt_entries (
+                id SERIAL PRIMARY KEY,
+                entry_date TEXT NOT NULL,
+                entry_type TEXT NOT NULL DEFAULT 'invoice',
+                amount_eur DOUBLE PRECISION NOT NULL DEFAULT 0,
+                amount_usdt DOUBLE PRECISION NOT NULL DEFAULT 0,
+                amount_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                note TEXT NOT NULL DEFAULT '',
+                link_url TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS acc_invoice_debt_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_date TEXT NOT NULL,
+                entry_type TEXT NOT NULL DEFAULT 'invoice',
+                amount_eur DOUBLE PRECISION NOT NULL DEFAULT 0,
+                amount_usdt DOUBLE PRECISION NOT NULL DEFAULT 0,
+                amount_try DOUBLE PRECISION NOT NULL DEFAULT 0,
+                note TEXT NOT NULL DEFAULT '',
+                link_url TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """,
+        )
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_acc_inv_debt_date ON acc_invoice_debt_entries(entry_date)")
+    conn.commit()
 
 
 def migrate_accounting_pronet(conn):

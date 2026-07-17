@@ -1120,6 +1120,16 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
     def list_transactions():
         period = period_from_request()
         date_sql, date_params = date_clause("t.tx_date", period)
+        pm_filter = (request.args.get("payment_method_id") or "").strip()
+        pm_sql = ""
+        params = list(date_params)
+        if pm_filter:
+            try:
+                pm_id = int(pm_filter)
+                pm_sql = " AND t.payment_method_id = ?"
+                params.append(pm_id)
+            except (TypeError, ValueError):
+                pass
         with closing(get_db()) as conn:
             rows = fetchall(
                 conn,
@@ -1127,10 +1137,10 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
                 SELECT t.*, p.name AS payment_name
                 FROM acc_finance_transactions t
                 INNER JOIN acc_payment_methods p ON p.id = t.payment_method_id
-                WHERE 1=1{date_sql}
+                WHERE 1=1{date_sql}{pm_sql}
                 ORDER BY t.tx_date DESC, t.id DESC
                 """,
-                date_params,
+                tuple(params),
             )
         return jsonify({**period_meta(period), "transactions": [dict(r) for r in rows]})
 
@@ -1395,6 +1405,41 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
 
     # ── Cari giderler ──
 
+    EXPENSE_EXTRA_PAID_FROM = ("Kripto Ana Kasa", "Kripto Fatura Kasa")
+
+    def _expense_paid_from_options(conn, period=None):
+        rows = fetchall(conn, "SELECT * FROM acc_payment_methods ORDER BY tx_type ASC, name ASC") or []
+        opts = []
+        seen = set()
+        for row in rows:
+            data = enrich_payment_method(conn, row, period=period)
+            if not data.get("period_active"):
+                continue
+            label = (data.get("name") or "").strip()
+            if not label:
+                continue
+            key = label.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            kind = "deposit" if data.get("tx_type") == "deposit" else "withdrawal"
+            opts.append({
+                "value": label,
+                "label": label + (" · Yatırım" if kind == "deposit" else " · Çekim"),
+                "group": "Payment Yöntemleri",
+            })
+        for name in EXPENSE_EXTRA_PAID_FROM:
+            opts.append({"value": name, "label": name, "group": "Kripto Kasa"})
+        return opts
+
+    @bp.route("/expense-paid-from-options", methods=["GET"])
+    @acc_perm(*MODULE_ACCESS)
+    def expense_paid_from_options():
+        period = period_from_request()
+        with closing(get_db()) as conn:
+            opts = _expense_paid_from_options(conn, period=period)
+        return jsonify({"options": opts})
+
     @bp.route("/expenses", methods=["GET"])
     @acc_perm(*MODULE_ACCESS)
     def list_expenses():
@@ -1421,6 +1466,7 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
         expense_date = parse_date(data.get("expense_date"))
         amount = parse_amount(data.get("amount"))
         description = (data.get("description") or "").strip()
+        paid_from = (data.get("paid_from") or "").strip()[:120]
         try:
             category_id = int(data.get("category_id"))
         except (TypeError, ValueError):
@@ -1446,12 +1492,12 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
                 conn,
                 """
                 INSERT INTO acc_expenses
-                (expense_date, category_id, description, amount, currency,
+                (expense_date, category_id, description, paid_from, amount, currency,
                  amount_try, amount_usd, amount_eur, rate_usd_try, rate_eur_try, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    expense_date, category_id, description, fx["amount"], fx["currency"],
+                    expense_date, category_id, description, paid_from, fx["amount"], fx["currency"],
                     fx["TRY"], fx["USD"], fx["EUR"],
                     fx["rate_usd_try"], fx["rate_eur_try"], now,
                 ),
@@ -1482,6 +1528,9 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             description = (
                 (data.get("description") if "description" in data else existing.get("description") or "")
             ).strip()
+            paid_from = (
+                (data.get("paid_from") if "paid_from" in data else existing.get("paid_from") or "")
+            ).strip()[:120]
             try:
                 category_id = int(data.get("category_id")) if data.get("category_id") is not None else int(existing["category_id"])
             except (TypeError, ValueError):
@@ -1512,12 +1561,12 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
                 conn,
                 """
                 UPDATE acc_expenses
-                SET expense_date = ?, category_id = ?, description = ?, amount = ?, currency = ?,
+                SET expense_date = ?, category_id = ?, description = ?, paid_from = ?, amount = ?, currency = ?,
                     amount_try = ?, amount_usd = ?, amount_eur = ?, rate_usd_try = ?, rate_eur_try = ?
                 WHERE id = ?
                 """,
                 (
-                    expense_date, category_id, description, fx["amount"], fx["currency"],
+                    expense_date, category_id, description, paid_from, fx["amount"], fx["currency"],
                     fx["TRY"], fx["USD"], fx["EUR"],
                     fx["rate_usd_try"], fx["rate_eur_try"], expense_id,
                 ),
@@ -1542,6 +1591,138 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
             execute(conn, "DELETE FROM acc_expenses WHERE id = ?", (expense_id,))
             conn.commit()
         return jsonify({"ok": True})
+
+    # ── Güncel fatura borç ──
+
+    INVOICE_DEBT_TYPES = frozenset({"opening", "invoice", "payment"})
+
+    def _parse_signed_money(raw):
+        try:
+            return float(raw or 0)
+        except (TypeError, ValueError):
+            return None
+
+    def _invoice_debt_balances(conn):
+        row = fetchone(
+            conn,
+            """
+            SELECT
+              COALESCE(SUM(amount_eur), 0) AS bal_eur,
+              COALESCE(SUM(amount_usdt), 0) AS bal_usdt,
+              COALESCE(SUM(amount_try), 0) AS bal_try
+            FROM acc_invoice_debt_entries
+            """,
+        )
+        d = dict(row) if row else {}
+        return {
+            "eur": round(float(d.get("bal_eur") or 0), 2),
+            "usdt": round(float(d.get("bal_usdt") or 0), 2),
+            "try": round(float(d.get("bal_try") or 0), 2),
+        }
+
+    @bp.route("/invoice-debt", methods=["GET"])
+    @acc_perm(*MODULE_ACCESS)
+    def list_invoice_debt():
+        with closing(get_db()) as conn:
+            rows = fetchall(
+                conn,
+                """
+                SELECT * FROM acc_invoice_debt_entries
+                ORDER BY entry_date ASC, id ASC
+                """,
+            ) or []
+            balances = _invoice_debt_balances(conn)
+        return jsonify({"entries": [dict(r) for r in rows], "balances": balances})
+
+    @bp.route("/invoice-debt", methods=["POST"])
+    @acc_perm(*MODULE_ACCESS)
+    def create_invoice_debt():
+        data = request.get_json(silent=True) or {}
+        entry_date = parse_date(data.get("entry_date"))
+        entry_type = (data.get("entry_type") or "invoice").strip().lower()
+        if entry_type not in INVOICE_DEBT_TYPES:
+            return jsonify({"error": "Tür: opening, invoice veya payment olmalı."}), 400
+        if not entry_date:
+            return jsonify({"error": "Geçerli tarih girin."}), 400
+        eur = _parse_signed_money(data.get("amount_eur"))
+        usdt = _parse_signed_money(data.get("amount_usdt"))
+        try_amt = _parse_signed_money(data.get("amount_try"))
+        if eur is None or usdt is None or try_amt is None:
+            return jsonify({"error": "Tutarlar sayı olmalı."}), 400
+        # Formdan mutlak değer gelir; tür işaretini belirler
+        if entry_type == "payment":
+            eur, usdt, try_amt = -abs(eur), -abs(usdt), -abs(try_amt)
+        else:
+            eur, usdt, try_amt = abs(eur), abs(usdt), abs(try_amt)
+        if eur == 0 and usdt == 0 and try_amt == 0:
+            return jsonify({"error": "En az bir tutar girin."}), 400
+        note = (data.get("note") or "").strip()[:300]
+        link_url = (data.get("link_url") or "").strip()[:500]
+        now = iso(utcnow())
+        with closing(get_db()) as conn:
+            eid = insert_returning_id(
+                conn,
+                """
+                INSERT INTO acc_invoice_debt_entries
+                  (entry_date, entry_type, amount_eur, amount_usdt, amount_try, note, link_url, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (entry_date, entry_type, eur, usdt, try_amt, note, link_url, now),
+            )
+            conn.commit()
+            row = fetchone(conn, "SELECT * FROM acc_invoice_debt_entries WHERE id = ?", (eid,))
+            balances = _invoice_debt_balances(conn)
+        return jsonify({"entry": dict(row), "balances": balances}), 201
+
+    @bp.route("/invoice-debt/<int:entry_id>", methods=["PUT"])
+    @acc_perm(*MODULE_ACCESS)
+    def update_invoice_debt(entry_id):
+        data = request.get_json(silent=True) or {}
+        with closing(get_db()) as conn:
+            existing = fetchone(conn, "SELECT * FROM acc_invoice_debt_entries WHERE id = ?", (entry_id,))
+            if not existing:
+                return jsonify({"error": "Kayıt bulunamadı."}), 404
+            existing = dict(existing)
+            entry_date = parse_date(data.get("entry_date")) or existing.get("entry_date")
+            entry_type = (data.get("entry_type") or existing.get("entry_type") or "invoice").strip().lower()
+            if entry_type not in INVOICE_DEBT_TYPES:
+                return jsonify({"error": "Tür: opening, invoice veya payment olmalı."}), 400
+            eur = _parse_signed_money(data.get("amount_eur") if "amount_eur" in data else existing.get("amount_eur"))
+            usdt = _parse_signed_money(data.get("amount_usdt") if "amount_usdt" in data else existing.get("amount_usdt"))
+            try_amt = _parse_signed_money(data.get("amount_try") if "amount_try" in data else existing.get("amount_try"))
+            if eur is None or usdt is None or try_amt is None:
+                return jsonify({"error": "Tutarlar sayı olmalı."}), 400
+            # PUT'ta tutarlar mutlak gelirse türe göre işaretle; signed gelirse koru
+            if data.get("amounts_absolute"):
+                if entry_type == "payment":
+                    eur, usdt, try_amt = -abs(eur), -abs(usdt), -abs(try_amt)
+                else:
+                    eur, usdt, try_amt = abs(eur), abs(usdt), abs(try_amt)
+            note = (data.get("note") if "note" in data else existing.get("note") or "").strip()[:300]
+            link_url = (data.get("link_url") if "link_url" in data else existing.get("link_url") or "").strip()[:500]
+            execute(
+                conn,
+                """
+                UPDATE acc_invoice_debt_entries
+                SET entry_date = ?, entry_type = ?, amount_eur = ?, amount_usdt = ?, amount_try = ?,
+                    note = ?, link_url = ?
+                WHERE id = ?
+                """,
+                (entry_date, entry_type, eur, usdt, try_amt, note, link_url, entry_id),
+            )
+            conn.commit()
+            row = fetchone(conn, "SELECT * FROM acc_invoice_debt_entries WHERE id = ?", (entry_id,))
+            balances = _invoice_debt_balances(conn)
+        return jsonify({"entry": dict(row), "balances": balances})
+
+    @bp.route("/invoice-debt/<int:entry_id>", methods=["DELETE"])
+    @acc_perm(*MODULE_ACCESS)
+    def delete_invoice_debt(entry_id):
+        with closing(get_db()) as conn:
+            execute(conn, "DELETE FROM acc_invoice_debt_entries WHERE id = ?", (entry_id,))
+            conn.commit()
+            balances = _invoice_debt_balances(conn)
+        return jsonify({"ok": True, "balances": balances})
 
     # ── Kasa takip ──
 

@@ -646,6 +646,19 @@
       border: 1px solid rgba(148, 163, 184, 0.25);
       white-space: nowrap;
     }
+    .acc-debt-table { width: 100%; font-size: 0.8rem; }
+    .acc-debt-table th, .acc-debt-table td { padding: 0.4rem 0.55rem; white-space: nowrap; }
+    .acc-debt-table tr.acc-debt-opening td {
+      background: rgba(244, 114, 182, 0.22);
+      font-weight: 600;
+    }
+    .acc-debt-table tr.acc-debt-payment td { color: var(--rose); }
+    .acc-debt-table tr.acc-debt-editing td {
+      outline: 1px solid rgba(99,102,241,0.45);
+      background: rgba(99,102,241,0.08);
+    }
+    .acc-debt-table .acc-debt-note { max-width: 220px; white-space: normal; }
+    .acc-debt-table .acc-debt-link a { font-size: 0.72rem; }
     .acc-inv-meta-grid input:disabled,
     .acc-inv-table input:disabled {
       opacity: 0.65;
@@ -2678,7 +2691,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260713z"></script>
+  <script src="/static/accounting.js?v=20260717a"></script>
   <script src="/static/mailing.js?v=20260713s"></script>
   <script src="/static/biolink.js?v=20260716b"></script>
   <script src="/static/marketing.js?v=20260712d"></script>
