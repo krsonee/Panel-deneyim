@@ -159,7 +159,7 @@ def theme_vars(theme_key, accent_override=""):
     out["category"] = t.get("category") or ""
     # Tema sabit marka logosu — sayfa "Logo yok" seçiminden bağımsız
     out["brand_logo"] = bool(t.get("brand_logo", True))
-    logo_src = brand_default_logo() or DEFAULT_BRAND_LOGO
+    logo_src = _effective_default_logo()
     out["brand_logo_src"] = logo_src if out["brand_logo"] and logo_src else ""
     out["default_banner"] = DEFAULT_BANNER
     return out
@@ -487,11 +487,30 @@ def _normalize_url(url):
 
 
 def _effective_default_logo():
-    return brand_default_logo() or DEFAULT_BRAND_LOGO or ""
+    """Marka stok logosu; Bizzo'da asla Makrobet logosuna düşme."""
+    logo = (brand_default_logo() or "").strip()
+    if logo:
+        return logo
+    try:
+        from panel_config import PANEL_BRAND
+        if PANEL_BRAND == "bizzo":
+            return ""
+    except Exception:
+        pass
+    return DEFAULT_BRAND_LOGO or ""
 
 
 def _effective_default_favicon():
-    return brand_default_favicon() or DEFAULT_FAVICON or ""
+    fav = (brand_default_favicon() or "").strip()
+    if fav:
+        return fav
+    try:
+        from panel_config import PANEL_BRAND
+        if PANEL_BRAND == "bizzo":
+            return ""
+    except Exception:
+        pass
+    return DEFAULT_FAVICON or ""
 
 
 def _store_avatar_url(val):
@@ -1210,13 +1229,16 @@ def hide_brand_asset(conn, asset_key, kind=""):
     key = (asset_key or "").strip()
     if not key:
         raise ValueError("Varlık anahtarı gerekli.")
-    known = {a.get("key") for a in BRAND_LOGOS + BRAND_BANNERS + BRAND_FAVICONS}
+    stock = brand_assets()
+    stock_items = list(stock.get("logos") or []) + list(stock.get("banners") or []) + list(stock.get("favicons") or [])
+    known = {a.get("key") for a in stock_items}
     if key not in known:
         raise ValueError("Bu hazır varlık bulunamadı.")
     # Varsayılanları koru
     protected = set()
-    for a in BRAND_LOGOS + BRAND_BANNERS + BRAND_FAVICONS:
-        if a.get("url") in (DEFAULT_BRAND_LOGO, DEFAULT_BANNER, DEFAULT_FAVICON):
+    defaults = {stock.get("default_logo"), stock.get("default_favicon"), DEFAULT_BANNER}
+    for a in stock_items:
+        if a.get("url") in defaults:
             protected.add(a.get("key"))
     if key in protected:
         raise ValueError("Varsayılan logo/banner/favicon gizlenemez.")

@@ -835,12 +835,28 @@
   }
 
   function createNewPage() {
-    blApi("/api/biolink/pages", { method: "POST", body: { title: "Yeni Sayfa", theme: (window.PANEL_BIOLINK && window.PANEL_BIOLINK.defaultTheme) || "" } }).then(function (r) {
-      if (r && r.ok) {
+    var theme = (window.PANEL_BIOLINK && window.PANEL_BIOLINK.defaultTheme) || "";
+    var btn = document.getElementById("btn-biolink-new");
+    if (btn) {
+      if (btn.dataset.busy === "1") return;
+      btn.dataset.busy = "1";
+      btn.disabled = true;
+    }
+    blApi("/api/biolink/pages", { method: "POST", body: { title: "Yeni Sayfa", theme: theme } }).then(function (r) {
+      if (r && r.ok && r.data && r.data.page) {
         blToast("Sayfa oluşturuldu");
         loadPages();
         openEditor(r.data.page);
-      } else if (r) alert((r.data && r.data.error) || "Oluşturulamadı");
+      } else if (r) {
+        alert((r.data && r.data.error) || ("Oluşturulamadı (" + (r.status || "?") + ")"));
+      } else {
+        alert("Sunucuya ulaşılamadı");
+      }
+    }).finally(function () {
+      if (btn) {
+        btn.dataset.busy = "0";
+        btn.disabled = false;
+      }
     });
   }
 
@@ -1292,13 +1308,18 @@
   }
 
   function bindEvents() {
-    document.getElementById("btn-biolink-new").onclick = createNewPage;
-    document.getElementById("btn-biolink-refresh").onclick = loadPages;
-    document.getElementById("btn-biolink-save").onclick = savePage;
-    document.getElementById("btn-biolink-close").onclick = closeEditor;
+    var btnNew = document.getElementById("btn-biolink-new");
+    if (btnNew) btnNew.onclick = createNewPage;
+    var btnRefresh = document.getElementById("btn-biolink-refresh");
+    if (btnRefresh) btnRefresh.onclick = loadPages;
+    var btnSave = document.getElementById("btn-biolink-save");
+    if (btnSave) btnSave.onclick = savePage;
+    var btnClose = document.getElementById("btn-biolink-close");
+    if (btnClose) btnClose.onclick = closeEditor;
     var restoreBtn = document.getElementById("btn-biolink-restore-assets");
     if (restoreBtn) restoreBtn.onclick = blRestoreBrandAssets;
-    document.getElementById("btn-biolink-add-button").onclick = addButton;
+    var btnAdd = document.getElementById("btn-biolink-add-button");
+    if (btnAdd) btnAdd.onclick = addButton;
     var logoFile = document.getElementById("bl-logo-file");
     var bannerFile = document.getElementById("bl-banner-file");
     var faviconFile = document.getElementById("bl-favicon-file");

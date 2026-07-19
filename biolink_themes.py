@@ -572,36 +572,67 @@ THEMES = {
         card_hover="rgba(34,197,94,0.15)", accent="#facc15", accent2="#22c55e",
         category="Marka", style="neon",
     ),
-    # Bizzo Casino temaları (yalnızca Bizzo panelde listelenir)
+    # Bizzo Casino — bizzocasino168.com paleti (mor / lime / altın)
     "bizzo": _theme(
         "★ Bizzo",
-        bg="#0c0a09", text="#fafaf9", muted="#a8a29e",
-        card_bg="rgba(225, 29, 72, 0.12)", card_border="rgba(225, 29, 72, 0.42)",
-        card_hover="rgba(225, 29, 72, 0.20)", accent="#e11d48", accent2="#fbbf24",
+        bg="#2b1234", text="#ffffff", muted="#c4b5d4",
+        card_bg="rgba(255,255,255,0.07)", card_border="rgba(178, 255, 79, 0.35)",
+        card_hover="rgba(255,255,255,0.12)", accent="#b2ff4f", accent2="#f5d76e",
         category="Bizzo", style="neon", animated=True, animation="makrobet", brand_logo=True,
     ),
     "bz_classic": _theme(
         "Bizzo Klasik",
-        bg="#0c0a09", text="#fafaf9", muted="#a8a29e",
-        card_bg="#1c1917", card_border="rgba(225, 29, 72, 0.35)",
-        card_hover="#292524", accent="#e11d48", accent2="#fbbf24",
+        bg="#2b1234", text="#ffffff", muted="#c4b5d4",
+        card_bg="#3a1a45", card_border="rgba(178, 255, 79, 0.28)",
+        card_hover="#4a2258", accent="#b2ff4f", accent2="#f5d76e",
         category="Bizzo", style="classic", brand_logo=True,
+    ),
+    "bz_lime": _theme(
+        "Bizzo Lime",
+        bg="radial-gradient(1100px 620px at 50% -12%, #4a1f5c 0%, #2b1234 42%, #16091c 100%)",
+        text="#f7ffe8", muted="#d4e8b0",
+        card_bg="rgba(178, 255, 79, 0.10)", card_border="rgba(178, 255, 79, 0.45)",
+        card_hover="rgba(178, 255, 79, 0.18)", accent="#b2ff4f", accent2="#ffffff",
+        category="Bizzo", style="neon", animated=True, animation="makrobet", brand_logo=True,
     ),
     "bz_gold": _theme(
         "Bizzo Altın",
-        bg="radial-gradient(1100px 620px at 50% -12%, #3f1d1d 0%, #0c0a09 45%, #030303 100%)",
-        text="#fafaf9", muted="#a8a29e",
-        card_bg="rgba(251, 191, 36, 0.08)", card_border="rgba(251, 191, 36, 0.40)",
-        card_hover="rgba(251, 191, 36, 0.14)", accent="#fbbf24", accent2="#e11d48",
+        bg="radial-gradient(1000px 560px at 50% -10%, #5a2a1a 0%, #2b1234 50%, #120814 100%)",
+        text="#fffaf0", muted="#e8d5a3",
+        card_bg="rgba(245, 215, 110, 0.10)", card_border="rgba(245, 215, 110, 0.42)",
+        card_hover="rgba(245, 215, 110, 0.18)", accent="#f5d76e", accent2="#b2ff4f",
         category="Bizzo", style="glow", animated=True, animation="gold", brand_logo=True,
     ),
     "bz_night": _theme(
         "Bizzo Gece",
-        bg="linear-gradient(160deg,#0a0a0a,#1c1917 55%,#0c0a09)",
-        text="#fafaf9", muted="#78716c",
-        card_bg="rgba(255,255,255,0.05)", card_border="rgba(225, 29, 72, 0.30)",
-        card_hover="rgba(255,255,255,0.09)", accent="#fb7185",
+        bg="linear-gradient(160deg,#16091c,#2b1234 55%,#0d0612)",
+        text="#ffffff", muted="#9b8aa8",
+        card_bg="rgba(255,255,255,0.05)", card_border="rgba(178, 255, 79, 0.22)",
+        card_hover="rgba(255,255,255,0.09)", accent="#d4ff8a",
         category="Bizzo", style="solid", brand_logo=True,
+    ),
+    "bz_vip": _theme(
+        "Bizzo VIP",
+        bg="radial-gradient(900px 520px at 50% 0%,#5c2d6e,#2b1234 55%,#120814)",
+        text="#fff8e7", muted="#e8d5a3",
+        card_bg="rgba(245, 215, 110, 0.08)", card_border="rgba(245, 215, 110, 0.38)",
+        card_hover="rgba(245, 215, 110, 0.15)", accent="#f5d76e", accent2="#b2ff4f",
+        category="Bizzo", style="glow", animated=True, animation="gold", brand_logo=True,
+    ),
+    "bz_promo": _theme(
+        "Bizzo Promo",
+        bg="#2b1234", text="#ffffff", muted="#c4b5d4",
+        card_bg="rgba(178, 255, 79, 0.12)", card_border="rgba(178, 255, 79, 0.50)",
+        card_hover="rgba(178, 255, 79, 0.20)", accent="#b2ff4f", accent2="#f5d76e",
+        category="Bizzo", style="lift", brand_logo=True,
+    ),
+    "bz_soft": _theme(
+        "Bizzo Soft",
+        bg="linear-gradient(180deg,#3a1a45,#2b1234)",
+        text="#ffffff", muted="#d4c4e0",
+        card_bg="rgba(255,255,255,0.08)", card_border="rgba(255,255,255,0.16)",
+        card_hover="rgba(255,255,255,0.13)", accent="#c8ff7a",
+        category="Bizzo", style="soft", brand_logo=True,
     ),
 }
 
@@ -621,6 +652,14 @@ _MAKRO_BRAND_LOGOS = [
     {"key": "logo-avatar", "label": "Logo Avatar (kare)", "url": "/static/biolink/logo/logo-avatar-512.png", "w": 512, "h": 512},
 ]
 
+_BIZZO_BRAND_LOGOS = [
+    {"key": "bizzo-main", "label": "Bizzo Logo (yatay)", "url": "/static/biolink/logo/bizzo/logo-main.svg", "w": 450, "h": 175},
+    {"key": "bizzo-wide", "label": "Bizzo Logo Wide", "url": "/static/biolink/logo/bizzo/logo-wide.svg", "w": 450, "h": 175},
+    {"key": "bizzo-mark", "label": "Bizzo Mark", "url": "/static/biolink/logo/bizzo/logo-mark.svg", "w": 304, "h": 276},
+    {"key": "bizzo-avatar", "label": "Bizzo Avatar", "url": "/static/biolink/logo/bizzo/logo-avatar-512.png", "w": 512, "h": 512},
+    {"key": "bizzo-200", "label": "Bizzo 200px", "url": "/static/biolink/logo/bizzo/logo-200.png", "w": 200, "h": 182},
+]
+
 BRAND_LOGOS = list(_MAKRO_BRAND_LOGOS)
 
 BRAND_BANNERS = []
@@ -629,6 +668,12 @@ _MAKRO_BRAND_FAVICONS = [
     {"key": "makrobet-ico", "label": "Makrobet Favicon", "url": "/static/biolink/favicons/favicon-makrobet.ico"},
     {"key": "logo-avatar-favicon", "label": "Logo Avatar", "url": "/static/biolink/logo/logo-avatar-512.png", "w": 512, "h": 512},
     {"key": "logo-200-favicon", "label": "Logo 200px", "url": "/static/biolink/logo/logo-200.png", "w": 200, "h": 46},
+]
+
+_BIZZO_BRAND_FAVICONS = [
+    {"key": "bizzo-favicon", "label": "Bizzo Favicon", "url": "/static/biolink/favicons/favicon-bizzo.png"},
+    {"key": "bizzo-avatar-favicon", "label": "Bizzo Avatar", "url": "/static/biolink/logo/bizzo/logo-avatar-512.png", "w": 512, "h": 512},
+    {"key": "bizzo-mark-favicon", "label": "Bizzo Mark", "url": "/static/biolink/logo/bizzo/logo-mark.svg"},
 ]
 
 BRAND_FAVICONS = list(_MAKRO_BRAND_FAVICONS)
@@ -682,13 +727,15 @@ def resolve_theme_key(theme_key):
 
 def brand_assets():
     brand, cfg = _panel_brand_cfg()
-    show_stock = bool(cfg.get("show_stock_brand_assets", brand == "makro"))
-    if show_stock:
+    show_stock = bool(cfg.get("show_stock_brand_assets", True))
+    if not show_stock:
+        logos, favicons = [], []
+    elif brand == "bizzo":
+        logos = list(_BIZZO_BRAND_LOGOS)
+        favicons = list(_BIZZO_BRAND_FAVICONS)
+    else:
         logos = list(_MAKRO_BRAND_LOGOS)
         favicons = list(_MAKRO_BRAND_FAVICONS)
-    else:
-        logos = []
-        favicons = []
     return {
         "logos": logos,
         "banners": list(BRAND_BANNERS),

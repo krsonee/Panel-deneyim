@@ -16,7 +16,12 @@
     :root {
       --bg: #060a10; --sidebar: #0a0f18; --surface: #0f1623; --surface-2: #151e2e;
       --border: #243044; --text: #e8edf5; --muted: #7d8da6; --accent: {{ panel.accent }};
-      --accent-soft: rgba(99,102,241,0.15); --green: #22c55e; --green-soft: rgba(34,197,94,0.12);
+      {% if panel.brand == "bizzo" %}
+      --accent-soft: rgba(178,255,79,0.14); --accent-ink: #1a0f20; --accent-ring: rgba(178,255,79,0.35);
+      {% else %}
+      --accent-soft: rgba(99,102,241,0.15); --accent-ink: #fff; --accent-ring: rgba(99,102,241,0.35);
+      {% endif %}
+      --green: #22c55e; --green-soft: rgba(34,197,94,0.12);
       --amber: #f59e0b; --rose: #f43f5e; --cyan: #06b6d4;
       --sidebar-w: 250px;
       --code-bg: #04070c; --code-text: #94a3b8; --hover-bg: #1c2738;
@@ -25,9 +30,13 @@
     [data-theme="light"] {
       --bg: #f1f5f9; --sidebar: #ffffff; --surface: #ffffff; --surface-2: #f8fafc;
       --border: #e2e8f0; --text: #0f172a; --muted: #64748b;
-      --accent-soft: rgba(99,102,241,0.12); --green-soft: rgba(34,197,94,0.15);
+      {% if panel.brand == "bizzo" %}
+      --accent-soft: rgba(178,255,79,0.18); --row-hover: rgba(178,255,79,0.10);
+      {% else %}
+      --accent-soft: rgba(99,102,241,0.12); --row-hover: rgba(99,102,241,0.08);
+      {% endif %}
+      --green-soft: rgba(34,197,94,0.15);
       --code-bg: #f1f5f9; --code-text: #475569; --hover-bg: #e2e8f0;
-      --row-hover: rgba(99,102,241,0.08);
     }
     [data-theme="light"] .tag { color: #4338ca; }
     [data-theme="light"] th.col-dragging { color: #4338ca; }
@@ -1436,7 +1445,7 @@
       background: var(--surface-2); color: var(--text); font-size: 0.78rem; font-weight: 600; cursor: pointer;
     }
     .btn:hover { background: var(--hover-bg); }
-    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink, #fff); }
     .btn-success { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.4); color: var(--green); }
     .btn-danger { color: var(--rose); border-color: rgba(244,63,94,0.4); }
     .btn-sm { padding: 0.28rem 0.55rem; font-size: 0.68rem; }
@@ -2735,7 +2744,7 @@
       domainPrefix: {{ panel.domain_prefix_placeholder|tojson }}
     };
   </script>
-  <script src="/static/biolink.js?v=20260720a"></script>
+  <script src="/static/biolink.js?v=20260720c"></script>
   {% if panel.features.marketing %}
   <script src="/static/marketing.js?v=20260712d"></script>
   {% endif %}
@@ -4232,15 +4241,15 @@
       }
 
       function setSmarticoView(mode) {
-        var boxes = {
-          empty: "smartico-empty-box",
-          error: "smartico-error-box",
-          data: null
-        };
-        document.getElementById("smartico-empty-box").style.display = mode === "empty" ? "" : "none";
-        document.getElementById("smartico-error-box").style.display = mode === "error" ? "" : "none";
-        document.getElementById("smartico-kpi-grid").style.display = mode === "data" ? "" : "none";
-        document.getElementById("smartico-table-wrap").style.display = mode === "data" ? "" : "none";
+        var emptyBox = document.getElementById("smartico-empty-box");
+        if (!emptyBox) return;
+        emptyBox.style.display = mode === "empty" ? "" : "none";
+        var errBox = document.getElementById("smartico-error-box");
+        if (errBox) errBox.style.display = mode === "error" ? "" : "none";
+        var kpi = document.getElementById("smartico-kpi-grid");
+        if (kpi) kpi.style.display = mode === "data" ? "" : "none";
+        var wrap = document.getElementById("smartico-table-wrap");
+        if (wrap) wrap.style.display = mode === "data" ? "" : "none";
       }
 
       function applySmarticoInactiveFilter(rows) {
@@ -4282,12 +4291,14 @@
       }
 
       function renderSmarticoReport(result) {
+        if (!document.getElementById("smartico-table")) return;
         if (!result || result.error === "not_configured") {
           setSmarticoView("empty");
           return;
         }
         if (result.error) {
-          document.getElementById("smartico-error-text").textContent = "Smartico API hatası: " + result.error;
+          var errText = document.getElementById("smartico-error-text");
+          if (errText) errText.textContent = "Smartico API hatası: " + result.error;
           if (!result.rows || !result.rows.length) { setSmarticoView("error"); return; }
         }
         smarticoLastResult = result;
@@ -4311,15 +4322,15 @@
           bonus_total: function(r) { return r.bonus_total || 0; }
         });
         var s = result.summary || {};
-        document.getElementById("smartico-kpi-visits").textContent = fmtSmarticoNum(s.visit_count);
-        document.getElementById("smartico-kpi-regs").textContent = fmtSmarticoNum(s.registration_count);
-        document.getElementById("smartico-kpi-ftd").textContent = fmtSmarticoNum(s.ftd_count);
-        document.getElementById("smartico-kpi-deposit").textContent = fmtSmarticoMoney(s.deposit_total) + (result.currency ? " " + result.currency : "");
-        var withdrawalEl = document.getElementById("smartico-kpi-withdrawal");
-        if (withdrawalEl) withdrawalEl.textContent = fmtSmarticoMoney(s.withdrawal_total) + (result.currency ? " " + result.currency : "");
-        var bonusEl = document.getElementById("smartico-kpi-bonus");
-        if (bonusEl) bonusEl.textContent = fmtSmarticoMoney(s.bonus_total) + (result.currency ? " " + result.currency : "");
+        var setTxt = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
+        setTxt("smartico-kpi-visits", fmtSmarticoNum(s.visit_count));
+        setTxt("smartico-kpi-regs", fmtSmarticoNum(s.registration_count));
+        setTxt("smartico-kpi-ftd", fmtSmarticoNum(s.ftd_count));
+        setTxt("smartico-kpi-deposit", fmtSmarticoMoney(s.deposit_total) + (result.currency ? " " + result.currency : ""));
+        setTxt("smartico-kpi-withdrawal", fmtSmarticoMoney(s.withdrawal_total) + (result.currency ? " " + result.currency : ""));
+        setTxt("smartico-kpi-bonus", fmtSmarticoMoney(s.bonus_total) + (result.currency ? " " + result.currency : ""));
         var tbody = document.getElementById("smartico-table");
+        if (!tbody) return;
         smarticoRowsById = {};
         updateTableFoot("smartico-table", rows.length);
         updateSortHeaders("smartico-table");
@@ -4352,7 +4363,7 @@
           }).join("");
         }
         setSmarticoView("data");
-        document.getElementById("smartico-updated").textContent = "Son güncelleme: " + new Date().toLocaleTimeString("tr-TR") + (result.source === "cache" ? " (önbellek)" : "");
+        setTxt("smartico-updated", "Son güncelleme: " + new Date().toLocaleTimeString("tr-TR") + (result.source === "cache" ? " (önbellek)" : ""));
         renderTop5Lists(result.rows || []);
       }
 
@@ -4373,6 +4384,7 @@
       }
 
       function renderSmarticoConfig(cfg) {
+        if (!document.getElementById("smartico-api-host")) return;
         smarticoConfigured = !!cfg.configured;
         document.getElementById("smartico-api-host").value = cfg.api_host || "https://boapi.smartico.ai";
         document.getElementById("smartico-api-key").placeholder = cfg.configured ? ("Kayıtlı: " + cfg.api_key_masked + " — değiştirmek için yeni anahtar yapıştır") : "xxxxxxxx-xxxx-xxxx-xxxx";
@@ -4381,7 +4393,8 @@
           loadSmarticoActiveKeys();
         } else {
           setSmarticoView("empty");
-          document.getElementById("smartico-settings-box").style.display = "";
+          var box = document.getElementById("smartico-settings-box");
+          if (box) box.style.display = "";
         }
       }
 
@@ -4398,9 +4411,13 @@
       }
 
       function setBlinkView(mode) {
-        document.getElementById("blink-empty-box").style.display = mode === "empty" ? "" : "none";
-        document.getElementById("blink-error-box").style.display = mode === "error" ? "" : "none";
-        document.getElementById("blink-table-wrap").style.display = mode === "data" ? "" : "none";
+        var emptyBox = document.getElementById("blink-empty-box");
+        if (!emptyBox) return;
+        emptyBox.style.display = mode === "empty" ? "" : "none";
+        var errBox = document.getElementById("blink-error-box");
+        if (errBox) errBox.style.display = mode === "error" ? "" : "none";
+        var wrap = document.getElementById("blink-table-wrap");
+        if (wrap) wrap.style.display = mode === "data" ? "" : "none";
       }
 
       function applyBlinkSearchFilter(rows) {
@@ -4416,12 +4433,14 @@
       }
 
       function renderBlinkReport(result) {
+        if (!document.getElementById("blink-table")) return;
         if (!result || result.error === "not_configured") {
           setBlinkView("empty");
           return;
         }
         if (result.error) {
-          document.getElementById("blink-error-text").textContent = "bl.ink API hatası: " + result.error;
+          var blinkErr = document.getElementById("blink-error-text");
+          if (blinkErr) blinkErr.textContent = "bl.ink API hatası: " + result.error;
           if (!result.rows || !result.rows.length) { setBlinkView("error"); return; }
         }
         blinkLastResult = result;
@@ -4434,6 +4453,7 @@
           click_count: function(r) { return r.click_count || 0; }
         });
         var tbody = document.getElementById("blink-table");
+        if (!tbody) return;
         blinkRowsById = {};
         updateTableFoot("blink-table", rows.length);
         updateSortHeaders("blink-table");
@@ -4461,7 +4481,8 @@
           }).join("");
         }
         setBlinkView("data");
-        document.getElementById("blink-updated").textContent = "Son güncelleme: " + new Date().toLocaleTimeString("tr-TR") + (result.source === "cache" ? " (önbellek)" : "");
+        var blinkUpd = document.getElementById("blink-updated");
+        if (blinkUpd) blinkUpd.textContent = "Son güncelleme: " + new Date().toLocaleTimeString("tr-TR") + (result.source === "cache" ? " (önbellek)" : "");
       }
 
       function loadBlinkReport(force) {
@@ -4479,13 +4500,15 @@
       }
 
       function renderBlinkConfig(cfg) {
+        if (!document.getElementById("blink-email")) return;
         blinkConfigured = !!cfg.configured;
-        document.getElementById("blink-email").placeholder = cfg.configured ? ("Kayıtlı: " + cfg.email_masked + " — değiştirmek için yeniden gir") : "ornek@makrobet.com";
+        document.getElementById("blink-email").placeholder = cfg.configured ? ("Kayıtlı: " + cfg.email_masked + " — değiştirmek için yeniden gir") : "ornek@domain.com";
         if (cfg.configured) {
           loadBlinkReport(false);
         } else {
           setBlinkView("empty");
-          document.getElementById("blink-settings-box").style.display = "";
+          var box = document.getElementById("blink-settings-box");
+          if (box) box.style.display = "";
         }
       }
 
@@ -5243,6 +5266,7 @@
 
       bindOptional("btn-makrolink-settings", "click", function() {
         var box = document.getElementById("makrolink-settings-box");
+        if (!box) return;
         box.style.display = box.style.display === "none" ? "" : "none";
       });
 
@@ -5469,8 +5493,8 @@
             destination_url: dest,
             label: label,
             code: code,
-            affiliate_id: document.getElementById("makrolink-affid").value.trim(),
-            ref_code: document.getElementById("makrolink-ref").value.trim(),
+            affiliate_id: (document.getElementById("makrolink-affid") || { value: "" }).value.trim(),
+            ref_code: (document.getElementById("makrolink-ref") || { value: "" }).value.trim(),
             category: category
           })
         }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
@@ -5478,7 +5502,8 @@
             if (btn) { btn.disabled = false; btn.textContent = "Kısalt & kopyala"; }
             if (!res.ok) { alert(res.data.error || "Oluşturulamadı."); return; }
             var link = res.data.link || {};
-            document.getElementById("makrolink-create-form").reset();
+            var createForm = document.getElementById("makrolink-create-form");
+            if (createForm) createForm.reset();
             makrolinkSyncCreateCategorySelect();
             var box = document.getElementById("makrolink-created-box");
             if (box) box.style.display = "block";

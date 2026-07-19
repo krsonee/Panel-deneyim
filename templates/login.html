@@ -45,7 +45,7 @@
     .pw-toggle:hover { color: #e8edf5; }
     .btn {
       width: 100%; padding: 0.8rem; border: none; border-radius: 10px;
-      background: {{ panel.accent }}; color: #fff; font-size: 0.95rem; font-weight: 600;
+      background: {{ panel.accent }}; color: {% if panel.brand == "bizzo" %}#1a0f20{% else %}#fff{% endif %}; font-size: 0.95rem; font-weight: 600;
       cursor: pointer; margin-top: 0.25rem;
     }
     .btn:hover { filter: brightness(1.08); }
