@@ -55,8 +55,8 @@ PERMISSION_CATALOG = [
      "desc": "Personel ve maaş tablosu"},
     {"key": "accounting.payroll.office_salaries", "label": "Ofis Personeli Maaşları", "group": "Muhasebe",
      "desc": "Ofis personeli maaş tutarları, dağılım ve toplamları"},
-    {"key": "accounting.invoices", "label": "Pronet Proforma Fatura", "group": "Muhasebe",
-     "desc": "Aylık resmi fatura şablonu (Pronet)"},
+    {"key": "accounting.invoices", "label": "Proforma Fatura", "group": "Muhasebe",
+     "desc": "Aylık resmi fatura şablonu"},
     {"key": "accounting.invoice_debt", "label": "Güncel Fatura Borç", "group": "Muhasebe",
      "desc": "EUR / USDT / TRY fatura borç defteri — borç, ödeme ve anlık bakiye"},
     {"key": "accounting.pl_report", "label": "PL Raporu", "group": "Muhasebe",
@@ -268,7 +268,16 @@ def active_permission_catalog():
             mod = key.split(".", 1)[1]
             if mod not in ENABLED_MODULES and mod != "settings":
                 continue
-        out.append(item)
+        row = dict(item)
+        if key == "accounting.invoices":
+            try:
+                from panel_config import BRAND
+                vendor = BRAND.get("invoice_vendor") or "Pronet"
+            except Exception:
+                vendor = "Pronet"
+            row["label"] = f"{vendor} Proforma Fatura"
+            row["desc"] = f"Aylık resmi fatura şablonu ({vendor})"
+        out.append(row)
     return out
 
 

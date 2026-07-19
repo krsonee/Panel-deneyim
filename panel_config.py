@@ -33,6 +33,9 @@ _BRANDS = {
         "default_short_host": "",
         "default_aff_base": "",
         "accent": "#6366f1",
+        # Muhasebe fatura alanı görünen adı (API/tablo adı pronet kalabilir)
+        "invoice_vendor": "Pronet",
+        "invoice_vendor_upper": "PRONET",
     },
     "bizzo": {
         "brand": "bizzo",
@@ -46,6 +49,8 @@ _BRANDS = {
         "default_short_host": "",
         "default_aff_base": "",
         "accent": "#e11d48",
+        "invoice_vendor": "Bizzo",
+        "invoice_vendor_upper": "BIZZO",
     },
 }
 
@@ -68,6 +73,8 @@ def panel_context() -> dict:
         "shortlink_label": BRAND["shortlink_label"],
         "shortlink_host_placeholder": BRAND["shortlink_host_placeholder"],
         "accent": BRAND["accent"],
+        "invoice_vendor": BRAND["invoice_vendor"],
+        "invoice_vendor_upper": BRAND["invoice_vendor_upper"],
         "enabled_modules": list(ENABLED_MODULES),
         "features": dict(FEATURES),
     }

@@ -936,11 +936,11 @@
     </section>
   </div>
 
-  <!-- Fatura / Pronet Proforma -->
+  <!-- Fatura / Proforma -->
   <div class="acc-pane" id="acc-pane-invoices" data-acc-pane="invoices" data-perm="accounting.invoices" hidden>
     <section class="card">
       <div class="card-head">
-        <span>Pronet Proforma Fatura</span>
+        <span>{{ panel.invoice_vendor }} Proforma Fatura</span>
         <span class="acc-inv-lock-badge muted" id="acc-inv-lock-badge" hidden>Kilitli dönem — düzenlenemez</span>
       </div>
     </section>
@@ -952,7 +952,7 @@
       </div>
       <div class="kpi amber">
         <div class="val" id="acc-inv-total-try">—</div>
-        <div class="lbl">Pronet Proforma Fatura</div>
+        <div class="lbl">{{ panel.invoice_vendor }} Proforma Fatura</div>
       </div>
       <div class="kpi">
         <div class="val" id="acc-inv-total-eur">—</div>
@@ -1302,15 +1302,15 @@
     <div id="acc-pl-sections"></div>
 
     <section class="card">
-      <div class="card-head"><span>Pronet Çapraz Kontrol &amp; Asıl Net</span></div>
+      <div class="card-head"><span>{{ panel.invoice_vendor }} Çapraz Kontrol &amp; Asıl Net</span></div>
       <p class="hint" style="padding:0 1rem;margin-top:0.5rem;">Bu alanlar Excel'de de elle girilir (gerçekleşen ödemeye göre değişir, formülle hesaplanamaz).</p>
       <div class="card-body">
         <div class="form-row-4">
-          <div style="grid-column: span 2;"><label for="acc-pl-pronet-label">Pronet Fatura Etiketi</label>
-            <input id="acc-pl-pronet-label" placeholder="örn. PRONET FATURASI Haziran 2025 € 287.596,70" autocomplete="off">
+          <div style="grid-column: span 2;"><label for="acc-pl-pronet-label">{{ panel.invoice_vendor }} Fatura Etiketi</label>
+            <input id="acc-pl-pronet-label" placeholder="örn. {{ panel.invoice_vendor_upper }} FATURASI Haziran 2025 € 287.596,70" autocomplete="off">
           </div>
-          <div><label for="acc-pl-pronet-fatura">Pronet Fatura (TRY)</label><input type="number" step="0.01" id="acc-pl-pronet-fatura"></div>
-          <div><label for="acc-pl-pronet-odenen">Pronet Ödenen (TRY, eksi yazılır)</label><input type="number" step="0.01" id="acc-pl-pronet-odenen"></div>
+          <div><label for="acc-pl-pronet-fatura">{{ panel.invoice_vendor }} Fatura (TRY)</label><input type="number" step="0.01" id="acc-pl-pronet-fatura"></div>
+          <div><label for="acc-pl-pronet-odenen">{{ panel.invoice_vendor }} Ödenen (TRY, eksi yazılır)</label><input type="number" step="0.01" id="acc-pl-pronet-odenen"></div>
         </div>
         <div class="form-row-4" style="margin-top:0.55rem;">
           <div><label for="acc-pl-asil-net">Asıl Net (TRY)</label><input type="number" step="0.01" id="acc-pl-asil-net"></div>
