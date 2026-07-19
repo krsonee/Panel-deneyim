@@ -572,15 +572,47 @@ THEMES = {
         card_hover="rgba(34,197,94,0.15)", accent="#facc15", accent2="#22c55e",
         category="Marka", style="neon",
     ),
+    # Bizzo Casino temaları (yalnızca Bizzo panelde listelenir)
+    "bizzo": _theme(
+        "★ Bizzo",
+        bg="#0c0a09", text="#fafaf9", muted="#a8a29e",
+        card_bg="rgba(225, 29, 72, 0.12)", card_border="rgba(225, 29, 72, 0.42)",
+        card_hover="rgba(225, 29, 72, 0.20)", accent="#e11d48", accent2="#fbbf24",
+        category="Bizzo", style="neon", animated=True, animation="makrobet", brand_logo=True,
+    ),
+    "bz_classic": _theme(
+        "Bizzo Klasik",
+        bg="#0c0a09", text="#fafaf9", muted="#a8a29e",
+        card_bg="#1c1917", card_border="rgba(225, 29, 72, 0.35)",
+        card_hover="#292524", accent="#e11d48", accent2="#fbbf24",
+        category="Bizzo", style="classic", brand_logo=True,
+    ),
+    "bz_gold": _theme(
+        "Bizzo Altın",
+        bg="radial-gradient(1100px 620px at 50% -12%, #3f1d1d 0%, #0c0a09 45%, #030303 100%)",
+        text="#fafaf9", muted="#a8a29e",
+        card_bg="rgba(251, 191, 36, 0.08)", card_border="rgba(251, 191, 36, 0.40)",
+        card_hover="rgba(251, 191, 36, 0.14)", accent="#fbbf24", accent2="#e11d48",
+        category="Bizzo", style="glow", animated=True, animation="gold", brand_logo=True,
+    ),
+    "bz_night": _theme(
+        "Bizzo Gece",
+        bg="linear-gradient(160deg,#0a0a0a,#1c1917 55%,#0c0a09)",
+        text="#fafaf9", muted="#78716c",
+        card_bg="rgba(255,255,255,0.05)", card_border="rgba(225, 29, 72, 0.30)",
+        card_hover="rgba(255,255,255,0.09)", accent="#fb7185",
+        category="Bizzo", style="solid", brand_logo=True,
+    ),
 }
 
+# Geriye dönük sabitler (marka bilinmiyorsa makro varsayılanı)
 DEFAULT_THEME = "makrobet"
 DEFAULT_HEADING_STYLE = "classic"
 DEFAULT_BRAND_LOGO = "/static/biolink/logo/logo-400.png"
 DEFAULT_BANNER = ""  # Banner GIF'ler kaldırıldı — sayfalar bannersız
 DEFAULT_FAVICON = "/static/biolink/favicons/favicon-makrobet.ico"
 
-BRAND_LOGOS = [
+_MAKRO_BRAND_LOGOS = [
     {"key": "logo-400", "label": "Logo 400px", "url": "/static/biolink/logo/logo-400.png", "w": 400, "h": 93},
     {"key": "logo-600", "label": "Logo 600px", "url": "/static/biolink/logo/logo-600.png", "w": 600, "h": 139},
     {"key": "logo-200", "label": "Logo 200px", "url": "/static/biolink/logo/logo-200.png", "w": 200, "h": 46},
@@ -589,23 +621,82 @@ BRAND_LOGOS = [
     {"key": "logo-avatar", "label": "Logo Avatar (kare)", "url": "/static/biolink/logo/logo-avatar-512.png", "w": 512, "h": 512},
 ]
 
+BRAND_LOGOS = list(_MAKRO_BRAND_LOGOS)
+
 BRAND_BANNERS = []
 
-BRAND_FAVICONS = [
+_MAKRO_BRAND_FAVICONS = [
     {"key": "makrobet-ico", "label": "Makrobet Favicon", "url": "/static/biolink/favicons/favicon-makrobet.ico"},
     {"key": "logo-avatar-favicon", "label": "Logo Avatar", "url": "/static/biolink/logo/logo-avatar-512.png", "w": 512, "h": 512},
     {"key": "logo-200-favicon", "label": "Logo 200px", "url": "/static/biolink/logo/logo-200.png", "w": 200, "h": 46},
 ]
 
+BRAND_FAVICONS = list(_MAKRO_BRAND_FAVICONS)
+
+_MAKROBET_THEME_KEYS = frozenset(
+    k for k, v in THEMES.items()
+    if (v.get("category") or "") in ("Makrobet",) or k in ("makrobet", "makrovip")
+)
+_BIZZO_THEME_KEYS = frozenset(
+    k for k, v in THEMES.items()
+    if (v.get("category") or "") == "Bizzo" or k.startswith("bz_") or k == "bizzo"
+)
+
+
+def _panel_brand_cfg():
+    try:
+        from panel_config import BRAND, PANEL_BRAND
+        return PANEL_BRAND, BRAND
+    except Exception:
+        return "makro", {}
+
+
+def brand_default_theme():
+    _, cfg = _panel_brand_cfg()
+    key = (cfg.get("biolink_default_theme") or DEFAULT_THEME).strip()
+    return key if key in THEMES else DEFAULT_THEME
+
+
+def brand_default_logo():
+    _, cfg = _panel_brand_cfg()
+    return (cfg.get("default_brand_logo") or "").strip()
+
+
+def brand_default_favicon():
+    _, cfg = _panel_brand_cfg()
+    return (cfg.get("default_favicon") or "").strip()
+
+
+def resolve_theme_key(theme_key):
+    """Markaya göre geçersiz/karşı-marka temayı varsayılana çeker."""
+    brand, _ = _panel_brand_cfg()
+    key = (theme_key or "").strip() or brand_default_theme()
+    if brand == "bizzo" and key in _MAKROBET_THEME_KEYS:
+        return brand_default_theme()
+    if brand == "makro" and key in _BIZZO_THEME_KEYS:
+        return brand_default_theme()
+    if key in THEMES:
+        return key
+    return brand_default_theme()
+
 
 def brand_assets():
+    brand, cfg = _panel_brand_cfg()
+    show_stock = bool(cfg.get("show_stock_brand_assets", brand == "makro"))
+    if show_stock:
+        logos = list(_MAKRO_BRAND_LOGOS)
+        favicons = list(_MAKRO_BRAND_FAVICONS)
+    else:
+        logos = []
+        favicons = []
     return {
-        "logos": list(BRAND_LOGOS),
+        "logos": logos,
         "banners": list(BRAND_BANNERS),
-        "favicons": list(BRAND_FAVICONS),
-        "default_logo": DEFAULT_BRAND_LOGO,
+        "favicons": favicons,
+        "default_logo": brand_default_logo(),
         "default_banner": DEFAULT_BANNER,
-        "default_favicon": DEFAULT_FAVICON,
+        "default_favicon": brand_default_favicon(),
+        "casino_name": cfg.get("casino_name") or "",
     }
 
 # key, name, category — CSS class = hs-{key}
@@ -673,20 +764,38 @@ HEADING_STYLE_META = {k: {"name": n, "category": c} for k, n, c in HEADING_STYLE
 
 
 def theme_list():
-    return [
-        {
+    brand, cfg = _panel_brand_cfg()
+    exclude = set(cfg.get("biolink_theme_categories_exclude") or ())
+    include = cfg.get("biolink_theme_categories_include")
+    include_set = set(include) if include else None
+    # Makro panelde Bizzo temaları; Bizzo panelde Makrobet temaları gizlenir
+    if brand == "bizzo":
+        exclude |= {"Makrobet"}
+    elif brand == "makro":
+        exclude |= {"Bizzo"}
+    out = []
+    for k, v in THEMES.items():
+        cat = v.get("category") or "Koyu"
+        if cat in exclude:
+            continue
+        if include_set is not None and cat not in include_set:
+            continue
+        if brand == "bizzo" and k in _MAKROBET_THEME_KEYS:
+            continue
+        if brand == "makro" and k in _BIZZO_THEME_KEYS:
+            continue
+        out.append({
             "key": k,
             "name": v["name"],
             "accent": v.get("accent"),
             "accent2": v.get("accent2") or v.get("accent"),
             "bg": v.get("bg"),
-            "category": v.get("category") or "Koyu",
+            "category": cat,
             "style": v.get("style") or "classic",
             "animated": bool(v.get("animated")),
             "brand_logo": bool(v.get("brand_logo")),
-        }
-        for k, v in THEMES.items()
-    ]
+        })
+    return out
 
 
 def heading_style_list():

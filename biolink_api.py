@@ -41,6 +41,11 @@ from biolink_themes import (
     DEFAULT_FAVICON,
     DEFAULT_HEADING_STYLE,
     DEFAULT_THEME,
+    brand_assets,
+    brand_default_favicon,
+    brand_default_logo,
+    brand_default_theme,
+    resolve_theme_key,
     HEADING_STYLE_KEYS,
     HEADING_STYLES,
     THEMES,
@@ -142,7 +147,8 @@ def theme_list():
 
 
 def theme_vars(theme_key, accent_override=""):
-    t = THEMES.get(theme_key) or THEMES[DEFAULT_THEME]
+    key = resolve_theme_key(theme_key)
+    t = THEMES.get(key) or THEMES[brand_default_theme()]
     out = dict(t)
     if (accent_override or "").strip():
         out["accent"] = accent_override.strip()
@@ -153,7 +159,8 @@ def theme_vars(theme_key, accent_override=""):
     out["category"] = t.get("category") or ""
     # Tema sabit marka logosu — sayfa "Logo yok" seçiminden bağımsız
     out["brand_logo"] = bool(t.get("brand_logo", True))
-    out["brand_logo_src"] = DEFAULT_BRAND_LOGO if out["brand_logo"] else ""
+    logo_src = brand_default_logo() or DEFAULT_BRAND_LOGO
+    out["brand_logo_src"] = logo_src if out["brand_logo"] and logo_src else ""
     out["default_banner"] = DEFAULT_BANNER
     return out
 
@@ -479,11 +486,21 @@ def _normalize_url(url):
     return url
 
 
+def _effective_default_logo():
+    return brand_default_logo() or DEFAULT_BRAND_LOGO or ""
+
+
+def _effective_default_favicon():
+    return brand_default_favicon() or DEFAULT_FAVICON or ""
+
+
 def _store_avatar_url(val):
     val = (val or "").strip()[:500]
     if val == NONE_MARKER:
         return NONE_MARKER
-    return val or DEFAULT_BRAND_LOGO
+    # Bizzo'da stok logo yok — boş bırakılabilir
+    fallback = _effective_default_logo()
+    return val or fallback or NONE_MARKER
 
 
 def _store_banner_url(val):
@@ -504,13 +521,14 @@ def _store_favicon_url(val):
 
 
 def resolve_favicon_url(page):
-    """Boş favicon → varsayılan Makrobet favicon."""
+    """Boş favicon → marka varsayılanı (Bizzo'da stok yoksa boş)."""
+    fallback = _effective_default_favicon()
     if not page:
-        return DEFAULT_FAVICON
+        return fallback
     raw = (page.get("favicon_url") or "").strip()
     if raw and raw != NONE_MARKER:
         return raw
-    return DEFAULT_FAVICON
+    return fallback
 
 
 def _page_row(row):
@@ -519,7 +537,7 @@ def _page_row(row):
     d = dict(row)
     d["is_active"] = bool(int(d.get("is_active") or 0))
     d["view_count"] = int(d.get("view_count") or 0)
-    d["theme"] = d.get("theme") or DEFAULT_THEME
+    d["theme"] = resolve_theme_key(d.get("theme") or brand_default_theme())
     d["button_shape"] = d.get("button_shape") or "pill"
 
     raw_avatar = (d.get("avatar_url") or "").strip()
@@ -530,7 +548,7 @@ def _page_row(row):
 
     d["hide_logo"] = raw_avatar == NONE_MARKER
     d["avatar_url"] = raw_avatar
-    d["logo_url"] = "" if d["hide_logo"] else (raw_avatar or DEFAULT_BRAND_LOGO)
+    d["logo_url"] = "" if d["hide_logo"] else (raw_avatar or _effective_default_logo())
 
     d["hide_banner"] = raw_banner == NONE_MARKER or layout == "none" or not (raw_banner or DEFAULT_BANNER)
     if d["hide_banner"]:
@@ -696,7 +714,7 @@ def apply_preview_overrides(page, args):
             page["hide_logo"] = True
         else:
             page["hide_logo"] = False
-            page["avatar_url"] = av or DEFAULT_BRAND_LOGO
+            page["avatar_url"] = av or _effective_default_logo()
             page["logo_url"] = page["avatar_url"]
     if "banner_url" in args:
         ban = (args.get("banner_url") or "").strip()[:500]
@@ -763,7 +781,7 @@ def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_co
         banner_layout = DEFAULT_BANNER_LAYOUT
     if banner_url == NONE_MARKER:
         banner_layout = "none"
-    theme = theme if theme in THEMES else DEFAULT_THEME
+    theme = resolve_theme_key(theme)
     accent_color = (accent_color or "").strip()[:32]
     button_shape = button_shape if button_shape in BUTTON_SHAPES else "pill"
     ga4_measurement_id = (ga4_measurement_id or "").strip()[:64]
@@ -771,7 +789,7 @@ def create_page(conn, *, title="", subtitle="", slug=None, theme=None, accent_co
     created_by = (created_by or "").strip()[:64]
     stored_domain = _unique_custom_domain(conn, custom_domain)
     if stored_domain and not _valid_custom_domain(stored_domain):
-        raise ValueError("Geçersiz özel domain (örn. vippmakro.com).")
+        raise ValueError("Geçersiz özel domain (örn. ornek.com).")
     now = iso(utcnow())
 
     base = slug.strip() if (slug or "").strip() else title
@@ -817,7 +835,7 @@ def update_page(conn, page_id, data):
     banner_url = pick("banner_url", row.get("banner_url") or "", 500)
     favicon_url = pick("favicon_url", row.get("favicon_url") or "", 500)
     banner_layout = pick("banner_layout", row.get("banner_layout") or DEFAULT_BANNER_LAYOUT, choices=set(BANNER_LAYOUTS))
-    theme = pick("theme", row["theme"], choices=set(THEMES.keys()))
+    theme = resolve_theme_key(data["theme"] if "theme" in data else row["theme"])
     accent_color = pick("accent_color", row["accent_color"], 32)
     button_shape = pick("button_shape", row["button_shape"], choices=set(BUTTON_SHAPES))
     ga4_measurement_id = pick("ga4_measurement_id", row["ga4_measurement_id"], 64)
@@ -892,7 +910,7 @@ def duplicate_page(conn, page_id, created_by=""):
         subtitle=src["subtitle"],
         theme=src["theme"],
         accent_color=src["accent_color"],
-        avatar_url=src.get("avatar_url") or DEFAULT_BRAND_LOGO,
+        avatar_url=src.get("avatar_url") or _effective_default_logo(),
         banner_url=src.get("banner_url") or DEFAULT_BANNER,
         banner_layout=src.get("banner_layout") or DEFAULT_BANNER_LAYOUT,
         button_shape=src["button_shape"],
@@ -1158,16 +1176,17 @@ def list_brand_assets(conn):
         for r in (fetchall(conn, "SELECT asset_key FROM biolink_hidden_assets") or [])
         if (r["asset_key"] or "").strip()
     }
+    stock = brand_assets()
     logos = [
-        a for a in list(BRAND_LOGOS)
+        a for a in list(stock.get("logos") or [])
         if a.get("key") not in hidden
     ] + [a for a in custom if a["kind"] == "logo"]
     banners = [
-        a for a in list(BRAND_BANNERS)
+        a for a in list(stock.get("banners") or [])
         if a.get("key") not in hidden
     ] + [a for a in custom if a["kind"] == "banner"]
     favicons = [
-        a for a in list(BRAND_FAVICONS)
+        a for a in list(stock.get("favicons") or [])
         if a.get("key") not in hidden
     ] + [a for a in custom if a["kind"] == "favicon"]
     popups = [a for a in custom if a["kind"] == "popup"]
@@ -1176,9 +1195,11 @@ def list_brand_assets(conn):
         "banners": banners,
         "favicons": favicons,
         "popups": popups,
-        "default_logo": DEFAULT_BRAND_LOGO,
-        "default_banner": DEFAULT_BANNER,
-        "default_favicon": DEFAULT_FAVICON,
+        "default_logo": stock.get("default_logo") or "",
+        "default_banner": stock.get("default_banner") or DEFAULT_BANNER,
+        "default_favicon": stock.get("default_favicon") or "",
+        "default_theme": brand_default_theme(),
+        "casino_name": stock.get("casino_name") or "",
         "hidden_count": len(hidden),
         "popup_shapes": popup_shape_catalog(),
     }

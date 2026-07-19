@@ -620,61 +620,84 @@ def migrate_makrolink(conn):
         )
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_makrolink_clicks_link ON makrolink_clicks(link_id)")
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_makrolink_clicks_at ON makrolink_clicks(clicked_at)")
-    # Default public host
-    if uses_postgres():
-        execute(
-            conn,
-            """
-            INSERT INTO makrolink_settings (key, value) VALUES ('public_host', 'makrovip.com')
-            ON CONFLICT (key) DO NOTHING
-            """,
-        )
-        execute(
-            conn,
-            """
-            INSERT INTO makrolink_settings (key, value) VALUES ('public_scheme', 'https')
-            ON CONFLICT (key) DO NOTHING
-            """,
-        )
-        execute(
-            conn,
-            """
-            INSERT INTO makrolink_settings (key, value) VALUES ('aff_base', 'https://go.aff.makroaffi.com')
-            ON CONFLICT (key) DO NOTHING
-            """,
-        )
-        execute(
-            conn,
-            """
-            INSERT INTO makrolink_settings (key, value) VALUES ('short_hosts', 'makrovip.com')
-            ON CONFLICT (key) DO NOTHING
-            """,
-        )
+    # Kısa link varsayılanları — markaya göre (Bizzo'da makrobet/makrovip seed yok)
+    try:
+        from panel_config import BRAND as _ML_BRAND, PANEL_BRAND as _ML_PANEL
+    except Exception:
+        _ML_BRAND, _ML_PANEL = {}, "makro"
+    _ml_host = (_ML_BRAND.get("default_short_host") or "").strip()
+    _ml_aff = (_ML_BRAND.get("default_aff_base") or "").strip()
+    # Yalnızca makro + dolu varsayılan varsa seed et; bizzo boş başlar
+    if _ML_PANEL == "makro" and _ml_host:
+        if uses_postgres():
+            execute(
+                conn,
+                """
+                INSERT INTO makrolink_settings (key, value) VALUES ('public_host', ?)
+                ON CONFLICT (key) DO NOTHING
+                """,
+                (_ml_host,),
+            )
+            execute(
+                conn,
+                """
+                INSERT INTO makrolink_settings (key, value) VALUES ('public_scheme', 'https')
+                ON CONFLICT (key) DO NOTHING
+                """,
+            )
+            if _ml_aff:
+                execute(
+                    conn,
+                    """
+                    INSERT INTO makrolink_settings (key, value) VALUES ('aff_base', ?)
+                    ON CONFLICT (key) DO NOTHING
+                    """,
+                    (_ml_aff,),
+                )
+            execute(
+                conn,
+                """
+                INSERT INTO makrolink_settings (key, value) VALUES ('short_hosts', ?)
+                ON CONFLICT (key) DO NOTHING
+                """,
+                (_ml_host,),
+            )
+        else:
+            execute(
+                conn,
+                "INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('public_host', ?)",
+                (_ml_host,),
+            )
+            execute(
+                conn,
+                "INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('public_scheme', 'https')",
+            )
+            if _ml_aff:
+                execute(
+                    conn,
+                    "INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('aff_base', ?)",
+                    (_ml_aff,),
+                )
+            execute(
+                conn,
+                "INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('short_hosts', ?)",
+                (_ml_host,),
+            )
     else:
-        execute(
-            conn,
-            """
-            INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('public_host', 'makrovip.com')
-            """,
-        )
-        execute(
-            conn,
-            """
-            INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('public_scheme', 'https')
-            """,
-        )
-        execute(
-            conn,
-            """
-            INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('aff_base', 'https://go.aff.makroaffi.com')
-            """,
-        )
-        execute(
-            conn,
-            """
-            INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('short_hosts', 'makrovip.com')
-            """,
-        )
+        # scheme her markada olabilir
+        if uses_postgres():
+            execute(
+                conn,
+                """
+                INSERT INTO makrolink_settings (key, value) VALUES ('public_scheme', 'https')
+                ON CONFLICT (key) DO NOTHING
+                """,
+            )
+        else:
+            execute(
+                conn,
+                "INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('public_scheme', 'https')",
+            )
     cols = _table_columns(conn, "makrolink_links")
     if cols and "target_domain" not in cols:
         execute(conn, "ALTER TABLE makrolink_links ADD COLUMN target_domain TEXT NOT NULL DEFAULT ''")

@@ -37,9 +37,9 @@
           <h4 id="biolink-editor-title">Sayfa Düzenle</h4>
 
           <div class="biolink-page-meta">
-            <div><label for="bl-title">Sayfa Başlığı</label><input id="bl-title" placeholder="MAKROVIP DESTEK HATTI" autocomplete="off"></div>
-            <div><label for="bl-slug">Slug (URL)</label><input id="bl-slug" placeholder="vipmakro" autocomplete="off"></div>
-            <div><label for="bl-domain">Özel Domain</label><input id="bl-domain" placeholder="vipmakro.com" autocomplete="off"><span class="muted-sm" style="display:block;margin-top:0.25rem;">DNS: Namecheap A kaydı → <code>216.24.57.1</code>, Render’da custom domain ekle.</span></div>
+            <div><label for="bl-title">Sayfa Başlığı</label><input id="bl-title" placeholder="{{ panel.biolink_title_placeholder }}" autocomplete="off"></div>
+            <div><label for="bl-slug">Slug (URL)</label><input id="bl-slug" placeholder="{{ panel.biolink_slug_placeholder }}" autocomplete="off"></div>
+            <div><label for="bl-domain">Özel Domain</label><input id="bl-domain" placeholder="{{ panel.biolink_domain_placeholder }}" autocomplete="off"><span class="muted-sm" style="display:block;margin-top:0.25rem;">DNS: Namecheap A kaydı → <code>216.24.57.1</code>, Render’da custom domain ekle.</span></div>
             <div class="full">
               <label>Favicon (sekme ikonu)</label>
               <div class="bl-asset-toolbar">
@@ -48,7 +48,7 @@
                 <span class="muted-sm bl-upload-status" id="bl-favicon-upload-status"></span>
               </div>
               <div class="bl-asset-picks bl-favicon-picks" id="bl-favicon-picks"></div>
-              <input id="bl-favicon" placeholder="Boş = Makrobet favicon / logo" autocomplete="off" style="margin-top:0.45rem;">
+              <input id="bl-favicon" placeholder="{{ panel.biolink_favicon_placeholder }}" autocomplete="off" style="margin-top:0.45rem;">
             </div>
             <div><label for="bl-shape">Buton Stili</label>
               <select id="bl-shape">
@@ -59,7 +59,7 @@
             </div>
             <div class="full">
               <label>Tasarım Temaları</label>
-              <input type="hidden" id="bl-theme" value="makrobet">
+              <input type="hidden" id="bl-theme" value="{{ panel.biolink_default_theme }}">
               <div class="bl-theme-toolbar">
                 <select id="bl-theme-cat"><option value="">Tüm kategoriler</option></select>
                 <span class="muted-sm" id="bl-theme-count"></span>
@@ -68,7 +68,7 @@
             </div>
             <div class="full"><label for="bl-subtitle">Alt Başlık / Açıklama</label><textarea id="bl-subtitle" rows="2" placeholder="Kısa tanıtım metni…"></textarea></div>
             <div class="full">
-              <label>Makrobet Logo</label>
+              <label>{{ panel.biolink_logo_label }}</label>
               <div class="bl-asset-toolbar">
                 <button type="button" class="btn btn-sm" id="btn-bl-upload-logo">+ Logo yükle</button>
                 <input type="file" id="bl-logo-file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden>
@@ -94,7 +94,7 @@
               </select>
             </div>
             <div><label for="bl-accent">Vurgu Rengi</label><input id="bl-accent" type="color" style="height:38px;padding:2px;width:100%;"></div>
-            <div><label for="bl-ga4-id">GA4 Measurement ID</label><input id="bl-ga4-id" placeholder="G-XXXXXXXX (vipmakro.com sayfa görüntüleme)" autocomplete="off"></div>
+            <div><label for="bl-ga4-id">GA4 Measurement ID</label><input id="bl-ga4-id" placeholder="G-XXXXXXXX" autocomplete="off"></div>
             <div><label for="bl-ga4-secret">GA4 API Secret</label><input id="bl-ga4-secret" type="password" placeholder="Admin → Data streams → Measurement Protocol" autocomplete="off"></div>
             <div class="full bl-popup-settings">
               <label class="bl-live-toggle" style="margin-bottom:0.55rem;">

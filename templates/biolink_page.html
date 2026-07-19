@@ -572,17 +572,17 @@
   <div class="wrap">
     <div class="page-hero">
     {% if page.logo_url %}
-    <img class="brand-logo-top" src="{{ page.logo_url }}" alt="Makrobet">
+    <img class="brand-logo-top" src="{{ page.logo_url }}" alt="{{ panel.casino_name }}">
     {% endif %}
 
     {% if page.banner_url %}
       {% if page.banner_layout == 'top' %}
     <div class="banner-wrap{% if '1080' in page.banner_url %} square{% endif %}">
-      <img src="{{ page.banner_url }}" alt="Makrobet Banner" width="468" height="60">
+      <img src="{{ page.banner_url }}" alt="{{ panel.casino_name }} Banner" width="468" height="60">
     </div>
       {% elif page.banner_layout == 'towers' %}
     <div class="banner-wrap towers-mobile{% if '1080' in page.banner_url %} square{% endif %}">
-      <img src="{{ page.banner_url }}" alt="Makrobet Banner" width="468" height="60">
+      <img src="{{ page.banner_url }}" alt="{{ panel.casino_name }} Banner" width="468" height="60">
     </div>
       {% endif %}
     {% endif %}

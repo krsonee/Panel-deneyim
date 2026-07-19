@@ -2103,7 +2103,7 @@
               <div style="display:flex;flex-wrap:wrap;gap:0.4rem;align-items:end;padding:0.5rem 0.55rem;border:1px solid var(--border,#243044);border-radius:8px;background:rgba(56,189,248,0.06);width:100%;">
                 <div>
                   <label for="makrolink-bulk-prefix" style="font-size:0.68rem;">Önek</label>
-                  <input id="makrolink-bulk-prefix" value="makrobet" style="width:110px;" autocomplete="off" title="örn. makrobet">
+                  <input id="makrolink-bulk-prefix" value="{{ panel.domain_prefix_placeholder }}" style="width:110px;" autocomplete="off" title="örn. {{ panel.domain_prefix_placeholder }}">
                 </div>
                 <div>
                   <label for="makrolink-bulk-from" style="font-size:0.68rem;">Eski no</label>
@@ -2726,7 +2726,16 @@
   {% if panel.features.mailing %}
   <script src="/static/mailing.js?v=20260719c"></script>
   {% endif %}
-  <script src="/static/biolink.js?v=20260716b"></script>
+  <script>
+    window.PANEL_BIOLINK = {
+      defaultTheme: {{ panel.biolink_default_theme|tojson }},
+      casinoName: {{ panel.casino_name|tojson }},
+      promoPlaceholder: {{ panel.biolink_promo_placeholder|tojson }},
+      shortlinkLabel: {{ panel.shortlink_label|tojson }},
+      domainPrefix: {{ panel.domain_prefix_placeholder|tojson }}
+    };
+  </script>
+  <script src="/static/biolink.js?v=20260720a"></script>
   {% if panel.features.marketing %}
   <script src="/static/marketing.js?v=20260712d"></script>
   {% endif %}
@@ -4819,10 +4828,10 @@
         fetch(API + "/api/makrolink/config").then(function(r) { return r.status === 401 ? null : r.json(); })
           .then(function(d) {
             if (!d) return;
-            document.getElementById("makrolink-host").value = d.public_host || "makrovip.com";
+            document.getElementById("makrolink-host").value = d.public_host || "";
             document.getElementById("makrolink-scheme").value = d.public_scheme || "https";
             var affEl = document.getElementById("makrolink-aff-base");
-            if (affEl) affEl.value = d.aff_base || "https://go.aff.makroaffi.com";
+            if (affEl) affEl.value = d.aff_base || "";
             var hostsEl = document.getElementById("makrolink-hosts");
             if (hostsEl) hostsEl.value = (d.short_hosts || []).join("\n");
             var groupEl = document.getElementById("makrolink-online-group");
@@ -5239,7 +5248,7 @@
 
       bindOptional("btn-makrolink-refresh", "click", function() {
         loadMakroLinks();
-        toast("MakroLink yenileniyor…");
+        toast((window.PANEL_BIOLINK && window.PANEL_BIOLINK.shortlinkLabel || "Kısa Link") + " yenileniyor…");
       });
 
       bindOptional("makrolink-search", "input", function() {
@@ -5339,7 +5348,7 @@
             public_scheme: document.getElementById("makrolink-scheme").value,
             aff_base: document.getElementById("makrolink-aff-base")
               ? document.getElementById("makrolink-aff-base").value.trim()
-              : "https://go.aff.makroaffi.com",
+              : "",
             short_hosts: document.getElementById("makrolink-hosts")
               ? document.getElementById("makrolink-hosts").value
               : "",
@@ -5358,7 +5367,7 @@
             if (!res.ok) { alert(res.data.error || "Kaydedilemedi."); return; }
             var sec = document.getElementById("makrolink-ga4-secret");
             if (sec) sec.value = "";
-            toast("MakroLink ayarları kaydedildi — domain grubu değiştiyse Takip eşle’ye bas");
+            toast((window.PANEL_BIOLINK && window.PANEL_BIOLINK.shortlinkLabel || "Kısa Link") + " ayarları kaydedildi — domain grubu değiştiyse Takip eşle’ye bas");
             loadMakroLinkConfig();
             loadMakroLinks();
           });
@@ -5382,7 +5391,7 @@
       });
 
       bindOptional("btn-makrolink-resync", "click", function() {
-        if (!confirm("Tüm aktif MakroLink Affid/kodlarını canlı domain grubuna yazayım mı?")) return;
+        if (!confirm("Tüm aktif kısa link Affid/kodlarını canlı domain grubuna yazayım mı?")) return;
         var st = document.getElementById("makrolink-ga4-status");
         if (st) st.textContent = "Eşleniyor…";
         fetch(API + "/api/makrolink/resync-tracking", { method: "POST" })
@@ -5404,7 +5413,7 @@
       });
 
       bindOptional("btn-makrolink-bulk-rewrite", "click", function() {
-        var prefix = ((document.getElementById("makrolink-bulk-prefix") || {}).value || "makrobet").trim();
+        var prefix = ((document.getElementById("makrolink-bulk-prefix") || {}).value || (window.PANEL_BIOLINK && window.PANEL_BIOLINK.domainPrefix) || "").trim();
         var fromNum = ((document.getElementById("makrolink-bulk-from") || {}).value || "").trim();
         var toNum = ((document.getElementById("makrolink-bulk-to") || {}).value || "").trim();
         var st = document.getElementById("makrolink-bulk-status");

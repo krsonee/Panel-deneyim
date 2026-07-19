@@ -91,6 +91,23 @@ app.config.update(
 )
 
 
+def migrate_biolink_themes_for_brand():
+    """Karşı marka tema anahtarlarını bu panelin varsayılanına çeker."""
+    try:
+        from biolink_themes import _BIZZO_THEME_KEYS, _MAKROBET_THEME_KEYS, brand_default_theme
+    except Exception:
+        return
+    default = brand_default_theme()
+    with closing(get_db()) as conn:
+        if PANEL_BRAND == "bizzo":
+            for key in _MAKROBET_THEME_KEYS:
+                execute(conn, "UPDATE biolink_pages SET theme = ? WHERE theme = ?", (default, key))
+        elif PANEL_BRAND == "makro":
+            for key in _BIZZO_THEME_KEYS:
+                execute(conn, "UPDATE biolink_pages SET theme = ? WHERE theme = ?", (default, key))
+        conn.commit()
+
+
 def init_db():
     db_init_schema()
     if PANEL_WIPE_DATA:
@@ -99,6 +116,7 @@ def init_db():
             conn.commit()
         print(f"\n🧹 PANEL_WIPE_DATA: operasyonel veri temizlendi ({PANEL_BRAND}).\n")
     migrate_domains()
+    migrate_biolink_themes_for_brand()
     ensure_primary_admin()
     seed_admin_users()
     print(f"\n🏷️  Panel markası: {BRAND['product_name']} (PANEL_BRAND={PANEL_BRAND})\n")
@@ -1292,7 +1310,7 @@ def delete_link(link_id):
 def build_tracking_snippet(domain=None, ref_code=None):
     base = get_server_base_url()
     return (
-        "<!-- MakroPanel — tüm kayıtlı domainler için ortak takip kodu -->\n"
+        f"<!-- {BRAND.get('tracker_comment') or 'Panel takip kodu'} -->\n"
         f'<script src="{base}/static/tracker.js" '
         f'data-api="{base}" async></script>'
     )

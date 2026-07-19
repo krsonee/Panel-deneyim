@@ -10,7 +10,11 @@ import struct
 import time
 import urllib.parse
 
-ISSUER = "MakroPanel"
+try:
+    from panel_config import BRAND
+    ISSUER = BRAND.get("totp_issuer") or "Panel"
+except Exception:
+    ISSUER = "Panel"
 
 
 def generate_secret():

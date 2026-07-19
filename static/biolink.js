@@ -101,7 +101,7 @@
       fields: [
         { key: "label", label: "Promo başlığı", placeholder: "500.000 TL Slot Turnuvası", full: false },
         { key: "badge_text", label: "Etiket / tutar", placeholder: "3.000 TL", full: false },
-        { key: "url", label: "Promo linki", placeholder: "https://makrobet804.com/…", full: true },
+        { key: "url", label: "Promo linki", placeholder: (window.PANEL_BIOLINK && window.PANEL_BIOLINK.promoPlaceholder) || "https://ornek-domain.com/…", full: true },
       ],
     },
     link: {
@@ -184,6 +184,11 @@
     return blApi("/api/biolink/themes").then(function (r) {
       if (!r || !r.ok) return;
       blThemes = r.data.themes || [];
+      if (r.data.default_theme) {
+        window.PANEL_BIOLINK = window.PANEL_BIOLINK || {};
+        window.PANEL_BIOLINK.defaultTheme = r.data.default_theme;
+        window.PANEL_BIOLINK.casinoName = r.data.casino_name || "";
+      }
       blHeadingStyles = r.data.heading_styles || [];
       if (r.data.popup_shapes && r.data.popup_shapes.length) {
         BL_POPUP_SHAPES = r.data.popup_shapes;
@@ -212,7 +217,7 @@
     var countEl = document.getElementById("bl-theme-count");
     var catSel = document.getElementById("bl-theme-cat");
     if (!box) return;
-    var selected = (hidden && hidden.value) || "makrobet";
+    var selected = (hidden && hidden.value) || (window.PANEL_BIOLINK && window.PANEL_BIOLINK.defaultTheme) || "";
     var cat = catSel ? catSel.value : "";
     var list = blThemes.filter(function (t) { return !cat || t.category === cat; });
     if (countEl) countEl.textContent = list.length + " / " + blThemes.length + " tema";
@@ -267,7 +272,7 @@
     if (kind === "favicon") {
       return {
         key: "default",
-        label: "Varsayılan (Makrobet)",
+        label: "Varsayılan (" + ((window.PANEL_BIOLINK && window.PANEL_BIOLINK.casinoName) || "logo") + ")",
         url: "",
         custom: false,
         isNone: true,
@@ -583,7 +588,7 @@
     if (domainEl) domainEl.value = page.custom_domain || "";
     var faviconEl = document.getElementById("bl-favicon");
     if (faviconEl) faviconEl.value = page.favicon_url || "";
-    document.getElementById("bl-theme").value = page.theme || "makrobet";
+    document.getElementById("bl-theme").value = page.theme || (window.PANEL_BIOLINK && window.PANEL_BIOLINK.defaultTheme) || "";
     document.getElementById("bl-shape").value = page.button_shape || "pill";
     renderThemeGallery();
     document.getElementById("bl-subtitle").value = page.subtitle || "";
@@ -830,7 +835,7 @@
   }
 
   function createNewPage() {
-    blApi("/api/biolink/pages", { method: "POST", body: { title: "Yeni Sayfa", theme: "makrobet" } }).then(function (r) {
+    blApi("/api/biolink/pages", { method: "POST", body: { title: "Yeni Sayfa", theme: (window.PANEL_BIOLINK && window.PANEL_BIOLINK.defaultTheme) || "" } }).then(function (r) {
       if (r && r.ok) {
         blToast("Sayfa oluşturuldu");
         loadPages();

@@ -98,10 +98,18 @@ def create_biolink_blueprint(permission_required):
     @api.route("/themes", methods=["GET"])
     @perm(*MODULE_ACCESS)
     def themes():
+        from biolink_themes import brand_default_theme
+        try:
+            from panel_config import BRAND
+            casino = BRAND.get("casino_name") or ""
+        except Exception:
+            casino = ""
         return jsonify({
             "themes": biolink_api.theme_list(),
             "heading_styles": biolink_api.heading_style_list(),
             "popup_shapes": biolink_api.popup_shape_catalog(),
+            "default_theme": brand_default_theme(),
+            "casino_name": casino,
         })
 
     @api.route("/assets", methods=["GET"])
