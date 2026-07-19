@@ -17,6 +17,8 @@
   var MAIL_IMPORT_DISMISSED_KEY = "makro_mail_import_dismissed_v1";
   var MAIL_TAB_STORAGE_KEY = "makro_mail_tab";
   var mailImportPollTimer = null;
+  var mailScrubPollTimer = null;
+  var mailScrubJobId = null;
   var mailImportRefreshTimer = null;
   var mailImportHandledJobs = {};
   var mailImportActiveXhr = null;
@@ -707,7 +709,9 @@
       var cur = sel.value;
       var isFilter = sel.id === "mail-contact-tag-filter";
       var isMove = sel.id === "mail-tag-move-from" || sel.id === "mail-tag-move-to";
-      var emptyLabel = isFilter ? "Tüm etiketler" : (isMove ? "Seç…" : "Etiket yok");
+      var isScrub = sel.id === "mail-scrub-tag";
+      var emptyLabel = isFilter || isScrub ? "Tüm etiketler" : (isMove ? "Seç…" : "Etiket yok");
+      if (isScrub) emptyLabel = "Tüm kontaklar";
       sel.innerHTML = optionsWithEmpty(emptyLabel);
       if (cur) sel.value = cur;
     });
@@ -846,7 +850,7 @@
       var tbody = document.getElementById("mail-contacts-table");
       if (!tbody) return;
       if (!res || !res.ok) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty">Yüklenemedi</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">Yüklenemedi</td></tr>';
         mailContactsPageTotal = 0;
         mailContactsFilterTotal = 0;
         mailUpdateContactSelectionCount();
@@ -869,7 +873,7 @@
       });
       if (harvested) mailFillAllTagSelects();
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty">Kontak yok</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">Kontak yok</td></tr>';
         mailUpdateContactSelectionCount();
         return;
       }
@@ -877,16 +881,94 @@
         var tags = (c.tags || []).map(function (t) {
           return '<span class="acc-chip"><span class="acc-chip-text">' + esc(t) + "</span></span>";
         }).join(" ");
+        var vs = (c.verify_status || "").trim();
+        var vd = (c.verify_detail || "").trim();
+        var vLabel = vs ? esc(vs) : "—";
+        if (vd) vLabel = '<span title="' + esc(vd) + '">' + vLabel + "</span>";
         return "<tr>" +
           '<td><input type="checkbox" class="mail-contact-check" value="' + c.id + '"></td>' +
           "<td>" + esc(c.email) + (c.unsubscribed ? ' <span class="muted">(unsub)</span>' : "") + "</td>" +
           "<td>" + esc(c.name) + "</td>" +
+          "<td>" + vLabel + "</td>" +
           "<td>" + (tags || "—") + "</td>" +
           "<td>" + esc(c.source) + "</td>" +
           '<td><button type="button" class="btn btn-sm mail-del-contact" data-id="' + c.id + '">Sil</button></td>' +
           "</tr>";
       }).join("");
       mailUpdateContactSelectionCount();
+    });
+  }
+
+  function mailScrubStatusText(j) {
+    if (!j) return "—";
+    var parts = [
+      (j.processed || 0) + "/" + (j.total || "?"),
+      "valid " + (j.valid_count || 0),
+      "invalid " + (j.invalid_count || 0),
+      "unknown " + (j.unknown_count || 0),
+      "catch-all " + (j.catch_all_count || 0),
+      "disp " + (j.disposable_count || 0),
+      "role " + (j.role_count || 0),
+      "suppressed " + (j.suppressed_count || 0)
+    ];
+    if (j.skipped_count) parts.push("skip " + j.skipped_count);
+    return (j.status || "") + " · " + parts.join(" · ");
+  }
+
+  function mailPollScrubJob(jobId) {
+    var prog = document.getElementById("mail-scrub-progress");
+    var bar = document.getElementById("mail-scrub-progress-bar");
+    var statusEl = document.getElementById("mail-scrub-status");
+    var cancelBtn = document.getElementById("mail-scrub-cancel");
+    if (prog) prog.hidden = false;
+    if (cancelBtn) cancelBtn.hidden = false;
+    mailScrubJobId = jobId;
+    if (mailScrubPollTimer) { clearTimeout(mailScrubPollTimer); mailScrubPollTimer = null; }
+    function poll() {
+      mailApi("/api/mailing/contacts/scrub/status/" + jobId, { timeoutMs: 30000 }).then(function (res) {
+        if (!res || !res.ok || !res.data.job) {
+          mailScrubPollTimer = setTimeout(poll, 2500);
+          return;
+        }
+        var j = res.data.job;
+        var pct = j.total > 0 ? Math.min(100, Math.round((j.processed / j.total) * 100)) : 0;
+        if (bar) bar.style.width = (j.total > 0 ? pct : (j.processed > 0 ? 40 : 12)) + "%";
+        if (statusEl) statusEl.textContent = mailScrubStatusText(j);
+        if (j.status === "done" || j.status === "error" || j.status === "cancelled") {
+          if (cancelBtn) cancelBtn.hidden = true;
+          mailScrubJobId = null;
+          if (j.status === "done") mailToast("Liste temizliği bitti");
+          else if (j.status === "error") mailToast(j.error || "Temizlik hatası");
+          mailLoadContacts();
+          mailLoadTags();
+          return;
+        }
+        if (j.status === "cancelling" && statusEl) {
+          statusEl.textContent = "İptal ediliyor… · " + mailScrubStatusText(j);
+        }
+        mailScrubPollTimer = setTimeout(poll, 1500);
+      });
+    }
+    poll();
+  }
+
+  function mailStartScrub(opts) {
+    opts = opts || {};
+    var body = {};
+    if (opts.contact_ids && opts.contact_ids.length) {
+      body.contact_ids = opts.contact_ids;
+    } else {
+      body.tag_filter = (document.getElementById("mail-scrub-tag") || {}).value || "";
+    }
+    var n = opts.contact_ids ? opts.contact_ids.length : "filtre";
+    if (!confirm("Liste temizliği başlasın mı? Kapsam: " + n)) return;
+    mailApi("/api/mailing/contacts/scrub/start", { method: "POST", body: body, timeoutMs: 30000 }).then(function (res) {
+      if (!res || !res.ok) {
+        mailToast((res && res.data && res.data.error) || "Başlatılamadı");
+        return;
+      }
+      mailToast("Temizlik başladı #" + res.data.job.id);
+      mailPollScrubJob(res.data.job.id);
     });
   }
 
@@ -1422,6 +1504,27 @@
       setText("mail-set-pass-hint", s.smtp_password_set ? "Şifre kayıtlı (değiştirmek için yaz)" : "Şifre yok");
       updateProviderPill(s.provider_mode);
       renderDomainsTable(mailDomains);
+      var scrub = s.scrub || {};
+      var elSmtp = document.getElementById("mail-scrub-smtp");
+      if (elSmtp) elSmtp.checked = scrub.scrub_smtp_verify !== false && s.scrub_smtp_verify !== "0";
+      var elRate = document.getElementById("mail-scrub-rate");
+      if (elRate) elRate.value = scrub.scrub_rate_per_minute || s.scrub_rate_per_minute || 30;
+      var elSkip = document.getElementById("mail-scrub-skip");
+      if (elSkip) elSkip.value = scrub.scrub_skip_hours != null ? scrub.scrub_skip_hours : (s.scrub_skip_hours || 168);
+      var elFrom = document.getElementById("mail-scrub-from");
+      if (elFrom) elFrom.value = scrub.scrub_mail_from || s.scrub_mail_from || "";
+      var elInv = document.getElementById("mail-scrub-suppress-invalid");
+      if (elInv) elInv.checked = scrub.scrub_auto_suppress_invalid !== false && s.scrub_auto_suppress_invalid !== "0";
+      var elDisp = document.getElementById("mail-scrub-suppress-disposable");
+      if (elDisp) elDisp.checked = scrub.scrub_suppress_disposable !== false && s.scrub_suppress_disposable !== "0";
+      var elRole = document.getElementById("mail-scrub-suppress-role");
+      if (elRole) elRole.checked = !!(scrub.scrub_suppress_role || s.scrub_suppress_role === "1");
+      var elCamp = document.getElementById("mail-scrub-camp-only");
+      if (elCamp) elCamp.checked = !!(scrub.scrub_campaign_only_valid || s.scrub_campaign_only_valid === "1");
+      var campOnly = document.getElementById("mail-camp-only-verified");
+      if (campOnly && (scrub.scrub_campaign_only_valid || s.scrub_campaign_only_valid === "1")) {
+        campOnly.checked = true;
+      }
     });
   }
 
@@ -2029,12 +2132,14 @@
       var maxVal = maxEl && maxEl.value ? Number(maxEl.value) : null;
       var rateEl = document.getElementById("mail-camp-rate");
       var rateVal = rateEl && rateEl.value ? Number(rateEl.value) : 120;
+      var onlyV = document.getElementById("mail-camp-only-verified");
       return {
         tag_filter: (document.getElementById("mail-camp-tag").value || "").trim(),
         max_recipients: maxVal,
         rate_per_minute: rateVal || 120,
         scheduled_at: (document.getElementById("mail-camp-schedule").value || "").trim(),
-        exclude_previously_sent: document.getElementById("mail-camp-exclude-sent").checked
+        exclude_previously_sent: document.getElementById("mail-camp-exclude-sent").checked,
+        only_verified: onlyV ? !!onlyV.checked : false
       };
     }
 
@@ -2115,6 +2220,45 @@
       if (tag) url += "&tag=" + encodeURIComponent(tag);
       window.open(url, "_blank");
     });
+    bindClick("mail-scrub-start", function () { mailStartScrub({}); });
+    bindClick("mail-scrub-selected", function () {
+      var ids = Array.prototype.map.call(
+        document.querySelectorAll(".mail-contact-check:checked"),
+        function (el) { return Number(el.value); }
+      ).filter(Boolean);
+      if (!ids.length) { mailToast("Önce kontak seç"); return; }
+      mailStartScrub({ contact_ids: ids });
+    });
+    bindClick("mail-scrub-cancel", function () {
+      if (!mailScrubJobId) return;
+      mailApi("/api/mailing/contacts/scrub/cancel/" + mailScrubJobId, { method: "POST" }).then(function (res) {
+        if (!res || !res.ok) mailToast((res && res.data && res.data.error) || "İptal edilemedi");
+        else mailToast("İptal isteniyor…");
+      });
+    });
+    var scrubForm = document.getElementById("mail-scrub-settings-form");
+    if (scrubForm) {
+      scrubForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        mailApi("/api/mailing/settings", {
+          method: "PATCH",
+          body: {
+            scrub_smtp_verify: document.getElementById("mail-scrub-smtp").checked,
+            scrub_rate_per_minute: String(document.getElementById("mail-scrub-rate").value || 30),
+            scrub_skip_hours: String(document.getElementById("mail-scrub-skip").value || 168),
+            scrub_mail_from: (document.getElementById("mail-scrub-from").value || "").trim(),
+            scrub_auto_suppress_invalid: document.getElementById("mail-scrub-suppress-invalid").checked,
+            scrub_suppress_disposable: document.getElementById("mail-scrub-suppress-disposable").checked,
+            scrub_suppress_role: document.getElementById("mail-scrub-suppress-role").checked,
+            scrub_campaign_only_valid: document.getElementById("mail-scrub-camp-only").checked
+          }
+        }).then(function (res) {
+          if (!res || !res.ok) { mailToast("Kaydedilemedi"); return; }
+          mailToast("Temizleme ayarları kaydedildi");
+          mailLoadSettings();
+        });
+      });
+    }
     var ch = document.getElementById("mail-rep-channel");
     if (ch) ch.addEventListener("change", mailLoadReports);
     var st = document.getElementById("mail-rep-status");

@@ -624,7 +624,7 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
     }
 
 
-def _campaign_selection_where(tag_filter, exclude_previously_sent):
+def _campaign_selection_where(tag_filter, exclude_previously_sent, only_verified=False):
     """Kampanya alıcı seçiminde kullanılan WHERE + params — hem sayım
     önizlemesinde hem gerçek eklemede aynı filtre mantığı kullanılsın diye."""
     clauses = [
@@ -641,14 +641,21 @@ def _campaign_selection_where(tag_filter, exclude_previously_sent):
         clauses.append(
             "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
         )
+    if only_verified:
+        # SMTP ile valid + (SMTP kapalıyken) mx_ok kabul
+        clauses.append("LOWER(COALESCE(verify_status, '')) IN ('valid', 'mx_ok')")
     return " AND ".join(clauses), params
 
 
-def _attach_campaign_recipients(conn, campaign_id, *, tag_filter, max_recipients, exclude_previously_sent, now):
+def _attach_campaign_recipients(
+    conn, campaign_id, *, tag_filter, max_recipients, exclude_previously_sent, now, only_verified=False,
+):
     """Filtreye uyan kontakları (limitliyse en fazla max_recipients kadar,
     en eski/ilk eklenenden başlayarak) tek seferde toplu INSERT ile kampanyaya
     ekler — yüz binlerce satırda da satır-satır sorgu yapmaz."""
-    where_sql, params = _campaign_selection_where(tag_filter, exclude_previously_sent)
+    where_sql, params = _campaign_selection_where(
+        tag_filter, exclude_previously_sent, only_verified=only_verified,
+    )
     sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
     if max_recipients:
         sql += " LIMIT ?"
@@ -1421,17 +1428,23 @@ def _purge_all_mail_contacts_once():
 def create_mailing_blueprint(permission_required):
     from mail_campaign_worker import ensure_campaign_scheduler
     from mail_ops import ensure_mail_ops_schema
+    from mail_scrub import cancel_active_scrub_jobs, ensure_mail_scrub_schema
 
     ensure_campaign_scheduler()
     try:
         with closing(get_db()) as conn:
             ensure_mail_ops_schema(conn)
+            ensure_mail_scrub_schema(conn)
     except Exception as exc:
-        print(f"⚠️  mail_ops ensure: {exc}")
+        print(f"⚠️  mail_ops/scrub ensure: {exc}")
     try:
         _cancel_all_active_imports()
     except Exception as exc:
         print(f"⚠️  startup import cancel: {exc}")
+    try:
+        cancel_active_scrub_jobs()
+    except Exception as exc:
+        print(f"⚠️  startup scrub cancel: {exc}")
     try:
         _purge_all_mail_contacts_once()
     except Exception as exc:
@@ -1838,6 +1851,76 @@ def create_mailing_blueprint(permission_required):
             conn.commit()
         return jsonify({"ok": True, "status": "cancelling"})
 
+    @bp.route("/contacts/scrub/start", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def start_scrub():
+        """Liste temizleme: syntax/MX/SMTP ping → invalid’leri suppression’a al."""
+        from mail_scrub import job_public, start_scrub_job
+
+        data = request.get_json(silent=True) or {}
+        tag_filter = (data.get("tag_filter") or "").strip()
+        contact_ids = data.get("contact_ids") or []
+        if not isinstance(contact_ids, list):
+            contact_ids = []
+        try:
+            contact_ids = [int(x) for x in contact_ids if x is not None and str(x).strip() != ""]
+        except (TypeError, ValueError):
+            return jsonify({"error": "contact_ids geçersiz."}), 400
+        scope = "selected" if contact_ids else ("filter" if tag_filter else "all")
+        try:
+            job_id = start_scrub_job(tag_filter=tag_filter, contact_ids=contact_ids, scope=scope)
+        except RuntimeError as exc:
+            return jsonify({"error": str(exc)}), 409
+        except Exception as exc:
+            return jsonify({"error": f"Temizlik başlatılamadı: {exc}"}), 500
+        with closing(get_db()) as conn:
+            from mail_ops import audit
+            audit(conn, request.headers.get("X-Admin-User") or "admin", "scrub_start", f"job={job_id} scope={scope}")
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            row = fetchone(conn, "SELECT * FROM mail_scrub_jobs WHERE id = ?", (job_id,))
+        return jsonify({"ok": True, "job": job_public(row)}), 201
+
+    @bp.route("/contacts/scrub/status/<int:job_id>", methods=["GET"])
+    @mail_perm(*MAIL_CRM)
+    def scrub_status(job_id):
+        from mail_scrub import job_public
+
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM mail_scrub_jobs WHERE id = ?", (job_id,))
+            if not row:
+                return jsonify({"error": "İş bulunamadı."}), 404
+        return jsonify({"job": job_public(row)})
+
+    @bp.route("/contacts/scrub/latest", methods=["GET"])
+    @mail_perm(*MAIL_CRM)
+    def scrub_latest():
+        from mail_scrub import job_public
+
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM mail_scrub_jobs ORDER BY id DESC LIMIT 1")
+        return jsonify({"job": job_public(row) if row else None})
+
+    @bp.route("/contacts/scrub/cancel/<int:job_id>", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def cancel_scrub(job_id):
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT status FROM mail_scrub_jobs WHERE id = ?", (job_id,))
+            if not row:
+                return jsonify({"error": "İş bulunamadı."}), 404
+            status = row["status"]
+            if status in ("done", "error", "cancelled", "cancelling"):
+                return jsonify({"error": f"İş zaten sonlanmış ({status})."}), 400
+            execute(
+                conn,
+                "UPDATE mail_scrub_jobs SET status = 'cancelling', updated_at = ? WHERE id = ?",
+                (iso(utcnow()), job_id),
+            )
+            conn.commit()
+        return jsonify({"ok": True, "status": "cancelling"})
+
     @bp.route("/tags", methods=["GET"])
     @mail_perm(*MAIL_CRM)
     def list_tags():
@@ -2212,6 +2295,13 @@ def create_mailing_blueprint(permission_required):
         if scheduled_raw and "T" in scheduled_raw and len(scheduled_raw) == 16:
             scheduled_raw = scheduled_raw + ":00"
         with closing(get_db()) as conn:
+            from mail_scrub import scrub_settings as _scrub_settings
+            scrub_cfg = _scrub_settings(conn)
+            only_verified = data.get("only_verified")
+            if only_verified is None:
+                only_verified = bool(scrub_cfg.get("scrub_campaign_only_valid"))
+            else:
+                only_verified = bool(only_verified)
             if not fetchone(conn, "SELECT id FROM mail_templates WHERE id = ?", (template_id,)):
                 return jsonify({"error": "Şablon bulunamadı."}), 404
             if not fetchone(conn, "SELECT id FROM mail_domains WHERE id = ?", (domain_id,)):
@@ -2234,7 +2324,7 @@ def create_mailing_blueprint(permission_required):
             )
             attached = _attach_campaign_recipients(
                 conn, cid, tag_filter=tag_filter, max_recipients=max_recipients,
-                exclude_previously_sent=exclude_sent, now=now,
+                exclude_previously_sent=exclude_sent, now=now, only_verified=only_verified,
             )
             execute(
                 conn,
@@ -2263,7 +2353,16 @@ def create_mailing_blueprint(permission_required):
         except (TypeError, ValueError):
             max_recipients = None
         with closing(get_db()) as conn:
-            where_sql, params = _campaign_selection_where(tag_filter, exclude_sent)
+            from mail_scrub import scrub_settings as _scrub_settings
+            scrub_cfg = _scrub_settings(conn)
+            only_verified = data.get("only_verified")
+            if only_verified is None:
+                only_verified = bool(scrub_cfg.get("scrub_campaign_only_valid"))
+            else:
+                only_verified = bool(only_verified)
+            where_sql, params = _campaign_selection_where(
+                tag_filter, exclude_sent, only_verified=only_verified,
+            )
             total = None
             # Tag filtreliyse registry sayısı; değilse approx. Exact COUNT yasak.
             if tag_filter and not exclude_sent:
@@ -2732,14 +2831,21 @@ def create_mailing_blueprint(permission_required):
             "provider_mode", "smtp_host", "smtp_port", "smtp_user", "smtp_password",
             "webhook_secret", "default_domain_id",
             "smartico_affiliate_id", "smartico_subid_param",
+            "scrub_smtp_verify", "scrub_rate_per_minute", "scrub_auto_suppress_invalid",
+            "scrub_suppress_disposable", "scrub_suppress_role", "scrub_campaign_only_valid",
+            "scrub_skip_hours", "scrub_mail_from",
         )
         with closing(get_db()) as conn:
+            from mail_scrub import ensure_mail_scrub_schema, scrub_settings as _scrub_settings
+            ensure_mail_scrub_schema(conn)
             settings = {k: get_mail_setting(conn, k, "") or "" for k in keys}
             # Mask password
             pw = settings.get("smtp_password") or ""
             settings["smtp_password_set"] = bool(pw)
             settings["smtp_password"] = ""
             settings["webhook_secret_masked"] = _mask_secret(settings.get("webhook_secret") or "")
+            scrub = _scrub_settings(conn)
+            settings["scrub"] = scrub
             domains = [_domain_public(r) for r in (fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC") or [])]
         return jsonify({"settings": settings, "domains": domains})
 
@@ -2751,15 +2857,27 @@ def create_mailing_blueprint(permission_required):
             "provider_mode", "smtp_host", "smtp_port", "smtp_user", "smtp_password",
             "webhook_secret", "default_domain_id",
             "smartico_affiliate_id", "smartico_subid_param",
+            "scrub_smtp_verify", "scrub_rate_per_minute", "scrub_auto_suppress_invalid",
+            "scrub_suppress_disposable", "scrub_suppress_role", "scrub_campaign_only_valid",
+            "scrub_skip_hours", "scrub_mail_from",
         }
         with closing(get_db()) as conn:
             if data.get("rotate_webhook_secret"):
                 upsert_mail_setting(conn, "webhook_secret", secrets.token_hex(24))
+            bool_keys = {
+                "scrub_smtp_verify", "scrub_auto_suppress_invalid", "scrub_suppress_disposable",
+                "scrub_suppress_role", "scrub_campaign_only_valid",
+            }
             for key, val in data.items():
                 if key not in allowed:
                     continue
                 if key == "smtp_password" and (val is None or val == ""):
                     continue  # empty = keep existing
+                if key in bool_keys:
+                    if isinstance(val, bool):
+                        val = "1" if val else "0"
+                    else:
+                        val = "1" if str(val).strip().lower() in ("1", "true", "yes", "on") else "0"
                 upsert_mail_setting(conn, key, "" if val is None else str(val).strip())
             conn.commit()
             settings = {k: get_mail_setting(conn, k, "") or "" for k in allowed}
@@ -2767,6 +2885,8 @@ def create_mailing_blueprint(permission_required):
             settings["smtp_password_set"] = bool(pw)
             settings["smtp_password"] = ""
             settings["webhook_secret_masked"] = _mask_secret(settings.get("webhook_secret") or "")
+            from mail_scrub import scrub_settings as _scrub_settings
+            settings["scrub"] = _scrub_settings(conn)
         return jsonify({"settings": settings})
 
     def _mask_secret(s):

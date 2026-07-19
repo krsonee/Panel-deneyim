@@ -147,6 +147,31 @@
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Liste temizle (gönderim öncesi süzgeç)</span></div>
+      <div class="card-body">
+        <p class="hint" style="margin:0 0 0.65rem;">
+          Syntax / disposable / MX / SMTP ping ile geçersiz adresleri ayıklar.
+          Geçersizler suppression’a alınır; geçerli olanlar <code>mail_valid</code> etiketi alır.
+          SMTP ping “pasif kullanıcı” bulmaz — sadece mailbox’ın kabul edilip edilmediğine bakar.
+        </p>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end;">
+          <div style="min-width:180px;">
+            <label>Kapsam etiketi (boş = tümü)</label>
+            <select id="mail-scrub-tag" class="mail-tag-select"><option value="">Tüm kontaklar</option></select>
+          </div>
+          <button type="button" class="btn btn-primary" id="mail-scrub-start">Listeyi temizle</button>
+          <button type="button" class="btn btn-sm" id="mail-scrub-selected">Seçilileri temizle</button>
+          <button type="button" class="btn btn-sm" id="mail-scrub-cancel" hidden>İptal</button>
+        </div>
+        <div id="mail-scrub-progress" hidden style="margin-top:0.75rem;">
+          <div style="background:rgba(148,163,184,0.18);border-radius:999px;height:10px;overflow:hidden;">
+            <div id="mail-scrub-progress-bar" style="background:var(--green,#22c55e);height:100%;width:0%;transition:width .35s;"></div>
+          </div>
+          <p class="hint" id="mail-scrub-status" style="margin:0.4rem 0 0;">—</p>
+        </div>
+      </div>
+    </section>
+    <section class="card" style="margin-bottom:1rem;">
       <div class="card-head"><span>Smartico'dan otomatik segment</span></div>
       <div class="card-body">
         <p class="hint">
@@ -217,8 +242,8 @@
       <div class="table-wrap">
         <div class="table-scroll">
           <table>
-            <thead><tr><th style="width:2rem;"></th><th>E-posta</th><th>Ad</th><th>Etiket</th><th>Kaynak</th><th></th></tr></thead>
-            <tbody id="mail-contacts-table"><tr><td colspan="6" class="empty">Veri yok</td></tr></tbody>
+            <thead><tr><th style="width:2rem;"></th><th>E-posta</th><th>Ad</th><th>Doğrulama</th><th>Etiket</th><th>Kaynak</th><th></th></tr></thead>
+            <tbody id="mail-contacts-table"><tr><td colspan="7" class="empty">Veri yok</td></tr></tbody>
           </table>
         </div>
         <div class="mail-contacts-footer" id="mail-contacts-footer">
@@ -328,9 +353,12 @@
           <div><label>Maks alıcı</label><input type="number" id="mail-camp-max" min="1" placeholder="örn. 150000 — boş = hepsi"></div>
           <div><label>Saatlik hız (mail/dk)</label><input type="number" id="mail-camp-rate" min="1" max="6000" value="120" title="SMTP için önerilen 60–180"></div>
           <div><label>Zamanla (opsiyonel)</label><input type="datetime-local" id="mail-camp-schedule"></div>
-          <div style="display:flex;align-items:flex-end;">
+          <div style="display:flex;align-items:flex-end;flex-wrap:wrap;gap:0.65rem;">
             <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
               <input type="checkbox" id="mail-camp-exclude-sent" checked> Önceden mail atılmışları hariç tut
+            </label>
+            <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
+              <input type="checkbox" id="mail-camp-only-verified"> Sadece doğrulanmış
             </label>
           </div>
           <div style="display:flex;align-items:flex-end;gap:0.5rem;flex-wrap:wrap;">
@@ -484,6 +512,47 @@
         <p class="hint" style="margin-top:0.5rem;">
           Bounce webhook: <code>/api/mailing/webhooks/bounce</code> — header <code>X-Mailing-Webhook-Secret</code> (IVR secret ile aynı).
           Her mailde otomatik unsubscribe + açık takibi eklenir.
+        </p>
+      </div>
+    </section>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Liste temizleme ayarları</span></div>
+      <div class="card-body">
+        <form id="mail-scrub-settings-form" class="form-row-4">
+          <div>
+            <label style="display:flex;align-items:center;gap:0.4rem;margin-top:1.4rem;">
+              <input type="checkbox" id="mail-scrub-smtp" checked> SMTP ping (RCPT)
+            </label>
+          </div>
+          <div><label>Hız (kontrol/dk)</label><input type="number" id="mail-scrub-rate" min="1" max="600" value="30"></div>
+          <div><label>Tekrar atlama (saat)</label><input type="number" id="mail-scrub-skip" min="0" max="2160" value="168" title="Son N saatte doğrulanmışsa tekrar kontrol etme"></div>
+          <div><label>Probe From (opsiyonel)</label><input type="text" id="mail-scrub-from" placeholder="noreply@vipozelileti.com"></div>
+          <div>
+            <label style="display:flex;align-items:center;gap:0.4rem;margin-top:1.4rem;">
+              <input type="checkbox" id="mail-scrub-suppress-invalid" checked> Invalid → suppression
+            </label>
+          </div>
+          <div>
+            <label style="display:flex;align-items:center;gap:0.4rem;margin-top:1.4rem;">
+              <input type="checkbox" id="mail-scrub-suppress-disposable" checked> Disposable → suppression
+            </label>
+          </div>
+          <div>
+            <label style="display:flex;align-items:center;gap:0.4rem;margin-top:1.4rem;">
+              <input type="checkbox" id="mail-scrub-suppress-role"> Role (info@…) → suppression
+            </label>
+          </div>
+          <div>
+            <label style="display:flex;align-items:center;gap:0.4rem;margin-top:1.4rem;">
+              <input type="checkbox" id="mail-scrub-camp-only"> Kampanyada varsayılan: sadece doğrulanmış
+            </label>
+          </div>
+          <div style="grid-column:1/-1;"><button type="submit" class="btn btn-primary">Temizleme ayarlarını kaydet</button></div>
+        </form>
+        <p class="hint" style="margin-top:0.65rem;">
+          SMTP ping kapalıysa sadece syntax + disposable + MX kontrolü yapılır (hızlı, “mx_ok”).
+          Açıkken alıcı MX’ine RCPT TO ile bakar — Gmail vb. çoğu zaman <code>unknown</code> döner; catch-all domainler ayrı etiketlenir.
+          Render’da outbound port 25 kapalıysa SMTP ping çalışmaz; o zaman SMTP’yi kapatıp MX modunu kullan.
         </p>
       </div>
     </section>
