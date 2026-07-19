@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Giriş — Makro Panel</title>
+  <title>Giriş — {{ panel.product_name }}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -26,7 +26,7 @@
       box-shadow: 0 24px 60px rgba(0,0,0,0.45);
     }
     .logo { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.25rem; }
-    .logo span { color: #6366f1; }
+    .logo span { color: {{ panel.accent }}; }
     .sub { color: #7d8da6; font-size: 0.88rem; margin-bottom: 1.75rem; }
     label { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: #7d8da6; margin-bottom: 0.35rem; }
     input {
@@ -34,7 +34,7 @@
       background: #151e2e; border: 1px solid #243044; border-radius: 10px;
       color: #e8edf5; font-size: 0.95rem;
     }
-    input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.2); }
+    input:focus { outline: none; border-color: {{ panel.accent }}; box-shadow: 0 0 0 3px color-mix(in srgb, {{ panel.accent }} 25%, transparent); }
     .pw-field { position: relative; }
     .pw-field input { padding-right: 2.6rem; }
     .pw-toggle {
@@ -45,7 +45,7 @@
     .pw-toggle:hover { color: #e8edf5; }
     .btn {
       width: 100%; padding: 0.8rem; border: none; border-radius: 10px;
-      background: #6366f1; color: #fff; font-size: 0.95rem; font-weight: 600;
+      background: {{ panel.accent }}; color: #fff; font-size: 0.95rem; font-weight: 600;
       cursor: pointer; margin-top: 0.25rem;
     }
     .btn:hover { filter: brightness(1.08); }
@@ -59,8 +59,8 @@
 </head>
 <body>
   <div class="login-box">
-    <div class="logo">Makro<span>Panel</span></div>
-    <p class="sub">Link Takip & Analiz modülüne giriş yap</p>
+    <div class="logo">{{ panel.product_html|safe }}</div>
+    <p class="sub">{{ panel.login_sub }}</p>
     {% if error %}
     <div class="error">{{ error }}</div>
     {% endif %}

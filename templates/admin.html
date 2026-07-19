@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <title>Makro Panel</title>
+  <title>{{ panel.product_name }}</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#060a10">
@@ -15,7 +15,7 @@
     html { overflow-x: clip; }
     :root {
       --bg: #060a10; --sidebar: #0a0f18; --surface: #0f1623; --surface-2: #151e2e;
-      --border: #243044; --text: #e8edf5; --muted: #7d8da6; --accent: #6366f1;
+      --border: #243044; --text: #e8edf5; --muted: #7d8da6; --accent: {{ panel.accent }};
       --accent-soft: rgba(99,102,241,0.15); --green: #22c55e; --green-soft: rgba(34,197,94,0.12);
       --amber: #f59e0b; --rose: #f43f5e; --cyan: #06b6d4;
       --sidebar-w: 250px;
@@ -1858,15 +1858,19 @@
   <div class="app">
     <aside class="sidebar" id="sidebar-nav">
       <div class="sidebar-brand">
-        <h1>Makro<span>Panel</span></h1>
-        <p>SaaS Yönetim Merkezi</p>
+        <h1>{{ panel.product_html|safe }}</h1>
+        <p>{{ panel.tagline }}</p>
       </div>
       <nav class="nav">
         <div class="nav-label">Modüller</div>
         <button type="button" class="nav-item active" data-module="tracking" data-perm="module.tracking"><span class="icon">📊</span> Link Takip & Analiz</button>
         <button type="button" class="nav-item" data-module="accounting" data-perm="module.accounting"><span class="icon">💰</span> Muhasebe</button>
+        {% if panel.features.mailing %}
         <button type="button" class="nav-item" data-module="mailing" data-perm="module.mailing"><span class="icon">✉️</span> Mailing</button>
+        {% endif %}
+        {% if panel.features.marketing %}
         <button type="button" class="nav-item" data-module="marketing" data-perm="module.marketing"><span class="icon">📣</span> Marketing</button>
+        {% endif %}
         <button type="button" class="nav-item" data-module="biolink" data-perm="module.biolink"><span class="icon">🔗</span> Bio Sayfa</button>
         <button type="button" class="nav-item" id="btn-open-settings" data-superadmin-only="1" style="width:100%;border:none;background:none;cursor:pointer;font:inherit;text-align:left;">
           <span class="icon">⚙️</span> Ayarlar
@@ -1939,6 +1943,7 @@
           </div>
         </section>
 
+        {% if panel.features.smartico %}
         <!-- Top 5 Kanallar -->
         <section class="top5-grid" data-perm="tracking.smartico">
           <div class="top5-card">
@@ -1962,6 +1967,7 @@
             <ol class="top5-list" id="top5-deposit"><li class="muted">Veri yok</li></ol>
           </div>
         </section>
+        {% endif %}
 
         <!-- Grafikler -->
         <section class="charts-grid" data-perm="tracking.dashboard">
@@ -1979,7 +1985,7 @@
 
         <section class="card" data-perm="tracking.makrolink">
           <div class="card-head">
-            <span>MakroLink <span class="muted" style="font-weight:400;font-size:0.72rem;">(kısa link · tıklama sayacı)</span></span>
+            <span>{{ panel.shortlink_label }} <span class="muted" style="font-weight:400;font-size:0.72rem;">(kısa link · tıklama sayacı)</span></span>
             <div class="card-actions">
               <input id="makrolink-search" placeholder="🔎 Link ara…" style="width:150px;" autocomplete="off">
               <span class="muted" id="makrolink-updated" style="font-size:0.72rem;"></span>
@@ -1988,16 +1994,20 @@
             </div>
           </div>
           <div class="card-body" id="makrolink-settings-box" data-admin-only="1" style="display:none;">
-            <p class="hint">Kısa domainler Render custom domain + CNAME. Hepsi aynı kodu açar. GA tek property — Measurement Protocol (tıklamada sunucu gönderir).</p>
+            <p class="hint">Kısa domainler Render custom domain + CNAME. Hepsi aynı kodu açar. Hedef = eklediğiniz casino/site URL’si (Smartico yok).</p>
             <div class="hint" style="margin:0.5rem 0 0.75rem;padding:0.55rem 0.7rem;border:1px solid rgba(245,158,11,0.35);border-radius:8px;background:rgba(245,158,11,0.08);color:var(--text);font-size:0.78rem;line-height:1.45;">
-              <strong>Önemli:</strong> MakroLink tablosundaki <em>tıklama</em> = short URL’ye gelen her hit.<br>
+              <strong>Önemli:</strong> Tablodaki <em>tıklama</em> = short URL’ye gelen her hit.<br>
               Üstteki <em>Online oyuncu</em> = casino sitesinde <code>tracker.js</code> çalışan oturumlar.<br>
-              Domain 804→805→806 değişince linkleri tek tek güncelleme — aşağıdaki <strong>canlı domain grubunu</strong> güncelle + <em>Takip eşle</em>.
+              Önce <strong>Takip Edilen Domainler</strong>’e domain ekleyin; kısa link hedefi bu domainlere gitsin.
             </div>
             <form id="makrolink-config-form">
               <div class="form-row-4">
-                <div><label for="makrolink-host">Varsayılan short host</label><input id="makrolink-host" placeholder="makrovip.com" autocomplete="off"></div>
-                <div><label for="makrolink-aff-base">Smartico aff base</label><input id="makrolink-aff-base" placeholder="https://go.aff.makroaffi.com" autocomplete="off"></div>
+                <div><label for="makrolink-host">Varsayılan short host</label><input id="makrolink-host" placeholder="{{ panel.shortlink_host_placeholder }}" autocomplete="off"></div>
+                {% if panel.features.smartico %}
+                <div><label for="makrolink-aff-base">Smartico aff base</label><input id="makrolink-aff-base" placeholder="https://go.aff.example.com" autocomplete="off"></div>
+                {% else %}
+                <input type="hidden" id="makrolink-aff-base" value="">
+                {% endif %}
                 <div><label for="makrolink-scheme">Scheme</label>
                   <select id="makrolink-scheme"><option value="https">https</option><option value="http">http</option></select>
                 </div>
@@ -2005,12 +2015,12 @@
               </div>
               <div style="margin-top:0.65rem;">
                 <label for="makrolink-hosts">Kısa domain listesi <span class="muted">(satır veya virgül)</span></label>
-                <textarea id="makrolink-hosts" rows="3" placeholder="makrovip.com&#10;sada.com&#10;asdf.com" style="width:100%;"></textarea>
+                <textarea id="makrolink-hosts" rows="3" placeholder="{{ panel.shortlink_host_placeholder }}" style="width:100%;"></textarea>
               </div>
               <div style="margin-top:0.65rem;">
                 <label for="makrolink-online-group">Canlı casino domain grubu <span class="muted">(online takip — max 150)</span></label>
-                <textarea id="makrolink-online-group" rows="2" placeholder="makrobet804-820" style="width:100%;"></textarea>
-                <p class="muted-sm" style="margin:0.35rem 0 0;">Örn. <code>makrobet804-820</code> → 804.com…820.com. Yeni link Affid’i bu gruba yazılır. Domain patlayınca aralığı kaydır, Kaydet + Takip eşle.</p>
+                <textarea id="makrolink-online-group" rows="2" placeholder="ornek804-820  veya  domain1.com, domain2.com" style="width:100%;"></textarea>
+                <p class="muted-sm" style="margin:0.35rem 0 0;">Takip edilen casino domain aralığı / listesi. Domain değişince güncelle + Takip eşle.</p>
                 <p class="muted-sm" id="makrolink-online-group-status" style="margin:0.2rem 0 0;"></p>
               </div>
               <div class="form-row-4" style="margin-top:0.65rem;">
@@ -2023,7 +2033,7 @@
                 </div>
               </div>
               <div style="margin-top:0.85rem;padding-top:0.75rem;border-top:1px solid var(--border,#243044);">
-                <label style="display:block;margin-bottom:0.35rem;">MakroLink kategorileri</label>
+                <label style="display:block;margin-bottom:0.35rem;">{{ panel.shortlink_label }} kategorileri</label>
                 <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;margin-bottom:0.5rem;">
                   <input id="makrolink-cat-new" placeholder="Yeni kategori adı…" style="min-width:180px;flex:1;" autocomplete="off">
                   <button type="button" class="btn btn-sm btn-primary" id="btn-makrolink-cat-add">Ekle</button>
@@ -2036,14 +2046,18 @@
           <div class="card-body">
             <form id="makrolink-create-form">
               <div class="form-row-4">
-                <div class="form-span-2"><label for="makrolink-dest">Hedef link <span class="muted">(Smartico veya site URL)</span></label>
-                  <input id="makrolink-dest" placeholder="go.aff…/slug  veya  https://makrobet804.com/promotions" required autocomplete="off">
+                <div class="form-span-2"><label for="makrolink-dest">Hedef link <span class="muted">(site URL — eklediğiniz domain)</span></label>
+                  <input id="makrolink-dest" placeholder="https://ornek-domain.com/promotions" required autocomplete="off">
                 </div>
-                <div><label for="makrolink-label">Etiket</label><input id="makrolink-label" placeholder="örn. slotbuse FTD" required autocomplete="off"></div>
-                <div><label for="makrolink-code">Özel kod</label><input id="makrolink-code" placeholder="örn. slotbuse-ftd" required autocomplete="off"></div>
+                <div><label for="makrolink-label">Etiket</label><input id="makrolink-label" placeholder="örn. slot kampanya" required autocomplete="off"></div>
+                <div><label for="makrolink-code">Özel kod</label><input id="makrolink-code" placeholder="örn. slot-kampanya" required autocomplete="off"></div>
               </div>
               <div class="form-row-4" style="margin-top:0.5rem;">
+                {% if panel.features.smartico %}
                 <div><label for="makrolink-affid">Smartico Affiliate ID</label><input id="makrolink-affid" placeholder="örn. 12345 (online eşleme için)" autocomplete="off"></div>
+                {% else %}
+                <input type="hidden" id="makrolink-affid" value="">
+                {% endif %}
                 <div><label for="makrolink-ref">Ref notu</label><input id="makrolink-ref" placeholder="opsiyonel" autocomplete="off"></div>
                 <div><label for="makrolink-category">Kategori</label>
                   <select id="makrolink-category" required>
@@ -2063,7 +2077,7 @@
               <div style="margin-top:0.55rem;display:flex;justify-content:flex-end;">
                 <button type="submit" class="btn btn-primary" id="btn-makrolink-create">Kısalt &amp; kopyala</button>
               </div>
-              <p class="muted-sm" style="margin-top:0.4rem;">Smartico slug/go.aff veya herhangi bir site URL’si kısaltılabilir. Online takip: Ayarlar’daki <strong>canlı domain grubu</strong> + Affid.</p>
+              <p class="muted-sm" style="margin-top:0.4rem;">Hedef olarak takip ettiğiniz domain URL’sini girin. Online takip: Ayarlar’daki <strong>canlı domain grubu</strong>.</p>
             </form>
             <div id="makrolink-created-box" style="display:none;margin-top:0.75rem;padding:0.65rem 0.75rem;border:1px solid var(--border, #333);border-radius:8px;">
               <div class="muted" style="font-size:0.72rem;margin-bottom:0.25rem;">Son oluşturulan kısa link</div>
@@ -2073,7 +2087,7 @@
                 <span class="muted" style="font-size:0.72rem;">DNS yokken test: <code id="makrolink-created-test"></code></span>
               </div>
             </div>
-            <p class="hint" style="margin-top:0.5rem;">Akış: <code>makrovip.com/xxx</code> → Smartico go.aff <em>veya</em> doğrudan site URL (örn. makrobet804.com/promotions). Eski bl.ink’e dokunulmaz.</p>
+            <p class="hint" style="margin-top:0.5rem;">Akış: <code>kisalink.com/xxx</code> → eklediğiniz site URL’si (örn. casino-domain.com/promotions).</p>
           </div>
           <div class="table-wrap">
             <div class="makrolink-table-toolbar" style="flex-wrap:wrap;gap:0.45rem;align-items:end;">
@@ -2101,7 +2115,7 @@
                 </div>
                 <button type="button" class="btn btn-sm btn-primary" id="btn-makrolink-bulk-rewrite">Hedef domainleri güncelle</button>
                 <span class="muted-sm" id="makrolink-bulk-status" style="align-self:center;"></span>
-                <span class="muted-sm" style="flex:1 1 100%;margin:0;">Sadece <code>makrobet804.com/…</code> hedefleri değişir. Smartico go.aff ve diğer domainler <strong>değişmez</strong>.</span>
+                <span class="muted-sm" style="flex:1 1 100%;margin:0;">Sadece seçtiğiniz host’taki hedefler değişir; diğer domainler <strong>değişmez</strong>.</span>
               </div>
             </div>
             <div class="scroll-hint">Tabloyu yatay kaydırın</div>
@@ -2163,6 +2177,7 @@
           </div>
         </section>
 
+        {% if panel.features.smartico %}
         <section class="card" data-perm="tracking.smartico">
           <div class="card-head">
             <span>Smartico Affiliate Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(ziyaret · kayıt · yatırım · komisyon)</span></span>
@@ -2248,6 +2263,7 @@
             </div>
           </div>
         </section>
+        {% endif %}
 
         <section class="card" data-perm="tracking.players">
           <div class="card-head"><span>Şu An Online</span><span class="muted" id="online-label" style="font-weight:400;font-size:0.75rem;"></span></div>
@@ -2345,6 +2361,7 @@
           </div>
         </section>
 
+        {% if panel.features.blink %}
         <section class="card" data-perm="tracking.blink">
           <div class="card-head">
             <span>bl.ink Link Raporu <span class="muted" style="font-weight:400;font-size:0.72rem;">(kısa linkler · tıklama · şu an online)</span></span>
@@ -2396,11 +2413,16 @@
             </div>
           </div>
         </section>
+        {% endif %}
         </div><!-- /module-tracking-panel -->
 
         {% include 'partials/accounting_panel.html' %}
+        {% if panel.features.mailing %}
         {% include 'partials/mailing_panel.html' %}
+        {% endif %}
+        {% if panel.features.marketing %}
         {% include 'partials/marketing_panel.html' %}
+        {% endif %}
         {% include 'partials/biolink_panel.html' %}
       </div>
     </div>
@@ -2604,6 +2626,7 @@
     </div>
   </div>
 
+  {% if panel.features.smartico %}
   <div class="modal-overlay" id="smartico-bind-modal">
     <div class="modal">
       <div class="modal-head">
@@ -2630,6 +2653,7 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
   <div class="modal-overlay" id="makrolink-edit-modal">
     <div class="modal" style="max-width:720px;">
@@ -2643,15 +2667,19 @@
         <p class="hint" style="margin-bottom:0.75rem;font-size:0.72rem;">Özel kod değişirse eski kısa link adresi çalışmaz; yeni kodla paylaşım yap.</p>
         <div class="form-row-4">
           <div><label for="makrolink-edit-label">Etiket</label><input id="makrolink-edit-label" autocomplete="off"></div>
-          <div><label for="makrolink-edit-code">Özel kod</label><input id="makrolink-edit-code" autocomplete="off" placeholder="gencmarketingmakro"></div>
+          <div><label for="makrolink-edit-code">Özel kod</label><input id="makrolink-edit-code" autocomplete="off" placeholder="kampanya-kodu"></div>
           <div><label for="makrolink-edit-category">Kategori</label><select id="makrolink-edit-category"></select></div>
         </div>
         <div style="margin-top:0.65rem;">
-          <label for="makrolink-edit-dest">Smartico go.aff linki</label>
-          <input id="makrolink-edit-dest" autocomplete="off" placeholder="https://go.aff.makroaffi.com/…">
+          <label for="makrolink-edit-dest">Hedef site URL</label>
+          <input id="makrolink-edit-dest" autocomplete="off" placeholder="https://ornek-domain.com/…">
         </div>
         <div class="form-row-4" style="margin-top:0.65rem;">
+          {% if panel.features.smartico %}
           <div><label for="makrolink-edit-affid">Smartico Affiliate ID</label><input id="makrolink-edit-affid" autocomplete="off"></div>
+          {% else %}
+          <input type="hidden" id="makrolink-edit-affid" value="">
+          {% endif %}
           <div><label for="makrolink-edit-ref">Ref notu</label><input id="makrolink-edit-ref" autocomplete="off"></div>
         </div>
         <p class="muted-sm" style="margin-top:0.5rem;">Online eşleme Ayarlar’daki canlı domain grubundan yapılır; link başına domain yok.</p>
@@ -2663,6 +2691,7 @@
     </div>
   </div>
 
+  {% if panel.features.blink %}
   <div class="modal-overlay" id="blink-bind-modal">
     <div class="modal">
       <div class="modal-head">
@@ -2689,16 +2718,29 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
   <div class="toast" id="toast"></div>
 
   <script src="/static/accounting.js?v=20260717b"></script>
+  {% if panel.features.mailing %}
   <script src="/static/mailing.js?v=20260719c"></script>
+  {% endif %}
   <script src="/static/biolink.js?v=20260716b"></script>
+  {% if panel.features.marketing %}
   <script src="/static/marketing.js?v=20260712d"></script>
+  {% endif %}
   <script>
     (function () {
       var API = "";
+      var PANEL_FEATURES = {{ panel.features|tojson }};
+      var PANEL_BRAND = {{ panel.brand|tojson }};
+      var FEATURE_PERM_MAP = {
+        "tracking.smartico": "smartico",
+        "tracking.blink": "blink",
+        "module.mailing": "mailing",
+        "module.marketing": "marketing"
+      };
       var allSessions = [];
       var prevSnapshot = {};
       var flashIds = new Set();
@@ -2857,7 +2899,7 @@
         if (!name) return;
         if (availableModules.indexOf(name) < 0 && myPermissions.indexOf("*") < 0) return;
         currentModule = name;
-        localStorage.setItem("makropanel_module", name);
+        localStorage.setItem((PANEL_BRAND || "makro") + "panel_module", name);
         var trackPanel = document.getElementById("module-tracking-panel");
         var accPanel = document.getElementById("module-accounting-panel");
         var mailPanel = document.getElementById("module-mailing-panel");
@@ -2956,8 +2998,18 @@
         });
       }
 
+      function featureAllowsPerm(key) {
+        if (!key) return true;
+        var feat = FEATURE_PERM_MAP[key];
+        if (feat && PANEL_FEATURES && PANEL_FEATURES[feat] === false) return false;
+        if (key.indexOf("mailing.") === 0 && PANEL_FEATURES && PANEL_FEATURES.mailing === false) return false;
+        if (key.indexOf("marketing.") === 0 && PANEL_FEATURES && PANEL_FEATURES.marketing === false) return false;
+        return true;
+      }
+
       function hasPerm(key) {
         if (!key) return true;
+        if (!featureAllowsPerm(key)) return false;
         if (myPermissions.indexOf("*") >= 0) return true;
         return myPermissions.indexOf(key) >= 0;
       }
@@ -3111,11 +3163,12 @@
             updateRoleDesc("new-user-role", "new-user-role-desc");
           }
           updateRoleDesc("edit-user-role", "edit-user-role-desc");
-          var savedMod = localStorage.getItem("makropanel_module");
+          var modKey = (PANEL_BRAND || "makro") + "panel_module";
+          var savedMod = localStorage.getItem(modKey) || localStorage.getItem("makropanel_module");
           var startMod = data.default_module || "tracking";
-          // Acil: Mailing otomatik açılınca ağır API'ler paneli kilitliyordu
-          if (savedMod === "mailing") {
-            try { localStorage.setItem("makropanel_module", "tracking"); } catch (e) {}
+          // Kapalı modüller / eski mailing tercihi → tracking
+          if (savedMod === "mailing" || savedMod === "marketing") {
+            try { localStorage.setItem(modKey, "tracking"); } catch (e) {}
             savedMod = "tracking";
           }
           if (savedMod && availableModules.indexOf(savedMod) >= 0) startMod = savedMod;

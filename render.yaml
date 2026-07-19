@@ -1,4 +1,6 @@
 # Render Blueprint — https://render.com/docs/blueprint-spec
+# Aynı kod tabanı, iki bağımsız servis + iki ayrı DB.
+# Makro: PANEL_BRAND=makro  |  Bizzo: PANEL_BRAND=bizzo
 services:
   - type: web
     name: makropanel
@@ -10,6 +12,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.0"
+      - key: PANEL_BRAND
+        value: makro
       - key: SECRET_KEY
         generateValue: true
       - key: PUBLIC_BASE_URL
@@ -23,7 +27,36 @@ services:
           name: makropanel-db
           property: connectionString
 
+  - type: web
+    name: bizzopanel
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --worker-class gthread --timeout 7200 --keep-alive 5
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+      - key: PANEL_BRAND
+        value: bizzo
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PUBLIC_BASE_URL
+        value: https://bizzopanel.onrender.com
+      - key: ADMIN_USERNAME
+        value: tolgakt
+      - key: ADMIN_PASSWORD
+        sync: false
+      # İlk deploy'da boş panel için bir kez true yapıp sonra kaldırın:
+      # - key: PANEL_WIPE_DATA
+      #   value: "1"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bizzopanel-db
+          property: connectionString
+
 databases:
   - name: makropanel-db
     plan: basic-256mb
-    # basic-256mb ~$6/ay — veriler deploy sonrası da kalır (SQLite geçici diskte silinirdi)
+  - name: bizzopanel-db
+    plan: basic-256mb

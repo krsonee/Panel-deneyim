@@ -2,6 +2,14 @@
 
 import json
 
+try:
+    from panel_config import ENABLED_MODULES, feature_enabled
+except ImportError:
+    ENABLED_MODULES = ("tracking", "accounting", "biolink")
+
+    def feature_enabled(name):
+        return name in ("tracking", "accounting", "biolink", "makrolink")
+
 PERMISSION_CATALOG = [
     {"key": "module.tracking", "label": "Link Takip & Analiz", "group": "Modüller",
      "desc": "Ana takip modülüne erişim"},
@@ -29,8 +37,8 @@ PERMISSION_CATALOG = [
      "desc": "Smartico API entegrasyonu, ayarları ve rapor görüntüleme"},
     {"key": "tracking.blink", "label": "bl.ink Link Raporu", "group": "Link Takip",
      "desc": "bl.ink API entegrasyonu, ayarları ve link/online rapor görüntüleme"},
-    {"key": "tracking.makrolink", "label": "MakroLink (makrovip.com)", "group": "Link Takip",
-     "desc": "Kendi kısa link oluşturma, tıklama raporu ve Smartico URL kısaltma"},
+    {"key": "tracking.makrolink", "label": "Kısa Link", "group": "Link Takip",
+     "desc": "Kısa link oluşturma, tıklama raporu — hedef eklenen domain/URL üzerinden"},
     {"key": "biolink.pages", "label": "Sayfa Oluşturucu", "group": "Bio Sayfa",
      "desc": "Link-in-bio sayfa oluşturma, tema, buton/promo yönetimi ve tıklama raporu"},
     {"key": "accounting.dashboard", "label": "Muhasebe Özet", "group": "Muhasebe",
@@ -115,8 +123,8 @@ ROLE_TEMPLATES = {
         "desc": "Takip modülünde tam yetki, kullanıcı yönetimi yok",
         "permissions": [
             "module.tracking", "tracking.dashboard", "tracking.domains",
-            "tracking.players", "tracking.reports", "tracking.export", "tracking.smartico",
-            "tracking.blink", "tracking.makrolink",
+            "tracking.players", "tracking.reports", "tracking.export",
+            "tracking.makrolink",
             "module.biolink", "biolink.pages",
         ],
     },
@@ -132,32 +140,21 @@ ROLE_TEMPLATES = {
             "accounting.invoice_calc", "accounting.personnel",
         ],
     },
-    "mailer": {
-        "label": "Mailing Operatörü",
-        "desc": "Mailing modülünde tam yetki",
-        "permissions": list(MAILING_PERMS),
-    },
-    "marketer": {
-        "label": "Marketing Operatörü",
-        "desc": "Marketing modülünde tam yetki",
-        "permissions": list(MARKETING_PERMS),
-    },
     "viewer": {
         "label": "İzleyici",
         "desc": "Sadece görüntüleme, düzenleme yok",
         "permissions": [
-            "module.tracking", "tracking.dashboard", "tracking.players", "tracking.reports", "tracking.smartico",
-            "tracking.blink", "tracking.makrolink",
+            "module.tracking", "tracking.dashboard", "tracking.players", "tracking.reports",
+            "tracking.makrolink",
             "module.biolink", "biolink.pages",
-            "module.mailing", "mailing.dashboard", "mailing.reports",
         ],
     },
     "affiliate_manager": {
         "label": "Affiliate Yöneticisi",
         "desc": "Raporlar ve dashboard",
         "permissions": [
-            "module.tracking", "tracking.dashboard", "tracking.reports", "tracking.smartico",
-            "tracking.blink", "tracking.makrolink",
+            "module.tracking", "tracking.dashboard", "tracking.reports",
+            "tracking.makrolink",
             "module.biolink", "biolink.pages",
         ],
     },
@@ -245,22 +242,45 @@ def has_permission(user_permissions, required):
     return required in perms
 
 
+def _module_enabled(name: str) -> bool:
+    return name in ENABLED_MODULES or name == "settings"
+
+
+def active_permission_catalog():
+    """Kapalı özelliklerin yetki anahtarlarını katalogdan çıkarır."""
+    hidden_prefixes = []
+    if not feature_enabled("mailing"):
+        hidden_prefixes.extend(("module.mailing", "mailing."))
+    if not feature_enabled("marketing"):
+        hidden_prefixes.extend(("module.marketing", "marketing."))
+    if not feature_enabled("smartico"):
+        hidden_prefixes.append("tracking.smartico")
+    if not feature_enabled("blink"):
+        hidden_prefixes.append("tracking.blink")
+    out = []
+    for item in PERMISSION_CATALOG:
+        key = item["key"]
+        if any(key == p or key.startswith(p) for p in hidden_prefixes if p.endswith(".")) or key in hidden_prefixes:
+            continue
+        if key.startswith("module.") and key not in (
+            "module.tracking", "module.accounting", "module.biolink", "module.settings",
+        ):
+            mod = key.split(".", 1)[1]
+            if mod not in ENABLED_MODULES and mod != "settings":
+                continue
+        out.append(item)
+    return out
+
+
 def has_any_module_access(user_permissions):
     perms = normalize_permissions(user_permissions)
     if "*" in perms:
         return True
-    if any(m in perms for m in MODULE_KEYS):
-        return True
-    if any(p.startswith("tracking.") for p in perms):
-        return True
-    if any(p.startswith("accounting.") for p in perms):
-        return True
-    if any(p.startswith("mailing.") for p in perms):
-        return True
-    if any(p.startswith("marketing.") for p in perms):
-        return True
-    if any(p.startswith("biolink.") for p in perms):
-        return True
+    for m in ENABLED_MODULES:
+        if f"module.{m}" in perms:
+            return True
+        if any(p.startswith(f"{m}.") for p in perms):
+            return True
     if "admin.users" in perms or "admin.audit" in perms:
         return True
     return False
@@ -268,19 +288,15 @@ def has_any_module_access(user_permissions):
 
 def available_modules(user_permissions):
     perms = normalize_permissions(user_permissions)
+    order = [m for m in ("tracking", "accounting", "biolink") if m in ENABLED_MODULES]
     if "*" in perms:
-        return ["tracking", "accounting", "mailing", "marketing", "biolink", "settings"]
+        mods = list(order)
+        mods.append("settings")
+        return mods
     mods = []
-    if "module.tracking" in perms or any(p.startswith("tracking.") for p in perms):
-        mods.append("tracking")
-    if "module.accounting" in perms or any(p.startswith("accounting.") for p in perms):
-        mods.append("accounting")
-    if "module.mailing" in perms or any(p.startswith("mailing.") for p in perms):
-        mods.append("mailing")
-    if "module.marketing" in perms or any(p.startswith("marketing.") for p in perms):
-        mods.append("marketing")
-    if "module.biolink" in perms or any(p.startswith("biolink.") for p in perms):
-        mods.append("biolink")
+    for m in order:
+        if f"module.{m}" in perms or any(p.startswith(f"{m}.") for p in perms):
+            mods.append(m)
     if "module.settings" in perms or "admin.users" in perms or "admin.audit" in perms:
         mods.append("settings")
     return mods
@@ -292,10 +308,6 @@ def default_module_for_user(user_permissions):
         return "tracking"
     if "accounting" in mods:
         return "accounting"
-    if "mailing" in mods:
-        return "mailing"
-    if "marketing" in mods:
-        return "marketing"
     if "biolink" in mods:
         return "biolink"
     return mods[0] if mods else None

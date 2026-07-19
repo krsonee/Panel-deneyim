@@ -2946,12 +2946,18 @@ def init_mailing_schema(conn):
         ]
     for sql in statements:
         execute(conn, sql)
-    seed_mailing_defaults(conn)
     try:
-        from mail_ops import ensure_mail_ops_schema
-        ensure_mail_ops_schema(conn)
-    except Exception as exc:
-        print(f"⚠️  mail_ops schema: {exc}")
+        from panel_config import feature_enabled
+        mailing_on = feature_enabled("mailing")
+    except Exception:
+        mailing_on = True
+    if mailing_on:
+        seed_mailing_defaults(conn)
+        try:
+            from mail_ops import ensure_mail_ops_schema
+            ensure_mail_ops_schema(conn)
+        except Exception as exc:
+            print(f"⚠️  mail_ops schema: {exc}")
     conn.commit()
 
 
@@ -3281,26 +3287,90 @@ def init_db():
         init_schema(conn)
         migrate_schema(conn)
         try:
-            ensure_mail_click_links_table(conn)
-        except Exception as exc:
+            from panel_config import feature_enabled
+            mailing_on = feature_enabled("mailing")
+        except Exception:
+            mailing_on = True
+        if mailing_on:
             try:
-                conn.rollback()
-            except Exception:
-                pass
-            print(f"⚠️  ensure_mail_click_links_table hata: {exc}")
+                ensure_mail_click_links_table(conn)
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                print(f"⚠️  ensure_mail_click_links_table hata: {exc}")
+            try:
+                ensure_mail_import_jobs_table(conn)
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                print(f"⚠️  ensure_mail_import_jobs_table hata: {exc}")
+            try:
+                ensure_mail_contacts_unique_email(conn)
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                print(f"⚠️  ensure_mail_contacts_unique_email hata: {exc}")
+
+
+def wipe_operational_data(conn):
+    """Modül içeriklerini boşaltır; admin kullanıcıları ve şema/kataloglar kalır.
+
+    Takip domainleri, oturumlar, kısa linkler, bio sayfalar, muhasebe işlemleri,
+    Smartico/bl.ink/mailing içerikleri silinir.
+    """
+    tables = [
+        "visitor_sessions",
+        "tracked_links",
+        "ref_code_labels",
+        "makrolink_clicks",
+        "makrolink_links",
+        "biolink_clicks",
+        "biolink_buttons",
+        "biolink_pages",
+        "biolink_assets",
+        "smartico_link_bindings",
+        "smartico_settings",
+        "blink_link_bindings",
+        "blink_settings",
+        "acc_finance_transactions",
+        "acc_expenses",
+        "acc_vault_transactions",
+        "acc_employees",
+        "acc_staff",
+        "acc_invoice_debt_entries",
+        "acc_pronet_period_meta",
+        "acc_pronet_lines",
+        "acc_pl_lines",
+        "acc_pl_meta",
+        "acc_invoice_calc_daily",
+        "acc_invoice_calc_day_meta",
+        "mail_sends",
+        "mail_campaigns",
+        "mail_contacts",
+        "mail_contact_tags",
+        "mail_click_links",
+        "mail_import_jobs",
+        "mkt_deal_payments",
+        "mkt_deals",
+        "audit_log",
+        "makrolink_settings",
+    ]
+    for table in tables:
+        cols = _table_columns(conn, table)
+        if not cols:
+            continue
         try:
-            ensure_mail_import_jobs_table(conn)
+            execute(conn, f"DELETE FROM {table}")
+            conn.commit()
         except Exception as exc:
             try:
                 conn.rollback()
             except Exception:
                 pass
-            print(f"⚠️  ensure_mail_import_jobs_table hata: {exc}")
-        try:
-            ensure_mail_contacts_unique_email(conn)
-        except Exception as exc:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            print(f"⚠️  ensure_mail_contacts_unique_email hata: {exc}")
+            print(f"⚠️  wipe skip {table}: {exc}")

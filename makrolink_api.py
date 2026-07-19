@@ -31,8 +31,17 @@ from database import (
 
 IntegrityError = integrity_error_type()
 
-DEFAULT_PUBLIC_HOST = "makrovip.com"
-DEFAULT_AFF_BASE = "https://go.aff.makroaffi.com"
+try:
+    from panel_config import BRAND, feature_enabled as _panel_feature
+except ImportError:
+    BRAND = {"default_short_host": "", "default_aff_base": ""}
+
+    def _panel_feature(name):
+        return name != "smartico"
+
+DEFAULT_PUBLIC_HOST = BRAND.get("default_short_host") or ""
+DEFAULT_AFF_BASE = BRAND.get("default_aff_base") or ""
+SMARTICO_ENABLED = _panel_feature("smartico")
 CODE_ALPHABET = string.ascii_letters + string.digits
 CODE_LEN = 7
 
@@ -340,17 +349,18 @@ def _clean_host(host):
 
 
 def _parse_host_list(raw, fallback=DEFAULT_PUBLIC_HOST):
-    if not raw:
-        return [fallback]
     hosts = []
     seen = set()
-    for part in re.split(r"[\s,;]+", str(raw)):
+    for part in re.split(r"[\s,;]+", str(raw or "")):
         h = _clean_host(part)
         if not h or "." not in h or h in seen:
             continue
         seen.add(h)
         hosts.append(h)
-    return hosts or [fallback]
+    fb = _clean_host(fallback) if fallback else ""
+    if not hosts and fb and "." in fb:
+        return [fb]
+    return hosts
 
 
 def get_config(conn, include_secrets=False):
@@ -358,15 +368,17 @@ def get_config(conn, include_secrets=False):
     hosts = _parse_host_list(get_setting(conn, "short_hosts", ""), default_host or DEFAULT_PUBLIC_HOST)
     if default_host and default_host not in hosts:
         hosts.insert(0, default_host)
-    if not default_host:
+    if not default_host and hosts:
         default_host = hosts[0]
 
     scheme = (get_setting(conn, "public_scheme", "https") or "https").strip().lower()
     if scheme not in ("https", "http"):
         scheme = "https"
-    aff_base = (get_setting(conn, "aff_base", DEFAULT_AFF_BASE) or DEFAULT_AFF_BASE).strip().rstrip("/")
-    if not aff_base.startswith("http"):
+    aff_base = (get_setting(conn, "aff_base", DEFAULT_AFF_BASE) or DEFAULT_AFF_BASE or "").strip().rstrip("/")
+    if aff_base and not aff_base.startswith("http"):
         aff_base = "https://" + aff_base
+    if not SMARTICO_ENABLED:
+        aff_base = ""
 
     mid = (get_setting(conn, "ga4_measurement_id", "") or "").strip()
     secret = (get_setting(conn, "ga4_api_secret", "") or "").strip()
@@ -379,10 +391,11 @@ def get_config(conn, include_secrets=False):
         online_group_error = str(exc)
 
     cfg = {
-        "public_host": default_host,
+        "public_host": default_host or "",
         "short_hosts": hosts,
         "public_scheme": scheme,
-        "aff_base": aff_base or DEFAULT_AFF_BASE,
+        "aff_base": aff_base,
+        "smartico_enabled": SMARTICO_ENABLED,
         "online_domain_group": group_raw,
         "online_domains": online_domains,
         "online_domain_count": len(online_domains),
@@ -485,14 +498,20 @@ def _valid_url(url):
 
 
 def _aff_host(conn):
-    base = (get_config(conn).get("aff_base") or DEFAULT_AFF_BASE).rstrip("/")
+    if not SMARTICO_ENABLED:
+        return ""
+    base = (get_config(conn).get("aff_base") or DEFAULT_AFF_BASE or "").rstrip("/")
+    if not base:
+        return ""
     if not base.startswith("http"):
         base = "https://" + base
     return (urlparse(base).netloc or "").lower().removeprefix("www.")
 
 
 def is_smartico_destination(conn, url):
-    """Hedef Smartico go.aff mi?"""
+    """Hedef Smartico go.aff mi? (özellik kapalıysa her zaman False)"""
+    if not SMARTICO_ENABLED:
+        return False
     u = (url or "").strip()
     if not u:
         return False
@@ -506,10 +525,14 @@ def is_smartico_destination(conn, url):
 
 
 def normalize_smartico_aff_url(conn, raw):
+    if not SMARTICO_ENABLED:
+        raise ValueError("Smartico bu panelde kapalı. Tam site URL'si girin (https://…).")
     raw = (raw or "").strip()
     if not raw:
-        raise ValueError("Smartico go.aff linki gerekli.")
-    base = get_config(conn)["aff_base"].rstrip("/")
+        raise ValueError("Hedef link gerekli.")
+    base = (get_config(conn).get("aff_base") or "").rstrip("/")
+    if not base:
+        raise ValueError("Smartico aff base tanımlı değil.")
 
     if re.fullmatch(r"[A-Za-z0-9_-]{4,64}", raw) and "://" not in raw and "/" not in raw:
         return f"{base}/{raw}"
@@ -519,11 +542,11 @@ def normalize_smartico_aff_url(conn, raw):
 
     p = urlparse(raw)
     if not p.netloc:
-        raise ValueError("Geçerli Smartico go.aff URL gerekli.")
+        raise ValueError("Geçerli URL gerekli.")
 
     slug = (p.path or "").strip("/")
     if not slug:
-        raise ValueError("go.aff linkinde path/slug yok (örn. …/46ix1iwv).")
+        raise ValueError("Link path/slug eksik.")
     out = f"{base}/{slug.split('/')[0]}"
     if p.query:
         out += "?" + p.query
@@ -533,13 +556,12 @@ def normalize_smartico_aff_url(conn, raw):
 
 
 def normalize_destination_url(conn, raw):
-    """Smartico go.aff VEYA herhangi bir site URL'si (örn. makrobet804.com/promotions)."""
+    """Hedef: eklenen casino/site URL'si (https://domain/…). Smartico kapalı."""
     raw = (raw or "").strip()
     if not raw:
         raise ValueError("Hedef link gerekli.")
 
-    # Saf slug → Smartico
-    if re.fullmatch(r"[A-Za-z0-9_-]{4,64}", raw) and "://" not in raw and "/" not in raw:
+    if SMARTICO_ENABLED and re.fullmatch(r"[A-Za-z0-9_-]{4,64}", raw) and "://" not in raw and "/" not in raw:
         return normalize_smartico_aff_url(conn, raw)
 
     if not raw.startswith("http"):
@@ -548,10 +570,9 @@ def normalize_destination_url(conn, raw):
     if not _valid_url(raw):
         raise ValueError("Geçerli hedef URL gerekli (https://…).")
 
-    if is_smartico_destination(conn, raw):
+    if SMARTICO_ENABLED and is_smartico_destination(conn, raw):
         return normalize_smartico_aff_url(conn, raw)
 
-    # Özel site: path/query koru, host normalize
     p = urlparse(raw)
     host = (p.netloc or "").lower()
     if host.startswith("www."):

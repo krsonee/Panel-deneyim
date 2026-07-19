@@ -30,8 +30,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from permissions import (
     ALL_PERMISSION_KEYS,
-    PERMISSION_CATALOG,
     ROLE_TEMPLATES,
+    active_permission_catalog,
     available_modules,
     default_module_for_user,
     has_any_module_access,
@@ -40,6 +40,7 @@ from permissions import (
     permissions_from_role,
 )
 import totp
+from panel_config import BRAND, PANEL_BRAND, feature_enabled, panel_context
 from database import (
     DB_PATH,
     APP_DIR,
@@ -59,6 +60,7 @@ from database import (
     upsert_ref_code_label,
     utcnow,
     uses_postgres,
+    wipe_operational_data,
 )
 
 # ── Ortam değişkenleri (Render → Environment) ──
@@ -72,6 +74,8 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "makrobet-analytics-gizli-anahtar-degi
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+# PANEL_WIPE_DATA=1 → başlangıçta operasyonel veriyi bir kez temizler (admin kalır)
+PANEL_WIPE_DATA = os.environ.get("PANEL_WIPE_DATA", "").strip().lower() in ("1", "true", "yes")
 
 ONLINE_THRESHOLD_SECONDS = 90
 IntegrityError = integrity_error_type()
@@ -89,9 +93,15 @@ app.config.update(
 
 def init_db():
     db_init_schema()
+    if PANEL_WIPE_DATA:
+        with closing(get_db()) as conn:
+            wipe_operational_data(conn)
+            conn.commit()
+        print(f"\n🧹 PANEL_WIPE_DATA: operasyonel veri temizlendi ({PANEL_BRAND}).\n")
     migrate_domains()
     ensure_primary_admin()
     seed_admin_users()
+    print(f"\n🏷️  Panel markası: {BRAND['product_name']} (PANEL_BRAND={PANEL_BRAND})\n")
     if os.environ.get("RENDER") and not uses_postgres():
         print(
             "\n⚠️  UYARI: Render'da SQLite kullanılıyor — her deploy'da veriler silinir!\n"
@@ -99,6 +109,11 @@ def init_db():
         )
     elif os.environ.get("RENDER") and uses_postgres():
         print("\n✅ PostgreSQL bağlı — veriler kalıcı.\n")
+
+
+@app.context_processor
+def inject_panel():
+    return {"panel": panel_context()}
 
 
 def ensure_primary_admin():
@@ -516,7 +531,7 @@ def expand_domain_input(text):
 
 
 def migrate_domains():
-    """Eski yanlış kayıtları düzeltir; yerel test için localhost ekler."""
+    """Eski yanlış kayıtları düzeltir. Yerel demo için localhost yalnızca PANEL_SEED_LOCALHOST=1 iken eklenir."""
     with closing(get_db()) as conn:
         rows = fetchall(conn, "SELECT id, domain FROM tracked_links")
         for row in rows:
@@ -527,16 +542,18 @@ def migrate_domains():
                 except IntegrityError:
                     execute(conn, "DELETE FROM tracked_links WHERE id = ?", (row["id"],))
 
-        has_local = fetchone(
-            conn,
-            "SELECT 1 FROM tracked_links WHERE domain IN ('localhost', '127.0.0.1') LIMIT 1",
-        )
-        if not has_local:
-            execute(
+        seed_local = os.environ.get("PANEL_SEED_LOCALHOST", "").strip().lower() in ("1", "true", "yes")
+        if seed_local and not _is_prod:
+            has_local = fetchone(
                 conn,
-                "INSERT INTO tracked_links (domain, ref_code, label, created_at) VALUES ('localhost', '', '', ?)",
-                (iso(utcnow()),),
+                "SELECT 1 FROM tracked_links WHERE domain IN ('localhost', '127.0.0.1') LIMIT 1",
             )
+            if not has_local:
+                execute(
+                    conn,
+                    "INSERT INTO tracked_links (domain, ref_code, label, created_at) VALUES ('localhost', '', '', ?)",
+                    (iso(utcnow()),),
+                )
         conn.commit()
 
 
@@ -912,7 +929,8 @@ def health():
         pass
     return jsonify({
         "ok": True,
-        "service": "makropanel",
+        "service": BRAND["service_name"],
+        "brand": PANEL_BRAND,
         "database": db_type,
         "persistent": db_type == "postgresql",
         "tracked_domains": link_count,
@@ -1091,7 +1109,7 @@ def admin_page():
     return render_template(
         "admin.html",
         server_url=get_server_base_url(),
-        default_module=default_module_for_user(perms),
+        default_module=default_module_for_user(perms) or "tracking",
     )
 
 
@@ -1116,9 +1134,10 @@ def api_me():
         "two_factor_required": two_factor_required,
         "two_factor_enabled": two_factor_enabled,
         "role_templates": ROLE_TEMPLATES,
-        "permission_catalog": PERMISSION_CATALOG,
+        "permission_catalog": active_permission_catalog(),
         "available_modules": available_modules(perms),
         "default_module": default_module_for_user(perms),
+        "panel": panel_context(),
     })
 
 
@@ -1126,7 +1145,7 @@ def api_me():
 @login_required
 def permissions_catalog():
     return jsonify({
-        "catalog": PERMISSION_CATALOG,
+        "catalog": active_permission_catalog(),
         "role_templates": ROLE_TEMPLATES,
     })
 
@@ -1829,7 +1848,7 @@ def list_admin_users():
         item = admin_user_to_dict(row)
         item["role_label"] = ROLE_TEMPLATES.get(item["role"], {}).get("label", item["role"])
         users.append(item)
-    return jsonify({"users": users, "role_templates": ROLE_TEMPLATES, "permission_catalog": PERMISSION_CATALOG})
+    return jsonify({"users": users, "role_templates": ROLE_TEMPLATES, "permission_catalog": active_permission_catalog()})
 
 
 @app.route("/api/admin/users", methods=["POST"])
@@ -2179,22 +2198,29 @@ def static_files(filename):
 
 
 from accounting_routes import create_accounting_blueprint
-from smartico_routes import create_smartico_blueprint
-from blink_routes import create_blink_blueprint
 from makrolink_routes import create_makrolink_blueprint
-from mailing_routes import create_mailing_blueprint, create_mailing_click_blueprint
 from biolink_routes import create_biolink_blueprint, handle_custom_domain_biolink
-from marketing_routes import create_marketing_blueprint
 import makrolink_api
 
 app.register_blueprint(create_accounting_blueprint(permission_required, superadmin_required))
-app.register_blueprint(create_smartico_blueprint(permission_required, superadmin_required))
-app.register_blueprint(create_blink_blueprint(permission_required, superadmin_required))
-app.register_blueprint(create_makrolink_blueprint(permission_required, admin_only_required))
-app.register_blueprint(create_mailing_blueprint(permission_required))
-app.register_blueprint(create_mailing_click_blueprint())
+if feature_enabled("makrolink"):
+    app.register_blueprint(create_makrolink_blueprint(permission_required, admin_only_required))
 app.register_blueprint(create_biolink_blueprint(permission_required))
-app.register_blueprint(create_marketing_blueprint(permission_required))
+
+# Kapalı özellikler (mailing / marketing / smartico / blink) bilinçli olarak register edilmiyor.
+if feature_enabled("smartico"):
+    from smartico_routes import create_smartico_blueprint
+    app.register_blueprint(create_smartico_blueprint(permission_required, superadmin_required))
+if feature_enabled("blink"):
+    from blink_routes import create_blink_blueprint
+    app.register_blueprint(create_blink_blueprint(permission_required, superadmin_required))
+if feature_enabled("mailing"):
+    from mailing_routes import create_mailing_blueprint, create_mailing_click_blueprint
+    app.register_blueprint(create_mailing_blueprint(permission_required))
+    app.register_blueprint(create_mailing_click_blueprint())
+if feature_enabled("marketing"):
+    from marketing_routes import create_marketing_blueprint
+    app.register_blueprint(create_marketing_blueprint(permission_required))
 
 
 @app.before_request
@@ -2246,11 +2272,12 @@ if __name__ == "__main__":
     # yarım kalan kod import hatasıyla sunucuyu düşürür. Reload varsayılan kapalı.
     debug = os.environ.get("FLASK_DEBUG", "1").strip().lower() in ("1", "true", "yes")
     use_reloader = os.environ.get("FLASK_RELOAD", "0").strip().lower() in ("1", "true", "yes")
-    print("\n  Merkezi Analiz Sunucusu")
+    print(f"\n  {BRAND['product_name']}")
     print("  ─────────────────────────")
+    print(f"  Brand       : {PANEL_BRAND}")
     print(f"  Admin Panel : http://127.0.0.1:{port}/admin")
     if not _is_prod:
-        print("  Giriş       : admin / makro123 (varsayılan, yerel geliştirme)")
+        print(f"  Giriş       : {ADMIN_USERNAME} / (ADMIN_PASSWORD)")
     print(f"  Demo Site   : http://127.0.0.1:{port}/demo")
     if debug and not use_reloader:
         print("  Mod         : debug açık, otomatik reload kapalı (stabil)")
