@@ -2413,12 +2413,21 @@ def create_mailing_blueprint(permission_required):
         })
 
     # ── Domains / Settings ─────────────────────────────────────
+    def _domain_public(row):
+        d = _row(row) if row else None
+        if not d:
+            return None
+        pw = (d.get("smtp_password") or "").strip()
+        d["smtp_password_set"] = bool(pw)
+        d["smtp_password"] = ""
+        return d
+
     @bp.route("/domains", methods=["GET"])
     @mail_perm(*MAIL_SET)
     def list_domains():
         with closing(get_db()) as conn:
-            rows = _rows(fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC"))
-        return jsonify({"domains": rows})
+            rows = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC")
+        return jsonify({"domains": [_domain_public(r) for r in (rows or [])]})
 
     @bp.route("/domains/<int:domain_id>", methods=["PATCH"])
     @mail_perm(*MAIL_SET)
@@ -2428,25 +2437,40 @@ def create_mailing_blueprint(permission_required):
             row = fetchone(conn, "SELECT * FROM mail_domains WHERE id = ?", (domain_id,))
             if not row:
                 return jsonify({"error": "Domain bulunamadı."}), 404
-            execute(
-                conn,
-                """
-                UPDATE mail_domains SET
-                    from_name = ?, from_local = ?, status = ?, dns_status = ?, notes = ?
-                WHERE id = ?
-                """,
-                (
-                    (data.get("from_name") if "from_name" in data else row["from_name"] or "").strip(),
-                    (data.get("from_local") if "from_local" in data else row["from_local"] or "noreply").strip(),
-                    (data.get("status") if "status" in data else row["status"] or "pending").strip(),
-                    (data.get("dns_status") if "dns_status" in data else row["dns_status"] or "unconfigured").strip(),
-                    (data.get("notes") if "notes" in data else row["notes"] or "").strip(),
-                    domain_id,
-                ),
-            )
+            row = dict(row)
+            from_name = (data.get("from_name") if "from_name" in data else row.get("from_name") or "").strip()
+            from_local = (data.get("from_local") if "from_local" in data else row.get("from_local") or "noreply").strip()
+            status = (data.get("status") if "status" in data else row.get("status") or "pending").strip()
+            dns_status = (data.get("dns_status") if "dns_status" in data else row.get("dns_status") or "unconfigured").strip()
+            notes = (data.get("notes") if "notes" in data else row.get("notes") or "").strip()
+            smtp_password = row.get("smtp_password") or ""
+            if "smtp_password" in data and data.get("smtp_password") not in (None, ""):
+                smtp_password = str(data.get("smtp_password")).strip()
+            # Kolon yoksa eski UPDATE'e düşmesin diye try
+            try:
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_domains SET
+                        from_name = ?, from_local = ?, status = ?, dns_status = ?, notes = ?,
+                        smtp_password = ?
+                    WHERE id = ?
+                    """,
+                    (from_name, from_local, status, dns_status, notes, smtp_password, domain_id),
+                )
+            except Exception:
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_domains SET
+                        from_name = ?, from_local = ?, status = ?, dns_status = ?, notes = ?
+                    WHERE id = ?
+                    """,
+                    (from_name, from_local, status, dns_status, notes, domain_id),
+                )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_domains WHERE id = ?", (domain_id,))
-        return jsonify({"domain": _row(row)})
+        return jsonify({"domain": _domain_public(row)})
 
     @bp.route("/settings", methods=["GET"])
     @mail_perm(*MAIL_SET)
@@ -2463,7 +2487,7 @@ def create_mailing_blueprint(permission_required):
             settings["smtp_password_set"] = bool(pw)
             settings["smtp_password"] = ""
             settings["webhook_secret_masked"] = _mask_secret(settings.get("webhook_secret") or "")
-            domains = _rows(fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC"))
+            domains = [_domain_public(r) for r in (fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC") or [])]
         return jsonify({"settings": settings, "domains": domains})
 
     @bp.route("/settings", methods=["PATCH"])

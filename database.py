@@ -3039,6 +3039,17 @@ def migrate_mail_campaigns_pro(conn):
                 conn.rollback()
             except Exception:
                 pass
+    # Domain bazlı DirectMail SMTP şifresi (From adresi ile login eşleşsin)
+    dom_cols = _table_columns(conn, "mail_domains") or set()
+    if dom_cols and "smtp_password" not in dom_cols:
+        try:
+            execute(conn, "ALTER TABLE mail_domains ADD COLUMN smtp_password TEXT NOT NULL DEFAULT ''")
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_contacts_tags ON mail_contacts(tags)")
     conn.commit()
 

@@ -1403,11 +1403,12 @@
     }
     tbody.innerHTML = domains.map(function (d) {
       var from = (d.from_local || "noreply") + "@" + d.domain;
+      var smtpOk = d.smtp_password_set ? "SMTP ✓" : "SMTP yok";
       return "<tr>" +
         "<td>" + esc(d.domain) + "</td>" +
         "<td>" + esc(d.from_name) + " &lt;" + esc(from) + "&gt;</td>" +
         "<td>" + esc(d.status) + "</td>" +
-        "<td>" + esc(d.dns_status) + "</td>" +
+        "<td>" + esc(d.dns_status) + " · " + smtpOk + "</td>" +
         "<td>" + esc(d.notes) + "</td>" +
         '<td><button type="button" class="btn btn-sm mail-edit-domain" data-id="' + d.id + '">Düzenle</button></td></tr>';
     }).join("");
@@ -1844,14 +1845,28 @@
         var did = Number(editD.getAttribute("data-id"));
         var d = mailDomains.find(function (x) { return x.id === did; });
         if (!d) return;
-        var fromName = prompt("From adı", d.from_name || "");
+        var fromName = prompt("From adı", d.from_name || d.domain || "");
         if (fromName === null) return;
-        var fromLocal = prompt("From local (noreply)", d.from_local || "noreply");
+        var fromLocal = prompt("From local (örn. info)", d.from_local || "info");
         if (fromLocal === null) return;
+        var smtpHint = d.smtp_password_set
+          ? "DirectMail SMTP şifresi (boş = değiştirme)"
+          : "DirectMail SMTP şifresi (info@" + d.domain + " için zorunlu)";
+        var smtpPw = prompt(smtpHint, "");
+        if (smtpPw === null) return;
+        var body = { from_name: fromName, from_local: fromLocal, status: "active", dns_status: "verified" };
+        if ((smtpPw || "").trim()) body.smtp_password = smtpPw.trim();
         mailApi("/api/mailing/domains/" + did, {
           method: "PATCH",
-          body: { from_name: fromName, from_local: fromLocal }
-        }).then(function () { mailLoadSettings(); });
+          body: body
+        }).then(function (res) {
+          if (!res || !res.ok) {
+            mailToast((res && res.data && res.data.error) || "Domain kaydedilemedi");
+            return;
+          }
+          mailToast("Domain güncellendi");
+          mailLoadSettings();
+        });
       }
     });
 

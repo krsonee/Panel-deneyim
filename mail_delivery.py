@@ -167,6 +167,34 @@ def deliver_mail(
         return send_id, "failed", "SMTP host tanımlı değil"
 
     from_email, from_name = _domain_from(conn, domain_id)
+    # DirectMail: SMTP login = From adresi olmalı. Domain'e özel şifre varsa onu kullan.
+    domain_smtp_pw = ""
+    if domain_id:
+        drow = fetchone(conn, "SELECT smtp_password FROM mail_domains WHERE id = ?", (domain_id,))
+        if drow:
+            domain_smtp_pw = (dict(drow).get("smtp_password") or "").strip()
+    if domain_smtp_pw:
+        user = from_email
+        password = domain_smtp_pw
+    else:
+        user_domain = user.split("@")[-1].lower() if "@" in (user or "") else ""
+        from_domain = from_email.split("@")[-1].lower() if "@" in (from_email or "") else ""
+        if user_domain and from_domain and user_domain != from_domain:
+            err = (
+                f"SMTP kullanıcı ({user}) ile gönderen domain ({from_email}) uyuşmuyor. "
+                "Ayarlar → Domain düzenle → bu domain için DirectMail SMTP şifresini kaydet."
+            )
+            from database import execute
+            execute(
+                conn,
+                """
+                UPDATE mail_sends
+                SET status = 'failed', error = ?
+                WHERE id = ?
+                """,
+                (err, send_id),
+            )
+            return send_id, "failed", err
     try:
         msg_id = _smtp_send(
             host=host,
