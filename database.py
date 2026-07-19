@@ -2947,6 +2947,11 @@ def init_mailing_schema(conn):
     for sql in statements:
         execute(conn, sql)
     seed_mailing_defaults(conn)
+    try:
+        from mail_ops import ensure_mail_ops_schema
+        ensure_mail_ops_schema(conn)
+    except Exception as exc:
+        print(f"⚠️  mail_ops schema: {exc}")
     conn.commit()
 
 

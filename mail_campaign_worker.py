@@ -111,6 +111,11 @@ def _campaign_cancelled(conn, campaign_id):
     return not row or row["status"] in ("cancelling", "cancelled")
 
 
+def _campaign_paused(conn, campaign_id):
+    row = fetchone(conn, "SELECT status FROM mail_campaigns WHERE id = ?", (campaign_id,))
+    return bool(row and row["status"] == "paused")
+
+
 def _run_campaign_job(campaign_id):
     try:
         _process_campaign(campaign_id)
@@ -187,6 +192,16 @@ def _process_campaign(campaign_id):
         failed_count = int(camp.get("failed_count") or 0)
         skipped_count = int(camp.get("skipped_count") or 0)
 
+        # Domain bazlı hız (varsa kampanya hızından düşük olan uygulanır)
+        try:
+            drow = fetchone(conn, "SELECT rate_per_minute FROM mail_domains WHERE id = ?", (camp.get("domain_id"),))
+            dom_rate = int((drow or {}).get("rate_per_minute") or 0) if drow else 0
+            if dom_rate > 0:
+                rate = min(rate, dom_rate) if rate > 0 else dom_rate
+                delay = (60.0 / rate) if rate > 0 else delay
+        except Exception:
+            pass
+
         while True:
             if _campaign_cancelled(conn, campaign_id):
                 execute(
@@ -198,6 +213,18 @@ def _process_campaign(campaign_id):
                     WHERE id = ?
                     """,
                     (iso(utcnow()), iso(utcnow()), sent_count, failed_count, skipped_count, campaign_id),
+                )
+                conn.commit()
+                return
+            if _campaign_paused(conn, campaign_id):
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_campaigns
+                    SET sent_count = ?, failed_count = ?, skipped_count = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (sent_count, failed_count, skipped_count, iso(utcnow()), campaign_id),
                 )
                 conn.commit()
                 return
@@ -218,7 +245,7 @@ def _process_campaign(campaign_id):
                 break
 
             for rec in recipients:
-                if _campaign_cancelled(conn, campaign_id):
+                if _campaign_cancelled(conn, campaign_id) or _campaign_paused(conn, campaign_id):
                     break
                 rec = dict(rec)
                 now = iso(utcnow())
@@ -256,7 +283,7 @@ def _process_campaign(campaign_id):
                     text_body=text_body,
                     inject_tracking=_inject_tracking,
                 )
-                recip_status = status if status in ("simulated", "sent", "queued", "failed") else "failed"
+                recip_status = status if status in ("simulated", "sent", "queued", "failed", "skipped") else "failed"
                 execute(
                     conn,
                     "UPDATE mail_campaign_recipients SET status = ?, send_id = ? WHERE id = ?",
@@ -264,10 +291,11 @@ def _process_campaign(campaign_id):
                 )
                 if status in ("simulated", "sent"):
                     sent_count += 1
+                elif status == "skipped":
+                    skipped_count += 1
                 elif status == "failed":
                     failed_count += 1
                 else:
-                    # queued (smtp kayıt ama gönderilmedi — say) as failed-ish
                     failed_count += 1
 
                 execute(
@@ -293,6 +321,18 @@ def _process_campaign(campaign_id):
                     WHERE id = ?
                     """,
                     (iso(utcnow()), iso(utcnow()), sent_count, failed_count, skipped_count, campaign_id),
+                )
+                conn.commit()
+                return
+            if _campaign_paused(conn, campaign_id):
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_campaigns
+                    SET sent_count = ?, failed_count = ?, skipped_count = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (sent_count, failed_count, skipped_count, iso(utcnow()), campaign_id),
                 )
                 conn.commit()
                 return

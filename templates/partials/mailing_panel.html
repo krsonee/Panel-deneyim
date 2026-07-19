@@ -210,6 +210,7 @@
           <input type="search" id="mail-contact-q" placeholder="Ara…" style="width:160px;">
           <select id="mail-contact-tag-filter" class="mail-tag-select" style="width:auto;min-width:140px;"><option value="">Tüm etiketler</option></select>
           <button type="button" class="btn btn-sm" id="mail-contacts-select-page">Sayfayı seç</button>
+          <button type="button" class="btn btn-sm" id="mail-contacts-export">CSV export</button>
           <button type="button" class="btn btn-sm" id="mail-contacts-refresh">Yenile</button>
         </div>
       </div>
@@ -405,16 +406,30 @@
       <div class="kpi green"><div class="val" id="mail-rep-delivered">—</div><div class="lbl">İletilen / Simüle</div></div>
       <div class="kpi amber"><div class="val" id="mail-rep-queued">—</div><div class="lbl">Kuyruk</div></div>
       <div class="kpi rose"><div class="val" id="mail-rep-failed">—</div><div class="lbl">Başarısız</div></div>
-      <div class="kpi cyan"><div class="val" id="mail-rep-opened">—</div><div class="lbl">Açılma (stub)</div></div>
+      <div class="kpi cyan"><div class="val" id="mail-rep-opened">—</div><div class="lbl">Açılma</div></div>
+    </section>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><span>Kampanya analitiği</span>
+        <button type="button" class="btn btn-sm" id="mail-rep-analytics-refresh">Yenile</button>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Kampanya</th><th>Durum</th><th>İletilen</th><th>Açılma %</th><th>Tıklama %</th><th>Fail</th><th>Skip</th></tr></thead>
+            <tbody id="mail-rep-analytics"><tr><td colspan="7" class="empty">Veri yok</td></tr></tbody>
+          </table>
+        </div>
+      </div>
     </section>
     <section class="card">
       <div class="card-head">
         <span>Gönderim logları</span>
-        <div style="display:flex;gap:0.5rem;">
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
           <select id="mail-rep-channel" style="width:auto;">
             <option value="">Tüm kanallar</option>
             <option value="bulk">Kampanya</option>
             <option value="ivr">IVR</option>
+            <option value="test">Test</option>
           </select>
           <select id="mail-rep-status" style="width:auto;">
             <option value="">Tüm durumlar</option>
@@ -422,6 +437,8 @@
             <option value="queued">queued</option>
             <option value="sent">sent</option>
             <option value="failed">failed</option>
+            <option value="skipped">skipped</option>
+            <option value="bounced">bounced</option>
           </select>
           <button type="button" class="btn btn-sm" id="mail-rep-refresh">Yenile</button>
         </div>
@@ -463,6 +480,10 @@
         <p class="hint" style="margin-top:0.75rem;">
           <strong>Stub:</strong> gerçek mail gitmez, Raporlar’da <code>simulated</code> kayıt oluşur (test için).
           <strong>SMTP:</strong> Alibaba DirectMail bilgilerini gir → Kampanyalar’dan gönderim gerçek mail atar (465 SSL önerilir).
+        </p>
+        <p class="hint" style="margin-top:0.5rem;">
+          Bounce webhook: <code>/api/mailing/webhooks/bounce</code> — header <code>X-Mailing-Webhook-Secret</code> (IVR secret ile aynı).
+          Her mailde otomatik unsubscribe + açık takibi eklenir.
         </p>
       </div>
     </section>

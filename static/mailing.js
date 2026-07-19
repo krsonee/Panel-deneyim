@@ -1207,6 +1207,7 @@
       done: "Tamam",
       cancelling: "İptal…",
       cancelled: "İptal",
+      paused: "Duraklatıldı",
       error: "Hata"
     };
     return map[status] || status || "—";
@@ -1271,7 +1272,17 @@
           actions += '<button type="button" class="btn btn-sm mail-queue-camp" data-id="' + c.id + '">Zamanla</button> ';
         }
         if (c.status === "scheduled" || c.status === "queued" || c.status === "sending") {
+          actions += '<button type="button" class="btn btn-sm mail-pause-camp" data-id="' + c.id + '">Duraklat</button> ';
           actions += '<button type="button" class="btn btn-sm mail-cancel-camp" data-id="' + c.id + '">İptal</button> ';
+        }
+        if (c.status === "paused") {
+          actions += '<button type="button" class="btn btn-sm btn-primary mail-resume-camp" data-id="' + c.id + '">Devam</button> ';
+          actions += '<button type="button" class="btn btn-sm mail-cancel-camp" data-id="' + c.id + '">İptal</button> ';
+        }
+        if (c.status === "done" || c.status === "error" || c.status === "cancelled" || c.status === "paused") {
+          if (Number(c.failed_count || 0) > 0) {
+            actions += '<button type="button" class="btn btn-sm mail-retry-camp" data-id="' + c.id + '">Fail retry</button> ';
+          }
         }
         if (c.status === "draft" || c.status === "scheduled" || c.status === "done" || c.status === "cancelled" || c.status === "error") {
           actions += '<button type="button" class="btn btn-sm mail-del-camp" data-id="' + c.id + '">Sil</button>';
@@ -1342,16 +1353,36 @@
     if (status) url += "&status=" + encodeURIComponent(status);
     return Promise.all([
       mailApi("/api/mailing/dashboard"),
-      mailApi(url)
+      mailApi(url),
+      mailApi("/api/mailing/reports/campaigns")
     ]).then(function (results) {
       var dash = results[0];
       var sendsRes = results[1];
+      var analyticsRes = results[2];
       if (dash && dash.ok) {
         var k = dash.data.kpi || {};
         setText("mail-rep-delivered", k.sends_delivered);
         setText("mail-rep-queued", k.sends_queued);
         setText("mail-rep-failed", k.sends_failed);
         setText("mail-rep-opened", k.opened);
+      }
+      var atbody = document.getElementById("mail-rep-analytics");
+      if (atbody) {
+        var camps = (analyticsRes && analyticsRes.ok && analyticsRes.data.campaigns) || [];
+        if (!camps.length) {
+          atbody.innerHTML = '<tr><td colspan="7" class="empty">Kampanya yok</td></tr>';
+        } else {
+          atbody.innerHTML = camps.map(function (c) {
+            return "<tr>" +
+              "<td>" + esc(c.name) + "</td>" +
+              "<td>" + esc(mailCampStatusLabel(c.status)) + "</td>" +
+              "<td>" + fmtNum(c.delivered) + "</td>" +
+              "<td>" + esc(String(c.open_rate)) + "%</td>" +
+              "<td>" + esc(String(c.click_rate)) + "%</td>" +
+              "<td>" + fmtNum(c.failed_count) + "</td>" +
+              "<td>" + fmtNum(c.skipped_count) + "</td></tr>";
+          }).join("");
+        }
       }
       var tbody = document.getElementById("mail-rep-table");
       if (!tbody) return;
@@ -1366,7 +1397,7 @@
           "<td>" + esc(s.channel) + "</td>" +
           "<td>" + esc(s.to_email) + "</td>" +
           "<td>" + esc(s.subject) + "</td>" +
-          "<td>" + esc(s.status) + "</td>" +
+          "<td>" + esc(s.status) + (s.error ? (' <span class="muted" title="' + esc(s.error) + '">!</span>') : "") + "</td>" +
           "<td>" + esc(s.provider_msg_id) + "</td></tr>";
       }).join("");
     });
@@ -1823,6 +1854,34 @@
         });
         return;
       }
+      var pauseC = e.target.closest(".mail-pause-camp");
+      if (pauseC) {
+        mailApi("/api/mailing/campaigns/" + pauseC.getAttribute("data-id") + "/pause", { method: "POST" })
+          .then(function (res) {
+            mailToast((res && res.ok) ? "Duraklatıldı" : ((res && res.data && res.data.error) || "Olmadı"));
+            mailLoadCampaigns();
+          });
+        return;
+      }
+      var resumeC = e.target.closest(".mail-resume-camp");
+      if (resumeC) {
+        mailApi("/api/mailing/campaigns/" + resumeC.getAttribute("data-id") + "/resume", { method: "POST" })
+          .then(function (res) {
+            mailToast((res && res.ok) ? "Devam ediyor" : ((res && res.data && res.data.error) || "Olmadı"));
+            mailLoadCampaigns();
+          });
+        return;
+      }
+      var retryC = e.target.closest(".mail-retry-camp");
+      if (retryC) {
+        if (!confirm("Başarısız alıcılar yeniden kuyruğa alınsın mı?")) return;
+        mailApi("/api/mailing/campaigns/" + retryC.getAttribute("data-id") + "/retry-failed", { method: "POST" })
+          .then(function (res) {
+            mailToast((res && res.ok) ? "Retry başladı" : ((res && res.data && res.data.error) || "Olmadı"));
+            mailLoadCampaigns();
+          });
+        return;
+      }
       var cancelC = e.target.closest(".mail-cancel-camp");
       if (cancelC) {
         if (!confirm("Kampanya iptal edilsin mi? Devam eden gönderimler durur.")) return;
@@ -2049,6 +2108,13 @@
     }
     bindClick("mail-ivr-refresh", mailLoadIvr);
     bindClick("mail-rep-refresh", mailLoadReports);
+    bindClick("mail-rep-analytics-refresh", mailLoadReports);
+    bindClick("mail-contacts-export", function () {
+      var tag = (document.getElementById("mail-contact-tag-filter") || {}).value || "";
+      var url = "/api/mailing/contacts/export?limit=50000";
+      if (tag) url += "&tag=" + encodeURIComponent(tag);
+      window.open(url, "_blank");
+    });
     var ch = document.getElementById("mail-rep-channel");
     if (ch) ch.addEventListener("change", mailLoadReports);
     var st = document.getElementById("mail-rep-status");

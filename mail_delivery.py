@@ -8,6 +8,7 @@ from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
 from database import (
+    execute,
     fetchone,
     get_mail_setting,
     insert_returning_id,
@@ -29,12 +30,28 @@ def _domain_from(conn, domain_id):
     return f"{local}@{domain}", name
 
 
-def _smtp_send(*, host, port, user, password, from_email, from_name, to_email, subject, html_body, text_body):
+def _smtp_send(
+    *,
+    host,
+    port,
+    user,
+    password,
+    from_email,
+    from_name,
+    to_email,
+    subject,
+    html_body,
+    text_body,
+    extra_headers=None,
+):
     msg = EmailMessage()
     msg["Subject"] = subject or "(konu yok)"
     msg["From"] = formataddr((from_name, from_email))
     msg["To"] = to_email
     msg["Message-ID"] = make_msgid(domain=from_email.split("@")[-1] if "@" in from_email else "localhost")
+    for hk, hv in (extra_headers or {}).items():
+        if hv:
+            msg[hk] = hv
     text = (text_body or "").strip()
     html = (html_body or "").strip()
     if text:
@@ -81,18 +98,33 @@ def deliver_mail(
     text_body="",
     inject_tracking=None,
 ):
-    """Tek mail gönder / simüle et.
+    """Tek mail gönder / simüle et. Dönüş: (send_id, status, error_message)"""
+    from mail_ops import inject_ops_footer, is_suppressed, list_unsubscribe_headers
 
-    inject_tracking: optional callable(conn, body, send_id=..., contact_id=..., campaign_id=..., as_html=...) -> body
-    Dönüş: (send_id, status, error_message)
-    """
     now = iso(utcnow())
     mode = (get_mail_setting(conn, "provider_mode", "stub") or "stub").strip().lower()
     to_email = (to_email or "").strip().lower()
     if not to_email:
         return None, "failed", "Alıcı e-posta yok"
 
-    # Önce kayıt aç (tracking send_id ister)
+    if is_suppressed(conn, to_email):
+        send_id = insert_returning_id(
+            conn,
+            """
+            INSERT INTO mail_sends (
+                channel, campaign_id, contact_id, template_id, domain_id,
+                to_email, to_phone, subject, status, provider_msg_id, error,
+                opened_at, clicked_at, sent_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                channel, campaign_id, contact_id, template_id, domain_id,
+                to_email, to_phone or "", subject or "", "skipped", "",
+                "Suppression / unsubscribed", None, None, None, now,
+            ),
+        )
+        return send_id, "skipped", "Suppression / unsubscribed"
+
     send_id = insert_returning_id(
         conn,
         """
@@ -129,15 +161,34 @@ def deliver_mail(
                 conn, tracked_html, send_id=send_id, contact_id=contact_id,
                 campaign_id=campaign_id, as_html=True,
             ) or tracked_html
-        elif tracked_text:
+        if tracked_text:
             tracked_text = inject_tracking(
                 conn, tracked_text, send_id=send_id, contact_id=contact_id,
                 campaign_id=campaign_id, as_html=False,
             ) or tracked_text
 
+    unsub_http = ""
+    try:
+        if tracked_html:
+            tracked_html, unsub_http = inject_ops_footer(
+                conn, tracked_html, send_id=send_id, contact_id=contact_id,
+                email=to_email, as_html=True,
+            )
+        elif tracked_text:
+            tracked_text, unsub_http = inject_ops_footer(
+                conn, tracked_text, send_id=send_id, contact_id=contact_id,
+                email=to_email, as_html=False,
+            )
+        else:
+            tracked_html, unsub_http = inject_ops_footer(
+                conn, "<p></p>", send_id=send_id, contact_id=contact_id,
+                email=to_email, as_html=True,
+            )
+    except Exception as exc:
+        print(f"⚠️  mail ops footer: {exc}")
+
     if mode != "smtp":
         msg_id = f"stub-{send_id}-{now[-8:]}"
-        from database import execute
         execute(
             conn,
             """
@@ -154,7 +205,6 @@ def deliver_mail(
     user = (get_mail_setting(conn, "smtp_user", "") or "").strip()
     password = get_mail_setting(conn, "smtp_password", "") or ""
     if not host:
-        from database import execute
         execute(
             conn,
             """
@@ -167,7 +217,6 @@ def deliver_mail(
         return send_id, "failed", "SMTP host tanımlı değil"
 
     from_email, from_name = _domain_from(conn, domain_id)
-    # DirectMail: SMTP login = From adresi olmalı. Domain'e özel şifre varsa onu kullan.
     domain_smtp_pw = ""
     if domain_id:
         drow = fetchone(conn, "SELECT smtp_password FROM mail_domains WHERE id = ?", (domain_id,))
@@ -184,17 +233,14 @@ def deliver_mail(
                 f"SMTP kullanıcı ({user}) ile gönderen domain ({from_email}) uyuşmuyor. "
                 "Ayarlar → Domain düzenle → bu domain için DirectMail SMTP şifresini kaydet."
             )
-            from database import execute
             execute(
                 conn,
-                """
-                UPDATE mail_sends
-                SET status = 'failed', error = ?
-                WHERE id = ?
-                """,
+                "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?",
                 (err, send_id),
             )
             return send_id, "failed", err
+
+    extra = list_unsubscribe_headers(unsub_http) if unsub_http else None
     try:
         msg_id = _smtp_send(
             host=host,
@@ -207,8 +253,8 @@ def deliver_mail(
             subject=subject,
             html_body=tracked_html,
             text_body=tracked_text,
+            extra_headers=extra,
         )
-        from database import execute
         execute(
             conn,
             """
@@ -221,7 +267,6 @@ def deliver_mail(
         return send_id, "sent", ""
     except Exception as exc:
         err = str(exc).strip()[:500] or "SMTP gönderim hatası"
-        from database import execute
         execute(
             conn,
             """

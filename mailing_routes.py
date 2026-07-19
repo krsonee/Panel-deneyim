@@ -10,6 +10,7 @@ import os
 import re
 import secrets
 import threading
+import time
 import urllib.parse
 from contextlib import closing
 
@@ -626,7 +627,10 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
 def _campaign_selection_where(tag_filter, exclude_previously_sent):
     """Kampanya alıcı seçiminde kullanılan WHERE + params — hem sayım
     önizlemesinde hem gerçek eklemede aynı filtre mantığı kullanılsın diye."""
-    clauses = ["unsubscribed = 0"]
+    clauses = [
+        "unsubscribed = 0",
+        "NOT EXISTS (SELECT 1 FROM mail_suppressions s WHERE s.email = LOWER(mail_contacts.email))",
+    ]
     params = []
     tag_filter = (tag_filter or "").strip()
     if tag_filter:
@@ -1261,7 +1265,7 @@ def _stub_send(conn, *, channel, to_email, subject, contact=None, campaign_id=No
 
 
 def create_mailing_click_blueprint():
-    """Public click redirect — auth yok."""
+    """Public click / open / unsubscribe — auth yok."""
     bp = Blueprint("mailing_click", __name__)
 
     @bp.route("/m/c/<token>", methods=["GET"])
@@ -1301,6 +1305,52 @@ def create_mailing_click_blueprint():
                 _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
             conn.commit()
         return redirect(dest, code=302)
+
+    @bp.route("/m/o/<int:send_id>/<sig>", methods=["GET"])
+    def mail_open_pixel(send_id, sig):
+        from mail_ops import record_open, verify_open_sig
+        # 1x1 GIF
+        pixel = (
+            b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04"
+            b"\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
+        )
+        try:
+            with closing(get_db()) as conn:
+                if verify_open_sig(conn, send_id, sig):
+                    record_open(conn, send_id)
+                    conn.commit()
+        except Exception:
+            pass
+        return pixel, 200, {
+            "Content-Type": "image/gif",
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        }
+
+    @bp.route("/m/u/<token>", methods=["GET", "POST"])
+    def mail_unsubscribe(token):
+        from mail_ops import apply_unsubscribe
+        with closing(get_db()) as conn:
+            ok, info = apply_unsubscribe(conn, token)
+            try:
+                conn.commit()
+            except Exception:
+                pass
+        if not ok:
+            return (
+                "<!doctype html><meta charset=utf-8><title>Hata</title>"
+                "<body style='font-family:sans-serif;padding:2rem'>"
+                "<h2>Geçersiz veya süresi dolmuş bağlantı</h2></body>",
+                404,
+            )
+        return (
+            "<!doctype html><meta charset=utf-8><title>Abonelik iptal</title>"
+            "<body style='font-family:sans-serif;padding:2rem;max-width:520px'>"
+            "<h2>Abonelikten çıktınız</h2>"
+            "<p>Bu adres artık mailing listelerimize eklenmeyecek.</p>"
+            f"<p class='muted' style='color:#6b7280'>{html_lib.escape(str(info or ''))}</p>"
+            "</body>",
+            200,
+        )
 
     return bp
 
@@ -1370,8 +1420,14 @@ def _purge_all_mail_contacts_once():
 
 def create_mailing_blueprint(permission_required):
     from mail_campaign_worker import ensure_campaign_scheduler
+    from mail_ops import ensure_mail_ops_schema
 
     ensure_campaign_scheduler()
+    try:
+        with closing(get_db()) as conn:
+            ensure_mail_ops_schema(conn)
+    except Exception as exc:
+        print(f"⚠️  mail_ops ensure: {exc}")
     try:
         _cancel_all_active_imports()
     except Exception as exc:
@@ -1407,15 +1463,20 @@ def create_mailing_blueprint(permission_required):
                     sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends") or 0
             else:
                 sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends") or 0
-            # Detaylı send durumları büyük tabloda pahalı — 0 göster, Reports'ta bakılsın
-            sends_sim = 0
-            sends_queued = 0
-            sends_failed = 0
-            opened = 0
-            clicked = 0
+            sends_sim = int(scalar(
+                conn, "SELECT COUNT(*) FROM mail_sends WHERE status IN ('sent','simulated')"
+            ) or 0)
+            sends_queued = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'queued'") or 0)
+            sends_failed = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'failed'") or 0)
+            opened = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE opened_at IS NOT NULL") or 0)
+            clicked = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE clicked_at IS NOT NULL") or 0)
             ivr_events = scalar(conn, "SELECT COUNT(*) FROM mail_ivr_events") or 0
             domains = _rows(fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC"))
             provider = get_mail_setting(conn, "provider_mode", "stub")
+            try:
+                suppressed = int(scalar(conn, "SELECT COUNT(*) FROM mail_suppressions") or 0)
+            except Exception:
+                suppressed = 0
         return jsonify({
             "kpi": {
                 "contacts": contacts,
@@ -1430,10 +1491,15 @@ def create_mailing_blueprint(permission_required):
                 "opened": opened,
                 "clicked": clicked,
                 "ivr_events": ivr_events,
+                "suppressed": suppressed,
             },
             "domains": domains,
             "provider_mode": provider,
-            "note": "Gönderim şu an stub modunda; Alibaba DirectMail bağlanınca gerçek iletime geçer.",
+            "note": (
+                "SMTP (DirectMail) aktif."
+                if (provider or "").strip().lower() == "smtp"
+                else "Stub modunda — Ayarlar'dan SMTP'ye geçince gerçek mail gider."
+            ),
         })
 
     # ── Contacts / CRM ─────────────────────────────────────────
@@ -2040,7 +2106,9 @@ def create_mailing_blueprint(permission_required):
             subject = _render_template(tpl["subject"], contact)
             html_body = _render_template(tpl["html_body"] or _plain_to_html(tpl["text_body"] or ""), contact)
             text_body = _render_template(tpl["text_body"] or "", contact)
-            send_id, status = _stub_send(
+            from mail_delivery import deliver_mail
+            mode = (get_mail_setting(conn, "provider_mode", "stub") or "stub").strip().lower()
+            send_id, status, err = deliver_mail(
                 conn,
                 channel="test",
                 to_email=email,
@@ -2051,6 +2119,7 @@ def create_mailing_blueprint(permission_required):
                 domain_id=domain_id,
                 html_body=html_body,
                 text_body=text_body,
+                inject_tracking=_inject_tracking,
             )
             links = _rows(fetchall(
                 conn,
@@ -2060,13 +2129,19 @@ def create_mailing_blueprint(permission_required):
             for L in links:
                 L["track_url"] = _track_url(L["token"])
             conn.commit()
+        msg = (
+            "Test mail gönderildi (SMTP)."
+            if mode == "smtp" and status == "sent"
+            else ("Test simüle edildi (stub)." if status == "simulated" else f"Durum: {status}" + (f" — {err}" if err else ""))
+        )
         return jsonify({
-            "ok": True,
+            "ok": status in ("sent", "simulated"),
             "send_id": send_id,
             "status": status,
-            "mode": "stub",
+            "mode": mode,
+            "error": err or "",
             "tracked_links": links,
-            "message": "Test gönderim kaydı oluşturuldu (stub). Takip linkleri hazır; Alibaba bağlanınca gerçek mail gider.",
+            "message": msg,
         })
 
     @bp.route("/templates/<int:template_id>", methods=["DELETE"])
@@ -2368,6 +2443,184 @@ def create_mailing_blueprint(permission_required):
                 )
             conn.commit()
         return jsonify({"ok": True, "status": new_status})
+
+    @bp.route("/campaigns/<int:campaign_id>/pause", methods=["POST"])
+    @mail_perm(*MAIL_CAMP)
+    def pause_campaign(campaign_id):
+        now = iso(utcnow())
+        with closing(get_db()) as conn:
+            camp = fetchone(conn, "SELECT status FROM mail_campaigns WHERE id = ?", (campaign_id,))
+            if not camp:
+                return jsonify({"error": "Kampanya bulunamadı."}), 404
+            if camp["status"] not in ("sending", "queued", "scheduled"):
+                return jsonify({"error": f"Duraklatılamaz: {camp['status']}"}), 400
+            execute(
+                conn,
+                "UPDATE mail_campaigns SET status = 'paused', updated_at = ? WHERE id = ?",
+                (now, campaign_id),
+            )
+            conn.commit()
+            try:
+                from mail_ops import audit
+                audit(conn, request.headers.get("X-Admin-User") or "admin", "campaign_pause", f"id={campaign_id}")
+                conn.commit()
+            except Exception:
+                pass
+        return jsonify({"ok": True, "status": "paused"})
+
+    @bp.route("/campaigns/<int:campaign_id>/resume", methods=["POST"])
+    @mail_perm(*MAIL_CAMP)
+    def resume_campaign(campaign_id):
+        from mail_campaign_worker import start_campaign_send
+        now = iso(utcnow())
+        with closing(get_db()) as conn:
+            camp = fetchone(conn, "SELECT status FROM mail_campaigns WHERE id = ?", (campaign_id,))
+            if not camp:
+                return jsonify({"error": "Kampanya bulunamadı."}), 404
+            if camp["status"] != "paused":
+                return jsonify({"error": f"Devam ettirilemez: {camp['status']}"}), 400
+            execute(
+                conn,
+                "UPDATE mail_campaigns SET status = 'queued', updated_at = ?, error = '' WHERE id = ?",
+                (now, campaign_id),
+            )
+            conn.commit()
+        start_campaign_send(campaign_id)
+        return jsonify({"ok": True, "status": "queued"})
+
+    @bp.route("/campaigns/<int:campaign_id>/retry-failed", methods=["POST"])
+    @mail_perm(*MAIL_CAMP)
+    def retry_failed_campaign(campaign_id):
+        from mail_campaign_worker import start_campaign_send
+        now = iso(utcnow())
+        with closing(get_db()) as conn:
+            camp = fetchone(conn, "SELECT status FROM mail_campaigns WHERE id = ?", (campaign_id,))
+            if not camp:
+                return jsonify({"error": "Kampanya bulunamadı."}), 404
+            if camp["status"] not in ("done", "error", "cancelled", "paused"):
+                return jsonify({"error": f"Retry için uygun değil: {camp['status']}"}), 400
+            n = execute(
+                conn,
+                """
+                UPDATE mail_campaign_recipients SET status = 'pending', send_id = NULL
+                WHERE campaign_id = ? AND status = 'failed'
+                """,
+                (campaign_id,),
+            )
+            reset = getattr(n, "rowcount", None)
+            execute(
+                conn,
+                """
+                UPDATE mail_campaigns
+                SET status = 'queued', finished_at = NULL, error = '', updated_at = ?
+                WHERE id = ?
+                """,
+                (now, campaign_id),
+            )
+            conn.commit()
+        start_campaign_send(campaign_id)
+        return jsonify({"ok": True, "status": "queued", "reset_failed": reset})
+
+    @bp.route("/reports/campaigns", methods=["GET"])
+    @mail_perm(*MAIL_REP)
+    def report_campaigns():
+        from mail_ops import campaign_analytics
+        cid = request.args.get("campaign_id")
+        with closing(get_db()) as conn:
+            rows = campaign_analytics(conn, int(cid) if cid else None)
+        return jsonify({"campaigns": rows})
+
+    @bp.route("/contacts/export", methods=["GET"])
+    @mail_perm(*MAIL_CRM)
+    def export_contacts():
+        tag = (request.args.get("tag") or "").strip()
+        limit = min(int(request.args.get("limit") or 50000), 200000)
+        with closing(get_db()) as conn:
+            if tag:
+                clause, params = _tag_match_clause(tag)
+                rows = fetchall(
+                    conn,
+                    f"SELECT email, name, phone, tags, source, unsubscribed, created_at FROM mail_contacts WHERE {clause} ORDER BY id DESC LIMIT ?",
+                    params + (limit,),
+                )
+            else:
+                rows = fetchall(
+                    conn,
+                    "SELECT email, name, phone, tags, source, unsubscribed, created_at FROM mail_contacts ORDER BY id DESC LIMIT ?",
+                    (limit,),
+                )
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["email", "name", "phone", "tags", "source", "unsubscribed", "created_at"])
+        for r in rows or []:
+            r = dict(r)
+            w.writerow([
+                r.get("email") or "",
+                r.get("name") or "",
+                r.get("phone") or "",
+                r.get("tags") or "",
+                r.get("source") or "",
+                r.get("unsubscribed") or 0,
+                r.get("created_at") or "",
+            ])
+        from flask import Response
+        return Response(
+            buf.getvalue(),
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=mail-contacts.csv"},
+        )
+
+    @bp.route("/webhooks/bounce", methods=["POST"])
+    def bounce_webhook():
+        """DirectMail / generic bounce-complaint webhook.
+        Auth: X-Mailing-Webhook-Secret veya ?secret=
+        Body örnek: { "email": "...", "type": "bounce"|"complaint", "reason": "..." }
+        veya Alibaba tarzı alanlar: rcpt, bounceType, status
+        """
+        from mail_ops import audit, suppress_email
+        data = request.get_json(silent=True) or {}
+        secret = (
+            request.headers.get("X-Mailing-Webhook-Secret")
+            or request.args.get("secret")
+            or ""
+        ).strip()
+        with closing(get_db()) as conn:
+            expected = (get_mail_setting(conn, "webhook_secret", "") or "").strip()
+            if not expected or secret != expected:
+                return jsonify({"error": "Unauthorized"}), 401
+            email = (
+                data.get("email")
+                or data.get("rcpt")
+                or data.get("recipient")
+                or data.get("Destination")
+                or ""
+            ).strip().lower()
+            # nested
+            if not email and isinstance(data.get("mail"), dict):
+                dests = data["mail"].get("destination") or []
+                if dests:
+                    email = str(dests[0]).strip().lower()
+            btype = (data.get("type") or data.get("bounceType") or data.get("event") or "bounce").strip().lower()
+            reason = (data.get("reason") or data.get("diagnosticCode") or btype)[:200]
+            if not email or not EMAIL_RE.match(email):
+                return jsonify({"error": "email gerekli"}), 400
+            if "complaint" in btype or "spam" in btype:
+                suppress_email(conn, email, reason="complaint", source="bounce_webhook")
+                kind = "complaint"
+            else:
+                suppress_email(conn, email, reason="bounce", source="bounce_webhook")
+                kind = "bounce"
+            execute(
+                conn,
+                """
+                UPDATE mail_sends SET status = 'bounced', error = ?
+                WHERE LOWER(to_email) = ? AND status IN ('sent','simulated','queued')
+                """,
+                (f"{kind}: {reason}", email),
+            )
+            audit(conn, "webhook", kind, email)
+            conn.commit()
+        return jsonify({"ok": True, "email": email, "type": kind})
 
     # ── Sends / Reports ────────────────────────────────────────
     @bp.route("/sends", methods=["GET"])
@@ -2685,7 +2938,18 @@ def create_mailing_blueprint(permission_required):
 
             contact_d = _contact_out(contact)
             subject = _render_template(tpl["subject"], contact_d)
-            send_id, status = _stub_send(
+            html_body = _render_template(
+                tpl.get("html_body") or _plain_to_html(tpl.get("text_body") or ""),
+                contact_d,
+            )
+            text_body = _render_template(tpl.get("text_body") or "", contact_d)
+            delay_sec = int(rule.get("delay_seconds") or 0)
+            if delay_sec > 0:
+                # Webhook'u uzun tutmamak için üst sınır
+                time.sleep(min(delay_sec, 30))
+            from mail_delivery import deliver_mail
+            mode = (get_mail_setting(conn, "provider_mode", "stub") or "stub").strip().lower()
+            send_id, status, err = deliver_mail(
                 conn,
                 channel="ivr",
                 to_email=contact_d["email"],
@@ -2695,11 +2959,14 @@ def create_mailing_blueprint(permission_required):
                 template_id=rule["template_id"],
                 domain_id=rule["domain_id"],
                 to_phone=phone or contact_d.get("phone") or "",
+                html_body=html_body,
+                text_body=text_body,
+                inject_tracking=_inject_tracking,
             )
             execute(
                 conn,
-                "UPDATE mail_ivr_events SET status = ?, contact_id = ?, send_id = ? WHERE id = ?",
-                (status, contact_d["id"], send_id, event_id),
+                "UPDATE mail_ivr_events SET status = ?, contact_id = ?, send_id = ?, error = ? WHERE id = ?",
+                (status, contact_d["id"], send_id, err or "", event_id),
             )
             conn.commit()
         return jsonify({
@@ -2707,7 +2974,7 @@ def create_mailing_blueprint(permission_required):
             "event_id": event_id,
             "send_id": send_id,
             "status": status,
-            "mode": "stub",
+            "mode": mode,
         })
 
     return bp
