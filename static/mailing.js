@@ -622,10 +622,10 @@
     if (tab === "dashboard") mailLoadDashboard();
     else if (tab === "relations") mailLoadRelations();
     else if (tab === "crm") {
-      // Mail Rehber — syncTags/recount milyonlarca satırda DB'yi kilitler
+      // Mail Rehber — açılışta refresh ile etiket sayıları canlı dolsun
       mailLoadContacts();
       mailLoadTags();
-      mailLoadContactStats();
+      mailLoadContactStats({ refresh: true });
     }
     else if (tab === "templates") mailLoadTemplates();
     else if (tab === "campaigns") {

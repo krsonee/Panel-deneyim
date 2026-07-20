@@ -596,23 +596,19 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
         refresh_names.append(match_tag)
 
     cleaned = []
-    # Önce sayımı güncelle, 0 ise sil
-    if action in ("move", "remove") and from_tag:
+    # Taşıma/kaldırma sonrası kaynak + hedef sayıları canlı güncelle
+    for name in refresh_names:
         try:
-            n = _recount_tag(conn, from_tag)
-            try:
-                conn.commit()
-            except Exception:
-                pass
-            if int(n or 0) <= 0:
+            n = _recount_tag(conn, name)
+            if action in ("move", "remove") and name == from_tag and int(n or 0) <= 0:
                 cleaned = _cleanup_empty_tags(conn, [from_tag])
         except Exception:
-            cleaned = []
-
-    # Diğer etiket sayıları arka planda
-    async_names = [n for n in refresh_names if n not in cleaned]
-    if async_names:
-        _refresh_tag_counts_async(async_names)
+            pass
+    try:
+        conn.commit()
+    except Exception:
+        pass
+    _invalidate_mail_stats_cache()
 
     return {
         "ok": True,
@@ -1101,15 +1097,21 @@ def _ensure_tag(conn, name, now=None):
     return False
 
 
-def _tag_usage_count(conn, name):
-    """Etiket kullanım sayısı — registry contact_count (LIKE taraması yok)."""
+def _tag_usage_count(conn, name, *, live=True):
+    """Etiket kullanım sayısı. live=True: gerçek COUNT (LIKE); False: yalnız registry."""
     name = (name or "").strip()
     if not name:
         return 0
-    cached = _registry_tag_count(conn, name)
-    if cached is not None:
-        return int(cached)
-    return 0
+    if not live:
+        cached = _registry_tag_count(conn, name)
+        if cached is not None:
+            return int(cached)
+        return 0
+    clause, params = _tag_match_clause(name)
+    try:
+        return int(scalar(conn, f"SELECT COUNT(*) FROM mail_contacts WHERE {clause}", params) or 0)
+    except Exception:
+        return 0
 
 
 def _delete_tag(conn, name, *, force=False):
@@ -1330,9 +1332,34 @@ def _recount_tag(conn, name):
     return n
 
 
+def _recount_all_tags(conn, *, limit=300):
+    """Registry'deki etiketleri canlı COUNT ile günceller."""
+    rows = fetchall(
+        conn,
+        "SELECT name FROM mail_contact_tags ORDER BY name ASC LIMIT ?",
+        (max(1, min(int(limit or 300), 500)),),
+    ) or []
+    out = []
+    for r in rows:
+        name = (r["name"] or "").strip()
+        if not name:
+            continue
+        n = _recount_tag(conn, name)
+        out.append({"name": name, "count": int(n or 0)})
+    try:
+        conn.commit()
+    except Exception:
+        pass
+    return out
+
+
 def _contact_tag_counts(conn, *, force=False, live=False):
-    """Etiket sayıları — yalnız registry contact_count. live recount KAPALI."""
+    """Etiket sayıları — registry; live=True ise önce recount."""
     import time
+
+    if live:
+        _recount_all_tags(conn)
+        force = True
 
     now = time.time()
     if not force and _TAG_COUNT_CACHE["rows"] is not None and (now - _TAG_COUNT_CACHE["ts"]) < 180:
@@ -1349,7 +1376,6 @@ def _contact_tag_counts(conn, *, force=False, live=False):
             counts[name] = int(r["contact_count"] or 0)
         else:
             counts[name] = 0
-    # live=True bile olsa LIKE recount yok — panel koruması
 
     rows = sorted(
         [{"name": name, "count": int(counts[name] or 0)} for name in counts],
@@ -1371,8 +1397,28 @@ _TAG_RECOUNT_STATE = {"running": False, "queued": set()}
 
 
 def _refresh_tag_counts_async(tag_names=None):
-    """Devre dışı — etiket başına full-table LIKE paneli kilitliyordu."""
-    return
+    """Etiket sayılarını arka planda canlı yenile (küçük parti)."""
+    names = [str(n).strip() for n in (tag_names or []) if str(n).strip()]
+    if not names:
+        return
+
+    def _run():
+        try:
+            with closing(get_db()) as conn:
+                for name in names[:80]:
+                    try:
+                        _recount_tag(conn, name)
+                    except Exception:
+                        pass
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+                _invalidate_mail_stats_cache()
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True, name="mail-tag-recount").start()
 
 
 def _stub_send(conn, *, channel, to_email, subject, contact=None, campaign_id=None,
@@ -1701,21 +1747,16 @@ def create_mailing_blueprint(permission_required):
                 _maybe_sync_missing_tags_async(force=True)
             by_tag = _contact_tag_counts(conn, live=False)
             pending_recount = []
-            # Yenile'de stale tag sayıları 0 ise bir kez recount dene (küçük listeler)
-            if refresh and by_tag:
-                zeros = [t["name"] for t in by_tag if int(t.get("count") or 0) == 0]
-                if zeros and int(total or 0) > 0 and int(total or 0) < 250000:
-                    for name in zeros[:40]:
-                        try:
-                            _recount_tag(conn, name)
-                        except Exception:
-                            pass
-                    try:
-                        conn.commit()
-                    except Exception:
-                        pass
-                    _invalidate_mail_stats_cache()
-                    by_tag = _contact_tag_counts(conn, force=True, live=False)
+            # Registry 0 kaldıysa (import sonrası) — küçük/orta listelerde canlı say
+            need_live = False
+            if by_tag and int(total or 0) > 0:
+                zeros = sum(1 for t in by_tag if int(t.get("count") or 0) == 0)
+                if zeros > 0 and int(total or 0) <= 200000:
+                    need_live = True
+                if refresh and int(total or 0) <= 500000:
+                    need_live = True
+            if need_live:
+                by_tag = _contact_tag_counts(conn, force=True, live=True)
         payload = {
             "total": total,
             "total_approx": bool(total_approx),
