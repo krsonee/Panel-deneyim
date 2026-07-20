@@ -605,6 +605,38 @@ def _page_row(row):
     return d
 
 
+def apply_redbox_layout_cols(buttons):
+    """Bizzo kırmızı kutu SS — blok sırasına göre yerleşim.
+
+    1. blok → Tam
+    2–4 → Sol + Orta + Sağ (üçlü satır)
+    kalan → Sol + Sağ çiftleri
+    Başlıklar sırayı bozmaz (tam satır, sayaca girmez).
+    """
+    out = []
+    idx = 0
+    for raw in buttons or []:
+        b = dict(raw)
+        if (b.get("button_type") or "").strip().lower() == HEADING_TYPE:
+            b["layout_col"] = "full"
+            out.append(b)
+            continue
+        if idx == 0:
+            col = "full"
+        elif idx == 1:
+            col = "left"
+        elif idx == 2:
+            col = "center"
+        elif idx == 3:
+            col = "right"
+        else:
+            col = "left" if ((idx - 4) % 2 == 0) else "right"
+        b["layout_col"] = col
+        out.append(b)
+        idx += 1
+    return out
+
+
 def group_layout_rows(buttons):
     """Bizzo yerleşim — kırmızı kutu grid’i.
 

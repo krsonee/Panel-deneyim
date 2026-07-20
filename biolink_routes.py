@@ -22,17 +22,20 @@ def render_public_biolink_page(page, *, preview=False, site_mode=False):
         "brand": PANEL_BRAND,
         "biolink_pack": BIOLINK_PACK,
     }
-    # layout_rows yalnızca Bizzo — Makro eski flat/link-col render kullanır
-    layout_rows = (
-        biolink_api.group_layout_rows(page.get("buttons") or [])
-        if PANEL_BRAND == "bizzo"
-        else None
-    )
+    # Bizzo: kırmızı kutu düzeni blok sırasından otomatik (DB'deki Sol/Sağ'a bağlı kalma)
+    if PANEL_BRAND == "bizzo":
+        page = dict(page)
+        page["buttons"] = biolink_api.apply_redbox_layout_cols(page.get("buttons") or [])
+        layout_rows = biolink_api.group_layout_rows(page["buttons"])
+    else:
+        layout_rows = None
     if preview:
         page = biolink_api.apply_preview_overrides(page, request.args)
-        theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
         if PANEL_BRAND == "bizzo":
-            layout_rows = biolink_api.group_layout_rows(page.get("buttons") or [])
+            page = dict(page)
+            page["buttons"] = biolink_api.apply_redbox_layout_cols(page.get("buttons") or [])
+            layout_rows = biolink_api.group_layout_rows(page["buttons"])
+        theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
         return render_template(
             "biolink_page.html", page=page, theme=theme, preview=True,
             click_prefix=f"/p/{page['slug']}", layout_rows=layout_rows, **brand_ctx,
