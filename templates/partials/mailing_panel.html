@@ -149,19 +149,58 @@
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head"><span>Kontak ekle</span></div>
+      <div class="card-head"><span id="mail-contact-form-title">Kontak ekle</span></div>
       <div class="card-body">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;align-items:start;">
           <div>
-            <p class="hint" style="margin:0 0 0.65rem;font-weight:600;color:var(--text,#e2e8f0);">Tek tek ekle</p>
-            <form id="mail-contact-form" class="form-row-4" style="grid-template-columns:1fr;">
-              <div><label>E-posta</label><input type="email" id="mail-c-email" required placeholder="ornek@mail.com"></div>
-              <div><label>Ad</label><input type="text" id="mail-c-name" placeholder="Ad Soyad (opsiyonel)"></div>
+            <p class="hint" style="margin:0 0 0.65rem;font-weight:600;color:var(--text,#e2e8f0);" id="mail-contact-form-sub">Tek tek ekle / düzenle</p>
+            <form id="mail-contact-form" class="form-row-4" style="grid-template-columns:1fr 1fr;">
+              <input type="hidden" id="mail-c-id" value="">
+              <div style="grid-column:1/-1;"><label>E-posta</label><input type="email" id="mail-c-email" required placeholder="ornek@mail.com"></div>
+              <div><label>Ad</label><input type="text" id="mail-c-name" placeholder="Ad Soyad"></div>
+              <div><label>Telefon</label><input type="text" id="mail-c-phone" placeholder="+90…"></div>
               <div>
-                <label>Etiket</label>
+                <label>Etiket (hızlı seç)</label>
                 <select id="mail-c-tags" class="mail-tag-select"><option value="">Etiket yok</option></select>
               </div>
-              <div><button type="submit" class="btn btn-primary">Ekle</button></div>
+              <div><label>Etiketler (virgülle çoklu)</label><input type="text" id="mail-c-tags-text" placeholder="vip, davet, uye_oldu"></div>
+              <div><label>Kaynak</label><input type="text" id="mail-c-source" placeholder="manual / csv / ivr…"></div>
+              <div>
+                <label>Doğrulama durumu</label>
+                <select id="mail-c-verify">
+                  <option value="">—</option>
+                  <option value="valid">valid</option>
+                  <option value="mx_ok">mx_ok</option>
+                  <option value="invalid">invalid</option>
+                  <option value="unknown">unknown</option>
+                  <option value="catch_all">catch_all</option>
+                  <option value="disposable">disposable</option>
+                  <option value="role">role</option>
+                </select>
+              </div>
+              <div>
+                <label>CRM aşama</label>
+                <select id="mail-c-lifecycle">
+                  <option value="lead">Aday</option>
+                  <option value="contacted">Temas edildi</option>
+                  <option value="engaged">İlgili</option>
+                  <option value="converted">Dönüşen</option>
+                  <option value="vip">VIP</option>
+                  <option value="dormant">Uyuyan</option>
+                  <option value="lost">Kayıp</option>
+                </select>
+              </div>
+              <div><label>CRM sahip</label><input type="text" id="mail-c-owner" placeholder="operatör"></div>
+              <div style="grid-column:1/-1;"><label>Notlar</label><textarea id="mail-c-notes" rows="2" placeholder="opsiyonel not"></textarea></div>
+              <div style="grid-column:1/-1;">
+                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
+                  <input type="checkbox" id="mail-c-unsub"> Abonelikten çıkmış (unsubscribed)
+                </label>
+              </div>
+              <div style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;">
+                <button type="submit" class="btn btn-primary" id="mail-c-submit">Ekle</button>
+                <button type="button" class="btn btn-sm" id="mail-c-cancel" hidden>Düzenlemeyi iptal</button>
+              </div>
             </form>
           </div>
           <div>

@@ -1828,17 +1828,46 @@ def create_mailing_blueprint(permission_required):
                     (data.get("name") or "").strip(),
                     tags,
                     (data.get("source") or "manual").strip() or "manual",
-                    1 if data.get("unsubscribed") else 0,
+                    1 if data.get("unsubscribed") in (True, 1, "1", "true", "yes", "on") else 0,
                     (data.get("notes") or "").strip(),
                     now,
                     now,
                 ),
             )
+            from database import _table_columns
+            cols = _table_columns(conn, "mail_contacts") or set()
+            extra_sets = []
+            extra_params = []
+            if "lifecycle" in cols and data.get("lifecycle"):
+                extra_sets.append("lifecycle = ?")
+                extra_params.append((data.get("lifecycle") or "lead").strip().lower())
+            if "crm_owner" in cols and "crm_owner" in data:
+                extra_sets.append("crm_owner = ?")
+                extra_params.append((data.get("crm_owner") or "").strip()[:120])
+            if "verify_status" in cols and "verify_status" in data:
+                extra_sets.append("verify_status = ?")
+                extra_params.append((data.get("verify_status") or "").strip()[:40])
+            if extra_sets:
+                execute(
+                    conn,
+                    f"UPDATE mail_contacts SET {', '.join(extra_sets)} WHERE id = ?",
+                    tuple(extra_params) + (cid,),
+                )
             for t in _parse_tags(data.get("tags")):
                 _ensure_tag(conn, t, now)
+            _invalidate_mail_stats_cache()
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_contacts WHERE id = ?", (cid,))
         return jsonify({"contact": _contact_out(row)}), 201
+
+    @bp.route("/contacts/<int:contact_id>", methods=["GET"])
+    @mail_perm(*MAIL_CRM)
+    def get_contact(contact_id):
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM mail_contacts WHERE id = ?", (contact_id,))
+            if not row:
+                return jsonify({"error": "Kontak bulunamadı."}), 404
+        return jsonify({"contact": _contact_out(row)})
 
     @bp.route("/contacts/<int:contact_id>", methods=["PATCH"])
     @mail_perm(*MAIL_CRM)
@@ -1852,30 +1881,59 @@ def create_mailing_blueprint(permission_required):
             email = (data.get("email") if "email" in data else row["email"] or "").strip().lower()
             if not email or not EMAIL_RE.match(email):
                 return jsonify({"error": "Geçerli bir e-posta girin."}), 400
+            other = fetchone(
+                conn,
+                "SELECT id FROM mail_contacts WHERE LOWER(email) = ? AND id != ?",
+                (email, contact_id),
+            )
+            if other:
+                return jsonify({"error": "Bu e-posta başka bir kontakta kayıtlı."}), 409
             tags = _tags_json(data.get("tags")) if "tags" in data else row["tags"]
+            if "unsubscribed" in data:
+                unsub = 1 if data.get("unsubscribed") in (True, 1, "1", "true", "yes", "on") else 0
+            else:
+                unsub = 1 if row["unsubscribed"] else 0
+
+            # Opsiyonel CRM / verify kolonları (yoksa UPDATE'te atlanır)
+            from database import _table_columns
+            cols = _table_columns(conn, "mail_contacts") or set()
+            sets = [
+                "email = ?", "phone = ?", "name = ?", "tags = ?", "source = ?",
+                "unsubscribed = ?", "notes = ?", "updated_at = ?",
+            ]
+            params = [
+                email,
+                (data.get("phone") if "phone" in data else row["phone"] or "").strip(),
+                (data.get("name") if "name" in data else row["name"] or "").strip(),
+                tags,
+                (data.get("source") if "source" in data else row["source"] or "manual").strip() or "manual",
+                unsub,
+                (data.get("notes") if "notes" in data else row["notes"] or "").strip(),
+                now,
+            ]
+            if "lifecycle" in cols and "lifecycle" in data:
+                life = (data.get("lifecycle") or "lead").strip().lower() or "lead"
+                sets.append("lifecycle = ?")
+                params.append(life)
+            if "crm_owner" in cols and "crm_owner" in data:
+                sets.append("crm_owner = ?")
+                params.append((data.get("crm_owner") or "").strip()[:120])
+            if "verify_status" in cols and "verify_status" in data:
+                sets.append("verify_status = ?")
+                params.append((data.get("verify_status") or "").strip()[:40])
+            if "verify_detail" in cols and "verify_detail" in data:
+                sets.append("verify_detail = ?")
+                params.append((data.get("verify_detail") or "").strip()[:240])
+            params.append(contact_id)
             execute(
                 conn,
-                """
-                UPDATE mail_contacts SET
-                    email = ?, phone = ?, name = ?, tags = ?, source = ?,
-                    unsubscribed = ?, notes = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    email,
-                    (data.get("phone") if "phone" in data else row["phone"] or "").strip(),
-                    (data.get("name") if "name" in data else row["name"] or "").strip(),
-                    tags,
-                    (data.get("source") if "source" in data else row["source"] or "manual").strip(),
-                    1 if data.get("unsubscribed", row["unsubscribed"]) else 0,
-                    (data.get("notes") if "notes" in data else row["notes"] or "").strip(),
-                    now,
-                    contact_id,
-                ),
+                f"UPDATE mail_contacts SET {', '.join(sets)} WHERE id = ?",
+                tuple(params),
             )
             if "tags" in data:
                 for t in _parse_tags(data.get("tags")):
                     _ensure_tag(conn, t, now)
+            _invalidate_mail_stats_cache()
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_contacts WHERE id = ?", (contact_id,))
         return jsonify({"contact": _contact_out(row)})
@@ -1885,6 +1943,7 @@ def create_mailing_blueprint(permission_required):
     def delete_contact(contact_id):
         with closing(get_db()) as conn:
             execute(conn, "DELETE FROM mail_contacts WHERE id = ?", (contact_id,))
+            _invalidate_mail_stats_cache()
             conn.commit()
         return jsonify({"ok": True})
 

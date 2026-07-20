@@ -1073,10 +1073,92 @@
           "<td>" + vLabel + "</td>" +
           "<td>" + (tags || "—") + "</td>" +
           "<td>" + esc(c.source) + "</td>" +
-          '<td><button type="button" class="btn btn-sm mail-del-contact" data-id="' + c.id + '">Sil</button></td>' +
-          "</tr>";
+          '<td style="white-space:nowrap;">' +
+            '<button type="button" class="btn btn-sm mail-edit-contact" data-id="' + c.id + '">Düzenle</button> ' +
+            '<button type="button" class="btn btn-sm mail-del-contact" data-id="' + c.id + '">Sil</button>' +
+          "</td></tr>";
       }).join("");
       mailUpdateContactSelectionCount();
+    });
+  }
+
+  function mailResetContactForm() {
+    var form = document.getElementById("mail-contact-form");
+    if (form) form.reset();
+    var idEl = document.getElementById("mail-c-id");
+    if (idEl) idEl.value = "";
+    setText("mail-contact-form-title", "Kontak ekle");
+    var sub = document.getElementById("mail-contact-form-sub");
+    if (sub) sub.textContent = "Tek tek ekle / düzenle";
+    var submit = document.getElementById("mail-c-submit");
+    if (submit) submit.textContent = "Ekle";
+    var cancel = document.getElementById("mail-c-cancel");
+    if (cancel) cancel.hidden = true;
+    var life = document.getElementById("mail-c-lifecycle");
+    if (life) life.value = "lead";
+  }
+
+  function mailCollectContactFormBody() {
+    var tagSelect = ((document.getElementById("mail-c-tags") || {}).value || "").trim();
+    var tagText = ((document.getElementById("mail-c-tags-text") || {}).value || "").trim();
+    var tags = [];
+    if (tagText) {
+      tagText.split(/[,;]+/).forEach(function (t) {
+        t = (t || "").trim();
+        if (t && tags.indexOf(t) < 0) tags.push(t);
+      });
+    }
+    if (tagSelect && tags.indexOf(tagSelect) < 0) tags.push(tagSelect);
+    return {
+      email: (document.getElementById("mail-c-email").value || "").trim(),
+      name: (document.getElementById("mail-c-name").value || "").trim(),
+      phone: (document.getElementById("mail-c-phone").value || "").trim(),
+      tags: tags,
+      source: (document.getElementById("mail-c-source").value || "").trim() || "manual",
+      notes: (document.getElementById("mail-c-notes").value || "").trim(),
+      unsubscribed: !!(document.getElementById("mail-c-unsub") || {}).checked,
+      verify_status: (document.getElementById("mail-c-verify") || {}).value || "",
+      lifecycle: (document.getElementById("mail-c-lifecycle") || {}).value || "lead",
+      crm_owner: (document.getElementById("mail-c-owner") || {}).value || ""
+    };
+  }
+
+  function mailFillContactForm(c) {
+    if (!c) return;
+    document.getElementById("mail-c-id").value = c.id || "";
+    document.getElementById("mail-c-email").value = c.email || "";
+    document.getElementById("mail-c-name").value = c.name || "";
+    document.getElementById("mail-c-phone").value = c.phone || "";
+    document.getElementById("mail-c-tags-text").value = (c.tags || []).join(", ");
+    document.getElementById("mail-c-tags").value = "";
+    document.getElementById("mail-c-source").value = c.source || "manual";
+    document.getElementById("mail-c-notes").value = c.notes || "";
+    document.getElementById("mail-c-unsub").checked = !!c.unsubscribed;
+    var verify = document.getElementById("mail-c-verify");
+    if (verify) verify.value = c.verify_status || "";
+    var life = document.getElementById("mail-c-lifecycle");
+    if (life) life.value = c.lifecycle || "lead";
+    var owner = document.getElementById("mail-c-owner");
+    if (owner) owner.value = c.crm_owner || "";
+    setText("mail-contact-form-title", "Kontak düzenle #" + c.id);
+    var sub = document.getElementById("mail-contact-form-sub");
+    if (sub) sub.textContent = "Düzenleme modu — kaydetince güncellenir";
+    var submit = document.getElementById("mail-c-submit");
+    if (submit) submit.textContent = "Güncelle";
+    var cancel = document.getElementById("mail-c-cancel");
+    if (cancel) cancel.hidden = false;
+    try {
+      document.getElementById("mail-contact-form").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (e) { /* ignore */ }
+  }
+
+  function mailEditContact(id) {
+    mailApi("/api/mailing/contacts/" + id).then(function (res) {
+      if (!res || !res.ok) {
+        mailToast((res && res.data && res.data.error) || "Kontak yüklenemedi");
+        return;
+      }
+      mailFillContactForm(res.data.contact);
     });
   }
 
@@ -1860,28 +1942,26 @@
     if (cForm) {
       cForm.addEventListener("submit", function (e) {
         e.preventDefault();
-        var tagVal = (document.getElementById("mail-c-tags").value || "").trim();
-        var tags = tagVal ? [tagVal] : [];
-        mailApi("/api/mailing/contacts", {
-          method: "POST",
-          body: {
-            email: document.getElementById("mail-c-email").value.trim(),
-            name: document.getElementById("mail-c-name").value.trim(),
-            tags: tags
-          }
-        }).then(function (res) {
+        var body = mailCollectContactFormBody();
+        if (!body.email) { mailToast("E-posta gerekli"); return; }
+        var editId = (document.getElementById("mail-c-id").value || "").trim();
+        var req = editId
+          ? mailApi("/api/mailing/contacts/" + editId, { method: "PATCH", body: body })
+          : mailApi("/api/mailing/contacts", { method: "POST", body: body });
+        req.then(function (res) {
           if (!res || !res.ok) {
-            mailToast((res && res.data && res.data.error) || "Eklenemedi");
+            mailToast((res && res.data && res.data.error) || (editId ? "Güncellenemedi" : "Eklenemedi"));
             return;
           }
-          cForm.reset();
-          mailToast("Kontak eklendi");
+          mailResetContactForm();
+          mailToast(editId ? "Kontak güncellendi" : "Kontak eklendi");
           mailLoadContactStats();
           mailLoadContacts();
           mailLoadTags();
         });
       });
     }
+    bindClick("mail-c-cancel", mailResetContactForm);
 
     bindClick("mail-csv-submit", function () {
       mailApi("/api/mailing/contacts/import", {
@@ -2195,6 +2275,11 @@
           });
         }
         mailLoadContacts();
+        return;
+      }
+      var editC = e.target.closest(".mail-edit-contact");
+      if (editC) {
+        mailEditContact(editC.getAttribute("data-id"));
         return;
       }
       var delC = e.target.closest(".mail-del-contact");
