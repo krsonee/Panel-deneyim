@@ -2360,6 +2360,33 @@
               Tıklama sayıları için <strong>Bio Sayfa → Domain Performans</strong> sekmesine bak.
             </p>
             {% endif %}
+            <form id="add-link-form" style="margin-top:0.85rem;">
+              <div class="form-row-4">
+                <div><label for="input-label">İsim</label><input id="input-label" placeholder="Örn: Bizzo ana site" autocomplete="off"></div>
+                <div><label for="input-domain">Domain</label><input id="input-domain" placeholder="{% if panel.brand == 'bizzo' %}bizzocasino168.com{% else %}makrobet804.com{% endif %}" autocomplete="off"></div>
+                <div><label for="input-ref">Referans (?ref=) — opsiyonel</label><input id="input-ref" placeholder="Boş = tüm site" autocomplete="off"></div>
+                <div style="align-self:end"><button type="submit" class="btn btn-primary">Domain Ekle</button></div>
+              </div>
+            </form>
+            <div class="tools-grid" style="margin-top:0.85rem;">
+              <div class="tool-box">
+                <h4>📦 Toplu Domain Ekle</h4>
+                <p class="muted" style="font-size:0.72rem;margin-bottom:0.45rem;">
+                  {% if panel.brand == "bizzo" %}
+                  Tek domain veya her satıra bir domain yaz. Örn: <strong>bizzocasino168.com</strong>
+                  {% else %}
+                  Aralık: <strong>makrobet804 - 1084</strong> → otomatik ekler. Tek domain de yazabilirsin.
+                  {% endif %}
+                </p>
+                <textarea id="bulk-domains" placeholder="{% if panel.brand == 'bizzo' %}bizzocasino168.com&#10;girbize.com{% else %}makrobet804 - 1084&#10;makrogir.com{% endif %}"></textarea>
+                <div style="margin-top:0.45rem;display:flex;gap:0.4rem;flex-wrap:wrap;">
+                  <input id="bulk-ref" placeholder="Ortak ref (opsiyonel)" style="flex:1;min-width:140px;" autocomplete="off">
+                  <button type="button" class="btn" id="btn-bulk-preview">Önizle</button>
+                  <button type="button" class="btn btn-primary" id="btn-bulk-add">Toplu Ekle</button>
+                </div>
+                <p class="muted" id="bulk-result" style="font-size:0.7rem;margin-top:0.4rem;"></p>
+              </div>
+            </div>
             <div class="tracking-code-panel">
               <div class="tracking-code-head">
                 <h4>📋 Ortak Takip Kodu</h4>
@@ -3618,7 +3645,7 @@
           return;
         }
 
-        var canManageDomains = (myPermissions || []).indexOf("*") !== -1;
+        var canManageDomains = hasPerm("tracking.domains") || (myPermissions || []).indexOf("*") !== -1;
         tbody.innerHTML = links.map(function(l) {
           var ref = l.ref_code ? '<span class="tag">'+esc(refDisplayLabel(l.ref_code))+'</span>' : '<span class="tag">Tüm site</span>';
           var on = l.online_count>0 ? '<span class="tag online">'+l.online_count+'</span>' : '<span class="tag offline">0</span>';

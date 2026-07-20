@@ -1224,7 +1224,7 @@ def list_links():
 
 
 @app.route("/api/links", methods=["POST"])
-@superadmin_required
+@permission_required("tracking.domains", "module.tracking")
 def create_link():
     data = request.get_json(silent=True) or {}
     domain = normalize_domain(data.get("domain", ""))
@@ -1256,7 +1256,7 @@ def create_link():
 
 
 @app.route("/api/links/bulk", methods=["POST"])
-@superadmin_required
+@permission_required("tracking.domains", "module.tracking")
 def create_links_bulk():
     data = request.get_json(silent=True) or {}
     raw_domains = data.get("domains") or data.get("text") or ""
@@ -1299,7 +1299,7 @@ def create_links_bulk():
 
 
 @app.route("/api/links/bulk/preview", methods=["POST"])
-@superadmin_required
+@permission_required("tracking.domains", "module.tracking")
 def preview_links_bulk():
     data = request.get_json(silent=True) or {}
     raw = data.get("text") or data.get("domains") or ""
@@ -1317,7 +1317,7 @@ def preview_links_bulk():
 
 
 @app.route("/api/links/<int:link_id>", methods=["DELETE"])
-@superadmin_required
+@permission_required("tracking.domains", "module.tracking")
 def delete_link(link_id):
     with closing(get_db()) as conn:
         execute(conn, "DELETE FROM visitor_sessions WHERE tracked_link_id = ?", (link_id,))
