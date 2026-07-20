@@ -403,6 +403,49 @@ def fetch_affiliate_names(conn, force=False):
     _aff_cache["data"] = mapping
     return mapping
 
+
+def fetch_affiliate_home_deal_id(conn, affiliate_id):
+    """Affiliate'in home/default deal_id'sini getir (af2_deals_op).
+
+    TAP move sadece affiliate_id ile çoğu zaman ConstraintViolation verir;
+    home deal_id ile taşınması gerekir.
+    """
+    cfg = get_config(conn)
+    if not cfg["api_key"]:
+        return None
+    try:
+        aid = int(affiliate_id)
+    except (TypeError, ValueError):
+        return None
+    try:
+        data = _request(
+            cfg["api_host"],
+            "af2_deals_op",
+            cfg["api_key"],
+            {"affiliate_id": str(aid)},
+            timeout=15,
+        )
+    except SmarticoError:
+        return None
+    rows = data if isinstance(data, list) else (data.get("data") if isinstance(data, dict) else None)
+    if not isinstance(rows, list) or not rows:
+        return None
+    default_row = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if row.get("is_default") is True or row.get("is_default") == 1:
+            default_row = row
+            break
+    pick = default_row or (rows[0] if isinstance(rows[0], dict) else None)
+    if not pick:
+        return None
+    deal = pick.get("deal_id") or pick.get("id")
+    try:
+        return int(deal) if deal is not None else None
+    except (TypeError, ValueError):
+        return None
+
 def fetch_media_report(conn, period="all", force=False):
     """Link/kanal bazlı ziyaret, kayıt, yatırım, komisyon raporu.
 
@@ -1265,7 +1308,7 @@ def move_affiliate(
         if cfg.get("default_affiliate_id") is None:
             raise ValueError(
                 "Affiliate ID boş = normal link. Normal link Affiliate ID ayarlanmamış — "
-                "int-api Ayarlar'dan Direct/Organic house ID gir."
+                "int-api Ayarlar'dan MARKOBET_DEFAULT (41105) gir."
             )
         aff = int(cfg["default_affiliate_id"])
         used_default = True
@@ -1275,13 +1318,23 @@ def move_affiliate(
         aff = int(cfg["default_affiliate_id"])
         used_default = True
 
+    # affiliate_id tek başına Smartico'da ConstraintViolation veriyor → home deal şart
+    if deal is None and aff is not None:
+        home_deal = fetch_affiliate_home_deal_id(conn, aff)
+        if home_deal is None:
+            raise SmarticoError(
+                f"Affiliate #{aff} için home deal bulunamadı. "
+                "Deal ID'yi elle gir veya Smartico rapor API key'ini kontrol et."
+            )
+        deal = home_deal
+
     body = {
         "cid": _MOVE_AFFILIATE_CID,
         "brand_id": cfg["brand_id"],
         "ext_customer_id": ext_id,
+        "deal_id": deal,
     }
-    if deal is not None:
-        body["deal_id"] = deal
+    # deal_id baskın; affiliate_id opsiyonel ek bilgi
     if aff is not None:
         body["affiliate_id"] = aff
     utm_s = (utm_source or "").strip()
@@ -1297,9 +1350,14 @@ def move_affiliate(
     except (TypeError, ValueError):
         err_i = -1
     if err_i != 0:
+        detail = (
+            payload.get("errMsg")
+            or payload.get("message")
+            or payload.get("error")
+            or ""
+        ).strip()
         raise SmarticoError(
-            payload.get("message")
-            or f"Üye taşınamadı (errCode={err_i}). Smartico support ile kontrol et."
+            detail or f"Üye taşınamadı (errCode={err_i}). Smartico support ile kontrol et."
         )
 
     msg = payload.get("message") or "Affiliate taşındı."
