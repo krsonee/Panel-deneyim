@@ -1351,8 +1351,9 @@
       '<label class="bl-col-layout-lbl">Yerleşim</label>' +
       '<div class="bl-layout-seg-row">' +
       seg("full", "Tam", "Tam genişlik — tek satır") +
-      seg("left", "Sol", "Sol yarım — sağ taraf boş kalır veya sonraki Sağ ile yan yana") +
-      seg("right", "Sağ", "Sağ yarım — sol taraf boş kalır veya önceki Sol ile yan yana") +
+      seg("left", "Sol", "Sol yarım — sağ boş") +
+      seg("center", "Orta", "Orta yarım — iki yan boş") +
+      seg("right", "Sağ", "Sağ yarım — sol boş") +
       "</div></div>";
   }
 

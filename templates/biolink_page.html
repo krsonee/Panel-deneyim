@@ -21,7 +21,7 @@
 {% else %}
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 {% endif %}
-<link rel="stylesheet" href="/static/biolink-skins.css?v=20260720k">
+<link rel="stylesheet" href="/static/biolink-skins.css?v=20260720m">
 {% if page.ga4_measurement_id %}
 <script async src="https://www.googletagmanager.com/gtag/js?id={{ page.ga4_measurement_id }}"></script>
 <script>
@@ -310,16 +310,31 @@
   body.brand-bizzo .link-row-full > .link-slot {
     width: 100%;
   }
-  body.brand-bizzo .link-row-pair,
-  body.brand-bizzo .link-row-half-left,
-  body.brand-bizzo .link-row-half-right {
+  /* Yan yana çift */
+  body.brand-bizzo .link-row-pair {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.45rem;
     align-items: stretch;
   }
-  body.brand-bizzo .link-row-half-left > .link-slot { grid-column: 1; }
-  body.brand-bizzo .link-row-half-right > .link-slot { grid-column: 2; }
+  /* SS gibi: Sol / Orta / Sağ — yarım genişlik, konum farklı */
+  body.brand-bizzo .link-row-half-left,
+  body.brand-bizzo .link-row-half-center,
+  body.brand-bizzo .link-row-half-right {
+    display: flex;
+    width: 100%;
+    align-items: stretch;
+  }
+  body.brand-bizzo .link-row-half-left { justify-content: flex-start; }
+  body.brand-bizzo .link-row-half-center { justify-content: center; }
+  body.brand-bizzo .link-row-half-right { justify-content: flex-end; }
+  body.brand-bizzo .link-row-half-left > .link-slot,
+  body.brand-bizzo .link-row-half-center > .link-slot,
+  body.brand-bizzo .link-row-half-right > .link-slot {
+    width: calc(50% - 0.22rem);
+    max-width: calc(50% - 0.22rem);
+    flex: 0 0 calc(50% - 0.22rem);
+  }
   body.brand-bizzo .link-slot { min-width: 0; }
   body.brand-bizzo .link-slot > a {
     width: 100%;
@@ -331,11 +346,10 @@
   @media (max-width: 560px) {
     body.brand-bizzo .wrap { max-width: 420px; }
     body.brand-bizzo .links { gap: 0.45rem; }
-    body.brand-bizzo .link-row-pair,
-    body.brand-bizzo .link-row-half-left,
-    body.brand-bizzo .link-row-half-right { gap: 0.4rem; }
+    body.brand-bizzo .link-row-pair { gap: 0.4rem; }
     body.brand-bizzo .link-row-pair a.link-btn,
     body.brand-bizzo .link-row-half-left a.link-btn,
+    body.brand-bizzo .link-row-half-center a.link-btn,
     body.brand-bizzo .link-row-half-right a.link-btn {
       padding: 0.72rem 0.65rem;
       font-size: 0.78rem;
@@ -343,38 +357,46 @@
     }
     body.brand-bizzo .link-row-pair .link-icon,
     body.brand-bizzo .link-row-half-left .link-icon,
+    body.brand-bizzo .link-row-half-center .link-icon,
     body.brand-bizzo .link-row-half-right .link-icon {
       width: 30px; height: 30px; font-size: 0.88rem; border-radius: 9px;
     }
     body.brand-bizzo .link-row-pair .platform-svg,
     body.brand-bizzo .link-row-half-left .platform-svg,
+    body.brand-bizzo .link-row-half-center .platform-svg,
     body.brand-bizzo .link-row-half-right .platform-svg { width: 18px; height: 18px; }
     body.brand-bizzo .link-row-pair a.link-btn::after,
     body.brand-bizzo .link-row-half-left a.link-btn::after,
+    body.brand-bizzo .link-row-half-center a.link-btn::after,
     body.brand-bizzo .link-row-half-right a.link-btn::after { display: none; }
     body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table,
     body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table,
+    body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table,
     body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table {
       padding: 0.7rem 0.7rem 0.75rem;
       gap: 0.4rem;
     }
     body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-kicker,
     body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-kicker,
+    body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-kicker,
     body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-kicker {
       font-size: 0.5rem; letter-spacing: 0.04em; padding: 0.2rem 0.45rem;
     }
     body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-amount,
     body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-amount,
+    body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-amount,
     body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-amount {
-      font-size: 0.52rem; padding: 0.18rem 0.4rem; max-width: 48%;
+      font-size: 0.52rem; padding: 0.18rem 0.4rem; max-width: 42%;
     }
     body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-body .link-label,
     body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-body .link-label,
+    body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-body .link-label,
     body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-body .link-label {
       font-size: 0.78rem;
     }
     body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-cta,
     body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-cta,
+    body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-cta,
     body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-cta { font-size: 0.62rem; }
   }
 
@@ -488,8 +510,7 @@
   body.brand-bizzo a.bonus-card.bonus-skin-table .bonus-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
+    justify-content: flex-start;
     width: 100%;
   }
   body.brand-bizzo a.bonus-card.bonus-skin-table .bonus-kicker {
@@ -500,13 +521,14 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: #141018;
-    background: #f0d24a;
+    background: linear-gradient(90deg, #d8ff6a, #f0d24a);
     padding: 0.28rem 0.65rem;
     border-radius: 999px;
     margin: 0;
     flex-shrink: 0;
     line-height: 1.1;
   }
+  /* Badge başlık satırının sağında (SS ile aynı) */
   body.brand-bizzo a.bonus-card.bonus-skin-table .bonus-amount {
     margin: 0 0 0 auto;
     font-size: 0.62rem;
@@ -519,9 +541,10 @@
     padding: 0.22rem 0.6rem;
     line-height: 1.1;
     white-space: nowrap;
-    max-width: 55%;
+    max-width: 42%;
     overflow: hidden;
     text-overflow: ellipsis;
+    flex-shrink: 0;
   }
   body.brand-bizzo a.bonus-card.bonus-skin-table .bonus-body {
     display: flex;
@@ -824,11 +847,11 @@
             <a class="link-btn bonus-card bonus-skin-{{ bonus_skin }} text-align-{{ align }}{% if half %} link-in-half{% endif %}" href="{{ click_prefix }}/go/{{ b.id }}">
               <div class="bonus-head">
                 <span class="bonus-kicker">{{ pack.bonus_kicker or 'BIZZO KAMPANYA' }}</span>
-                {% if b.badge_text %}<span class="bonus-amount">{{ b.badge_text }}</span>{% endif %}
               </div>
               <div class="bonus-body">
                 <span class="link-icon">{{ b.display_icon or b.icon or bonus_icon }}</span>
                 <span class="link-label">{{ b.label }}</span>
+                {% if b.badge_text %}<span class="bonus-amount">{{ b.badge_text }}</span>{% endif %}
               </div>
               <div class="bonus-cta"><span>{{ cta_strong }}</span> {{ cta_rest }}</div>
             </a>

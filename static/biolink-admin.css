@@ -562,6 +562,7 @@ body.panel-brand-bizzo .bl-layout-ico-full {
   opacity: 0.55;
 }
 body.panel-brand-bizzo .bl-layout-ico-left::before,
+body.panel-brand-bizzo .bl-layout-ico-center::before,
 body.panel-brand-bizzo .bl-layout-ico-right::before {
   content: "";
   position: absolute;
@@ -572,6 +573,7 @@ body.panel-brand-bizzo .bl-layout-ico-right::before {
   border-radius: 1px;
 }
 body.panel-brand-bizzo .bl-layout-ico-left::before { left: 1px; }
+body.panel-brand-bizzo .bl-layout-ico-center::before { left: 50%; transform: translateX(-50%); }
 body.panel-brand-bizzo .bl-layout-ico-right::before { right: 1px; }
 .bl-toggle-pill {
   font-size: 0.64rem;

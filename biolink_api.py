@@ -74,7 +74,7 @@ BUTTON_SHAPES = ("pill", "rounded", "square")
 NONE_MARKER = "__none__"
 BANNER_LAYOUTS = ("top", "towers", "none")
 DEFAULT_BANNER_LAYOUT = "top"
-LAYOUT_COLS = ("full", "left", "right")
+LAYOUT_COLS = ("full", "left", "center", "right")
 DEFAULT_LAYOUT_COL = "full"
 TEXT_ALIGNS = ("left", "center", "right")
 DEFAULT_TEXT_ALIGN = "left"
@@ -609,8 +609,9 @@ def group_layout_rows(buttons):
     """Bizzo yerleşim: satırları ayır.
 
     - Sol + Sağ ardışık → yan yana çift (pair)
-    - Tek Sol → sol yarım, sağ boş (half-left)
-    - Tek Sağ → sağ yarım, sol boş (half-right)
+    - Sol → sola yaslı yarım (half-left)
+    - Orta → ortada yarım, iki yan boş (half-center)
+    - Sağ → sağa yaslı yarım (half-right)
     - Tam / başlık → tam satır (full)
     """
     items = list(buttons or [])
@@ -621,8 +622,12 @@ def group_layout_rows(buttons):
         b = items[i]
         bt = (b.get("button_type") or "link").strip().lower()
         col = (b.get("layout_col") or "full").strip().lower()
-        if bt == HEADING_TYPE or col not in ("left", "right"):
+        if bt == HEADING_TYPE or col not in ("left", "center", "right"):
             rows.append({"kind": "full", "blocks": [b]})
+            i += 1
+            continue
+        if col == "center":
+            rows.append({"kind": "half-center", "blocks": [b]})
             i += 1
             continue
         nxt = items[i + 1] if i + 1 < n else None
@@ -637,7 +642,6 @@ def group_layout_rows(buttons):
             rows.append({"kind": "pair", "blocks": [b, nxt]})
             i += 2
             continue
-        # Tek yarım: karşı taraf boş kalsın (kırmızı kutu boşluğu)
         rows.append({"kind": "half-left" if col == "left" else "half-right", "blocks": [b]})
         i += 1
     return rows
