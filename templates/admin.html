@@ -1120,10 +1120,53 @@
     @media (max-width: 900px) { .mail-tpl-split { grid-template-columns: 1fr; } }
     .mail-tpl-preview {
       width: 100%; min-height: 320px; height: 100%; border: 1px solid var(--border);
-      border-radius: 9px; background: #fff;
+      border-radius: 9px; background: #e2e8f0;
+    }
+    .mail-tpl-view-modal {
+      max-width: 720px;
+      width: 96%;
+      max-height: 92vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .mail-tpl-view-body {
+      padding: 0 !important;
+      flex: 1;
+      min-height: 0;
+      background: #e2e8f0;
     }
     .mail-tpl-view-frame {
-      width: 100%; min-height: 70vh; height: 70vh; border: none; background: #0f172a;
+      width: 100%;
+      min-height: 72vh;
+      height: 72vh;
+      border: none;
+      background: #e2e8f0;
+      display: block;
+    }
+    .mail-tpl-badge {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      padding: 0.2rem 0.45rem;
+      border-radius: 6px;
+      border: 1px solid transparent;
+    }
+    .mail-tpl-badge.is-html {
+      background: rgba(56,189,248,0.16);
+      color: #7dd3fc;
+      border-color: rgba(56,189,248,0.35);
+    }
+    .mail-tpl-badge.is-text {
+      background: rgba(148,163,184,0.14);
+      color: #cbd5e1;
+      border-color: rgba(148,163,184,0.3);
+    }
+    .mail-tpl-filter-tabs { display: flex; gap: 0.25rem; }
+    .mail-tpl-filter.is-active {
+      border-color: rgba(250,204,21,0.55);
+      background: rgba(250,204,21,0.14);
+      color: #fde047;
     }
     .mail-tpl-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
     .mail-tpl-test-email { width: auto; min-width: 200px; max-width: 260px; }
@@ -2853,7 +2896,7 @@
 
   <script src="/static/accounting.js?v=20260717b"></script>
   {% if panel.features.mailing %}
-  <script src="/static/mailing.js?v=20260720g"></script>
+  <script src="/static/mailing.js?v=20260720h"></script>
   {% endif %}
   <script>
     window.PANEL_BIOLINK = {

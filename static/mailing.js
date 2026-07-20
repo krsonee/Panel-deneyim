@@ -1539,26 +1539,53 @@
     poll();
   }
 
+  var mailTplListFilter = "all";
+
+  function mailTplIsHtml(t) {
+    var h = ((t && t.html_body) || "").trim();
+    if (!h) return false;
+    if (/<!DOCTYPE/i.test(h) || /<html[\s>]/i.test(h) || /<table[\s>]/i.test(h)) return true;
+    if (h.indexOf("<") >= 0 && h.length > 80) return true;
+    return false;
+  }
+
+  function mailRenderTemplateTable() {
+    var tbody = document.getElementById("mail-tpl-table");
+    if (!tbody) return;
+    var list = mailTemplates || [];
+    if (mailTplListFilter === "html") list = list.filter(mailTplIsHtml);
+    else if (mailTplListFilter === "text") list = list.filter(function (t) { return !mailTplIsHtml(t); });
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">' +
+        (mailTemplates.length ? "Bu filtrede şablon yok" : "Şablon yok") + "</td></tr>";
+      return;
+    }
+    tbody.innerHTML = list.map(function (t) {
+      var isHtml = mailTplIsHtml(t);
+      var badge = isHtml
+        ? '<span class="mail-tpl-badge is-html">HTML</span>'
+        : '<span class="mail-tpl-badge is-text">Yazı</span>';
+      return "<tr>" +
+        "<td>" + badge + "</td>" +
+        "<td><strong>" + esc(t.name) + "</strong></td>" +
+        "<td>" + esc(t.subject) + "</td>" +
+        "<td>" + esc(fmtTime(t.updated_at)) + "</td>" +
+        '<td style="white-space:nowrap;">' +
+        '<button type="button" class="btn btn-sm mail-view-tpl" data-id="' + t.id + '">Görüntüle</button> ' +
+        '<button type="button" class="btn btn-sm mail-edit-tpl" data-id="' + t.id + '">Düzenle</button> ' +
+        '<button type="button" class="btn btn-sm mail-del-tpl" data-id="' + t.id + '">Sil</button>' +
+        "</td></tr>";
+    }).join("");
+  }
+
   function mailLoadTemplates() {
     return mailApi("/api/mailing/templates").then(function (res) {
       mailTemplates = (res && res.ok && res.data.templates) || [];
-      var tbody = document.getElementById("mail-tpl-table");
-      if (!tbody) return;
-      if (!mailTemplates.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty">Şablon yok</td></tr>';
-        return;
-      }
-      tbody.innerHTML = mailTemplates.map(function (t) {
-        return "<tr>" +
-          "<td>" + esc(t.name) + "</td>" +
-          "<td>" + esc(t.subject) + "</td>" +
-          "<td>" + esc(fmtTime(t.updated_at)) + "</td>" +
-          '<td style="white-space:nowrap;">' +
-          '<button type="button" class="btn btn-sm mail-view-tpl" data-id="' + t.id + '">Görüntüle</button> ' +
-          '<button type="button" class="btn btn-sm mail-edit-tpl" data-id="' + t.id + '">Düzenle</button> ' +
-          '<button type="button" class="btn btn-sm mail-del-tpl" data-id="' + t.id + '">Sil</button>' +
-          "</td></tr>";
-      }).join("");
+      mailRenderTemplateTable();
+      var nHtml = mailTemplates.filter(mailTplIsHtml).length;
+      var nText = mailTemplates.length - nHtml;
+      var hint = document.getElementById("mail-tpl-list-hint");
+      if (hint) hint.textContent = mailTemplates.length + " şablon · " + nHtml + " HTML · " + nText + " yazı";
     });
   }
 
@@ -1622,14 +1649,30 @@
   }
 
   function buildTplPreviewDoc(bodyHtml) {
+    var raw = (bodyHtml || "").trim();
+    if (!raw) {
+      return "<!DOCTYPE html><html><head><meta charset='utf-8'></head>" +
+        "<body style='margin:0;padding:40px;background:#f1f5f9;color:#64748b;font-family:system-ui,sans-serif;text-align:center;'>" +
+        "Önizleme boş — şablonda içerik yok.</body></html>";
+    }
+    // Tam HTML e-posta dokümanını tekrar sarmalama — nested <html> bozuluyor / görünmüyor
+    if (/<!DOCTYPE/i.test(raw) || /<html[\s>]/i.test(raw)) {
+      return raw;
+    }
+    // Yazı / fragment: okunaklı açık kart (koyu zeminde siyah yazı sorunu)
     return "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
       "<meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
       "<style>" +
-      "body{margin:0;padding:24px 12px;background:#0b1220;}" +
-      ".mail-preview-shell{max-width:560px;margin:0 auto;}" +
+      "html,body{margin:0;padding:0;background:#e2e8f0;}" +
+      "body{padding:28px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}" +
+      ".mail-preview-shell{max-width:560px;margin:0 auto;background:#ffffff;color:#0f172a;" +
+      "border-radius:12px;padding:28px 24px;box-shadow:0 8px 28px rgba(15,23,42,0.12);" +
+      "font-size:15px;line-height:1.65;}" +
+      ".mail-preview-shell p{margin:0 0 1em;color:#0f172a;}" +
+      ".mail-preview-shell a{color:#2563eb;word-break:break-all;}" +
       "img{max-width:100%;height:auto;display:block;}" +
-      "a{color:inherit}</style></head><body>" +
-      "<div class='mail-preview-shell'>" + bodyHtml + "</div></body></html>";
+      "</style></head><body>" +
+      "<div class='mail-preview-shell'>" + raw + "</div></body></html>";
   }
 
   function refreshTplPreview() {
@@ -2515,10 +2558,10 @@
         document.getElementById("mail-tpl-html").value = t.html_body || "";
         document.getElementById("mail-tpl-text").value = t.text_body || "";
         setText("mail-tpl-form-title", "Şablon düzenle #" + t.id);
-        // HTML doluysa HTML moduna geç
-        setTplMode((t.html_body || "").trim() && !(t.text_body || "").trim() ? "html" : "simple");
-        if ((t.html_body || "").trim() && (t.text_body || "").trim()) setTplMode("html");
+        setTplMode(mailTplIsHtml(t) ? "html" : "simple");
         refreshTplPreview();
+        var editorCard = document.querySelector(".mail-tpl-editor-card");
+        if (editorCard) try { editorCard.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e2) {}
         return;
       }
       var delT = e.target.closest(".mail-del-tpl");
@@ -2684,6 +2727,26 @@
       refreshTplPreview();
     });
     bindClick("mail-tpl-refresh", mailLoadTemplates);
+    bindClick("mail-tpl-reseed", function () {
+      mailToast("Eksik şablonlar yükleniyor…");
+      mailApi("/api/mailing/templates/reseed", { method: "POST", timeoutMs: 30000 }).then(function (res) {
+        if (!res || !res.ok) {
+          mailToast((res && res.data && res.data.error) || "Yüklenemedi");
+          return;
+        }
+        mailToast((res.data && res.data.message) || "Tamam");
+        mailLoadTemplates();
+      });
+    });
+    document.querySelectorAll(".mail-tpl-filter").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        mailTplListFilter = btn.getAttribute("data-tpl-filter") || "all";
+        document.querySelectorAll(".mail-tpl-filter").forEach(function (b) {
+          b.classList.toggle("is-active", b === btn);
+        });
+        mailRenderTemplateTable();
+      });
+    });
     bindClick("mail-tpl-view-close", closeTplViewModal);
     var viewModal = document.getElementById("mail-tpl-view-modal");
     if (viewModal) {

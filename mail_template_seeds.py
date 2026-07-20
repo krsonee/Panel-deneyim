@@ -11,7 +11,7 @@ from database import (
     utcnow,
 )
 
-SEED_FLAG = "seeded_makrobet_templates_v1"
+SEED_FLAG = "seeded_makrobet_templates_v2"
 CTA = "https://makrobet805.com/tr/"
 CTA_TOKEN = "{{link:sc:https://makrobet805.com/tr/}}"
 CTA_CASINO = "{{link:sc:https://makrobet805.com/tr/game/casino}}"
@@ -291,12 +291,19 @@ Makrobet
 ]
 
 
-def seed_makrobet_mail_templates(conn):
-    """Şablonlar yoksa ekler (flag ile tek sefer)."""
-    if (get_mail_setting(conn, SEED_FLAG, "") or "").strip() == "1":
-        return 0
+def seed_makrobet_mail_templates(conn, force_missing=False):
+    """Eksik Makrobet şablonlarını ekler.
+
+    Eski v1 flag yüzünden HTML’ler hiç eklenmemiş olabilir — isme göre
+    eksikleri her boot’ta (veya force_missing ile) tamamlar.
+    """
     now = iso(utcnow())
     added = 0
+    # force_missing veya henüz v2 işaretlenmemişse eksikleri doldur
+    already = (get_mail_setting(conn, SEED_FLAG, "") or "").strip() == "1"
+    if already and not force_missing:
+        # Yine de eksik isimleri kontrol et (ucuz SELECT)
+        pass
     for item in HTML_TEMPLATES + TEXT_TEMPLATES:
         name = item["name"]
         exists = fetchone(conn, "SELECT id FROM mail_templates WHERE name = ?", (name,))

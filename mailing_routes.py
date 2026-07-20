@@ -2620,6 +2620,20 @@ def create_mailing_blueprint(permission_required):
             rows = _rows(fetchall(conn, "SELECT * FROM mail_templates ORDER BY id DESC"))
         return jsonify({"templates": rows})
 
+    @bp.route("/templates/reseed", methods=["POST"])
+    @mail_perm(*MAIL_TPL)
+    def reseed_templates():
+        """Eksik Makrobet HTML/yazı şablonlarını ekler (mevcut olanlara dokunmaz)."""
+        from mail_template_seeds import seed_makrobet_mail_templates
+
+        with closing(get_db()) as conn:
+            added = seed_makrobet_mail_templates(conn, force_missing=True)
+        return jsonify({
+            "ok": True,
+            "added": added,
+            "message": (f"{added} şablon eklendi" if added else "Eksik şablon yok — hepsi zaten kayıtlı"),
+        })
+
     @bp.route("/templates", methods=["POST"])
     @mail_perm(*MAIL_TPL)
     def create_template():

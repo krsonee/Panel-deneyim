@@ -535,12 +535,23 @@
       </div>
     </section>
     <section class="card">
-      <div class="card-head"><span>Kayıtlı şablonlar</span><button type="button" class="btn btn-sm" id="mail-tpl-refresh">Yenile</button></div>
+      <div class="card-head">
+        <span>Kayıtlı şablonlar <span class="muted" id="mail-tpl-list-hint" style="font-weight:400;font-size:0.72rem;"></span></span>
+        <div style="display:flex;gap:0.35rem;flex-wrap:wrap;align-items:center;">
+          <div class="mail-tpl-filter-tabs" role="tablist">
+            <button type="button" class="btn btn-sm mail-tpl-filter is-active" data-tpl-filter="all">Tümü</button>
+            <button type="button" class="btn btn-sm mail-tpl-filter" data-tpl-filter="html">HTML</button>
+            <button type="button" class="btn btn-sm mail-tpl-filter" data-tpl-filter="text">Yazı</button>
+          </div>
+          <button type="button" class="btn btn-sm" id="mail-tpl-reseed">Eksik HTML’leri yükle</button>
+          <button type="button" class="btn btn-sm" id="mail-tpl-refresh">Yenile</button>
+        </div>
+      </div>
       <div class="table-wrap">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Ad</th><th>Konu</th><th>Güncelleme</th><th></th></tr></thead>
-            <tbody id="mail-tpl-table"><tr><td colspan="4" class="empty">Veri yok</td></tr></tbody>
+            <thead><tr><th>Tip</th><th>Ad</th><th>Konu</th><th>Güncelleme</th><th></th></tr></thead>
+            <tbody id="mail-tpl-table"><tr><td colspan="5" class="empty">Veri yok</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -829,12 +840,12 @@
 </div>
 
 <div class="modal-overlay" id="mail-tpl-view-modal">
-  <div class="modal" style="max-width:760px;width:96%;max-height:92vh;display:flex;flex-direction:column;">
+  <div class="modal mail-tpl-view-modal">
     <div class="modal-head">
       <h3 id="mail-tpl-view-title">Şablon önizleme</h3>
       <button type="button" class="modal-close" id="mail-tpl-view-close">&times;</button>
     </div>
-    <div class="modal-body" style="padding:0;flex:1;min-height:0;">
+    <div class="modal-body mail-tpl-view-body">
       <iframe id="mail-tpl-view-frame" class="mail-tpl-view-frame" title="Şablon önizleme" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>
     </div>
   </div>
