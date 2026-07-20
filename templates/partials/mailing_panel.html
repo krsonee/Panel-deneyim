@@ -9,6 +9,7 @@
 
   <div class="acc-tabs" id="mail-tabs">
     <button type="button" class="acc-tab active" data-mail-tab="dashboard" data-perm="mailing.dashboard">Özet</button>
+    <button type="button" class="acc-tab" data-mail-tab="relations" data-perm-any="mailing.relations,mailing.crm">CRM</button>
     <button type="button" class="acc-tab" data-mail-tab="crm" data-perm="mailing.crm">Mail Rehber</button>
     <button type="button" class="acc-tab" data-mail-tab="templates" data-perm="mailing.templates">Şablonlar</button>
     <button type="button" class="acc-tab" data-mail-tab="campaigns" data-perm="mailing.campaigns">Kampanyalar</button>
@@ -34,7 +35,100 @@
     </section>
   </div>
 
-  <!-- CRM -->
+  <!-- Gerçek CRM (ilişki) — Mail Rehber'den ayrı -->
+  <div class="acc-pane" id="mail-pane-relations" data-mail-pane="relations" hidden>
+    <section class="kpi-grid acc-kpi-grid" id="mail-rel-kpi" style="margin-bottom:1rem;">
+      <div class="kpi cyan"><div class="val" id="mail-rel-kpi-hot">—</div><div class="lbl">Sıcak kontak (50+)</div></div>
+      <div class="kpi green"><div class="val" id="mail-rel-kpi-tasks">—</div><div class="lbl">Açık görev</div></div>
+      <div class="kpi amber"><div class="val" id="mail-rel-kpi-overdue">—</div><div class="lbl">Geciken / vadesi gelen</div></div>
+      <div class="kpi"><div class="val" id="mail-rel-kpi-notes">—</div><div class="lbl">Toplam not</div></div>
+    </section>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head">
+        <span>Yaşam döngüsü (pipeline)</span>
+        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+          <button type="button" class="btn btn-sm" id="mail-rel-recompute">Skorları yenile</button>
+          <button type="button" class="btn btn-sm" id="mail-rel-refresh">Yenile</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="mail-rel-life-chips" style="display:flex;flex-wrap:wrap;gap:0.45rem;margin-bottom:0.85rem;"></div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end;margin-bottom:0.75rem;">
+          <div style="min-width:200px;flex:1;">
+            <label>Ara (e-posta / ad / sahip)</label>
+            <input type="search" id="mail-rel-q" placeholder="ara…">
+          </div>
+          <div>
+            <label>Aşama</label>
+            <select id="mail-rel-life-filter">
+              <option value="">Tümü</option>
+            </select>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary" id="mail-rel-search">Listele</button>
+        </div>
+        <p class="hint" style="margin:0 0 0.65rem;">
+          Bu alan rehber değil: ilişki skoru, aşama, not ve takip görevleri.
+          Aday → Temas → İlgili → Dönüşen / VIP · Uyuyan · Kayıp.
+        </p>
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Skor</th><th>Kontak</th><th>Aşama</th><th>Sahip</th><th>Son temas</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="mail-rel-table"><tr><td colspan="6" class="empty">Yükleniyor…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="card" id="mail-rel-profile-card" hidden>
+      <div class="card-head">
+        <span id="mail-rel-profile-title">Kontak profili</span>
+        <button type="button" class="btn btn-sm" id="mail-rel-profile-close">Kapat</button>
+      </div>
+      <div class="card-body">
+        <div class="form-row-4" style="margin-bottom:0.85rem;">
+          <div>
+            <label>Yaşam döngüsü</label>
+            <select id="mail-rel-lifecycle"></select>
+          </div>
+          <div>
+            <label>Sahip (operatör)</label>
+            <input type="text" id="mail-rel-owner" placeholder="örn. ahmet">
+          </div>
+          <div style="display:flex;align-items:flex-end;">
+            <button type="button" class="btn btn-primary" id="mail-rel-save-life">Kaydet</button>
+          </div>
+          <div>
+            <label>Skor / etkileşim</label>
+            <p class="hint" id="mail-rel-eng" style="margin:0.35rem 0 0;">—</p>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;">
+          <div>
+            <h4 style="margin:0 0 0.5rem;font-size:0.9rem;">Not ekle</h4>
+            <textarea id="mail-rel-note" rows="3" placeholder="Görüşme notu, vaat, itiraz…"></textarea>
+            <button type="button" class="btn btn-sm btn-primary" id="mail-rel-note-btn" style="margin-top:0.4rem;">Not kaydet</button>
+            <div id="mail-rel-notes" class="hint" style="margin-top:0.75rem;display:grid;gap:0.4rem;"></div>
+          </div>
+          <div>
+            <h4 style="margin:0 0 0.5rem;font-size:0.9rem;">Takip görevi</h4>
+            <input type="text" id="mail-rel-task-title" placeholder="Örn. Ara / bonus hatırlat">
+            <input type="datetime-local" id="mail-rel-task-due" style="margin-top:0.4rem;">
+            <button type="button" class="btn btn-sm btn-primary" id="mail-rel-task-btn" style="margin-top:0.4rem;">Görev ekle</button>
+            <div id="mail-rel-tasks" class="hint" style="margin-top:0.75rem;display:grid;gap:0.4rem;"></div>
+          </div>
+        </div>
+        <h4 style="margin:1rem 0 0.5rem;font-size:0.9rem;">Zaman çizelgesi</h4>
+        <div id="mail-rel-timeline" class="hint" style="display:grid;gap:0.45rem;max-height:320px;overflow:auto;"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Mail Rehber (eski CRM liste alanı — dokunulmadı içerik olarak) -->
   <div class="acc-pane" id="mail-pane-crm" data-mail-pane="crm" hidden>
     <section class="card" style="margin-bottom:1rem;">
       <div class="card-head"><span>Etiket yönetimi</span></div>

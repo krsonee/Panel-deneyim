@@ -208,6 +208,7 @@ def _cancel_all_active_imports(reason="Panel koruması: aktif içe aktarma durdu
 MODULE_ACCESS = ("module.mailing",)
 MAIL_DASH = ("mailing.dashboard",)
 MAIL_CRM = ("mailing.crm",)
+MAIL_REL = ("mailing.relations", "mailing.crm")  # gerçek CRM; rehber yetkisi olan da görür
 MAIL_TPL = ("mailing.templates",)
 MAIL_CAMP = ("mailing.campaigns",)
 MAIL_IVR = ("mailing.ivr",)
@@ -1554,6 +1555,7 @@ def _purge_all_mail_contacts_once():
 
 def create_mailing_blueprint(permission_required):
     from mail_campaign_worker import ensure_campaign_scheduler
+    from mail_crm import ensure_mail_crm_schema
     from mail_ops import ensure_mail_ops_schema
     from mail_scrub import cancel_active_scrub_jobs, ensure_mail_scrub_schema
 
@@ -1562,6 +1564,7 @@ def create_mailing_blueprint(permission_required):
         with closing(get_db()) as conn:
             ensure_mail_ops_schema(conn)
             ensure_mail_scrub_schema(conn)
+            ensure_mail_crm_schema(conn)
             try:
                 from mail_template_seeds import seed_makrobet_mail_templates
                 n = seed_makrobet_mail_templates(conn)
@@ -2100,6 +2103,127 @@ def create_mailing_blueprint(permission_required):
         with closing(get_db()) as conn:
             rows = _rows(fetchall(conn, "SELECT * FROM mail_contact_tags ORDER BY name ASC"))
         return jsonify({"tags": rows})
+
+    # ── Gerçek CRM (ilişki) — Mail Rehber'den ayrı ─────────────
+    @bp.route("/relations/overview", methods=["GET"])
+    @mail_perm(*MAIL_REL)
+    def relations_overview():
+        from mail_crm import crm_overview, ensure_mail_crm_schema
+
+        with closing(get_db()) as conn:
+            ensure_mail_crm_schema(conn)
+            data = crm_overview(conn)
+        return jsonify(data)
+
+    @bp.route("/relations/pipeline", methods=["GET"])
+    @mail_perm(*MAIL_REL)
+    def relations_pipeline():
+        from mail_crm import list_crm_pipeline
+
+        lifecycle = (request.args.get("lifecycle") or "").strip()
+        q = (request.args.get("q") or "").strip()
+        limit = request.args.get("limit") or 80
+        with closing(get_db()) as conn:
+            rows = list_crm_pipeline(conn, lifecycle=lifecycle, q=q, limit=limit)
+        return jsonify({"contacts": rows, "count": len(rows)})
+
+    @bp.route("/relations/contacts/<int:contact_id>", methods=["GET"])
+    @mail_perm(*MAIL_REL)
+    def relations_contact(contact_id):
+        from mail_crm import get_contact_crm, refresh_contact_crm
+
+        with closing(get_db()) as conn:
+            if (request.args.get("refresh") or "") in ("1", "true", "yes"):
+                refresh_contact_crm(conn, contact_id, apply_lifecycle=True)
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+            data = get_contact_crm(conn, contact_id)
+            if not data:
+                return jsonify({"error": "Kontak bulunamadı."}), 404
+        return jsonify({"contact": data})
+
+    @bp.route("/relations/contacts/<int:contact_id>/lifecycle", methods=["PATCH"])
+    @mail_perm(*MAIL_REL)
+    def relations_set_lifecycle(contact_id):
+        from mail_crm import get_contact_crm, set_lifecycle
+
+        data = request.get_json(silent=True) or {}
+        try:
+            with closing(get_db()) as conn:
+                set_lifecycle(
+                    conn, contact_id,
+                    data.get("lifecycle"),
+                    owner=data.get("crm_owner") if "crm_owner" in data else None,
+                )
+                conn.commit()
+                contact = get_contact_crm(conn, contact_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, "contact": contact})
+
+    @bp.route("/relations/contacts/<int:contact_id>/notes", methods=["POST"])
+    @mail_perm(*MAIL_REL)
+    def relations_add_note(contact_id):
+        from mail_crm import add_note, get_contact_crm
+
+        data = request.get_json(silent=True) or {}
+        author = request.headers.get("X-Admin-User") or data.get("author") or "admin"
+        try:
+            with closing(get_db()) as conn:
+                nid = add_note(conn, contact_id, data.get("body"), author=author)
+                conn.commit()
+                contact = get_contact_crm(conn, contact_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, "note_id": nid, "contact": contact}), 201
+
+    @bp.route("/relations/contacts/<int:contact_id>/tasks", methods=["POST"])
+    @mail_perm(*MAIL_REL)
+    def relations_add_task(contact_id):
+        from mail_crm import add_task, get_contact_crm
+
+        data = request.get_json(silent=True) or {}
+        author = request.headers.get("X-Admin-User") or data.get("author") or "admin"
+        try:
+            with closing(get_db()) as conn:
+                tid = add_task(
+                    conn, contact_id,
+                    data.get("title"),
+                    due_at=data.get("due_at"),
+                    author=author,
+                )
+                conn.commit()
+                contact = get_contact_crm(conn, contact_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, "task_id": tid, "contact": contact}), 201
+
+    @bp.route("/relations/tasks/<int:task_id>", methods=["PATCH"])
+    @mail_perm(*MAIL_REL)
+    def relations_patch_task(task_id):
+        from mail_crm import set_task_status
+
+        data = request.get_json(silent=True) or {}
+        try:
+            with closing(get_db()) as conn:
+                set_task_status(conn, task_id, data.get("status") or "done")
+                conn.commit()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True})
+
+    @bp.route("/relations/recompute", methods=["POST"])
+    @mail_perm(*MAIL_REL)
+    def relations_recompute():
+        from mail_crm import recompute_scores_batch
+
+        data = request.get_json(silent=True) or {}
+        limit = data.get("limit") or 300
+        with closing(get_db()) as conn:
+            n = recompute_scores_batch(conn, limit=limit)
+        return jsonify({"ok": True, "updated": n, "message": f"{n} kontak skoru güncellendi"})
 
     @bp.route("/crm/sync-smartico", methods=["POST"])
     @mail_perm(*MAIL_CRM)

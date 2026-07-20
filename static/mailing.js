@@ -38,6 +38,7 @@
 
   var MAIL_TAB_PERMS = {
     dashboard: "mailing.dashboard",
+    relations: ["mailing.relations", "mailing.crm"],
     crm: "mailing.crm",
     templates: "mailing.templates",
     campaigns: "mailing.campaigns",
@@ -49,11 +50,17 @@
   function mailHas(key) {
     if (!mailPerms || !mailPerms.length) return true;
     if (mailPerms.indexOf("*") >= 0) return true;
+    if (Array.isArray(key)) {
+      for (var i = 0; i < key.length; i++) {
+        if (mailPerms.indexOf(key[i]) >= 0) return true;
+      }
+      return false;
+    }
     return mailPerms.indexOf(key) >= 0;
   }
 
   function mailFirstAllowedTab() {
-    var order = ["dashboard", "crm", "templates", "campaigns", "ivr", "reports", "settings"];
+    var order = ["dashboard", "relations", "crm", "templates", "campaigns", "ivr", "reports", "settings"];
     for (var i = 0; i < order.length; i++) {
       if (mailHas(MAIL_TAB_PERMS[order[i]])) return order[i];
     }
@@ -613,8 +620,9 @@
 
   function mailLoadTab(tab) {
     if (tab === "dashboard") mailLoadDashboard();
+    else if (tab === "relations") mailLoadRelations();
     else if (tab === "crm") {
-      // syncTags/recount milyonlarca satırda DB'yi kilitler — sadece cache'li özet
+      // Mail Rehber — syncTags/recount milyonlarca satırda DB'yi kilitler
       mailLoadContacts();
       mailLoadTags();
       mailLoadContactStats();
@@ -627,6 +635,131 @@
     else if (tab === "ivr") { mailLoadSelects().then(mailLoadIvr); }
     else if (tab === "reports") mailLoadReports();
     else if (tab === "settings") mailLoadSettings();
+  }
+
+  var mailRelContactId = null;
+  var mailRelLabels = {};
+
+  function mailLoadRelations() {
+    mailApi("/api/mailing/relations/overview").then(function (res) {
+      if (!res || !res.ok) return;
+      var d = res.data || {};
+      mailRelLabels = d.lifecycle_labels || {};
+      setText("mail-rel-kpi-hot", fmtNum(d.hot_contacts));
+      setText("mail-rel-kpi-tasks", fmtNum(d.open_tasks));
+      setText("mail-rel-kpi-overdue", fmtNum(d.overdue_tasks));
+      setText("mail-rel-kpi-notes", fmtNum(d.notes_total));
+      var chips = document.getElementById("mail-rel-life-chips");
+      var filter = document.getElementById("mail-rel-life-filter");
+      var curFilter = filter ? filter.value : "";
+      if (chips) {
+        chips.innerHTML = (d.by_lifecycle || []).map(function (x) {
+          return '<button type="button" class="btn btn-sm mail-rel-life-chip" data-life="' + esc(x.key) + '">' +
+            esc(x.label) + " · " + fmtNum(x.count) + "</button>";
+        }).join("");
+      }
+      if (filter) {
+        filter.innerHTML = '<option value="">Tümü</option>' + (d.by_lifecycle || []).map(function (x) {
+          return '<option value="' + esc(x.key) + '">' + esc(x.label) + "</option>";
+        }).join("");
+        filter.value = curFilter;
+      }
+      var lifeSel = document.getElementById("mail-rel-lifecycle");
+      if (lifeSel) {
+        lifeSel.innerHTML = (d.by_lifecycle || []).map(function (x) {
+          return '<option value="' + esc(x.key) + '">' + esc(x.label) + "</option>";
+        }).join("");
+      }
+    });
+    mailLoadRelationsPipeline();
+  }
+
+  function mailLoadRelationsPipeline() {
+    var q = (document.getElementById("mail-rel-q") || {}).value || "";
+    var life = (document.getElementById("mail-rel-life-filter") || {}).value || "";
+    var url = "/api/mailing/relations/pipeline?limit=100";
+    if (q) url += "&q=" + encodeURIComponent(q);
+    if (life) url += "&lifecycle=" + encodeURIComponent(life);
+    return mailApi(url).then(function (res) {
+      var tbody = document.getElementById("mail-rel-table");
+      if (!tbody) return;
+      if (!res || !res.ok) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">Yüklenemedi</td></tr>';
+        return;
+      }
+      var rows = res.data.contacts || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">Kayıt yok — skorları yenile veya rehberden kontak ekle</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(function (c) {
+        return "<tr>" +
+          "<td><strong>" + fmtNum(c.crm_score) + "</strong></td>" +
+          "<td>" + esc(c.email) + (c.name ? ('<br><span class="muted">' + esc(c.name) + "</span>") : "") + "</td>" +
+          "<td>" + esc(c.lifecycle_label || c.lifecycle) + "</td>" +
+          "<td>" + esc(c.crm_owner || "—") + "</td>" +
+          "<td>" + esc(fmtTime(c.last_touch_at) || "—") + "</td>" +
+          '<td><button type="button" class="btn btn-sm mail-rel-open" data-id="' + c.id + '">Profil</button></td>' +
+          "</tr>";
+      }).join("");
+    });
+  }
+
+  function mailOpenRelProfile(id) {
+    mailRelContactId = id;
+    var card = document.getElementById("mail-rel-profile-card");
+    if (card) card.hidden = false;
+    mailApi("/api/mailing/relations/contacts/" + id + "?refresh=1", { timeoutMs: 30000 }).then(function (res) {
+      if (!res || !res.ok) {
+        mailToast((res && res.data && res.data.error) || "Profil yüklenemedi");
+        return;
+      }
+      mailRenderRelProfile(res.data.contact);
+    });
+  }
+
+  function mailRenderRelProfile(c) {
+    if (!c) return;
+    setText("mail-rel-profile-title", (c.name || c.email || "Profil") + " · #" + c.id);
+    var life = document.getElementById("mail-rel-lifecycle");
+    if (life) life.value = c.lifecycle || "lead";
+    var owner = document.getElementById("mail-rel-owner");
+    if (owner) owner.value = c.crm_owner || "";
+    var eng = c.engagement || {};
+    setText("mail-rel-eng", "Skor " + fmtNum(c.crm_score) + " · gönderim " + fmtNum(eng.sends) + " · açılma " + fmtNum(eng.opens) + " · tıklama " + fmtNum(eng.clicks));
+    var notesEl = document.getElementById("mail-rel-notes");
+    if (notesEl) {
+      notesEl.innerHTML = (c.notes || []).length
+        ? c.notes.map(function (n) {
+          return '<div style="padding:0.45rem 0.55rem;border:1px solid rgba(148,163,184,0.2);border-radius:8px;">' +
+            '<div class="muted" style="font-size:0.72rem;">' + esc(fmtTime(n.created_at)) + " · " + esc(n.author || "") + "</div>" +
+            "<div>" + esc(n.body) + "</div></div>";
+        }).join("")
+        : "<span class=\"muted\">Henüz not yok</span>";
+    }
+    var tasksEl = document.getElementById("mail-rel-tasks");
+    if (tasksEl) {
+      tasksEl.innerHTML = (c.tasks || []).length
+        ? c.tasks.map(function (t) {
+          var done = t.status === "done";
+          return '<div style="padding:0.45rem 0.55rem;border:1px solid rgba(148,163,184,0.2);border-radius:8px;display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">' +
+            "<div><div>" + (done ? "<s>" : "") + esc(t.title) + (done ? "</s>" : "") + "</div>" +
+            '<div class="muted" style="font-size:0.72rem;">' + esc(t.status) + (t.due_at ? (" · vade " + esc(fmtTime(t.due_at))) : "") + "</div></div>" +
+            (done ? "" : '<button type="button" class="btn btn-sm mail-rel-task-done" data-id="' + t.id + '">Tamam</button>') +
+            "</div>";
+        }).join("")
+        : "<span class=\"muted\">Açık görev yok</span>";
+    }
+    var tl = document.getElementById("mail-rel-timeline");
+    if (tl) {
+      tl.innerHTML = (c.timeline || []).length
+        ? c.timeline.map(function (e) {
+          return '<div style="padding:0.4rem 0;border-bottom:1px solid rgba(148,163,184,0.12);">' +
+            '<span class="muted">' + esc(fmtTime(e.at)) + "</span> · <strong>" + esc(e.title) + "</strong>" +
+            (e.detail ? (" — " + esc(e.detail)) : "") + "</div>";
+        }).join("")
+        : "<span class=\"muted\">Henüz aktivite yok</span>";
+    }
   }
 
   function mailLoadDashboard() {
@@ -1611,6 +1744,115 @@
         var btn = e.target.closest("[data-mail-tab]");
         if (!btn) return;
         switchMailTab(btn.getAttribute("data-mail-tab"));
+      });
+    }
+
+    bindClick("mail-rel-refresh", mailLoadRelations);
+    bindClick("mail-rel-search", mailLoadRelationsPipeline);
+    bindClick("mail-rel-recompute", function () {
+      mailToast("Skorlar hesaplanıyor…");
+      mailApi("/api/mailing/relations/recompute", { method: "POST", body: { limit: 400 }, timeoutMs: 120000 })
+        .then(function (res) {
+          if (!res || !res.ok) {
+            mailToast((res && res.data && res.data.error) || "Hesaplanamadı");
+            return;
+          }
+          mailToast(res.data.message || "Tamam");
+          mailLoadRelations();
+        });
+    });
+    bindClick("mail-rel-profile-close", function () {
+      mailRelContactId = null;
+      var card = document.getElementById("mail-rel-profile-card");
+      if (card) card.hidden = true;
+    });
+    bindClick("mail-rel-save-life", function () {
+      if (!mailRelContactId) return;
+      mailApi("/api/mailing/relations/contacts/" + mailRelContactId + "/lifecycle", {
+        method: "PATCH",
+        body: {
+          lifecycle: (document.getElementById("mail-rel-lifecycle") || {}).value,
+          crm_owner: (document.getElementById("mail-rel-owner") || {}).value || ""
+        }
+      }).then(function (res) {
+        if (!res || !res.ok) {
+          mailToast((res && res.data && res.data.error) || "Kaydedilemedi");
+          return;
+        }
+        mailToast("CRM kaydı güncellendi");
+        mailRenderRelProfile(res.data.contact);
+        mailLoadRelationsPipeline();
+      });
+    });
+    bindClick("mail-rel-note-btn", function () {
+      if (!mailRelContactId) return;
+      var body = ((document.getElementById("mail-rel-note") || {}).value || "").trim();
+      if (!body) { mailToast("Not yaz"); return; }
+      mailApi("/api/mailing/relations/contacts/" + mailRelContactId + "/notes", {
+        method: "POST",
+        body: { body: body }
+      }).then(function (res) {
+        if (!res || !res.ok) {
+          mailToast((res && res.data && res.data.error) || "Not eklenemedi");
+          return;
+        }
+        document.getElementById("mail-rel-note").value = "";
+        mailToast("Not kaydedildi");
+        mailRenderRelProfile(res.data.contact);
+      });
+    });
+    bindClick("mail-rel-task-btn", function () {
+      if (!mailRelContactId) return;
+      var title = ((document.getElementById("mail-rel-task-title") || {}).value || "").trim();
+      if (!title) { mailToast("Görev başlığı yaz"); return; }
+      var due = ((document.getElementById("mail-rel-task-due") || {}).value || "").trim();
+      if (due && due.length === 16) due += ":00";
+      mailApi("/api/mailing/relations/contacts/" + mailRelContactId + "/tasks", {
+        method: "POST",
+        body: { title: title, due_at: due || null }
+      }).then(function (res) {
+        if (!res || !res.ok) {
+          mailToast((res && res.data && res.data.error) || "Görev eklenemedi");
+          return;
+        }
+        document.getElementById("mail-rel-task-title").value = "";
+        mailToast("Görev eklendi");
+        mailRenderRelProfile(res.data.contact);
+        mailLoadRelations();
+      });
+    });
+    document.addEventListener("click", function (e) {
+      var chip = e.target.closest(".mail-rel-life-chip");
+      if (chip) {
+        var life = chip.getAttribute("data-life") || "";
+        var filter = document.getElementById("mail-rel-life-filter");
+        if (filter) filter.value = life;
+        mailLoadRelationsPipeline();
+        return;
+      }
+      var openBtn = e.target.closest(".mail-rel-open");
+      if (openBtn) {
+        mailOpenRelProfile(Number(openBtn.getAttribute("data-id")));
+        return;
+      }
+      var doneBtn = e.target.closest(".mail-rel-task-done");
+      if (doneBtn) {
+        var tid = doneBtn.getAttribute("data-id");
+        mailApi("/api/mailing/relations/tasks/" + tid, { method: "PATCH", body: { status: "done" } })
+          .then(function (res) {
+            if (!res || !res.ok) {
+              mailToast((res && res.data && res.data.error) || "Güncellenemedi");
+              return;
+            }
+            if (mailRelContactId) mailOpenRelProfile(mailRelContactId);
+            mailLoadRelations();
+          });
+      }
+    });
+    var relQ = document.getElementById("mail-rel-q");
+    if (relQ) {
+      relQ.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") mailLoadRelationsPipeline();
       });
     }
 
