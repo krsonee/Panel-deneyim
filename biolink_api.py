@@ -877,7 +877,10 @@ def apply_preview_overrides(page, args):
                     cur.update(raw)
             except (TypeError, ValueError, json.JSONDecodeError):
                 pass
-        for key in ("enabled", "title", "body", "image_url", "cta_label", "cta_url", "delay_ms", "frequency"):
+        for key in (
+            "enabled", "title", "body", "image_url", "media_url", "media_type",
+            "shape", "size", "cta_label", "cta_url", "delay_ms", "frequency",
+        ):
             arg_key = "popup_" + key
             if arg_key in args:
                 val = args.get(arg_key)
@@ -885,6 +888,9 @@ def apply_preview_overrides(page, args):
                     cur[key] = str(val).lower() in ("1", "true", "yes", "on")
                 else:
                     cur[key] = val
+        # JSON uzun URL'de kırılırsa ayrı popup_* alanlarıyla tamamla
+        if not cur.get("media_url") and cur.get("image_url"):
+            cur["media_url"] = cur["image_url"]
         page["popup"] = enrich_popup(cur)
     return page
 

@@ -709,7 +709,15 @@
     el = document.getElementById("bl-accent");
     if (el && el.value) q.set("accent_color", el.value);
     var popup = blReadPopupForm();
+    /* Tam JSON + kritik alanlar ayrı (şekil/medya preview'da kaybolmasın) */
     q.set("popup", JSON.stringify(popup));
+    q.set("popup_enabled", popup.enabled ? "1" : "0");
+    q.set("popup_shape", popup.shape || "rounded");
+    q.set("popup_size", popup.size || "md");
+    q.set("popup_media_type", popup.media_type || "auto");
+    if (popup.media_url) q.set("popup_media_url", popup.media_url);
+    if (popup.title) q.set("popup_title", popup.title);
+    if (popup.body) q.set("popup_body", popup.body);
     return q;
   }
 
