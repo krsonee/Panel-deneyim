@@ -510,6 +510,69 @@ body.panel-brand-bizzo .biolink-studio-section-title {
   color: var(--text);
   max-width: 118px;
 }
+
+/* Bizzo: görsel yerleşim seçici (Tam / Sol / Sağ) */
+body.panel-brand-bizzo .bl-layout-segs {
+  flex-wrap: wrap;
+  width: 100%;
+  margin: 0 0 0.15rem;
+}
+body.panel-brand-bizzo .bl-layout-seg-row {
+  display: inline-flex;
+  gap: 0.28rem;
+  flex-wrap: wrap;
+}
+body.panel-brand-bizzo .bl-layout-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.32rem 0.55rem;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.1;
+}
+body.panel-brand-bizzo .bl-layout-seg:hover {
+  border-color: rgba(178, 255, 79, 0.45);
+  background: rgba(178, 255, 79, 0.06);
+}
+body.panel-brand-bizzo .bl-layout-seg.is-on {
+  border-color: rgba(178, 255, 79, 0.7);
+  background: rgba(178, 255, 79, 0.14);
+  color: #eaffc8;
+  box-shadow: 0 0 0 1px rgba(178, 255, 79, 0.18);
+}
+body.panel-brand-bizzo .bl-layout-seg-ico {
+  width: 18px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1.5px solid currentColor;
+  opacity: 0.85;
+  position: relative;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+body.panel-brand-bizzo .bl-layout-ico-full {
+  background: currentColor;
+  opacity: 0.55;
+}
+body.panel-brand-bizzo .bl-layout-ico-left::before,
+body.panel-brand-bizzo .bl-layout-ico-right::before {
+  content: "";
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 42%;
+  background: currentColor;
+  border-radius: 1px;
+}
+body.panel-brand-bizzo .bl-layout-ico-left::before { left: 1px; }
+body.panel-brand-bizzo .bl-layout-ico-right::before { right: 1px; }
 .bl-toggle-pill {
   font-size: 0.64rem;
   display: inline-flex;

@@ -1231,6 +1231,20 @@
       var downBtn = e.target.closest("[data-bl-down]");
       if (downBtn) { moveButton(parseInt(downBtn.getAttribute("data-bl-down"), 10), 1); return; }
 
+      var layoutSeg = e.target.closest("[data-bl-layout-set]");
+      if (layoutSeg) {
+        var lid = layoutSeg.getAttribute("data-bl-id");
+        var lval = layoutSeg.getAttribute("data-bl-layout-set");
+        blApi("/api/biolink/buttons/" + lid, { method: "PUT", body: { layout_col: lval } }).then(function (r) {
+          if (r && r.ok) {
+            updateLocalButton(r.data.button);
+            renderButtonsList(blCurrentPage.buttons);
+            schedulePreviewRefresh();
+          } else if (r) alert((r.data && r.data.error) || "Yerleşim güncellenemedi");
+        });
+        return;
+      }
+
       var hsChip = e.target.closest("[data-bl-hs-for] [data-hs]");
       if (hsChip) {
         var scroller = hsChip.closest("[data-bl-hs-for]");
@@ -1323,15 +1337,23 @@
   }
 
   function blLayoutColPicker(b) {
+    /* Bizzo-only: kırmızı kutu modeli — Tam / Sol yarım / Sağ yarım */
+    if (!(window.PANEL_BIOLINK && window.PANEL_BIOLINK.brand === "bizzo")) return "";
     if (b.button_type === "heading") return "";
     var col = b.layout_col || "full";
-    return '<div class="bl-col-layout">' +
+    function seg(val, label, title) {
+      return '<button type="button" class="bl-layout-seg' + (col === val ? " is-on" : "") +
+        '" data-bl-layout-set="' + val + '" data-bl-id="' + b.id + '" title="' + title + '">' +
+        '<span class="bl-layout-seg-ico bl-layout-ico-' + val + '" aria-hidden="true"></span>' +
+        '<span>' + label + "</span></button>";
+    }
+    return '<div class="bl-col-layout bl-layout-segs" role="group" aria-label="Yerleşim">' +
       '<label class="bl-col-layout-lbl">Yerleşim</label>' +
-      '<select data-bl-field="layout_col" data-bl-id="' + b.id + '" title="Tam / sol yarım / sağ yarım — yan yana iki yarım kullan">' +
-      '<option value="full"' + (col === "full" ? " selected" : "") + ">Tam geni\u015flik</option>" +
-      '<option value="left"' + (col === "left" ? " selected" : "") + ">Yan yana \u2014 Sol (sonraki Sa\u011f)</option>" +
-      '<option value="right"' + (col === "right" ? " selected" : "") + ">Yan yana \u2014 Sa\u011f (önceki Sol)</option>" +
-      "</select></div>";
+      '<div class="bl-layout-seg-row">' +
+      seg("full", "Tam", "Tam genişlik — tek satır") +
+      seg("left", "Sol", "Sol yarım — sağ taraf boş kalır veya sonraki Sağ ile yan yana") +
+      seg("right", "Sağ", "Sağ yarım — sol taraf boş kalır veya önceki Sol ile yan yana") +
+      "</div></div>";
   }
 
   function renderButtonsList(buttons) {

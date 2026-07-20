@@ -606,11 +606,12 @@ def _page_row(row):
 
 
 def group_layout_rows(buttons):
-    """Blokları satırlara ayır.
+    """Bizzo yerleşim: satırları ayır.
 
-    - Sol + Sağ ardışık → yan yana çift
-    - Tek kalan Sol/Sağ → tam genişlik (sağa/sola kaymış tek buton olmasın)
-    - Tam / başlık → tam satır
+    - Sol + Sağ ardışık → yan yana çift (pair)
+    - Tek Sol → sol yarım, sağ boş (half-left)
+    - Tek Sağ → sağ yarım, sol boş (half-right)
+    - Tam / başlık → tam satır (full)
     """
     items = list(buttons or [])
     rows = []
@@ -636,8 +637,8 @@ def group_layout_rows(buttons):
             rows.append({"kind": "pair", "blocks": [b, nxt]})
             i += 2
             continue
-        # Yetim yarım → tam genişlik göster
-        rows.append({"kind": "full", "blocks": [b]})
+        # Tek yarım: karşı taraf boş kalsın (kırmızı kutu boşluğu)
+        rows.append({"kind": "half-left" if col == "left" else "half-right", "blocks": [b]})
         i += 1
     return rows
 
