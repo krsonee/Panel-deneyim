@@ -177,6 +177,8 @@
   }
 
   var blMutePreview = 0;
+  /* true = kullanıcı vurgu rengini elle seçti; false = temanın kendi rengi kullanılsın */
+  var blAccentCustom = false;
 
   function blApi(path, opts) {
     opts = opts || {};
@@ -245,6 +247,21 @@
     return t ? t.accent : "#888";
   }
 
+  function blThemeAccentHex(key) {
+    var a = String(blThemeSwatchColor(key) || "").trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(a)) return a;
+    if (/^#[0-9a-fA-F]{3}$/.test(a)) {
+      return "#" + a[1] + a[1] + a[2] + a[2] + a[3] + a[3];
+    }
+    return "#b2ff4f";
+  }
+
+  function forcePreviewRefresh() {
+    blMutePreview = 0;
+    clearTimeout(blPreviewTimer);
+    refreshPreview();
+  }
+
   function loadThemes() {
     return blApi("/api/biolink/themes").then(function (r) {
       if (!r || !r.ok) return;
@@ -300,9 +317,15 @@
     }).join("");
     box.querySelectorAll("[data-bl-theme-pick]").forEach(function (btn) {
       btn.onclick = function () {
-        if (hidden) hidden.value = btn.getAttribute("data-bl-theme-pick");
+        var key = btn.getAttribute("data-bl-theme-pick") || "";
+        if (hidden) hidden.value = key;
+        /* Tema seçince özel vurguyu bırak — yoksa tüm temalar aynı altın/lime görünür */
+        blAccentCustom = false;
+        var accentEl = document.getElementById("bl-accent");
+        if (accentEl) accentEl.value = blThemeAccentHex(key);
+        if (blCurrentPage) blCurrentPage.theme = key;
         renderThemeGallery();
-        schedulePreviewRefresh();
+        forcePreviewRefresh();
       };
     });
   }
@@ -662,7 +685,10 @@
     if (bannerEl) bannerEl.value = page.hide_banner ? BL_NONE : (page.banner_url || blAssets.default_banner || "");
     var layoutEl = document.getElementById("bl-banner-layout");
     if (layoutEl) layoutEl.value = page.banner_layout || "top";
-    document.getElementById("bl-accent").value = page.accent_color || "#ffd53e";
+    blAccentCustom = !!(page.accent_color && String(page.accent_color).trim());
+    document.getElementById("bl-accent").value = blAccentCustom
+      ? page.accent_color
+      : blThemeAccentHex(page.theme || (window.PANEL_BIOLINK && window.PANEL_BIOLINK.defaultTheme) || "");
     document.getElementById("bl-ga4-id").value = page.ga4_measurement_id || "";
     document.getElementById("bl-ga4-secret").value = "";
     document.getElementById("bl-is-active").checked = !!page.is_active;
@@ -706,18 +732,32 @@
     if (el) q.set("favicon_url", (el.value || "").trim());
     el = document.getElementById("bl-banner-layout");
     if (el && el.value) q.set("banner_layout", el.value);
+    /* Özel vurgu yoksa gönderme — tema renkleri ezilmesin */
     el = document.getElementById("bl-accent");
-    if (el && el.value) q.set("accent_color", el.value);
+    if (blAccentCustom && el && el.value) q.set("accent_color", el.value);
     var popup = blReadPopupForm();
-    /* Tam JSON + kritik alanlar ayrı (şekil/medya preview'da kaybolmasın) */
-    q.set("popup", JSON.stringify(popup));
+    /* Kısa popup payload — uzun URL iframe'i sessizce bozar, tema değişmez görünür */
+    var popupSlim = {
+      enabled: !!popup.enabled,
+      title: (popup.title || "").slice(0, 120),
+      body: (popup.body || "").slice(0, 180),
+      media_url: (popup.media_url || popup.image_url || "").slice(0, 280),
+      image_url: (popup.media_url || popup.image_url || "").slice(0, 280),
+      media_type: popup.media_type || "auto",
+      shape: popup.shape || "rounded",
+      size: popup.size || "md",
+      cta_label: (popup.cta_label || "").slice(0, 40),
+      cta_url: (popup.cta_url || "").slice(0, 280),
+      delay_ms: popup.delay_ms,
+      frequency: popup.frequency || "session",
+    };
+    q.set("popup", JSON.stringify(popupSlim));
     q.set("popup_enabled", popup.enabled ? "1" : "0");
     q.set("popup_shape", popup.shape || "rounded");
     q.set("popup_size", popup.size || "md");
     q.set("popup_media_type", popup.media_type || "auto");
-    if (popup.media_url) q.set("popup_media_url", popup.media_url);
-    if (popup.title) q.set("popup_title", popup.title);
-    if (popup.body) q.set("popup_body", popup.body);
+    if (popupSlim.media_url) q.set("popup_media_url", popupSlim.media_url);
+    if (popupSlim.title) q.set("popup_title", popupSlim.title);
     return q;
   }
 
@@ -905,7 +945,15 @@
     if (editor && editor.style.display === "none") return;
     var q = blPreviewDraftParams();
     q.set("_", String(Date.now()));
-    frame.src = "/p/" + encodeURIComponent(blCurrentPage.slug) + "?" + q.toString();
+    var url = "/p/" + encodeURIComponent(blCurrentPage.slug) + "?" + q.toString();
+    /* URL çok uzunsa popup medyasını düş — tema/önizleme yine yüklensin */
+    if (url.length > 7000) {
+      q.delete("popup");
+      q.delete("popup_media_url");
+      q.delete("popup_title");
+      url = "/p/" + encodeURIComponent(blCurrentPage.slug) + "?" + q.toString();
+    }
+    frame.src = url;
   }
 
   function createNewPage() {
@@ -960,7 +1008,7 @@
       avatar_url: document.getElementById("bl-avatar").value.trim(),
       banner_url: (document.getElementById("bl-banner") || {}).value.trim(),
       banner_layout: (document.getElementById("bl-banner-layout") || {}).value || "top",
-      accent_color: document.getElementById("bl-accent").value,
+      accent_color: blAccentCustom ? document.getElementById("bl-accent").value : "",
       ga4_measurement_id: document.getElementById("bl-ga4-id").value.trim(),
       is_active: document.getElementById("bl-is-active").checked,
       popup: blReadPopupForm(),
@@ -1548,9 +1596,16 @@
       var el = document.getElementById(id);
       if (!el) return;
       el.addEventListener("input", function () {
+        if (id === "bl-accent") blAccentCustom = true;
         if (id === "bl-avatar" || id === "bl-banner" || id === "bl-favicon") renderAssetPickers();
         schedulePreviewRefresh();
       });
+      if (id === "bl-accent") {
+        el.addEventListener("change", function () {
+          blAccentCustom = true;
+          schedulePreviewRefresh();
+        });
+      }
     });
     var popupEn = document.getElementById("bl-popup-enabled");
     if (popupEn) {
