@@ -143,8 +143,8 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
 
     @bp.route("/int-config", methods=["GET"])
     @perm(*MODULE_ACCESS)
-    @admin_only
     def get_int_config():
+        """Durum okuma: tracking.smartico yetkisi yeter (token maskeli)."""
         with closing(get_db()) as conn:
             cfg = smartico_api.ensure_makro_int_defaults(conn)
             configured = smartico_api.is_int_configured(conn)
@@ -163,6 +163,7 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
     @perm(*MODULE_ACCESS)
     @admin_only
     def save_int_config():
+        """Ayar yazma: yalnızca primary admin (tolgakt)."""
         data = request.get_json(silent=True) or {}
         try:
             with closing(get_db()) as conn:
@@ -194,13 +195,13 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
     @perm(*MODULE_ACCESS)
     @admin_only
     def delete_int_config():
+        """Ayar silme: yalnızca primary admin (tolgakt)."""
         with closing(get_db()) as conn:
             smartico_api.clear_int_config(conn)
         return jsonify({"ok": True})
 
     @bp.route("/lookup-player", methods=["GET"])
     @perm(*MODULE_ACCESS)
-    @admin_only
     def lookup_player():
         """Oyuncu ID / registration_id / username ile mevcut kanal kayıtlarını getir."""
         ext_id = (
@@ -220,11 +221,11 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
 
     @bp.route("/move-affiliate", methods=["POST"])
     @perm(*MODULE_ACCESS)
-    @admin_only
     def move_affiliate():
         """Oyuncuyu yeni affiliate/deal altına taşı (TAP cid 30062).
 
-        affiliate_id + deal_id boşsa default_affiliate_id (normal link / kanal yok) kullanılır.
+        tracking.smartico yetkisi olan herkes taşıyabilir.
+        affiliate_id + deal_id boşsa / use_default ile default (normal link) kullanılır.
         """
         data = request.get_json(silent=True) or {}
         try:
