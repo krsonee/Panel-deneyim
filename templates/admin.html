@@ -2472,10 +2472,10 @@
             <span>Üye Taşıma <span class="muted" style="font-weight:400;font-size:0.72rem;">(TAP · oyuncuyu başka affiliate’e taşı)</span></span>
             <div class="card-actions">
               <span class="muted" id="move-aff-status" style="font-size:0.72rem;"></span>
-              <button type="button" class="btn btn-sm" id="btn-move-aff-settings">⚙️ int-api Ayarlar</button>
+              <button type="button" class="btn btn-sm" id="btn-move-aff-settings" data-admin-only="1">⚙️ int-api Ayarlar</button>
             </div>
           </div>
-          <div class="card-body" id="move-aff-settings-box" style="display:none;">
+          <div class="card-body" id="move-aff-settings-box" data-admin-only="1" style="display:none;">
             <p class="hint">
               Smartico / TheAffiliatePlatform <strong>int-api</strong> bilgileri (rapor API key’den ayrı).
               <code>authorization_token</code> = Settings → submit registrations key.
