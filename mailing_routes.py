@@ -1459,7 +1459,27 @@ def create_mailing_blueprint(permission_required):
     bp = Blueprint("mailing", __name__, url_prefix="/api/mailing")
 
     def mail_perm(*keys):
-        return permission_required(*keys)
+        """Yetki + Makro mailing allowlist (varsayılan: yalnızca tolgakt)."""
+        decorated = permission_required(*keys)
+
+        def decorator(view):
+            from functools import wraps
+
+            from flask import jsonify, session
+
+            from panel_config import can_access_mailing
+
+            inner = decorated(view)
+
+            @wraps(view)
+            def wrapped(*args, **kwargs):
+                if not can_access_mailing(session.get("admin_username")):
+                    return jsonify({"error": "Mailing yalnızca yetkili hesap içindir."}), 403
+                return inner(*args, **kwargs)
+
+            return wrapped
+
+        return decorator
 
     # ── Dashboard ──────────────────────────────────────────────
     @bp.route("/dashboard", methods=["GET"])

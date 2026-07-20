@@ -3184,8 +3184,8 @@
           var modKey = (PANEL_BRAND || "makro") + "panel_module";
           var savedMod = localStorage.getItem(modKey) || localStorage.getItem("makropanel_module");
           var startMod = data.default_module || "tracking";
-          // Kapalı modüller / eski mailing tercihi → tracking
-          if (savedMod === "mailing" || savedMod === "marketing") {
+          // Kapalı modüller / erişilemeyen mailing veya marketing → tracking
+          if (savedMod === "marketing" || (savedMod === "mailing" && !(PANEL_FEATURES && PANEL_FEATURES.mailing))) {
             try { localStorage.setItem(modKey, "tracking"); } catch (e) {}
             savedMod = "tracking";
           }

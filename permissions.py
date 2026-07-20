@@ -263,7 +263,8 @@ def active_permission_catalog():
         if any(key == p or key.startswith(p) for p in hidden_prefixes if p.endswith(".")) or key in hidden_prefixes:
             continue
         if key.startswith("module.") and key not in (
-            "module.tracking", "module.accounting", "module.biolink", "module.settings",
+            "module.tracking", "module.accounting", "module.mailing",
+            "module.biolink", "module.settings",
         ):
             mod = key.split(".", 1)[1]
             if mod not in ENABLED_MODULES and mod != "settings":
@@ -297,7 +298,7 @@ def has_any_module_access(user_permissions):
 
 def available_modules(user_permissions):
     perms = normalize_permissions(user_permissions)
-    order = [m for m in ("tracking", "accounting", "biolink") if m in ENABLED_MODULES]
+    order = [m for m in ("tracking", "accounting", "mailing", "biolink") if m in ENABLED_MODULES]
     if "*" in perms:
         mods = list(order)
         mods.append("settings")
@@ -317,6 +318,8 @@ def default_module_for_user(user_permissions):
         return "tracking"
     if "accounting" in mods:
         return "accounting"
+    if "mailing" in mods:
+        return "mailing"
     if "biolink" in mods:
         return "biolink"
     return mods[0] if mods else None

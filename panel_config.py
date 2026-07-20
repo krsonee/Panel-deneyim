@@ -11,13 +11,20 @@ import os
 _RAW = (os.environ.get("PANEL_BRAND") or "makro").strip().lower()
 PANEL_BRAND = "bizzo" if _RAW in ("bizzo", "bizzocasino", "bizzo-casino") else "makro"
 
-# Her iki panelde aynı sade modül seti
-ENABLED_MODULES = ("tracking", "accounting", "biolink")
+# Mailing yalnızca Makro panel + allowlist kullanıcılar (varsayılan: tolgakt)
+_MAILING_USERS_RAW = (os.environ.get("MAILING_ALLOWED_USERS") or "tolgakt").strip().lower()
+MAILING_ALLOWED_USERS = frozenset(
+    u.strip() for u in _MAILING_USERS_RAW.split(",") if u.strip()
+)
+
+# Makro'da mailing açık; Bizzo'da kapalı
+_BASE_MODULES = ("tracking", "accounting", "biolink")
+ENABLED_MODULES = _BASE_MODULES + (("mailing",) if PANEL_BRAND == "makro" else ())
 
 FEATURES = {
     "smartico": False,
     "blink": False,
-    "mailing": False,
+    "mailing": PANEL_BRAND == "makro",
     "marketing": False,
     "makrolink": True,
     "accounting": True,
@@ -160,9 +167,24 @@ def feature_enabled(name: str) -> bool:
     return bool(FEATURES.get(name, False))
 
 
-def panel_context() -> dict:
-    """Jinja /api/me için panel bağlamı."""
+def can_access_mailing(username: str | None) -> bool:
+    """Mailing UI + API: yalnızca Makro markası ve allowlist kullanıcılar."""
+    if PANEL_BRAND != "makro" or not feature_enabled("mailing"):
+        return False
+    user = (username or "").strip().lower()
+    return bool(user) and user in MAILING_ALLOWED_USERS
+
+
+def panel_context(username: str | None = None) -> dict:
+    """Jinja /api/me için panel bağlamı.
+
+    username verilirse mailing özelliği kullanıcı allowlist'ine göre maskelenir
+    (diğer admin hesapları menüde Mailing görmez).
+    """
     pack = dict(BRAND.get("biolink_pack") or {})
+    features = dict(FEATURES)
+    if features.get("mailing") and username is not None and not can_access_mailing(username):
+        features["mailing"] = False
     return {
         "brand": BRAND["brand"],
         "service_name": BRAND["service_name"],
@@ -188,5 +210,5 @@ def panel_context() -> dict:
         "default_favicon": BRAND.get("default_favicon") or "",
         "biolink_pack": pack,
         "enabled_modules": list(ENABLED_MODULES),
-        "features": dict(FEATURES),
+        "features": features,
     }

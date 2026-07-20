@@ -40,7 +40,7 @@ from permissions import (
     permissions_from_role,
 )
 import totp
-from panel_config import BRAND, PANEL_BRAND, feature_enabled, panel_context
+from panel_config import BRAND, PANEL_BRAND, can_access_mailing, feature_enabled, panel_context
 from database import (
     DB_PATH,
     APP_DIR,
@@ -131,7 +131,8 @@ def init_db():
 
 @app.context_processor
 def inject_panel():
-    return {"panel": panel_context()}
+    # Oturumdaki kullanıcıya göre mailing menüsünü maskele (yalnızca tolgakt)
+    return {"panel": panel_context(session.get("admin_username"))}
 
 
 def ensure_primary_admin():
@@ -865,6 +866,14 @@ def permission_required(*required_perms):
         @login_required
         def wrapped(*args, **kwargs):
             needed = list(required_perms)
+            # Mailing: yetki anahtarı olsa bile allowlist dışı kullanıcı engellenir
+            mailing_needed = any(
+                p == "module.mailing" or str(p).startswith("mailing.") for p in needed
+            )
+            if mailing_needed and not can_access_mailing(session.get("admin_username")):
+                if request.path.startswith("/api/"):
+                    return jsonify({"error": "Mailing yalnızca yetkili hesap içindir."}), 403
+                return render_template("login.html", error="Mailing yalnızca yetkili hesap içindir."), 403
             if not has_permission(get_session_permissions(), needed):
                 if request.path.startswith("/api/"):
                     return jsonify({"error": "Bu işlem için yetkiniz yok."}), 403
@@ -1143,19 +1152,26 @@ def api_me():
         )
     two_factor_required = bool(int(row["two_factor_required"] or 0)) if row else False
     two_factor_enabled = bool(int(row["two_factor_enabled"] or 0)) if row else False
+    username = session.get("admin_username")
+    mods = available_modules(perms)
+    if "mailing" in mods and not can_access_mailing(username):
+        mods = [m for m in mods if m != "mailing"]
+    default_mod = default_module_for_user(perms)
+    if default_mod not in mods:
+        default_mod = mods[0] if mods else "tracking"
     return jsonify({
-        "username": session.get("admin_username"),
-        "display_name": (row["display_name"] if row else "") or session.get("admin_username"),
+        "username": username,
+        "display_name": (row["display_name"] if row else "") or username,
         "role": session.get("admin_role"),
         "permissions": perms,
-        "is_primary_admin": is_primary_admin(session.get("admin_username")),
+        "is_primary_admin": is_primary_admin(username),
         "two_factor_required": two_factor_required,
         "two_factor_enabled": two_factor_enabled,
         "role_templates": ROLE_TEMPLATES,
         "permission_catalog": active_permission_catalog(),
-        "available_modules": available_modules(perms),
-        "default_module": default_module_for_user(perms),
-        "panel": panel_context(),
+        "available_modules": mods,
+        "default_module": default_mod,
+        "panel": panel_context(username),
     })
 
 
