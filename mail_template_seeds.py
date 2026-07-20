@@ -17,13 +17,17 @@ from database import (
     utcnow,
 )
 
-SEED_FLAG = "seeded_makrobet_templates_v5"
+SEED_FLAG = "seeded_makrobet_templates_v6"
 
-# Aff panel tracking link (tüm HTML CTA’lar buraya)
+# Aff panel tracking link (çoğu HTML CTA buraya)
 AFF_URL = "https://makrovip.com/Vipmail"
 AFF_TOKEN = "{{link:sc:https://makrovip.com/Vipmail}}"
 
-# Geriye dönük isimler — hepsi aff linkine gider
+# Şans bonusu şablonuna özel WhatsApp / VIP destek
+WHATSAPP_URL = "https://vipmakro.com"
+WHATSAPP_TOKEN = "{{link:sc:https://vipmakro.com}}"
+
+# Geriye dönük isimler — varsayılan aff
 PROMO_URL = AFF_URL
 SITE_URL = AFF_URL
 VIP_URL = AFF_URL
@@ -225,16 +229,19 @@ HTML_TEMPLATES = [
             Merhaba <strong style="color:#fff;">{{{{name}}}}</strong>,<br><br>
             <strong style="color:{_MB_GOLD};font-size:17px;">Hesabına şans bonusu eklendi.</strong><br><br>
             Bonusunu almak için hemen
+            <a href="{WHATSAPP_TOKEN}" style="color:{_MB_GOLD};font-weight:800;text-decoration:underline;">vipmakro.com</a>
+            üzerinden WhatsApp destek hattımızdan talep et,
+            ya da
             <a href="{AFF_TOKEN}" style="color:{_MB_GOLD};font-weight:800;text-decoration:underline;">makrovip.com/Vipmail</a>
-            üzerinden talep et — WhatsApp destek veya site bağlantısı bu linkte.<br><br>
+            ile siteye bağlanıp talep oluştur.<br><br>
             Aynı dönemde prim bonusu, çevrim bonusu, görev bonusu, Makro Kasa ve bilet etkinlikleri de aktif olabilir —
             vurgu senin <strong style="color:{_MB_GOLD};">şans bonusunda</strong>.
             """,
-            "Hemen Talep Et",
-            AFF_TOKEN,
+            "WhatsApp’tan Talep Et",
+            WHATSAPP_TOKEN,
             note="Talep sonrası bonus hesabına tanımlanır. Şartlar ve çevrim koşulları geçerlidir.",
             badge="Şans Bonusu",
-            secondary_label="Linke Git · makrovip.com/Vipmail",
+            secondary_label="Siteye Bağlan · Talep Et",
             secondary_token=AFF_TOKEN,
             extra_html=_SANS_EXTRA,
         ),
@@ -242,8 +249,8 @@ HTML_TEMPLATES = [
 
 Hesabına şans bonusu eklendi.
 
-Hemen talep et:
-{AFF_URL}
+WhatsApp’tan talep et: {WHATSAPP_URL}
+Siteye bağlan · talep et: {AFF_URL}
 
 Ayrıca: Prim Bonusu · Çevrim Bonusu · Görev Bonusu · Makro Kasa · Bilet Etkinliği
 
@@ -392,8 +399,8 @@ TEXT_TEMPLATES = [
 
 Hesabına şans bonusu eklendi.
 
-Hemen talep et:
-{AFF_URL}
+WhatsApp’tan talep et: {WHATSAPP_URL}
+Siteye bağlan · talep et: {AFF_URL}
 
 Ayrıca aktif olabilir: Prim Bonusu · Çevrim Bonusu · Görev Bonusu · Makro Kasa · Bilet Etkinliği
 
