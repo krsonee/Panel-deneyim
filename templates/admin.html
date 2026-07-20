@@ -1326,69 +1326,152 @@
     .mail-camp-status.cancelled, .mail-camp-status.cancelling { background: rgba(251,146,60,0.18); color: #fdba74; }
     .mail-camp-status.paused { background: rgba(56,189,248,0.16); color: #7dd3fc; }
     .mail-camp-status.error { background: rgba(244,63,94,0.18); color: #fb7185; }
-    /* Kart overflow select menüsünü yutmasın */
-    #mail-pane-crm > .card {
-      overflow: visible;
-    }
+    #mail-pane-crm > .card { overflow: visible; }
     .mail-tag-move {
       margin: 0 1rem 0.85rem;
-      padding: 0.75rem 0.9rem;
+      padding: 1rem 1.05rem;
       border: 1px solid var(--border);
-      border-radius: 12px;
-      background: rgba(15,23,42,0.28);
-      position: relative;
-      z-index: 30;
-      overflow: visible;
+      border-radius: 14px;
+      background: rgba(15,23,42,0.4);
     }
     .mail-tag-move-title {
-      font-size: 0.78rem;
-      font-weight: 700;
-      margin-bottom: 0.55rem;
+      font-size: 0.92rem;
+      font-weight: 800;
+      margin-bottom: 0.35rem;
     }
-    .mail-tag-move-grid {
-      display: grid;
-      grid-template-columns: minmax(160px, 1fr) minmax(220px, 1.2fr) auto;
-      gap: 0.55rem;
-      align-items: start;
+    .mail-tag-move-step {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #facc15;
+      margin-right: 0.35rem;
     }
-    .mail-tag-move select.mail-tag-select {
-      width: 100%;
-      min-height: 2.4rem;
-      position: relative;
-      z-index: 31;
-    }
-    .mail-tag-target-list {
+    .mail-tag-move-scope {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.4rem;
-      margin-top: 0.4rem;
-      max-height: 140px;
-      overflow: auto;
-      padding: 0.35rem;
-      border: 1px solid rgba(148,163,184,0.22);
+      gap: 0.65rem 1rem;
+      align-items: center;
+      margin-bottom: 0.85rem;
+      padding: 0.55rem 0.7rem;
       border-radius: 10px;
       background: rgba(2,6,23,0.35);
+      border: 1px solid rgba(148,163,184,0.18);
     }
-    .mail-tag-target-chip {
-      border: 1px solid rgba(148,163,184,0.35);
-      background: rgba(30,41,59,0.9);
-      color: inherit;
-      border-radius: 999px;
-      padding: 0.28rem 0.65rem;
-      font-size: 0.75rem;
+    .mail-tag-scope-opt {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      cursor: pointer;
+      font-size: 0.82rem;
       font-weight: 600;
+    }
+    .mail-tag-move-cols {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 0.75rem;
+      align-items: stretch;
+      margin-bottom: 0.85rem;
+    }
+    .mail-tag-move-arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: #facc15;
+      padding-top: 1.6rem;
+    }
+    .mail-tag-move-col {
+      min-width: 0;
+      border: 1px solid rgba(148,163,184,0.22);
+      border-radius: 12px;
+      padding: 0.65rem;
+      background: rgba(2,6,23,0.45);
+    }
+    .mail-tag-move-col-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+      align-items: baseline;
+      margin-bottom: 0.5rem;
+      font-size: 0.8rem;
+    }
+    .mail-tag-move-col-head strong {
+      color: #e2e8f0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 60%;
+    }
+    .mail-tag-pick-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      max-height: 220px;
+      overflow: auto;
+      margin-bottom: 0.45rem;
+    }
+    .mail-tag-pick-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      width: 100%;
+      text-align: left;
+      border: 1px solid rgba(148,163,184,0.28);
+      background: rgba(30,41,59,0.85);
+      color: inherit;
+      border-radius: 10px;
+      padding: 0.55rem 0.7rem;
+      font-size: 0.84rem;
+      font-weight: 650;
       cursor: pointer;
     }
-    .mail-tag-target-chip.is-active {
-      border-color: rgba(250,204,21,0.65);
-      background: rgba(250,204,21,0.16);
-      color: #fde047;
+    .mail-tag-pick-item:hover {
+      border-color: rgba(148,163,184,0.55);
+      background: rgba(51,65,85,0.95);
     }
-    @media (max-width: 720px) {
-      .mail-tag-move-grid { grid-template-columns: 1fr; }
+    .mail-tag-pick-item.is-active {
+      border-color: rgba(250,204,21,0.7);
+      background: rgba(250,204,21,0.14);
+      box-shadow: inset 0 0 0 1px rgba(250,204,21,0.25);
+    }
+    .mail-tag-pick-item .mail-tag-pick-count {
+      font-variant-numeric: tabular-nums;
+      opacity: 0.75;
+      font-size: 0.78rem;
+    }
+    #mail-tag-move-to-new {
+      width: 100%;
+      margin-top: 0.15rem;
+    }
+    .mail-tag-move-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-bottom: 0.55rem;
+    }
+    .mail-tag-move-summary {
+      margin: 0;
+      padding: 0.55rem 0.7rem;
+      border-radius: 10px;
+      background: rgba(56,189,248,0.1);
+      border: 1px solid rgba(56,189,248,0.28);
+      color: #bae6fd;
+      font-size: 0.82rem;
+      font-weight: 650;
+    }
+    @media (max-width: 820px) {
+      .mail-tag-move-cols { grid-template-columns: 1fr; }
+      .mail-tag-move-arrow { padding-top: 0; transform: rotate(90deg); }
     }
     [data-theme="light"] .mail-tag-move {
-      background: rgba(248,250,252,0.95);
+      background: rgba(248,250,252,0.98);
+    }
+    [data-theme="light"] .mail-tag-move-summary {
+      color: #075985;
     }
     .mail-tag-manage-list {
       display: flex;
@@ -2770,7 +2853,7 @@
 
   <script src="/static/accounting.js?v=20260717b"></script>
   {% if panel.features.mailing %}
-  <script src="/static/mailing.js?v=20260720e"></script>
+  <script src="/static/mailing.js?v=20260720f"></script>
   {% endif %}
   <script>
     window.PANEL_BIOLINK = {

@@ -340,32 +340,36 @@
         <div class="mail-tag-stats-list" id="mail-crm-tag-stats-list"></div>
       </div>
       <div class="mail-tag-move" id="mail-tag-move-box">
-        <div class="mail-tag-move-title">Etiketler arası taşı / filtrele</div>
-        <div class="mail-tag-move-grid">
-          <div>
-            <label>Kaynak etiket</label>
-            <select id="mail-tag-move-from" class="mail-tag-select"><option value="">Seç…</option></select>
+        <div class="mail-tag-move-title">Etiket taşı</div>
+        <p class="hint" style="margin:0 0 0.75rem;">
+          1) Kimleri etkileyeceğini seç · 2) Soldan <strong>kaynak</strong> · 3) Sağdan <strong>hedef</strong> · 4) Butona bas.
+          Açılır menü yok — etiketler her zaman listede.
+        </p>
+        <input type="hidden" id="mail-tag-move-from" value="">
+        <input type="hidden" id="mail-tag-move-to" value="">
+        <div class="mail-tag-move-scope">
+          <span class="mail-tag-move-step">1. Kimler?</span>
+          <label class="mail-tag-scope-opt"><input type="radio" name="mail-tag-scope" value="selected" checked> Tabloda işaretlediklerim</label>
+          <label class="mail-tag-scope-opt"><input type="radio" name="mail-tag-scope" value="all"> Kaynak etiketteki herkes</label>
+        </div>
+        <div class="mail-tag-move-cols">
+          <div class="mail-tag-move-col">
+            <div class="mail-tag-move-col-head"><span class="mail-tag-move-step">2. Kaynak</span> <strong id="mail-tag-from-label">—</strong></div>
+            <div class="mail-tag-pick-list" id="mail-tag-from-list"></div>
           </div>
-          <div>
-            <label>Hedef etiket — listeden seç veya yeni yaz</label>
-            <select id="mail-tag-move-to" class="mail-tag-select"><option value="">Seç…</option></select>
-            <div class="mail-tag-target-list" id="mail-tag-target-list" aria-label="Hedef etiket listesi"></div>
-            <input type="text" id="mail-tag-move-to-new" placeholder="Yeni hedef etiket yaz…" style="margin-top:0.4rem;width:100%;">
-            <p class="hint" id="mail-tag-move-to-picked" style="margin:0.35rem 0 0;">Hedef: —</p>
-          </div>
-          <div style="display:flex;gap:0.4rem;align-items:flex-end;flex-wrap:wrap;">
-            <button type="button" class="btn btn-sm btn-primary" id="mail-tag-move-btn" title="Kaynaktan çıkar, hedefe ekle">Taşı</button>
-            <button type="button" class="btn btn-sm" id="mail-tag-add-btn" title="Hedef etiketi ekle (kaynak kalır)">Ekle</button>
-            <button type="button" class="btn btn-sm" id="mail-tag-remove-btn" title="Kaynak etiketi kaldır">Kaldır</button>
+          <div class="mail-tag-move-arrow" aria-hidden="true">→</div>
+          <div class="mail-tag-move-col">
+            <div class="mail-tag-move-col-head"><span class="mail-tag-move-step">3. Hedef</span> <strong id="mail-tag-to-label">—</strong></div>
+            <div class="mail-tag-pick-list" id="mail-tag-to-list"></div>
+            <input type="text" id="mail-tag-move-to-new" placeholder="veya yeni hedef etiket yaz…" autocomplete="off">
           </div>
         </div>
-        <label style="display:flex;align-items:center;gap:0.4rem;margin:0.55rem 0 0;cursor:pointer;font-size:0.82rem;">
-          <input type="checkbox" id="mail-tag-move-all"> Seçim yoksa kaynak etiketteki <strong>tümünü</strong> işle
-        </label>
-        <p class="hint" style="margin:0.4rem 0 0;">
-          Varsayılan: alttaki kontak tablosundan işaretlediğin kişilere uygulanır.
-          Tüm etiketi işlemek için yukarıdaki kutuyu işaretle.
-        </p>
+        <div class="mail-tag-move-actions">
+          <button type="button" class="btn btn-primary" id="mail-tag-move-btn">Taşı (kaynaktan çıkar → hedefe koy)</button>
+          <button type="button" class="btn" id="mail-tag-add-btn">Kopyala (hedefe ekle, kaynak kalsın)</button>
+          <button type="button" class="btn" id="mail-tag-remove-btn">Kaynak etiketi kaldır</button>
+        </div>
+        <p class="mail-tag-move-summary" id="mail-tag-move-summary">Hazır değil — kaynak / hedef / kimler seç.</p>
         <p class="hint" id="mail-tag-move-status" style="margin:0.35rem 0 0;">—</p>
       </div>
       <div class="card-head">

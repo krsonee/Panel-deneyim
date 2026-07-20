@@ -889,16 +889,19 @@
     document.querySelectorAll("select.mail-tag-select").forEach(function (sel) {
       var cur = sel.value;
       var isFilter = sel.id === "mail-contact-tag-filter";
-      var isMove = sel.id === "mail-tag-move-from" || sel.id === "mail-tag-move-to";
       var isScrub = sel.id === "mail-scrub-tag";
-      var emptyLabel = isFilter || isScrub ? "Tüm etiketler" : (isMove ? "Seç…" : "Etiket yok");
+      var emptyLabel = isFilter || isScrub ? "Tüm etiketler" : "Etiket yok";
       if (isScrub) emptyLabel = "Tüm kontaklar";
       sel.innerHTML = optionsWithEmpty(emptyLabel);
       if (cur) sel.value = cur;
     });
-    mailRenderTagTargetList();
+    mailRenderTagPickLists();
     mailFillCampTagSelect();
     mailRenderTagManageList();
+  }
+
+  function mailGetMoveFromTag() {
+    return ((document.getElementById("mail-tag-move-from") || {}).value || "").trim();
   }
 
   function mailGetMoveToTag() {
@@ -907,32 +910,70 @@
     return ((document.getElementById("mail-tag-move-to") || {}).value || "").trim();
   }
 
-  function mailUpdateMoveToPicked() {
-    var el = document.getElementById("mail-tag-move-to-picked");
-    if (!el) return;
-    var t = mailGetMoveToTag();
-    el.textContent = t ? ("Hedef: " + t) : "Hedef: —";
+  function mailGetMoveScope() {
+    var checked = document.querySelector('input[name="mail-tag-scope"]:checked');
+    return (checked && checked.value) || "selected";
   }
 
-  function mailRenderTagTargetList() {
-    var box = document.getElementById("mail-tag-target-list");
-    if (!box) return;
+  function mailUpdateMoveSummary() {
+    var sum = document.getElementById("mail-tag-move-summary");
+    var fromLabel = document.getElementById("mail-tag-from-label");
+    var toLabel = document.getElementById("mail-tag-to-label");
+    var fromTag = mailGetMoveFromTag();
+    var toTag = mailGetMoveToTag();
+    var scope = mailGetMoveScope();
+    var selectedCount = document.querySelectorAll(".mail-contact-check:checked").length;
+    if (fromLabel) fromLabel.textContent = fromTag || "—";
+    if (toLabel) toLabel.textContent = toTag || "—";
+    if (!sum) return;
+    var who = scope === "all"
+      ? (fromTag ? ("«" + fromTag + "» içindeki herkes") : "kaynak etiket seçilmedi")
+      : (selectedCount ? (selectedCount + " seçili kişi") : "tabloda henüz kimse işaretli değil");
+    if (!fromTag && scope === "all") {
+      sum.textContent = "Hazır değil — «Kaynak etiketteki herkes» için soldan kaynak seç.";
+      return;
+    }
+    if (scope === "selected" && !selectedCount) {
+      sum.textContent = "Hazır değil — alttaki tabloda kişi işaretle (veya kapsamı «herkes» yap).";
+      return;
+    }
+    if (!toTag && !fromTag) {
+      sum.textContent = "Hazır değil — soldan kaynak, sağdan hedef seç.";
+      return;
+    }
+    sum.textContent = "Özet: " + who +
+      (fromTag ? (" · kaynak «" + fromTag + "»") : "") +
+      (toTag ? (" · hedef «" + toTag + "»") : " · hedef yok");
+  }
+
+  function mailRenderTagPickLists() {
+    var fromBox = document.getElementById("mail-tag-from-list");
+    var toBox = document.getElementById("mail-tag-to-list");
+    if (!fromBox && !toBox) return;
     var countMap = {};
     (mailTagCounts || []).forEach(function (t) { countMap[t.name] = t.count; });
     var list = mailTagNameList();
-    var cur = mailGetMoveToTag();
-    if (!list.length) {
-      box.innerHTML = '<span class="muted">Önce etiket oluştur</span>';
-      return;
-    }
-    box.innerHTML = list.map(function (name) {
+    var fromCur = mailGetMoveFromTag();
+    var toCur = mailGetMoveToTag();
+    var emptyHtml = '<span class="muted" style="padding:0.4rem;">Önce etiket oluştur</span>';
+    function itemHtml(name, active) {
       var c = countMap[name];
-      var label = c == null ? name : (name + " (" + fmtNum(c) + ")");
-      var active = cur && cur === name ? " is-active" : "";
-      return '<button type="button" class="mail-tag-target-chip' + active + '" data-tag="' + esc(name) + '">' +
-        esc(label) + "</button>";
-    }).join("");
-    mailUpdateMoveToPicked();
+      var count = c == null ? "—" : fmtNum(c);
+      return '<button type="button" class="mail-tag-pick-item' + (active ? " is-active" : "") +
+        '" data-tag="' + esc(name) + '"><span>' + esc(name) +
+        '</span><span class="mail-tag-pick-count">' + count + "</span></button>";
+    }
+    if (fromBox) {
+      fromBox.innerHTML = list.length
+        ? list.map(function (n) { return itemHtml(n, fromCur === n); }).join("")
+        : emptyHtml;
+    }
+    if (toBox) {
+      toBox.innerHTML = list.length
+        ? list.map(function (n) { return itemHtml(n, !((document.getElementById("mail-tag-move-to-new") || {}).value || "").trim() && toCur === n); }).join("")
+        : emptyHtml;
+    }
+    mailUpdateMoveSummary();
   }
 
   function mailRenderTagManageList() {
@@ -1053,6 +1094,7 @@
     setText("mail-contacts-selected", fmtNum(selected));
     setText("mail-contacts-page", fmtNum(page || mailContactsPageTotal));
     setText("mail-contacts-total", fmtNum(mailContactsFilterTotal));
+    mailUpdateMoveSummary();
   }
 
   function mailLoadContacts() {
@@ -2145,33 +2187,34 @@
     }
 
     function mailRunBulkTag(action) {
-      var fromEl = document.getElementById("mail-tag-move-from");
       var statusEl = document.getElementById("mail-tag-move-status");
-      var allowAll = !!(document.getElementById("mail-tag-move-all") || {}).checked;
-      var fromTag = (fromEl && fromEl.value) || "";
+      var scopeMode = mailGetMoveScope();
+      var fromTag = mailGetMoveFromTag();
       var toTag = mailGetMoveToTag();
       var ids = mailSelectedContactIds();
       var body = { action: action, from_tag: fromTag, to_tag: toTag };
-      if (ids.length) {
-        body.contact_ids = ids;
-      } else if (allowAll) {
+      if (scopeMode === "all") {
         body.match_tag = fromTag || ((document.getElementById("mail-contact-tag-filter") || {}).value || "");
         if (!body.match_tag) {
-          mailToast("Kaynak etiket seç veya listeden kontak işaretle");
+          mailToast("Soldan kaynak etiket seç");
           return;
         }
         if (action === "add") body.from_tag = body.match_tag;
+      } else if (ids.length) {
+        body.contact_ids = ids;
       } else {
-        mailToast("Listeden kişi seç (veya «tümünü işle» kutusunu işaretle)");
+        mailToast("Alttaki tabloda kişi işaretle — veya «Kaynak etiketteki herkes»i seç");
         return;
       }
-      if (action === "add" && !toTag) { mailToast("Hedef etiket seç"); return; }
-      if (action === "remove" && !fromTag && !ids.length) { mailToast("Kaldırılacak etiket seç"); return; }
-      if (action === "remove" && !fromTag && ids.length) { mailToast("Kaldırılacak etiket seç"); return; }
-      if (action === "move" && (!fromTag || !toTag)) { mailToast("Kaynak ve hedef etiket seç"); return; }
+      if (action === "add" && !toTag) { mailToast("Sağdan hedef etiket seç"); return; }
+      if (action === "remove" && !fromTag) { mailToast("Soldan kaldırılacak kaynak etiket seç"); return; }
+      if (action === "move" && (!fromTag || !toTag)) { mailToast("Soldan kaynak, sağdan hedef seç"); return; }
 
-      var scope = ids.length ? (ids.length + " seçili") : ("«" + (body.match_tag || fromTag) + "» TÜMÜ");
-      var label = action === "move" ? ("Taşı: " + fromTag + " → " + toTag) : (action === "add" ? ("Ekle: " + toTag) : ("Kaldır: " + fromTag));
+      var scope = scopeMode === "all"
+        ? ("«" + (body.match_tag || fromTag) + "» içindeki HERKES")
+        : (ids.length + " seçili kişi");
+      var label = action === "move" ? ("Taşı: " + fromTag + " → " + toTag)
+        : (action === "add" ? ("Kopyala / ekle: " + toTag) : ("Kaldır: " + fromTag));
       if (!confirm(label + "\nKapsam: " + scope + "\nDevam?")) return;
       if (statusEl) statusEl.textContent = "İşleniyor…";
       mailApi("/api/mailing/contacts/tags/bulk", { method: "POST", body: body, timeoutMs: 300000 })
@@ -2195,35 +2238,35 @@
     bindClick("mail-tag-add-btn", function () { mailRunBulkTag("add"); });
     bindClick("mail-tag-remove-btn", function () { mailRunBulkTag("remove"); });
 
-    var moveToSel = document.getElementById("mail-tag-move-to");
-    if (moveToSel) {
-      moveToSel.addEventListener("change", function () {
-        var neu = document.getElementById("mail-tag-move-to-new");
-        if (neu) neu.value = "";
-        mailRenderTagTargetList();
-      });
-    }
+    document.querySelectorAll('input[name="mail-tag-scope"]').forEach(function (r) {
+      r.addEventListener("change", mailUpdateMoveSummary);
+    });
     var moveToNew = document.getElementById("mail-tag-move-to-new");
     if (moveToNew) {
       moveToNew.addEventListener("input", function () {
-        mailUpdateMoveToPicked();
-        var box = document.getElementById("mail-tag-target-list");
-        if (box) {
-          box.querySelectorAll(".mail-tag-target-chip").forEach(function (b) {
-            b.classList.toggle("is-active", b.getAttribute("data-tag") === moveToNew.value.trim());
-          });
-        }
+        var toEl = document.getElementById("mail-tag-move-to");
+        if (toEl && moveToNew.value.trim()) toEl.value = "";
+        mailRenderTagPickLists();
       });
     }
     document.addEventListener("click", function (e) {
-      var chip = e.target.closest(".mail-tag-target-chip");
-      if (!chip || !chip.closest("#mail-tag-target-list")) return;
-      var name = chip.getAttribute("data-tag") || "";
-      var sel = document.getElementById("mail-tag-move-to");
-      var neu = document.getElementById("mail-tag-move-to-new");
-      if (sel) sel.value = name;
-      if (neu) neu.value = "";
-      mailRenderTagTargetList();
+      var fromItem = e.target.closest("#mail-tag-from-list .mail-tag-pick-item");
+      if (fromItem) {
+        var fromName = fromItem.getAttribute("data-tag") || "";
+        var fromEl = document.getElementById("mail-tag-move-from");
+        if (fromEl) fromEl.value = fromName;
+        mailRenderTagPickLists();
+        return;
+      }
+      var toItem = e.target.closest("#mail-tag-to-list .mail-tag-pick-item");
+      if (toItem) {
+        var toName = toItem.getAttribute("data-tag") || "";
+        var toEl = document.getElementById("mail-tag-move-to");
+        var neu = document.getElementById("mail-tag-move-to-new");
+        if (toEl) toEl.value = toName;
+        if (neu) neu.value = "";
+        mailRenderTagPickLists();
+      }
     });
 
     bindClick("mail-tag-cleanup-btn", function () {
@@ -2294,6 +2337,7 @@
               var el = document.getElementById(id);
               if (el) el.value = name;
             });
+            mailRenderTagPickLists();
           });
           mailLoadContactStats();
         });
@@ -2307,7 +2351,7 @@
       var selected = tagEl.value || "";
       var fromEl = document.getElementById("mail-tag-move-from");
       if (fromEl && selected) fromEl.value = selected;
-      // Select'leri rebuild etme — değer kaybı / yarış olmasın
+      mailRenderTagPickLists();
       var list = document.getElementById("mail-crm-tag-stats-list");
       if (list) {
         list.querySelectorAll(".mail-tag-stat").forEach(function (btn) {
@@ -2331,6 +2375,7 @@
         }
         var fromEl = document.getElementById("mail-tag-move-from");
         if (fromEl && next) fromEl.value = next;
+        mailRenderTagPickLists();
         var list = document.getElementById("mail-crm-tag-stats-list");
         if (list) {
           list.querySelectorAll(".mail-tag-stat").forEach(function (btn) {
