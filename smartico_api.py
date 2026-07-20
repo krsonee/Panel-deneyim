@@ -7,6 +7,7 @@ mevcut tracked_links / visitor_sessions sistemini değiştirmez.
 """
 
 import json
+import os
 import re
 import urllib.error
 import urllib.parse
@@ -23,6 +24,7 @@ from database import (
     uses_postgres,
     utcnow,
 )
+from panel_config import PANEL_BRAND
 
 DEFAULT_API_HOST = "https://boapi.smartico.ai"
 DEFAULT_INT_API_BASE = "https://go.aff.makroaffi.com"
@@ -32,6 +34,15 @@ _LEGACY_INT_API_BASES = frozenset({
     "http://api.aff.makroaffi.com",
     "api.aff.makroaffi.com",
 })
+
+# Makro TAP — Smartico Settings'teki sabitler (Default'a Aktar için)
+MAKRO_DEFAULT_AFFILIATE_ID = 41105  # MARKOBET_DEFAULT
+MAKRO_DEFAULT_DEAL_ID = 19321
+MAKRO_LABEL_ID = 4689
+MAKRO_BRAND_ID = 492
+_KNOWN_HOME_DEALS = {
+    MAKRO_DEFAULT_AFFILIATE_ID: MAKRO_DEFAULT_DEAL_ID,
+}
 
 _SETTING_API_KEY = "api_key"
 _SETTING_API_HOST = "api_host"
@@ -410,12 +421,14 @@ def fetch_affiliate_home_deal_id(conn, affiliate_id):
     TAP move sadece affiliate_id ile çoğu zaman ConstraintViolation verir;
     home deal_id ile taşınması gerekir.
     """
-    cfg = get_config(conn)
-    if not cfg["api_key"]:
-        return None
     try:
         aid = int(affiliate_id)
     except (TypeError, ValueError):
+        return None
+    if aid in _KNOWN_HOME_DEALS:
+        return _KNOWN_HOME_DEALS[aid]
+    cfg = get_config(conn)
+    if not cfg["api_key"]:
         return None
     try:
         data = _request(
@@ -861,6 +874,47 @@ def _normalize_int_api_base(base):
     return base
 
 
+def _makro_int_auth_token():
+    """Env > yoksa Smartico submit-registrations key (Makro sabit)."""
+    env = (os.environ.get("SMARTICO_INT_AUTH_TOKEN") or "").strip()
+    if env:
+        return env
+    # Settings → API Key to submit registrations and activities
+    return "f7dd005a-d03e-11ec-b22a-06104d6e754b"
+
+
+def ensure_makro_int_defaults(conn, force=False):
+    """Makro için int-api ayarlarını otomatik doldur/kaydet."""
+    if PANEL_BRAND != "makro":
+        return get_int_config(conn)
+    cfg = get_int_config(conn)
+    token = (cfg.get("authorization_token") or "").strip() or _makro_int_auth_token()
+    label_id = cfg.get("label_id") if cfg.get("label_id") is not None else MAKRO_LABEL_ID
+    brand_id = cfg.get("brand_id") if cfg.get("brand_id") is not None else MAKRO_BRAND_ID
+    default_aff = (
+        cfg.get("default_affiliate_id")
+        if cfg.get("default_affiliate_id") is not None
+        else MAKRO_DEFAULT_AFFILIATE_ID
+    )
+    base = cfg.get("int_api_base") or DEFAULT_INT_API_BASE
+    needs = force or not (
+        cfg.get("authorization_token")
+        and cfg.get("label_id")
+        and cfg.get("brand_id")
+        and cfg.get("default_affiliate_id")
+    )
+    if needs:
+        return save_int_config(
+            conn,
+            authorization_token=token,
+            label_id=label_id,
+            brand_id=brand_id,
+            int_api_base=base,
+            default_affiliate_id=default_aff,
+        )
+    return cfg
+
+
 def get_int_config(conn):
     base = _normalize_int_api_base(get_smartico_setting(conn, _SETTING_INT_API_BASE, ""))
     token = (get_smartico_setting(conn, _SETTING_INT_AUTH_TOKEN, "") or "").strip()
@@ -879,6 +933,16 @@ def get_int_config(conn):
         default_affiliate_id = int(default_aff_raw) if default_aff_raw else None
     except (TypeError, ValueError):
         default_affiliate_id = None
+    # Makro: DB boşsa runtime'da sabitleri göster (henüz kaydetmeden)
+    if PANEL_BRAND == "makro":
+        if not token:
+            token = _makro_int_auth_token()
+        if label_id is None:
+            label_id = MAKRO_LABEL_ID
+        if brand_id is None:
+            brand_id = MAKRO_BRAND_ID
+        if default_affiliate_id is None:
+            default_affiliate_id = MAKRO_DEFAULT_AFFILIATE_ID
     return {
         "int_api_base": base,
         "authorization_token": token,
@@ -1237,13 +1301,38 @@ def lookup_player_by_ext_id(conn, ext_customer_id):
     if not rows and last_error and used_group is None:
         raise SmarticoError(last_error)
 
+    default_aff = None
+    try:
+        default_aff = get_int_config(conn).get("default_affiliate_id")
+    except Exception:
+        default_aff = MAKRO_DEFAULT_AFFILIATE_ID if PANEL_BRAND == "makro" else None
+
+    def _reg_num(row):
+        try:
+            return int(str(row.get("registration_id") or "0"))
+        except (TypeError, ValueError):
+            return 0
+
     rows.sort(
         key=lambda x: (
+            -_reg_num(x),  # en yeni registration önce (default taşıma sonrası)
             -(x.get("registration_count") or 0),
             -(x.get("ftd_count") or 0),
             str(x.get("affiliate_name") or ""),
         )
     )
+    newest = _reg_num(rows[0]) if rows else 0
+    for r in rows:
+        aff_id = r.get("affiliate_id")
+        try:
+            aff_n = int(aff_id) if aff_id is not None and str(aff_id).strip() != "" else None
+        except (TypeError, ValueError):
+            aff_n = None
+        r["is_default_affiliate"] = bool(
+            default_aff is not None and aff_n is not None and aff_n == int(default_aff)
+        )
+        r["is_current"] = bool(newest and _reg_num(r) == newest)
+
     # Taşıma API'si ext_customer_id ister — registration_id ile arandıysa çöz
     resolved_ext = ""
     for r in rows:
@@ -1260,6 +1349,7 @@ def lookup_player_by_ext_id(conn, ext_customer_id):
         "group_by": used_group,
         "period": used_period,
         "currency": currency,
+        "default_affiliate_id": default_aff,
     }
 
 
@@ -1280,6 +1370,8 @@ def move_affiliate(
     TAP API null affiliate kabul etmez; Direct/Organic house ID ile temsil edilir.
     İkisi doluysa deal_id baskın.
     """
+    if PANEL_BRAND == "makro":
+        ensure_makro_int_defaults(conn)
     if not is_int_configured(conn):
         raise SmarticoError(
             "Üye taşıma ayarları eksik. int-api token, label_id ve brand_id gerekli."
@@ -1303,19 +1395,15 @@ def move_affiliate(
         except (TypeError, ValueError) as exc:
             raise ValueError("affiliate_id sayı olmalı.") from exc
 
-    if deal is None and aff is None:
-        # Boş hedef → normal link (kanal yok / organik)
+    if use_default or (deal is None and aff is None):
+        # Default'a Aktar / boş hedef → MARKOBET_DEFAULT
         if cfg.get("default_affiliate_id") is None:
             raise ValueError(
-                "Affiliate ID boş = normal link. Normal link Affiliate ID ayarlanmamış — "
+                "Normal link Affiliate ID ayarlanmamış — "
                 "int-api Ayarlar'dan MARKOBET_DEFAULT (41105) gir."
             )
         aff = int(cfg["default_affiliate_id"])
-        used_default = True
-    elif use_default and deal is None:
-        if cfg.get("default_affiliate_id") is None:
-            raise ValueError("Normal link Affiliate ID (default_affiliate_id) ayarlanmamış.")
-        aff = int(cfg["default_affiliate_id"])
+        deal = None  # home deal aşağıda çözülecek
         used_default = True
 
     # affiliate_id tek başına Smartico'da ConstraintViolation veriyor → home deal şart

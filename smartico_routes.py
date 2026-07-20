@@ -146,7 +146,7 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
     @admin_only
     def get_int_config():
         with closing(get_db()) as conn:
-            cfg = smartico_api.get_int_config(conn)
+            cfg = smartico_api.ensure_makro_int_defaults(conn)
             configured = smartico_api.is_int_configured(conn)
         return jsonify({
             "configured": configured,
@@ -234,13 +234,19 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
                         "error": "not_configured",
                         "message": "Önce Üye Taşıma ayarlarını kaydet (token, label_id, brand_id).",
                     }), 400
+                use_default = bool(
+                    data.get("use_default")
+                    or data.get("to_default")
+                    or data.get("default")
+                )
                 result = smartico_api.move_affiliate(
                     conn,
                     ext_customer_id=data.get("ext_customer_id"),
-                    affiliate_id=data.get("affiliate_id"),
-                    deal_id=data.get("deal_id"),
+                    affiliate_id=None if use_default else data.get("affiliate_id"),
+                    deal_id=None if use_default else data.get("deal_id"),
                     utm_source=data.get("utm_source"),
                     utm_medium=data.get("utm_medium"),
+                    use_default=use_default,
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
