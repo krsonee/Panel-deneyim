@@ -2478,15 +2478,21 @@
           <div class="card-body" id="move-aff-settings-box" style="display:none;">
             <p class="hint">
               Smartico / TheAffiliatePlatform <strong>int-api</strong> bilgileri (rapor API key’den ayrı).
-              Account setup’taki <code>authorization_token</code> (UUID), <code>label_id</code> ve Makrobet <code>brand_id</code>’yi gir.
-              Base URL genelde <code>https://api.aff.makroaffi.com</code>.
+              <code>authorization_token</code> = Settings → submit registrations key.
+              <strong>Default Affiliate ID</strong> = Affiliate boş bırakılınca taşınacak “kanalsız / direkt” house affiliate.
             </p>
             <form id="move-aff-config-form">
               <div class="form-row-4">
                 <div><label for="move-aff-token">authorization_token</label><input id="move-aff-token" placeholder="xxxxxxxx-xxxx-xxxx-xxxx" autocomplete="off"></div>
-                <div><label for="move-aff-label">label_id</label><input id="move-aff-label" placeholder="20040" inputmode="numeric" autocomplete="off"></div>
-                <div><label for="move-aff-brand">brand_id</label><input id="move-aff-brand" placeholder="4" inputmode="numeric" autocomplete="off"></div>
+                <div><label for="move-aff-label">label_id</label><input id="move-aff-label" placeholder="4689" inputmode="numeric" autocomplete="off"></div>
+                <div><label for="move-aff-brand">brand_id</label><input id="move-aff-brand" placeholder="492" inputmode="numeric" autocomplete="off"></div>
                 <div><label for="move-aff-base">int-api base</label><input id="move-aff-base" placeholder="https://api.aff.makroaffi.com" autocomplete="off"></div>
+              </div>
+              <div class="form-row-4" style="margin-top:0.5rem;">
+                <div>
+                  <label for="move-aff-default">Default Affiliate ID <span class="muted">(kanalsız)</span></label>
+                  <input id="move-aff-default" list="move-aff-affiliate-list" placeholder="Affiliate boşken buraya taşınır" inputmode="numeric" autocomplete="off">
+                </div>
               </div>
               <div style="margin-top:0.65rem;display:flex;gap:0.5rem;">
                 <button type="submit" class="btn btn-primary btn-sm">Ayarları Kaydet</button>
@@ -2496,8 +2502,9 @@
           </div>
           <div class="card-body">
             <p class="hint" style="margin-bottom:0.75rem;">
-              Casino oyuncu ID’sini (<code>ext_customer_id</code>) ve hedef <strong>Affiliate ID</strong> veya <strong>Deal ID</strong> gir.
-              İkisi doluysa Deal ID geçerli olur. İşlem geri alınamaz — eski kayıt TAP’te donar.
+              Oyuncu ID yaz → mevcut kanal tabloda görünür.
+              <strong>Yeni Affiliate ID boş</strong> bırakılırsa üye <strong>default (kanalsız)</strong> affiliate’e taşınır.
+              Deal ID doluysa o baskın. İşlem geri alınamaz.
             </p>
             <form id="move-aff-form">
               <div class="form-row-4">
@@ -2505,24 +2512,47 @@
                   <label for="move-aff-customer">Oyuncu ID (ext_customer_id)</label>
                   <input id="move-aff-customer" placeholder="casino player id" autocomplete="off" required>
                 </div>
+                <div style="align-self:end;">
+                  <button type="button" class="btn btn-sm" id="btn-move-aff-lookup">Kanalı Sorgula</button>
+                </div>
                 <div>
-                  <label for="move-aff-affiliate">Yeni Affiliate ID</label>
-                  <input id="move-aff-affiliate" list="move-aff-affiliate-list" placeholder="ör. 5678" inputmode="numeric" autocomplete="off">
+                  <label for="move-aff-affiliate">Yeni Affiliate ID <span class="muted">(boş = default)</span></label>
+                  <input id="move-aff-affiliate" list="move-aff-affiliate-list" placeholder="boş bırak = kanalsız" inputmode="numeric" autocomplete="off">
                   <datalist id="move-aff-affiliate-list"></datalist>
                 </div>
                 <div>
                   <label for="move-aff-deal">Deal ID <span class="muted">(opsiyonel)</span></label>
                   <input id="move-aff-deal" placeholder="boş bırakılabilir" inputmode="numeric" autocomplete="off">
                 </div>
-                <div style="align-self:end;">
-                  <button type="submit" class="btn btn-primary" id="btn-move-aff-submit">Üyeyi Taşı</button>
-                </div>
               </div>
               <div class="form-row-4" style="margin-top:0.5rem;">
                 <div><label for="move-aff-utm-source">utm_source <span class="muted">(opsiyonel)</span></label><input id="move-aff-utm-source" autocomplete="off"></div>
                 <div><label for="move-aff-utm-medium">utm_medium <span class="muted">(opsiyonel)</span></label><input id="move-aff-utm-medium" autocomplete="off"></div>
+                <div style="align-self:end;">
+                  <button type="submit" class="btn btn-primary" id="btn-move-aff-submit">Üyeyi Taşı</button>
+                </div>
               </div>
             </form>
+            <div id="move-aff-lookup-box" style="display:none;margin-top:0.85rem;">
+              <p class="muted" style="font-size:0.75rem;margin-bottom:0.4rem;" id="move-aff-lookup-status"></p>
+              <div class="table-wrap">
+                <div class="table-scroll">
+                  <table>
+                    <thead><tr>
+                      <th>Affiliate / Kanal</th>
+                      <th>Affiliate ID</th>
+                      <th>Link</th>
+                      <th>Username</th>
+                      <th>Registration ID</th>
+                      <th>Kayıt</th>
+                      <th>FTD</th>
+                      <th>Yatırım</th>
+                    </tr></thead>
+                    <tbody id="move-aff-lookup-table"><tr><td colspan="8" class="empty">—</td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
             <div id="move-aff-result" style="display:none;margin-top:0.85rem;padding:0.75rem 1rem;border-radius:8px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);"></div>
           </div>
         </section>
@@ -5519,11 +5549,15 @@
       // --- Üye Taşıma (TAP int-api) ---
       var moveAffConfigLoaded = false;
 
+      var moveAffDefaultId = null;
+      var moveAffLookupTimer = null;
+
       function renderMoveAffStatus(cfg) {
         var el = document.getElementById("move-aff-status");
         if (!el) return;
         if (cfg && cfg.configured) {
-          el.textContent = "hazır · label " + (cfg.label_id || "?") + " · brand " + (cfg.brand_id || "?");
+          var def = cfg.default_affiliate_id != null ? (" · default #" + cfg.default_affiliate_id) : " · default yok";
+          el.textContent = "hazır · label " + (cfg.label_id || "?") + " · brand " + (cfg.brand_id || "?") + def;
           el.style.color = "";
         } else {
           el.textContent = "ayar yok — önce int-api bilgilerini kaydet";
@@ -5536,17 +5570,77 @@
         fetch(API + "/api/smartico/int-config").then(function(r) { return r.json(); })
           .then(function(cfg) {
             moveAffConfigLoaded = true;
+            moveAffDefaultId = cfg.default_affiliate_id != null ? cfg.default_affiliate_id : null;
             var tokenEl = document.getElementById("move-aff-token");
             var labelEl = document.getElementById("move-aff-label");
             var brandEl = document.getElementById("move-aff-brand");
             var baseEl = document.getElementById("move-aff-base");
+            var defEl = document.getElementById("move-aff-default");
             if (tokenEl) tokenEl.placeholder = cfg.authorization_token_masked || "xxxxxxxx-xxxx-xxxx-xxxx";
             if (labelEl && cfg.label_id != null) labelEl.value = String(cfg.label_id);
             if (brandEl && cfg.brand_id != null) brandEl.value = String(cfg.brand_id);
             if (baseEl && cfg.int_api_base) baseEl.value = cfg.int_api_base;
+            if (defEl) defEl.value = cfg.default_affiliate_id != null ? String(cfg.default_affiliate_id) : "";
             renderMoveAffStatus(cfg);
           }).catch(function() {
             renderMoveAffStatus({ configured: false });
+          });
+      }
+
+      function renderMoveAffLookup(res) {
+        var box = document.getElementById("move-aff-lookup-box");
+        var status = document.getElementById("move-aff-lookup-status");
+        var tbody = document.getElementById("move-aff-lookup-table");
+        if (!box || !tbody) return;
+        box.style.display = "";
+        var rows = (res && res.rows) || [];
+        if (status) {
+          status.textContent = rows.length
+            ? (res.ext_customer_id + " · " + rows.length + " kayıt bulundu")
+            : ((res && res.ext_customer_id ? res.ext_customer_id + " · " : "") + "kayıt bulunamadı");
+        }
+        if (!rows.length) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty">Bu oyuncu ID ile aktif kanal kaydı yok</td></tr>';
+          return;
+        }
+        tbody.innerHTML = rows.map(function(r) {
+          return "<tr>" +
+            "<td>" + esc(r.affiliate_name || "—") + "</td>" +
+            "<td>" + esc(r.affiliate_id != null ? String(r.affiliate_id) : "—") + "</td>" +
+            "<td>" + esc(r.link_name || (r.link_id != null ? ("#" + r.link_id) : "—")) + "</td>" +
+            "<td>" + esc(r.username || "—") + "</td>" +
+            "<td>" + esc(r.registration_id || "—") + "</td>" +
+            "<td>" + esc(String(r.registration_count != null ? r.registration_count : 0)) + "</td>" +
+            "<td>" + esc(String(r.ftd_count != null ? r.ftd_count : 0)) + "</td>" +
+            "<td>" + esc(String(r.deposit_total != null ? r.deposit_total : 0)) + "</td>" +
+            "</tr>";
+        }).join("");
+      }
+
+      function lookupMoveAffPlayer() {
+        var customer = ((document.getElementById("move-aff-customer") || {}).value || "").trim();
+        var box = document.getElementById("move-aff-lookup-box");
+        var status = document.getElementById("move-aff-lookup-status");
+        var tbody = document.getElementById("move-aff-lookup-table");
+        if (!customer) {
+          if (box) box.style.display = "none";
+          return;
+        }
+        if (box) box.style.display = "";
+        if (status) status.textContent = "Sorgulanıyor…";
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty">Yükleniyor…</td></tr>';
+        fetch(API + "/api/smartico/lookup-player?ext_customer_id=" + encodeURIComponent(customer))
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (!res.ok) {
+              if (status) status.textContent = res.data.error || "Sorgu başarısız";
+              if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty">' + esc(res.data.error || "Hata") + "</td></tr>";
+              return;
+            }
+            renderMoveAffLookup(res.data);
+          })
+          .catch(function() {
+            if (status) status.textContent = "İstek başarısız";
           });
       }
 
@@ -5577,6 +5671,7 @@
         var labelId = (document.getElementById("move-aff-label") || {}).value || "";
         var brandId = (document.getElementById("move-aff-brand") || {}).value || "";
         var base = (document.getElementById("move-aff-base") || {}).value || "";
+        var defaultAff = (document.getElementById("move-aff-default") || {}).value || "";
         if (!labelId || !brandId) { alert("label_id ve brand_id zorunlu."); return; }
         fetch(API + "/api/smartico/int-config", {
           method: "POST",
@@ -5585,17 +5680,31 @@
             authorization_token: token.trim(),
             label_id: labelId.trim(),
             brand_id: brandId.trim(),
-            int_api_base: base.trim()
+            int_api_base: base.trim(),
+            default_affiliate_id: defaultAff.trim() || null
           })
         }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
           .then(function(res) {
             if (!res.ok) { alert(res.data.error || "Kaydedilemedi."); return; }
             var tokenEl = document.getElementById("move-aff-token");
             if (tokenEl) { tokenEl.value = ""; tokenEl.placeholder = res.data.authorization_token_masked || ""; }
+            moveAffDefaultId = res.data.default_affiliate_id != null ? res.data.default_affiliate_id : null;
             renderMoveAffStatus(res.data);
             document.getElementById("move-aff-settings-box").style.display = "none";
             toast("Üye taşıma int-api ayarları kaydedildi!");
           });
+      });
+
+      bindOptional("btn-move-aff-lookup", "click", function() { lookupMoveAffPlayer(); });
+      bindOptional("move-aff-customer", "input", function() {
+        clearTimeout(moveAffLookupTimer);
+        moveAffLookupTimer = setTimeout(lookupMoveAffPlayer, 650);
+      });
+      bindOptional("move-aff-customer", "keydown", function(e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          lookupMoveAffPlayer();
+        }
       });
 
       bindOptional("btn-move-aff-clear", "click", function() {
@@ -5603,10 +5712,11 @@
         fetch(API + "/api/smartico/int-config", { method: "DELETE" })
           .then(function(r) { return r.json(); })
           .then(function() {
-            ["move-aff-token", "move-aff-label", "move-aff-brand"].forEach(function(id) {
+            ["move-aff-token", "move-aff-label", "move-aff-brand", "move-aff-default"].forEach(function(id) {
               var el = document.getElementById(id);
               if (el) el.value = "";
             });
+            moveAffDefaultId = null;
             renderMoveAffStatus({ configured: false });
             toast("Üye taşıma ayarları silindi.");
           });
@@ -5620,9 +5730,14 @@
         var utmSource = ((document.getElementById("move-aff-utm-source") || {}).value || "").trim();
         var utmMedium = ((document.getElementById("move-aff-utm-medium") || {}).value || "").trim();
         if (!customer) { alert("Oyuncu ID gerekli."); return; }
-        if (!affiliateId && !dealId) { alert("Affiliate ID veya Deal ID gir."); return; }
+        if (!affiliateId && !dealId && moveAffDefaultId == null) {
+          alert("Affiliate boş. Önce int-api Ayarlar'dan Default Affiliate ID (kanalsız) kaydet.");
+          return;
+        }
         var msg = "Oyuncu " + customer + " → ";
-        msg += dealId ? ("deal #" + dealId) : ("affiliate #" + affiliateId);
+        if (dealId) msg += "deal #" + dealId;
+        else if (affiliateId) msg += "affiliate #" + affiliateId;
+        else msg += "default (kanalsız) #" + moveAffDefaultId;
         msg += " taşınacak. Eski kayıt donar. Devam?";
         if (!confirm(msg)) return;
         var btn = document.getElementById("btn-move-aff-submit");

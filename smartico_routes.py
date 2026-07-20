@@ -156,6 +156,7 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
             ),
             "label_id": cfg["label_id"],
             "brand_id": cfg["brand_id"],
+            "default_affiliate_id": cfg.get("default_affiliate_id"),
         })
 
     @bp.route("/int-config", methods=["POST"])
@@ -168,12 +169,15 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
                 # Token boşsa mevcut token korunur (sadece label/brand güncelleme)
                 existing = smartico_api.get_int_config(conn)
                 token = (data.get("authorization_token") or "").strip() or existing["authorization_token"]
+                # default_affiliate_id gönderilmezse mevcut korunur
+                default_aff = data.get("default_affiliate_id", existing.get("default_affiliate_id"))
                 cfg = smartico_api.save_int_config(
                     conn,
                     authorization_token=token,
                     label_id=data.get("label_id"),
                     brand_id=data.get("brand_id"),
                     int_api_base=data.get("int_api_base"),
+                    default_affiliate_id=default_aff,
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -183,6 +187,7 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
             "authorization_token_masked": smartico_api.mask_key(cfg["authorization_token"]),
             "label_id": cfg["label_id"],
             "brand_id": cfg["brand_id"],
+            "default_affiliate_id": cfg.get("default_affiliate_id"),
         })
 
     @bp.route("/int-config", methods=["DELETE"])
@@ -193,11 +198,31 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
             smartico_api.clear_int_config(conn)
         return jsonify({"ok": True})
 
+    @bp.route("/lookup-player", methods=["GET"])
+    @perm(*MODULE_ACCESS)
+    @admin_only
+    def lookup_player():
+        """ext_customer_id ile mevcut affiliate/kanal kayıtlarını getir."""
+        ext_id = (request.args.get("ext_customer_id") or "").strip()
+        if not ext_id:
+            return jsonify({"error": "ext_customer_id gerekli."}), 400
+        try:
+            with closing(get_db()) as conn:
+                result = smartico_api.lookup_player_by_ext_id(conn, ext_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except smartico_api.SmarticoError as exc:
+            return jsonify({"error": str(exc)}), 502
+        return jsonify(result)
+
     @bp.route("/move-affiliate", methods=["POST"])
     @perm(*MODULE_ACCESS)
     @admin_only
     def move_affiliate():
-        """Oyuncuyu yeni affiliate/deal altına taşı (TAP cid 30062)."""
+        """Oyuncuyu yeni affiliate/deal altına taşı (TAP cid 30062).
+
+        affiliate_id + deal_id boşsa default_affiliate_id (kanalsız) kullanılır.
+        """
         data = request.get_json(silent=True) or {}
         try:
             with closing(get_db()) as conn:

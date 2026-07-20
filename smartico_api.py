@@ -33,6 +33,7 @@ _SETTING_INT_API_BASE = "int_api_base"
 _SETTING_INT_AUTH_TOKEN = "int_authorization_token"
 _SETTING_LABEL_ID = "label_id"
 _SETTING_BRAND_ID = "brand_id"
+_SETTING_DEFAULT_AFFILIATE_ID = "default_affiliate_id"
 
 _HTTP_TIMEOUT = 8
 _INT_HTTP_TIMEOUT = 20
@@ -809,6 +810,7 @@ def get_int_config(conn):
     token = (get_smartico_setting(conn, _SETTING_INT_AUTH_TOKEN, "") or "").strip()
     label_raw = (get_smartico_setting(conn, _SETTING_LABEL_ID, "") or "").strip()
     brand_raw = (get_smartico_setting(conn, _SETTING_BRAND_ID, "") or "").strip()
+    default_aff_raw = (get_smartico_setting(conn, _SETTING_DEFAULT_AFFILIATE_ID, "") or "").strip()
     try:
         label_id = int(label_raw) if label_raw else None
     except (TypeError, ValueError):
@@ -817,11 +819,16 @@ def get_int_config(conn):
         brand_id = int(brand_raw) if brand_raw else None
     except (TypeError, ValueError):
         brand_id = None
+    try:
+        default_affiliate_id = int(default_aff_raw) if default_aff_raw else None
+    except (TypeError, ValueError):
+        default_affiliate_id = None
     return {
         "int_api_base": base or DEFAULT_INT_API_BASE,
         "authorization_token": token,
         "label_id": label_id,
         "brand_id": brand_id,
+        "default_affiliate_id": default_affiliate_id,
     }
 
 
@@ -830,7 +837,14 @@ def is_int_configured(conn):
     return bool(cfg["authorization_token"] and cfg["label_id"] and cfg["brand_id"])
 
 
-def save_int_config(conn, authorization_token, label_id, brand_id, int_api_base=None):
+def save_int_config(
+    conn,
+    authorization_token,
+    label_id,
+    brand_id,
+    int_api_base=None,
+    default_affiliate_id=None,
+):
     token = (authorization_token or "").strip()
     base = (int_api_base or "").strip().rstrip("/") or DEFAULT_INT_API_BASE
     try:
@@ -843,10 +857,19 @@ def save_int_config(conn, authorization_token, label_id, brand_id, int_api_base=
         raise ValueError("brand_id sayı olmalı.") from exc
     if not token:
         raise ValueError("authorization_token boş olamaz.")
+    default_aff = None
+    if default_affiliate_id is not None and str(default_affiliate_id).strip() != "":
+        try:
+            default_aff = int(default_affiliate_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("default_affiliate_id sayı olmalı.") from exc
     upsert_smartico_setting(conn, _SETTING_INT_AUTH_TOKEN, token)
     upsert_smartico_setting(conn, _SETTING_LABEL_ID, str(lid))
     upsert_smartico_setting(conn, _SETTING_BRAND_ID, str(bid))
     upsert_smartico_setting(conn, _SETTING_INT_API_BASE, base)
+    upsert_smartico_setting(
+        conn, _SETTING_DEFAULT_AFFILIATE_ID, str(default_aff) if default_aff is not None else ""
+    )
     _int_jwt["token"] = None
     _int_jwt["expires_at"] = None
     _int_jwt["label_id"] = None
@@ -857,6 +880,7 @@ def clear_int_config(conn):
     upsert_smartico_setting(conn, _SETTING_INT_AUTH_TOKEN, "")
     upsert_smartico_setting(conn, _SETTING_LABEL_ID, "")
     upsert_smartico_setting(conn, _SETTING_BRAND_ID, "")
+    upsert_smartico_setting(conn, _SETTING_DEFAULT_AFFILIATE_ID, "")
     _int_jwt["token"] = None
     _int_jwt["expires_at"] = None
     _int_jwt["label_id"] = None
@@ -957,6 +981,108 @@ def _int_api_post(conn, body):
         raise
 
 
+def lookup_player_by_ext_id(conn, ext_customer_id):
+    """ext_customer_id ile oyuncunun mevcut affiliate/kanal kayıtlarını getir.
+
+    boapi media report (Registrations yetkisi gerekir). Lifetime aggregate.
+    """
+    cfg = get_config(conn)
+    if not cfg["api_key"]:
+        raise SmarticoError(
+            "Smartico rapor API anahtarı yok (Link Takip → Smartico Ayarlar). "
+            "Oyuncu sorgusu için Media reports key gerekli."
+        )
+    ext_id = (ext_customer_id or "").strip()
+    if not ext_id:
+        raise ValueError("ext_customer_id gerekli.")
+
+    int_cfg = get_int_config(conn)
+    group_attempts = [
+        "affiliate_id,link_id,ext_customer_id,username,registration_id",
+        "affiliate_id,ext_customer_id,username,registration_id",
+        "affiliate_id,ext_customer_id,username",
+        "affiliate_id,ext_customer_id",
+    ]
+    last_error = None
+    data = None
+    used_group = None
+    for group_by in group_attempts:
+        params = {"group_by": group_by}
+        if int_cfg.get("brand_id"):
+            params["brand_id"] = str(int_cfg["brand_id"])
+        try:
+            data = _request(
+                cfg["api_host"], "af2_media_report_op", cfg["api_key"], params,
+                timeout=_PLAYER_HTTP_TIMEOUT,
+            )
+        except SmarticoError as exc:
+            last_error = str(exc)
+            data = None
+            continue
+        if isinstance(data, dict) and isinstance(data.get("data"), list):
+            used_group = group_by
+            break
+        if isinstance(data, str) and data.strip():
+            last_error = f"Smartico API hatası: {data.strip()}"
+        else:
+            last_error = "Smartico API beklenmeyen cevap."
+        data = None
+
+    if data is None:
+        raise SmarticoError(last_error or "Oyuncu sorgusu başarısız.")
+
+    aff_names = fetch_affiliate_names(conn)
+    needle = ext_id.lower()
+    rows = []
+    for r in data.get("data") or []:
+        if not isinstance(r, dict):
+            continue
+        rid = str(r.get("ext_customer_id") or "").strip()
+        if not rid or rid.lower() != needle:
+            continue
+        # Sadece gerçek kayıt satırları (saf ziyaret gürültüsü at)
+        if (
+            _num(r.get("registration_count")) <= 0
+            and not str(r.get("registration_id") or "").strip()
+            and not str(r.get("username") or "").strip()
+        ):
+            continue
+        aff_id = r.get("affiliate_id")
+        rows.append({
+            "ext_customer_id": rid,
+            "username": str(r.get("username") or "").strip(),
+            "registration_id": str(r.get("registration_id") or "").strip(),
+            "affiliate_id": aff_id,
+            "affiliate_name": (
+                aff_names.get(str(aff_id))
+                if aff_id is not None
+                else None
+            ) or (f"Affiliate #{aff_id}" if aff_id is not None else "—"),
+            "link_id": r.get("link_id"),
+            "link_name": str(r.get("link_name") or "").strip(),
+            "brand_id": r.get("brand_id"),
+            "brand_name": str(r.get("brand_name") or "").strip(),
+            "registration_count": int(_num(r.get("registration_count"))),
+            "ftd_count": int(_num(r.get("ftd_count"))),
+            "deposit_total": round(_num(r.get("deposit_total")), 2),
+        })
+
+    rows.sort(
+        key=lambda x: (
+            -(x.get("registration_count") or 0),
+            -(x.get("ftd_count") or 0),
+            str(x.get("affiliate_name") or ""),
+        )
+    )
+    return {
+        "ext_customer_id": ext_id,
+        "rows": rows,
+        "count": len(rows),
+        "group_by": used_group,
+        "currency": (data.get("meta") or {}).get("operator_currency") or "",
+    }
+
+
 def move_affiliate(
     conn,
     *,
@@ -965,10 +1091,13 @@ def move_affiliate(
     deal_id=None,
     utm_source=None,
     utm_medium=None,
+    use_default=False,
 ):
     """Oyuncuyu yeni affiliate / deal altına taşı (cid 30062).
 
-    affiliate_id veya deal_id'den en az biri zorunlu; ikisi varsa deal_id baskın.
+    affiliate_id ve deal_id boşsa (veya use_default=True) ayardaki
+    default_affiliate_id kullanılır — genelde 'direkt / kanalsız' house aff.
+    İkisi doluysa deal_id baskın.
     """
     if not is_int_configured(conn):
         raise SmarticoError(
@@ -978,8 +1107,10 @@ def move_affiliate(
     if not ext_id:
         raise ValueError("ext_customer_id (casino oyuncu ID) gerekli.")
 
+    cfg = get_int_config(conn)
     deal = None
     aff = None
+    used_default = False
     if deal_id is not None and str(deal_id).strip() != "":
         try:
             deal = int(deal_id)
@@ -990,10 +1121,22 @@ def move_affiliate(
             aff = int(affiliate_id)
         except (TypeError, ValueError) as exc:
             raise ValueError("affiliate_id sayı olmalı.") from exc
-    if deal is None and aff is None:
-        raise ValueError("affiliate_id veya deal_id gerekli.")
 
-    cfg = get_int_config(conn)
+    if deal is None and aff is None:
+        # Boş hedef → default affiliate (kanalsız / direkt house)
+        if cfg.get("default_affiliate_id") is None:
+            raise ValueError(
+                "Affiliate ID boş. Default (kanalsız) affiliate ayarlanmamış — "
+                "int-api Ayarlar'dan default_affiliate_id gir."
+            )
+        aff = int(cfg["default_affiliate_id"])
+        used_default = True
+    elif use_default and deal is None:
+        if cfg.get("default_affiliate_id") is None:
+            raise ValueError("default_affiliate_id ayarlanmamış.")
+        aff = int(cfg["default_affiliate_id"])
+        used_default = True
+
     body = {
         "cid": _MOVE_AFFILIATE_CID,
         "brand_id": cfg["brand_id"],
@@ -1021,15 +1164,20 @@ def move_affiliate(
             or f"Üye taşınamadı (errCode={err_i}). Smartico support ile kontrol et."
         )
 
+    msg = payload.get("message") or "Affiliate taşındı."
+    if used_default:
+        msg = f"Default (kanalsız) affiliate #{aff} altına taşındı. " + msg
+
     return {
         "ok": True,
         "cid": payload.get("cid"),
         "errCode": err_i,
         "new_registration_id": payload.get("new_registration_id"),
-        "message": payload.get("message") or "Affiliate taşındı.",
+        "message": msg,
         "call_uid": payload.get("call_uid"),
         "ext_customer_id": ext_id,
         "affiliate_id": aff,
         "deal_id": deal,
         "brand_id": cfg["brand_id"],
+        "used_default": used_default,
     }
