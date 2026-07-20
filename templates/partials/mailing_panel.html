@@ -581,11 +581,15 @@
               </label>
             </div>
           </div>
-          <div id="mail-camp-mode-tag">
-            <label>Hedef etiket</label>
-            <select id="mail-camp-tag">
-              <option value="">Tüm aktif kontaklar</option>
-            </select>
+          <div id="mail-camp-mode-tag" style="grid-column:1/-1;">
+            <label>Hedef etiket(ler) — birden fazla seçilebilir (birleşim / OR)</label>
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin:0.35rem 0 0.45rem;">
+              <button type="button" class="btn btn-sm" id="mail-camp-tag-all">Tümünü seç</button>
+              <button type="button" class="btn btn-sm" id="mail-camp-tag-none">Temizle</button>
+              <span class="hint" id="mail-camp-tag-picked" style="margin:0;align-self:center;">Seçim yok = tüm aktif kontaklar</span>
+            </div>
+            <div class="mail-camp-tag-list" id="mail-camp-tag-list" aria-label="Kampanya etiketleri"></div>
+            <input type="hidden" id="mail-camp-tag" value="">
           </div>
           <div id="mail-camp-mode-selected" hidden style="grid-column:1/-1;">
             <p class="hint" id="mail-camp-selected-hint" style="margin:0;">Mail Rehber’de kişi seçip «Seçilileri kampanyaya» de — veya burada bekleyen seçim yok.</p>
@@ -613,7 +617,7 @@
         </form>
         <p class="hint" id="mail-camp-preview-hint" style="margin-top:0.65rem;"></p>
         <p class="hint" style="margin-top:0.35rem;">
-          Alıcı: etiket / Mail Rehber seçimi / elle e-posta → taslak → <strong>Şimdi gönder</strong>.
+          Alıcı: bir veya birden fazla etiket (birleşim) / Mail Rehber seçimi / elle e-posta → taslak → <strong>Şimdi gönder</strong>.
           Ayarlar’da mod <code>smtp</code> ise gerçek mail; <code>stub</code> ise simülasyon.
         </p>
       </div>

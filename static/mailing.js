@@ -1777,22 +1777,59 @@
     });
   }
 
+  function mailCampSelectedTags() {
+    var box = document.getElementById("mail-camp-tag-list");
+    if (!box) return [];
+    return Array.prototype.map.call(
+      box.querySelectorAll('input[type="checkbox"]:checked'),
+      function (el) { return el.value; }
+    ).filter(Boolean);
+  }
+
+  function mailSyncCampTagHidden() {
+    var tags = mailCampSelectedTags();
+    var hidden = document.getElementById("mail-camp-tag");
+    if (hidden) hidden.value = tags.join(", ");
+    var picked = document.getElementById("mail-camp-tag-picked");
+    if (picked) {
+      if (!tags.length) picked.textContent = "Seçim yok = tüm aktif kontaklar";
+      else if (tags.length === 1) picked.textContent = "1 etiket: " + tags[0];
+      else picked.textContent = tags.length + " etiket (birleşim): " + tags.join(", ");
+    }
+    var box = document.getElementById("mail-camp-tag-list");
+    if (box) {
+      box.querySelectorAll(".mail-camp-tag-item").forEach(function (lab) {
+        var inp = lab.querySelector('input[type="checkbox"]');
+        lab.classList.toggle("is-checked", !!(inp && inp.checked));
+      });
+    }
+  }
+
   function mailFillCampTagSelect() {
-    var sel = document.getElementById("mail-camp-tag");
-    if (!sel) return;
-    var cur = sel.value;
+    var box = document.getElementById("mail-camp-tag-list");
+    if (!box) return;
+    var prev = {};
+    mailCampSelectedTags().forEach(function (t) { prev[t] = true; });
     var countMap = {};
     (mailTagCounts || []).forEach(function (t) { countMap[t.name] = t.count; });
     var names = {};
     (mailTags || []).forEach(function (t) { if (t && t.name) names[t.name] = true; });
     (mailTagCounts || []).forEach(function (t) { if (t && t.name) names[t.name] = true; });
     var list = Object.keys(names).sort(function (a, b) { return a.localeCompare(b, "tr"); });
-    sel.innerHTML = '<option value="">Tüm aktif kontaklar</option>' + list.map(function (name) {
+    if (!list.length) {
+      box.innerHTML = '<span class="muted">Önce etiket oluştur</span>';
+      mailSyncCampTagHidden();
+      return;
+    }
+    box.innerHTML = list.map(function (name) {
       var c = countMap[name];
       var label = c == null ? name : (name + " (" + fmtNum(c) + ")");
-      return '<option value="' + esc(name) + '">' + esc(label) + "</option>";
+      var checked = prev[name] ? " checked" : "";
+      return '<label class="mail-camp-tag-item' + (prev[name] ? " is-checked" : "") + '">' +
+        '<input type="checkbox" value="' + esc(name) + '"' + checked + "> " +
+        "<span>" + esc(label) + "</span></label>";
     }).join("");
-    if (cur) sel.value = cur;
+    mailSyncCampTagHidden();
   }
 
   function mailCampStatusLabel(status) {
@@ -2819,9 +2856,11 @@
       var rateVal = rateEl && rateEl.value ? Number(rateEl.value) : 120;
       var onlyV = document.getElementById("mail-camp-only-verified");
       var mode = mailCampRecipientMode();
+      var tags = mode === "tag" ? mailCampSelectedTags() : [];
       var body = {
         recipient_mode: mode,
-        tag_filter: mode === "tag" ? ((document.getElementById("mail-camp-tag").value || "").trim()) : "",
+        tag_filter: tags.join(", "),
+        tag_filters: tags,
         max_recipients: maxVal,
         rate_per_minute: rateVal || 120,
         scheduled_at: (document.getElementById("mail-camp-schedule").value || "").trim(),
@@ -2841,6 +2880,25 @@
       radio.addEventListener("change", mailSyncCampRecipientModeUI);
     });
     mailSyncCampRecipientModeUI();
+
+    var campTagList = document.getElementById("mail-camp-tag-list");
+    if (campTagList) {
+      campTagList.addEventListener("change", function (e) {
+        if (e.target && e.target.matches('input[type="checkbox"]')) mailSyncCampTagHidden();
+      });
+    }
+    bindClick("mail-camp-tag-all", function () {
+      var box = document.getElementById("mail-camp-tag-list");
+      if (!box) return;
+      box.querySelectorAll('input[type="checkbox"]').forEach(function (el) { el.checked = true; });
+      mailSyncCampTagHidden();
+    });
+    bindClick("mail-camp-tag-none", function () {
+      var box = document.getElementById("mail-camp-tag-list");
+      if (!box) return;
+      box.querySelectorAll('input[type="checkbox"]').forEach(function (el) { el.checked = false; });
+      mailSyncCampTagHidden();
+    });
 
     bindClick("mail-contacts-to-campaign", function () {
       var ids = mailSelectedContactIds();
@@ -2900,7 +2958,13 @@
           if (!res || !res.ok) { hint.textContent = "Hesaplanamadı"; return; }
           var total = res.data.matching_count || 0;
           var willAttach = res.data.will_attach != null ? res.data.will_attach : total;
-          hint.textContent = "Filtreye uyan: " + fmtNum(total) + " kişi · bu kampanyaya eklenecek: " + fmtNum(willAttach) + " kişi";
+          var tags = res.data.tag_filters || [];
+          var tagBit = tags.length
+            ? (" · etiket: " + tags.join(", ") + (tags.length > 1 ? " (birleşim)" : ""))
+            : "";
+          var approxBit = res.data.approx ? " (yaklaşık)" : "";
+          hint.textContent = "Filtreye uyan: " + fmtNum(total) + approxBit +
+            " kişi · eklenecek: " + fmtNum(willAttach) + " kişi" + tagBit;
         });
     });
     bindClick("mail-camp-refresh", mailLoadCampaigns);

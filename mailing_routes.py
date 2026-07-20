@@ -269,6 +269,48 @@ def _tag_match_clause(tag, column="tags"):
     return f"{column} LIKE ?", (f'%"{tag}"%',)
 
 
+def _parse_tag_filter_list(tag_filter):
+    """tag_filter string / virgüllü liste / tag_filters[] → benzersiz etiket listesi."""
+    if isinstance(tag_filter, (list, tuple)):
+        raw_parts = [str(x) for x in tag_filter]
+    else:
+        raw = (tag_filter or "").strip()
+        if not raw:
+            return []
+        raw_parts = re.split(r"[,|;]+", raw)
+    out = []
+    seen = set()
+    for part in raw_parts:
+        t = (part or "").strip()
+        if not t or t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+    return out
+
+
+def _normalize_tag_filter_storage(tag_filter):
+    """DB tag_filter kolonuna yazılacak biçim: 'a, b' veya ''."""
+    tags = _parse_tag_filter_list(tag_filter)
+    return ", ".join(tags)
+
+
+def _tag_match_any_clause(tags, column="tags"):
+    """Birden fazla etiket → OR (herhangi birinde olan kontak)."""
+    tags = _parse_tag_filter_list(tags)
+    if not tags:
+        return "1=1", ()
+    if len(tags) == 1:
+        return _tag_match_clause(tags[0], column)
+    parts = []
+    params = []
+    for t in tags:
+        clause, tparams = _tag_match_clause(t, column)
+        parts.append(f"({clause})")
+        params.extend(tparams)
+    return "(" + " OR ".join(parts) + ")", tuple(params)
+
+
 def _contact_out(row):
     d = _row(row) if not isinstance(row, dict) else dict(row)
     if not d:
@@ -671,15 +713,18 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
 
 def _campaign_selection_where(tag_filter, exclude_previously_sent, only_verified=False):
     """Kampanya alıcı seçiminde kullanılan WHERE + params — hem sayım
-    önizlemesinde hem gerçek eklemede aynı filtre mantığı kullanılsın diye."""
+    önizlemesinde hem gerçek eklemede aynı filtre mantığı kullanılsın diye.
+
+    tag_filter: tek etiket, 'a, b' veya liste — birden fazla ise OR (birleşim).
+    """
     clauses = [
         "unsubscribed = 0",
         "NOT EXISTS (SELECT 1 FROM mail_suppressions s WHERE s.email = LOWER(mail_contacts.email))",
     ]
     params = []
-    tag_filter = (tag_filter or "").strip()
-    if tag_filter:
-        clause, tparams = _tag_match_clause(tag_filter)
+    tags = _parse_tag_filter_list(tag_filter)
+    if tags:
+        clause, tparams = _tag_match_any_clause(tags)
         clauses.append(clause)
         params.extend(tparams)
     if exclude_previously_sent:
@@ -2878,7 +2923,11 @@ def create_mailing_blueprint(permission_required):
         if not domain_id:
             return jsonify({"error": "Domain seçin."}), 400
         now = iso(utcnow())
-        tag_filter = (data.get("tag_filter") or "").strip()
+        # tag_filters[] öncelikli; yoksa tag_filter (tek / virgüllü)
+        if data.get("tag_filters") is not None:
+            tag_filter = _normalize_tag_filter_storage(data.get("tag_filters"))
+        else:
+            tag_filter = _normalize_tag_filter_storage(data.get("tag_filter"))
         max_recipients = data.get("max_recipients")
         try:
             max_recipients = int(max_recipients)
@@ -2982,7 +3031,11 @@ def create_mailing_blueprint(permission_required):
     def preview_campaign_selection():
         """Kampanya oluşturmadan önce filtreye kaç kişinin denk geldiğini gösterir."""
         data = request.get_json(silent=True) or {}
-        tag_filter = (data.get("tag_filter") or "").strip()
+        if data.get("tag_filters") is not None:
+            tag_filter = _normalize_tag_filter_storage(data.get("tag_filters"))
+        else:
+            tag_filter = _normalize_tag_filter_storage(data.get("tag_filter"))
+        tags_list = _parse_tag_filter_list(tag_filter)
         exclude_sent = data.get("exclude_previously_sent")
         exclude_sent = True if exclude_sent is None else bool(exclude_sent)
         max_recipients = data.get("max_recipients")
@@ -3032,8 +3085,19 @@ def create_mailing_blueprint(permission_required):
                     tag_filter, exclude_sent, only_verified=only_verified,
                 )
                 total = None
-                if tag_filter and not exclude_sent and not only_verified:
-                    total = _registry_tag_count(conn, tag_filter)
+                # Tek etiket + ek filtre yok → registry hızlı sayım
+                if len(tags_list) == 1 and not exclude_sent and not only_verified:
+                    total = _registry_tag_count(conn, tags_list[0])
+                if total is None and tags_list:
+                    try:
+                        total = int(scalar(
+                            conn,
+                            f"SELECT COUNT(*) FROM mail_contacts WHERE {where_sql}",
+                            tuple(params),
+                        ) or 0)
+                        approx = False
+                    except Exception:
+                        total = None
                 if total is None:
                     try:
                         total, approx = _approx_contact_total(conn)
@@ -3048,6 +3112,7 @@ def create_mailing_blueprint(permission_required):
             "max_recipients": max_recipients,
             "approx": approx,
             "recipient_mode": recipient_mode,
+            "tag_filters": tags_list,
         })
 
     @bp.route("/campaigns/<int:campaign_id>", methods=["PATCH"])
