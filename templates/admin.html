@@ -3398,8 +3398,18 @@
       function applyRoleToPermGrid(roleKey, containerId) {
         var t = roleTemplates[roleKey];
         if (!t) return;
+        // Özel yetki: checkbox'ları şablonla sıfırlama — mevcut seçimler kalsın
+        if (roleKey === "custom") {
+          document.querySelectorAll("#"+containerId+" .perm-chip").forEach(function(chip) {
+            var cb = chip.querySelector(".perm-cb");
+            if (!cb) return;
+            cb.disabled = false;
+            chip.classList.toggle("is-locked", false);
+          });
+          return;
+        }
         var perms = t.permissions || [];
-        var locked = roleKey !== "custom" && roleKey !== "superadmin";
+        var locked = roleKey !== "superadmin";
         document.querySelectorAll("#"+containerId+" .perm-chip").forEach(function(chip) {
           var cb = chip.querySelector(".perm-cb");
           if (!cb) return;
