@@ -2466,6 +2466,66 @@
             </div>
           </div>
         </section>
+
+        <section class="card" data-perm="tracking.smartico" data-superadmin-only="1">
+          <div class="card-head">
+            <span>Üye Taşıma <span class="muted" style="font-weight:400;font-size:0.72rem;">(TAP · oyuncuyu başka affiliate’e taşı)</span></span>
+            <div class="card-actions">
+              <span class="muted" id="move-aff-status" style="font-size:0.72rem;"></span>
+              <button type="button" class="btn btn-sm" id="btn-move-aff-settings">⚙️ int-api Ayarlar</button>
+            </div>
+          </div>
+          <div class="card-body" id="move-aff-settings-box" style="display:none;">
+            <p class="hint">
+              Smartico / TheAffiliatePlatform <strong>int-api</strong> bilgileri (rapor API key’den ayrı).
+              Account setup’taki <code>authorization_token</code> (UUID), <code>label_id</code> ve Makrobet <code>brand_id</code>’yi gir.
+              Base URL genelde <code>https://api.aff.makroaffi.com</code>.
+            </p>
+            <form id="move-aff-config-form">
+              <div class="form-row-4">
+                <div><label for="move-aff-token">authorization_token</label><input id="move-aff-token" placeholder="xxxxxxxx-xxxx-xxxx-xxxx" autocomplete="off"></div>
+                <div><label for="move-aff-label">label_id</label><input id="move-aff-label" placeholder="20040" inputmode="numeric" autocomplete="off"></div>
+                <div><label for="move-aff-brand">brand_id</label><input id="move-aff-brand" placeholder="4" inputmode="numeric" autocomplete="off"></div>
+                <div><label for="move-aff-base">int-api base</label><input id="move-aff-base" placeholder="https://api.aff.makroaffi.com" autocomplete="off"></div>
+              </div>
+              <div style="margin-top:0.65rem;display:flex;gap:0.5rem;">
+                <button type="submit" class="btn btn-primary btn-sm">Ayarları Kaydet</button>
+                <button type="button" class="btn btn-danger btn-sm" id="btn-move-aff-clear">Ayarları Sil</button>
+              </div>
+            </form>
+          </div>
+          <div class="card-body">
+            <p class="hint" style="margin-bottom:0.75rem;">
+              Casino oyuncu ID’sini (<code>ext_customer_id</code>) ve hedef <strong>Affiliate ID</strong> veya <strong>Deal ID</strong> gir.
+              İkisi doluysa Deal ID geçerli olur. İşlem geri alınamaz — eski kayıt TAP’te donar.
+            </p>
+            <form id="move-aff-form">
+              <div class="form-row-4">
+                <div>
+                  <label for="move-aff-customer">Oyuncu ID (ext_customer_id)</label>
+                  <input id="move-aff-customer" placeholder="casino player id" autocomplete="off" required>
+                </div>
+                <div>
+                  <label for="move-aff-affiliate">Yeni Affiliate ID</label>
+                  <input id="move-aff-affiliate" list="move-aff-affiliate-list" placeholder="ör. 5678" inputmode="numeric" autocomplete="off">
+                  <datalist id="move-aff-affiliate-list"></datalist>
+                </div>
+                <div>
+                  <label for="move-aff-deal">Deal ID <span class="muted">(opsiyonel)</span></label>
+                  <input id="move-aff-deal" placeholder="boş bırakılabilir" inputmode="numeric" autocomplete="off">
+                </div>
+                <div style="align-self:end;">
+                  <button type="submit" class="btn btn-primary" id="btn-move-aff-submit">Üyeyi Taşı</button>
+                </div>
+              </div>
+              <div class="form-row-4" style="margin-top:0.5rem;">
+                <div><label for="move-aff-utm-source">utm_source <span class="muted">(opsiyonel)</span></label><input id="move-aff-utm-source" autocomplete="off"></div>
+                <div><label for="move-aff-utm-medium">utm_medium <span class="muted">(opsiyonel)</span></label><input id="move-aff-utm-medium" autocomplete="off"></div>
+              </div>
+            </form>
+            <div id="move-aff-result" style="display:none;margin-top:0.85rem;padding:0.75rem 1rem;border-radius:8px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);"></div>
+          </div>
+        </section>
         {% endif %}
 
         <section class="card" data-perm="tracking.players">
@@ -5455,6 +5515,158 @@
           loadSmarticoReport(true);
         });
       });
+
+      // --- Üye Taşıma (TAP int-api) ---
+      var moveAffConfigLoaded = false;
+
+      function renderMoveAffStatus(cfg) {
+        var el = document.getElementById("move-aff-status");
+        if (!el) return;
+        if (cfg && cfg.configured) {
+          el.textContent = "hazır · label " + (cfg.label_id || "?") + " · brand " + (cfg.brand_id || "?");
+          el.style.color = "";
+        } else {
+          el.textContent = "ayar yok — önce int-api bilgilerini kaydet";
+          el.style.color = "#f87171";
+        }
+      }
+
+      function loadMoveAffConfig() {
+        if (!hasPerm("tracking.smartico")) return;
+        fetch(API + "/api/smartico/int-config").then(function(r) { return r.json(); })
+          .then(function(cfg) {
+            moveAffConfigLoaded = true;
+            var tokenEl = document.getElementById("move-aff-token");
+            var labelEl = document.getElementById("move-aff-label");
+            var brandEl = document.getElementById("move-aff-brand");
+            var baseEl = document.getElementById("move-aff-base");
+            if (tokenEl) tokenEl.placeholder = cfg.authorization_token_masked || "xxxxxxxx-xxxx-xxxx-xxxx";
+            if (labelEl && cfg.label_id != null) labelEl.value = String(cfg.label_id);
+            if (brandEl && cfg.brand_id != null) brandEl.value = String(cfg.brand_id);
+            if (baseEl && cfg.int_api_base) baseEl.value = cfg.int_api_base;
+            renderMoveAffStatus(cfg);
+          }).catch(function() {
+            renderMoveAffStatus({ configured: false });
+          });
+      }
+
+      function fillMoveAffAffiliateDatalist() {
+        var list = document.getElementById("move-aff-affiliate-list");
+        if (!list) return;
+        loadSmarticoAffiliateList(function() {
+          var rows = smarticoAffiliateList || [];
+          if (!rows.length) return;
+          list.innerHTML = rows.map(function(r) {
+            var id = r.affiliate_id;
+            var name = r.affiliate_name || ("#" + id);
+            return '<option value="' + esc(String(id)) + '">' + esc(name) + "</option>";
+          }).join("");
+        });
+      }
+
+      bindOptional("btn-move-aff-settings", "click", function() {
+        var box = document.getElementById("move-aff-settings-box");
+        if (!box) return;
+        box.style.display = box.style.display === "none" ? "" : "none";
+        if (box.style.display !== "none" && !moveAffConfigLoaded) loadMoveAffConfig();
+      });
+
+      bindOptional("move-aff-config-form", "submit", function(e) {
+        e.preventDefault();
+        var token = (document.getElementById("move-aff-token") || {}).value || "";
+        var labelId = (document.getElementById("move-aff-label") || {}).value || "";
+        var brandId = (document.getElementById("move-aff-brand") || {}).value || "";
+        var base = (document.getElementById("move-aff-base") || {}).value || "";
+        if (!labelId || !brandId) { alert("label_id ve brand_id zorunlu."); return; }
+        fetch(API + "/api/smartico/int-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            authorization_token: token.trim(),
+            label_id: labelId.trim(),
+            brand_id: brandId.trim(),
+            int_api_base: base.trim()
+          })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (!res.ok) { alert(res.data.error || "Kaydedilemedi."); return; }
+            var tokenEl = document.getElementById("move-aff-token");
+            if (tokenEl) { tokenEl.value = ""; tokenEl.placeholder = res.data.authorization_token_masked || ""; }
+            renderMoveAffStatus(res.data);
+            document.getElementById("move-aff-settings-box").style.display = "none";
+            toast("Üye taşıma int-api ayarları kaydedildi!");
+          });
+      });
+
+      bindOptional("btn-move-aff-clear", "click", function() {
+        if (!confirm("Üye taşıma int-api ayarları silinecek. Devam?")) return;
+        fetch(API + "/api/smartico/int-config", { method: "DELETE" })
+          .then(function(r) { return r.json(); })
+          .then(function() {
+            ["move-aff-token", "move-aff-label", "move-aff-brand"].forEach(function(id) {
+              var el = document.getElementById(id);
+              if (el) el.value = "";
+            });
+            renderMoveAffStatus({ configured: false });
+            toast("Üye taşıma ayarları silindi.");
+          });
+      });
+
+      bindOptional("move-aff-form", "submit", function(e) {
+        e.preventDefault();
+        var customer = ((document.getElementById("move-aff-customer") || {}).value || "").trim();
+        var affiliateId = ((document.getElementById("move-aff-affiliate") || {}).value || "").trim();
+        var dealId = ((document.getElementById("move-aff-deal") || {}).value || "").trim();
+        var utmSource = ((document.getElementById("move-aff-utm-source") || {}).value || "").trim();
+        var utmMedium = ((document.getElementById("move-aff-utm-medium") || {}).value || "").trim();
+        if (!customer) { alert("Oyuncu ID gerekli."); return; }
+        if (!affiliateId && !dealId) { alert("Affiliate ID veya Deal ID gir."); return; }
+        var msg = "Oyuncu " + customer + " → ";
+        msg += dealId ? ("deal #" + dealId) : ("affiliate #" + affiliateId);
+        msg += " taşınacak. Eski kayıt donar. Devam?";
+        if (!confirm(msg)) return;
+        var btn = document.getElementById("btn-move-aff-submit");
+        if (btn) { btn.disabled = true; btn.textContent = "Taşınıyor…"; }
+        var resultBox = document.getElementById("move-aff-result");
+        if (resultBox) { resultBox.style.display = "none"; resultBox.innerHTML = ""; }
+        fetch(API + "/api/smartico/move-affiliate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ext_customer_id: customer,
+            affiliate_id: affiliateId || null,
+            deal_id: dealId || null,
+            utm_source: utmSource || null,
+            utm_medium: utmMedium || null
+          })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (btn) { btn.disabled = false; btn.textContent = "Üyeyi Taşı"; }
+            if (!res.ok) {
+              alert(res.data.message || res.data.error || "Taşıma başarısız.");
+              return;
+            }
+            var d = res.data;
+            if (resultBox) {
+              resultBox.style.display = "";
+              resultBox.innerHTML =
+                "<strong>Taşındı.</strong> " + esc(d.message || "") +
+                "<br><span class='muted' style='font-size:0.78rem;'>new_registration_id: " +
+                esc(String(d.new_registration_id != null ? d.new_registration_id : "—")) +
+                " · call_uid: " + esc(String(d.call_uid || "—")) + "</span>";
+            }
+            toast("Üye taşındı!");
+          })
+          .catch(function() {
+            if (btn) { btn.disabled = false; btn.textContent = "Üyeyi Taşı"; }
+            alert("İstek başarısız.");
+          });
+      });
+
+      if (hasPerm("tracking.smartico")) {
+        loadMoveAffConfig();
+        fillMoveAffAffiliateDatalist();
+      }
 
       bindOptional("btn-blink-settings", "click", function() {
         var box = document.getElementById("blink-settings-box");

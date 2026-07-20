@@ -139,4 +139,85 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
             smartico_api.delete_link_binding(conn, data.get("affiliate_id"), data.get("link_id"))
         return jsonify({"ok": True})
 
+    # --- TAP int-api: Üye Taşıma (AFF_MOVE_AFFILIATE cid 30062) ---
+
+    @bp.route("/int-config", methods=["GET"])
+    @perm(*MODULE_ACCESS)
+    @admin_only
+    def get_int_config():
+        with closing(get_db()) as conn:
+            cfg = smartico_api.get_int_config(conn)
+            configured = smartico_api.is_int_configured(conn)
+        return jsonify({
+            "configured": configured,
+            "int_api_base": cfg["int_api_base"],
+            "authorization_token_masked": (
+                smartico_api.mask_key(cfg["authorization_token"]) if cfg["authorization_token"] else ""
+            ),
+            "label_id": cfg["label_id"],
+            "brand_id": cfg["brand_id"],
+        })
+
+    @bp.route("/int-config", methods=["POST"])
+    @perm(*MODULE_ACCESS)
+    @admin_only
+    def save_int_config():
+        data = request.get_json(silent=True) or {}
+        try:
+            with closing(get_db()) as conn:
+                # Token boşsa mevcut token korunur (sadece label/brand güncelleme)
+                existing = smartico_api.get_int_config(conn)
+                token = (data.get("authorization_token") or "").strip() or existing["authorization_token"]
+                cfg = smartico_api.save_int_config(
+                    conn,
+                    authorization_token=token,
+                    label_id=data.get("label_id"),
+                    brand_id=data.get("brand_id"),
+                    int_api_base=data.get("int_api_base"),
+                )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({
+            "configured": True,
+            "int_api_base": cfg["int_api_base"],
+            "authorization_token_masked": smartico_api.mask_key(cfg["authorization_token"]),
+            "label_id": cfg["label_id"],
+            "brand_id": cfg["brand_id"],
+        })
+
+    @bp.route("/int-config", methods=["DELETE"])
+    @perm(*MODULE_ACCESS)
+    @admin_only
+    def delete_int_config():
+        with closing(get_db()) as conn:
+            smartico_api.clear_int_config(conn)
+        return jsonify({"ok": True})
+
+    @bp.route("/move-affiliate", methods=["POST"])
+    @perm(*MODULE_ACCESS)
+    @admin_only
+    def move_affiliate():
+        """Oyuncuyu yeni affiliate/deal altına taşı (TAP cid 30062)."""
+        data = request.get_json(silent=True) or {}
+        try:
+            with closing(get_db()) as conn:
+                if not smartico_api.is_int_configured(conn):
+                    return jsonify({
+                        "error": "not_configured",
+                        "message": "Önce Üye Taşıma ayarlarını kaydet (token, label_id, brand_id).",
+                    }), 400
+                result = smartico_api.move_affiliate(
+                    conn,
+                    ext_customer_id=data.get("ext_customer_id"),
+                    affiliate_id=data.get("affiliate_id"),
+                    deal_id=data.get("deal_id"),
+                    utm_source=data.get("utm_source"),
+                    utm_medium=data.get("utm_medium"),
+                )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except smartico_api.SmarticoError as exc:
+            return jsonify({"error": str(exc)}), 502
+        return jsonify(result)
+
     return bp

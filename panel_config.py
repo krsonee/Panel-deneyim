@@ -22,7 +22,8 @@ _BASE_MODULES = ("tracking", "accounting", "biolink")
 ENABLED_MODULES = _BASE_MODULES + (("mailing",) if PANEL_BRAND == "makro" else ())
 
 FEATURES = {
-    "smartico": False,
+    # Makro: Smartico TAP rapor + üye taşıma (int-api). Bizzo: kapalı.
+    "smartico": PANEL_BRAND == "makro",
     "blink": False,
     "mailing": PANEL_BRAND == "makro",
     "marketing": False,

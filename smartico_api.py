@@ -25,11 +25,22 @@ from database import (
 )
 
 DEFAULT_API_HOST = "https://boapi.smartico.ai"
+DEFAULT_INT_API_BASE = "https://api.aff.makroaffi.com"
 
 _SETTING_API_KEY = "api_key"
 _SETTING_API_HOST = "api_host"
+_SETTING_INT_API_BASE = "int_api_base"
+_SETTING_INT_AUTH_TOKEN = "int_authorization_token"
+_SETTING_LABEL_ID = "label_id"
+_SETTING_BRAND_ID = "brand_id"
 
 _HTTP_TIMEOUT = 8
+_INT_HTTP_TIMEOUT = 20
+_MOVE_AFFILIATE_CID = 30062
+_MOVE_AFFILIATE_RESP_CID = 30063
+
+# int-api JWT bellek önbelleği (process ömrü)
+_int_jwt = {"token": None, "expires_at": None, "label_id": None}
 
 # Kendi tracker.js sistemimizde bir ziyaretçi bu kadar saniye içinde
 # heartbeat göndermişse "online" sayılır (app.py ile aynı eşik).
@@ -784,4 +795,241 @@ def _empty_summary():
         "withdrawal_total": 0.0,
         "commissions_total": 0.0,
         "bonus_total": 0.0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# TAP int-api — AFF_MOVE_AFFILIATE (cid 30062)
+# Raporlama (boapi) anahtarından ayrı: authorization_token + label_id + JWT
+# ---------------------------------------------------------------------------
+
+
+def get_int_config(conn):
+    base = (get_smartico_setting(conn, _SETTING_INT_API_BASE, "") or "").strip().rstrip("/")
+    token = (get_smartico_setting(conn, _SETTING_INT_AUTH_TOKEN, "") or "").strip()
+    label_raw = (get_smartico_setting(conn, _SETTING_LABEL_ID, "") or "").strip()
+    brand_raw = (get_smartico_setting(conn, _SETTING_BRAND_ID, "") or "").strip()
+    try:
+        label_id = int(label_raw) if label_raw else None
+    except (TypeError, ValueError):
+        label_id = None
+    try:
+        brand_id = int(brand_raw) if brand_raw else None
+    except (TypeError, ValueError):
+        brand_id = None
+    return {
+        "int_api_base": base or DEFAULT_INT_API_BASE,
+        "authorization_token": token,
+        "label_id": label_id,
+        "brand_id": brand_id,
+    }
+
+
+def is_int_configured(conn):
+    cfg = get_int_config(conn)
+    return bool(cfg["authorization_token"] and cfg["label_id"] and cfg["brand_id"])
+
+
+def save_int_config(conn, authorization_token, label_id, brand_id, int_api_base=None):
+    token = (authorization_token or "").strip()
+    base = (int_api_base or "").strip().rstrip("/") or DEFAULT_INT_API_BASE
+    try:
+        lid = int(label_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("label_id sayı olmalı.") from exc
+    try:
+        bid = int(brand_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("brand_id sayı olmalı.") from exc
+    if not token:
+        raise ValueError("authorization_token boş olamaz.")
+    upsert_smartico_setting(conn, _SETTING_INT_AUTH_TOKEN, token)
+    upsert_smartico_setting(conn, _SETTING_LABEL_ID, str(lid))
+    upsert_smartico_setting(conn, _SETTING_BRAND_ID, str(bid))
+    upsert_smartico_setting(conn, _SETTING_INT_API_BASE, base)
+    _int_jwt["token"] = None
+    _int_jwt["expires_at"] = None
+    _int_jwt["label_id"] = None
+    return get_int_config(conn)
+
+
+def clear_int_config(conn):
+    upsert_smartico_setting(conn, _SETTING_INT_AUTH_TOKEN, "")
+    upsert_smartico_setting(conn, _SETTING_LABEL_ID, "")
+    upsert_smartico_setting(conn, _SETTING_BRAND_ID, "")
+    _int_jwt["token"] = None
+    _int_jwt["expires_at"] = None
+    _int_jwt["label_id"] = None
+
+
+def _int_json_request(method, url, *, headers=None, body=None, timeout=None):
+    data = None
+    req_headers = {"User-Agent": "MakroPanel/1.0", "Accept": "application/json"}
+    if headers:
+        req_headers.update(headers)
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        req_headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout or _INT_HTTP_TIMEOUT) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            status = getattr(resp, "status", None) or resp.getcode()
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+        try:
+            payload = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            payload = {"error": raw or str(exc)}
+        raise SmarticoError(
+            payload.get("error") or payload.get("message") or f"HTTP {exc.code}"
+        ) from exc
+    except _FETCH_ERRORS as exc:
+        raise SmarticoError(f"int-api bağlantı hatası: {exc}") from exc
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as exc:
+        raise SmarticoError("int-api geçersiz JSON yanıtı.") from exc
+    if status and int(status) >= 400:
+        raise SmarticoError(payload.get("error") or payload.get("message") or f"HTTP {status}")
+    return payload
+
+
+def obtain_int_token(conn, force=False):
+    """POST /int-api/auth/v1 → jwt_token (yaklaşık 24 saat)."""
+    cfg = get_int_config(conn)
+    if not cfg["authorization_token"] or not cfg["label_id"]:
+        raise SmarticoError("int-api ayarları eksik (authorization_token + label_id).")
+
+    now = utcnow()
+    cached = _int_jwt.get("token")
+    exp = _int_jwt.get("expires_at")
+    if (
+        not force
+        and cached
+        and exp
+        and _int_jwt.get("label_id") == cfg["label_id"]
+        and exp > now + timedelta(minutes=5)
+    ):
+        return cached
+
+    url = f"{cfg['int_api_base']}/int-api/auth/v1"
+    payload = _int_json_request(
+        "POST",
+        url,
+        body={
+            "authorization_token": cfg["authorization_token"],
+            "label_id": cfg["label_id"],
+        },
+    )
+    jwt = (payload.get("jwt_token") or "").strip()
+    if not jwt:
+        raise SmarticoError("int-api token alınamadı (jwt_token yok).")
+    _int_jwt["token"] = jwt
+    _int_jwt["label_id"] = cfg["label_id"]
+    # Dokümanda 24 saat; güvenli tarafta 23 saat tut
+    _int_jwt["expires_at"] = now + timedelta(hours=23)
+    return jwt
+
+
+def _int_api_post(conn, body):
+    """Bearer JWT ile POST /int-api/ — 401'de bir kez token yenile."""
+    cfg = get_int_config(conn)
+    url = f"{cfg['int_api_base']}/int-api/"
+    jwt = obtain_int_token(conn)
+    try:
+        return _int_json_request(
+            "POST",
+            url,
+            headers={"Authorization": f"Bearer {jwt}"},
+            body=body,
+        )
+    except SmarticoError as exc:
+        msg = str(exc).lower()
+        if "401" in msg or "token" in msg or "unauthorized" in msg or "expired" in msg:
+            jwt = obtain_int_token(conn, force=True)
+            return _int_json_request(
+                "POST",
+                url,
+                headers={"Authorization": f"Bearer {jwt}"},
+                body=body,
+            )
+        raise
+
+
+def move_affiliate(
+    conn,
+    *,
+    ext_customer_id,
+    affiliate_id=None,
+    deal_id=None,
+    utm_source=None,
+    utm_medium=None,
+):
+    """Oyuncuyu yeni affiliate / deal altına taşı (cid 30062).
+
+    affiliate_id veya deal_id'den en az biri zorunlu; ikisi varsa deal_id baskın.
+    """
+    if not is_int_configured(conn):
+        raise SmarticoError(
+            "Üye taşıma ayarları eksik. int-api token, label_id ve brand_id gerekli."
+        )
+    ext_id = (ext_customer_id or "").strip()
+    if not ext_id:
+        raise ValueError("ext_customer_id (casino oyuncu ID) gerekli.")
+
+    deal = None
+    aff = None
+    if deal_id is not None and str(deal_id).strip() != "":
+        try:
+            deal = int(deal_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("deal_id sayı olmalı.") from exc
+    if affiliate_id is not None and str(affiliate_id).strip() != "":
+        try:
+            aff = int(affiliate_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("affiliate_id sayı olmalı.") from exc
+    if deal is None and aff is None:
+        raise ValueError("affiliate_id veya deal_id gerekli.")
+
+    cfg = get_int_config(conn)
+    body = {
+        "cid": _MOVE_AFFILIATE_CID,
+        "brand_id": cfg["brand_id"],
+        "ext_customer_id": ext_id,
+    }
+    if deal is not None:
+        body["deal_id"] = deal
+    if aff is not None:
+        body["affiliate_id"] = aff
+    utm_s = (utm_source or "").strip()
+    utm_m = (utm_medium or "").strip()
+    if utm_s:
+        body["utm_source"] = utm_s
+    if utm_m:
+        body["utm_medium"] = utm_m
+
+    payload = _int_api_post(conn, body)
+    try:
+        err_i = int(payload.get("errCode", 0))
+    except (TypeError, ValueError):
+        err_i = -1
+    if err_i != 0:
+        raise SmarticoError(
+            payload.get("message")
+            or f"Üye taşınamadı (errCode={err_i}). Smartico support ile kontrol et."
+        )
+
+    return {
+        "ok": True,
+        "cid": payload.get("cid"),
+        "errCode": err_i,
+        "new_registration_id": payload.get("new_registration_id"),
+        "message": payload.get("message") or "Affiliate taşındı.",
+        "call_uid": payload.get("call_uid"),
+        "ext_customer_id": ext_id,
+        "affiliate_id": aff,
+        "deal_id": deal,
+        "brand_id": cfg["brand_id"],
     }
