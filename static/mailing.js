@@ -633,12 +633,15 @@
     return mailApi("/api/mailing/dashboard").then(function (res) {
       if (!res || !res.ok) return;
       var k = res.data.kpi || {};
-      setText("mail-kpi-contacts", k.contacts);
-      setText("mail-kpi-contacts-sub", (k.active_contacts || 0) + " aktif");
-      setText("mail-kpi-campaigns", k.campaigns);
-      setText("mail-kpi-sent", k.sends_delivered);
-      setText("mail-kpi-sent-sub", "kuyruk " + (k.sends_queued || 0) + " · fail " + (k.sends_failed || 0));
-      setText("mail-kpi-ivr", k.ivr_events);
+      setText("mail-kpi-contacts", fmtNum(k.contacts));
+      var sub = fmtNum(k.active_contacts || 0) + " rehber";
+      if (k.contacts_approx) sub += " · approx";
+      if (k.suppressed) sub += " · sup " + fmtNum(k.suppressed);
+      setText("mail-kpi-contacts-sub", sub);
+      setText("mail-kpi-campaigns", fmtNum(k.campaigns));
+      setText("mail-kpi-sent", fmtNum(k.sends_delivered));
+      setText("mail-kpi-sent-sub", "kuyruk " + fmtNum(k.sends_queued || 0) + " · fail " + fmtNum(k.sends_failed || 0));
+      setText("mail-kpi-ivr", fmtNum(k.ivr_events));
       setText("mail-dash-note", res.data.note || "");
       mailDomains = res.data.domains || [];
       renderDomainChips(mailDomains);
@@ -677,7 +680,52 @@
     if (el) el.textContent = val == null || val === "" ? "—" : String(val);
   }
 
-  // ── CRM ───────────────────────────────────────────────────
+  // ── Mail Rehber ───────────────────────────────────────────
+  var MAIL_SELECTED_KEY = "makro_mail_camp_selected_ids";
+
+  function mailReadCampSelectedIds() {
+    try {
+      var raw = sessionStorage.getItem(MAIL_SELECTED_KEY) || "[]";
+      var arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return [];
+      return arr.map(function (x) { return Number(x); }).filter(Boolean);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function mailWriteCampSelectedIds(ids) {
+    try {
+      sessionStorage.setItem(MAIL_SELECTED_KEY, JSON.stringify(ids || []));
+    } catch (e) { /* ignore */ }
+    mailUpdateCampSelectedHint();
+  }
+
+  function mailUpdateCampSelectedHint() {
+    var hint = document.getElementById("mail-camp-selected-hint");
+    if (!hint) return;
+    var ids = mailReadCampSelectedIds();
+    hint.textContent = ids.length
+      ? (fmtNum(ids.length) + " kontak kampanya için hazır (Mail Rehber seçimi).")
+      : "Mail Rehber’de kişi seçip «Seçilileri kampanyaya» de — veya burada bekleyen seçim yok.";
+  }
+
+  function mailCampRecipientMode() {
+    var el = document.querySelector('input[name="mail-camp-recipient-mode"]:checked');
+    return (el && el.value) || "tag";
+  }
+
+  function mailSyncCampRecipientModeUI() {
+    var mode = mailCampRecipientMode();
+    var tagBox = document.getElementById("mail-camp-mode-tag");
+    var selBox = document.getElementById("mail-camp-mode-selected");
+    var manBox = document.getElementById("mail-camp-mode-manual");
+    if (tagBox) tagBox.hidden = mode !== "tag";
+    if (selBox) selBox.hidden = mode !== "selected";
+    if (manBox) manBox.hidden = mode !== "manual";
+    mailUpdateCampSelectedHint();
+  }
+
   function mailLoadTags() {
     return mailApi("/api/mailing/tags").then(function (res) {
       if (!res || !res.ok) return;
@@ -823,7 +871,7 @@
       // Tag listesini her stats çağrısında yeniden çekme — gereksiz DB yükü
       if (opts.refresh || opts.syncTags) mailLoadTags();
       // Otomatik recount poll kaldırıldı: milyonlarca satırda paneli kitler.
-      // Etiket sayılarını yenilemek için CRM "Yenile" butonu (refresh=1) kullanılır.
+      // Etiket sayılarını yenilemek için Mail Rehber "Yenile" (refresh=1) kullanılır.
       if (mailTagRecountTimer) { clearTimeout(mailTagRecountTimer); mailTagRecountTimer = null; }
     });
   }
@@ -1743,25 +1791,30 @@
       var fromEl = document.getElementById("mail-tag-move-from");
       var toEl = document.getElementById("mail-tag-move-to");
       var statusEl = document.getElementById("mail-tag-move-status");
+      var allowAll = !!(document.getElementById("mail-tag-move-all") || {}).checked;
       var fromTag = (fromEl && fromEl.value) || "";
       var toTag = (toEl && toEl.value) || "";
       var ids = mailSelectedContactIds();
       var body = { action: action, from_tag: fromTag, to_tag: toTag };
       if (ids.length) {
         body.contact_ids = ids;
-      } else {
+      } else if (allowAll) {
         body.match_tag = fromTag || ((document.getElementById("mail-contact-tag-filter") || {}).value || "");
         if (!body.match_tag) {
           mailToast("Kaynak etiket seç veya listeden kontak işaretle");
           return;
         }
         if (action === "add") body.from_tag = body.match_tag;
+      } else {
+        mailToast("Listeden kişi seç (veya «tümünü işle» kutusunu işaretle)");
+        return;
       }
       if (action === "add" && !toTag) { mailToast("Hedef etiket seç"); return; }
-      if (action === "remove" && !fromTag) { mailToast("Kaldırılacak etiket seç"); return; }
+      if (action === "remove" && !fromTag && !ids.length) { mailToast("Kaldırılacak etiket seç"); return; }
+      if (action === "remove" && !fromTag && ids.length) { mailToast("Kaldırılacak etiket seç"); return; }
       if (action === "move" && (!fromTag || !toTag)) { mailToast("Kaynak ve hedef etiket seç"); return; }
 
-      var scope = ids.length ? (ids.length + " seçili") : ("«" + (body.match_tag || fromTag) + "» tümü");
+      var scope = ids.length ? (ids.length + " seçili") : ("«" + (body.match_tag || fromTag) + "» TÜMÜ");
       var label = action === "move" ? ("Taşı: " + fromTag + " → " + toTag) : (action === "add" ? ("Ekle: " + toTag) : ("Kaldır: " + fromTag));
       if (!confirm(label + "\nKapsam: " + scope + "\nDevam?")) return;
       if (statusEl) statusEl.textContent = "İşleniyor…";
@@ -2133,15 +2186,45 @@
       var rateEl = document.getElementById("mail-camp-rate");
       var rateVal = rateEl && rateEl.value ? Number(rateEl.value) : 120;
       var onlyV = document.getElementById("mail-camp-only-verified");
-      return {
-        tag_filter: (document.getElementById("mail-camp-tag").value || "").trim(),
+      var mode = mailCampRecipientMode();
+      var body = {
+        recipient_mode: mode,
+        tag_filter: mode === "tag" ? ((document.getElementById("mail-camp-tag").value || "").trim()) : "",
         max_recipients: maxVal,
         rate_per_minute: rateVal || 120,
         scheduled_at: (document.getElementById("mail-camp-schedule").value || "").trim(),
         exclude_previously_sent: document.getElementById("mail-camp-exclude-sent").checked,
         only_verified: onlyV ? !!onlyV.checked : false
       };
+      if (mode === "selected") {
+        body.contact_ids = mailReadCampSelectedIds();
+      }
+      if (mode === "manual") {
+        body.manual_emails = (document.getElementById("mail-camp-manual-emails") || {}).value || "";
+      }
+      return body;
     }
+
+    document.querySelectorAll('input[name="mail-camp-recipient-mode"]').forEach(function (radio) {
+      radio.addEventListener("change", mailSyncCampRecipientModeUI);
+    });
+    mailSyncCampRecipientModeUI();
+
+    bindClick("mail-contacts-to-campaign", function () {
+      var ids = mailSelectedContactIds();
+      if (!ids.length) {
+        mailToast("Önce listeden kontak seç");
+        return;
+      }
+      mailWriteCampSelectedIds(ids);
+      mailToast(fmtNum(ids.length) + " kontak kampanyaya hazır");
+      var modeSel = document.querySelector('input[name="mail-camp-recipient-mode"][value="selected"]');
+      if (modeSel) {
+        modeSel.checked = true;
+        mailSyncCampRecipientModeUI();
+      }
+      switchMailTab("campaigns");
+    });
 
     var campForm = document.getElementById("mail-camp-form");
     if (campForm) {
@@ -2162,9 +2245,13 @@
             return;
           }
           mailToast("Kampanya oluşturuldu · " + fmtNum(res.data.campaign.recipient_count || 0) + " alıcı");
+          if (mailCampRecipientMode() === "selected") mailWriteCampSelectedIds([]);
           campForm.reset();
           document.getElementById("mail-camp-exclude-sent").checked = true;
           document.getElementById("mail-camp-rate").value = "120";
+          var modeTag = document.querySelector('input[name="mail-camp-recipient-mode"][value="tag"]');
+          if (modeTag) modeTag.checked = true;
+          mailSyncCampRecipientModeUI();
           mailFillCampTagSelect();
           var hint = document.getElementById("mail-camp-preview-hint");
           if (hint) hint.textContent = "";
@@ -2478,10 +2565,8 @@
     },
     onShow: function () {
       if (!mailLoaded) this.init();
-      // Import varsa bile CRM zorlama — CRM açılışı DB'yi kilitliyordu
       var tab = "dashboard";
       try { tab = localStorage.getItem(MAIL_TAB_STORAGE_KEY) || "dashboard"; } catch (e) { /* ignore */ }
-      if (tab === "crm") tab = "dashboard";
       switchMailTab(tab);
       mailRefreshImportStatus({ force: true });
     },

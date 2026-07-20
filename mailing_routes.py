@@ -647,24 +647,13 @@ def _campaign_selection_where(tag_filter, exclude_previously_sent, only_verified
     return " AND ".join(clauses), params
 
 
-def _attach_campaign_recipients(
-    conn, campaign_id, *, tag_filter, max_recipients, exclude_previously_sent, now, only_verified=False,
-):
-    """Filtreye uyan kontakları (limitliyse en fazla max_recipients kadar,
-    en eski/ilk eklenenden başlayarak) tek seferde toplu INSERT ile kampanyaya
-    ekler — yüz binlerce satırda da satır-satır sorgu yapmaz."""
-    where_sql, params = _campaign_selection_where(
-        tag_filter, exclude_previously_sent, only_verified=only_verified,
-    )
-    sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
-    if max_recipients:
-        sql += " LIMIT ?"
-        params.append(max_recipients)
-    contact_ids = [r["id"] for r in fetchall(conn, sql, tuple(params))]
+def _insert_campaign_recipient_ids(conn, campaign_id, contact_ids, now):
     attached = 0
     chunk_size = 5000
     for i in range(0, len(contact_ids), chunk_size):
         chunk = contact_ids[i:i + chunk_size]
+        if not chunk:
+            continue
         values_sql = ",".join(["(?, ?, 'pending', ?)"] * len(chunk))
         vparams = []
         for contact_id in chunk:
@@ -676,6 +665,102 @@ def _attach_campaign_recipients(
         )
         attached += len(chunk)
     return attached
+
+
+def _filter_sendable_contact_ids(conn, ids, *, exclude_previously_sent=False, only_verified=False):
+    """Verilen ID listesini unsub/suppression/(opsiyonel) verify filtrelerinden geçir."""
+    ids = [int(x) for x in (ids or []) if str(x).isdigit() or isinstance(x, int)]
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return []
+    out = []
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        ph = ",".join(["?"] * len(chunk))
+        clauses = [
+            f"id IN ({ph})",
+            "unsubscribed = 0",
+            "NOT EXISTS (SELECT 1 FROM mail_suppressions s WHERE s.email = LOWER(mail_contacts.email))",
+        ]
+        params = list(chunk)
+        if exclude_previously_sent:
+            clauses.append(
+                "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
+            )
+        if only_verified:
+            clauses.append("LOWER(COALESCE(verify_status, '')) IN ('valid', 'mx_ok')")
+        rows = fetchall(
+            conn,
+            f"SELECT id FROM mail_contacts WHERE {' AND '.join(clauses)} ORDER BY id ASC",
+            tuple(params),
+        ) or []
+        out.extend(int(r["id"]) for r in rows)
+    return out
+
+
+def _ensure_contacts_from_emails(conn, emails, now):
+    """Elle girilen e-postaları kontak olarak upsert eder; id listesi döner."""
+    cleaned = []
+    seen = set()
+    for raw in emails or []:
+        em = (raw or "").strip().lower()
+        if not em or em in seen:
+            continue
+        if not EMAIL_RE.match(em):
+            continue
+        seen.add(em)
+        cleaned.append(em)
+    if not cleaned:
+        return []
+    ids = []
+    for em in cleaned:
+        row = fetchone(conn, "SELECT id FROM mail_contacts WHERE LOWER(email) = ?", (em,))
+        if row:
+            ids.append(int(row["id"]))
+            continue
+        cid = insert_returning_id(
+            conn,
+            """
+            INSERT INTO mail_contacts (email, name, tags, source, unsubscribed, notes, created_at, updated_at)
+            VALUES (?, '', '[]', 'manual_campaign', 0, '', ?, ?)
+            """,
+            (em, now, now),
+        )
+        if cid:
+            ids.append(int(cid))
+    return ids
+
+
+def _attach_campaign_recipients(
+    conn, campaign_id, *, tag_filter, max_recipients, exclude_previously_sent, now,
+    only_verified=False, contact_ids=None, emails=None,
+):
+    """Etiket / seçili ID / elle e-posta ile kampanya alıcılarını ekler."""
+    contact_ids = list(contact_ids or [])
+    emails = list(emails or [])
+
+    if emails:
+        contact_ids = _ensure_contacts_from_emails(conn, emails, now) + contact_ids
+
+    if contact_ids:
+        filtered = _filter_sendable_contact_ids(
+            conn, contact_ids,
+            exclude_previously_sent=exclude_previously_sent,
+            only_verified=only_verified,
+        )
+        if max_recipients:
+            filtered = filtered[: int(max_recipients)]
+        return _insert_campaign_recipient_ids(conn, campaign_id, filtered, now)
+
+    where_sql, params = _campaign_selection_where(
+        tag_filter, exclude_previously_sent, only_verified=only_verified,
+    )
+    sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
+    if max_recipients:
+        sql += " LIMIT ?"
+        params.append(max_recipients)
+    ids = [r["id"] for r in fetchall(conn, sql, tuple(params))]
+    return _insert_campaign_recipient_ids(conn, campaign_id, ids, now)
 
 
 def _bulk_upsert_contacts(conn, batch, tag, now):
@@ -966,10 +1051,20 @@ def _run_import_job(job_id, path, tag):
                 (processed, processed, upserted, inserted, updated, skipped, final_now, job_id),
             )
             conn.commit()
+            _invalidate_mail_stats_cache()
             if tag:
-                _refresh_tag_counts_async([tag])
-            else:
-                _invalidate_mail_stats_cache()
+                try:
+                    _recount_tag(conn, tag)
+                    conn.commit()
+                except Exception:
+                    pass
+            if uses_postgres():
+                try:
+                    # reltuples / n_live_tup güncellensin — dashboard kartları dolsun
+                    execute(conn, "ANALYZE mail_contacts")
+                    conn.commit()
+                except Exception:
+                    pass
     except Exception as exc:
         try:
             with closing(get_db()) as conn:
@@ -1078,22 +1173,54 @@ _TAG_SYNC_STATE = {"ts": 0.0, "running": False, "last_added": 0}
 
 
 def _approx_contact_total(conn):
-    """3M satırda COUNT(*) yavaş — PG approx; exact fallback YOK (panel kitler)."""
+    """Kontak toplamı — önce canlı istatistik, 0 ise exact COUNT (import sonrası kartlar boş kalmasın)."""
     if uses_postgres():
+        for sql in (
+            "SELECT n_live_tup::bigint FROM pg_stat_user_tables WHERE relname = 'mail_contacts'",
+            "SELECT reltuples::bigint FROM pg_class WHERE relname = 'mail_contacts'",
+        ):
+            try:
+                n = scalar(conn, sql)
+                if n is not None and int(n) > 0:
+                    return int(n), True
+            except Exception:
+                pass
+        # Import sonrası reltuples sık 0 kalır — COUNT şart
         try:
-            n = scalar(
-                conn,
-                "SELECT reltuples::bigint FROM pg_class WHERE relname = 'mail_contacts'",
-            )
-            if n is not None:
-                return max(int(n), 0), True
+            return int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0), False
         except Exception:
-            pass
-        return 0, True
+            return 0, True
     try:
         return int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0), False
     except Exception:
         return 0, False
+
+
+def _approx_mailed_contacts(conn, total):
+    """En az 1 mail gitmiş kontak sayısı — timeout ile; olmazsa None."""
+    try:
+        if uses_postgres():
+            try:
+                execute(conn, "SET LOCAL statement_timeout = '4000ms'")
+            except Exception:
+                pass
+            n = scalar(
+                conn,
+                "SELECT COUNT(DISTINCT contact_id) FROM mail_sends WHERE contact_id IS NOT NULL",
+            )
+            return int(n or 0)
+        return int(scalar(
+            conn,
+            "SELECT COUNT(DISTINCT contact_id) FROM mail_sends WHERE contact_id IS NOT NULL",
+        ) or 0)
+    except Exception:
+        return None
+    finally:
+        if uses_postgres():
+            try:
+                execute(conn, "SET LOCAL statement_timeout = 0")
+            except Exception:
+                pass
 
 
 def _registry_tag_count(conn, name):
@@ -1558,20 +1685,39 @@ def create_mailing_blueprint(permission_required):
 
         with closing(get_db()) as conn:
             total, total_approx = _approx_contact_total(conn)
-            # COUNT(DISTINCT contact_id) büyük mail_sends'te paneli kitler — approx/skip
-            mailed = 0
-            never_mailed = total
-            # sync yalnız açık istekte; CRM açılışında otomatik tarama yok
+            mailed = _approx_mailed_contacts(conn, total)
+            if mailed is None:
+                mailed = 0
+                never_mailed = total
+                mailed_approx = True
+            else:
+                mailed = min(int(mailed), int(total or 0))
+                never_mailed = max(int(total or 0) - mailed, 0)
+                mailed_approx = False
             if sync_tags:
                 _maybe_sync_missing_tags_async(force=True)
-            # live=True = her etiket için full-table LIKE — milyonluk DB'de yasak
             by_tag = _contact_tag_counts(conn, live=False)
             pending_recount = []
-            # Yenile'de bile otomatik N× LIKE recount başlatma; registry contact_count yeter
+            # Yenile'de stale tag sayıları 0 ise bir kez recount dene (küçük listeler)
+            if refresh and by_tag:
+                zeros = [t["name"] for t in by_tag if int(t.get("count") or 0) == 0]
+                if zeros and int(total or 0) > 0 and int(total or 0) < 250000:
+                    for name in zeros[:40]:
+                        try:
+                            _recount_tag(conn, name)
+                        except Exception:
+                            pass
+                    try:
+                        conn.commit()
+                    except Exception:
+                        pass
+                    _invalidate_mail_stats_cache()
+                    by_tag = _contact_tag_counts(conn, force=True, live=False)
         payload = {
             "total": total,
             "total_approx": bool(total_approx),
             "mailed": mailed,
+            "mailed_approx": mailed_approx,
             "never_mailed": never_mailed,
             "by_tag": by_tag,
             "tag_count": len(by_tag),
@@ -2312,6 +2458,34 @@ def create_mailing_blueprint(permission_required):
             max_recipients = None
         exclude_sent = data.get("exclude_previously_sent")
         exclude_sent = True if exclude_sent is None else bool(exclude_sent)
+        recipient_mode = (data.get("recipient_mode") or "tag").strip().lower()
+        if recipient_mode not in ("tag", "selected", "manual"):
+            recipient_mode = "tag"
+        raw_ids = data.get("contact_ids") or []
+        contact_ids = []
+        if isinstance(raw_ids, list):
+            for x in raw_ids:
+                try:
+                    contact_ids.append(int(x))
+                except (TypeError, ValueError):
+                    continue
+        manual_raw = data.get("manual_emails") or data.get("emails") or ""
+        if isinstance(manual_raw, list):
+            emails = [str(x) for x in manual_raw]
+        else:
+            emails = re.split(r"[\s,;]+", str(manual_raw or ""))
+        emails = [e.strip() for e in emails if e and e.strip()]
+        if recipient_mode == "selected" and not contact_ids:
+            return jsonify({"error": "Seçili kontak yok. Mail Rehber’den kişi işaretle."}), 400
+        if recipient_mode == "manual" and not emails:
+            return jsonify({"error": "Elle e-posta listesi boş."}), 400
+        if recipient_mode == "tag":
+            contact_ids = []
+            emails = []
+        elif recipient_mode == "selected":
+            emails = []
+        elif recipient_mode == "manual":
+            contact_ids = []
         try:
             rate = int(data.get("rate_per_minute") or 120)
         except (TypeError, ValueError):
@@ -2333,6 +2507,13 @@ def create_mailing_blueprint(permission_required):
                 return jsonify({"error": "Şablon bulunamadı."}), 404
             if not fetchone(conn, "SELECT id FROM mail_domains WHERE id = ?", (domain_id,)):
                 return jsonify({"error": "Domain bulunamadı."}), 404
+            notes_extra = (data.get("notes") or "").strip()
+            if recipient_mode != "tag":
+                tag_filter = ""
+                if notes_extra:
+                    notes_extra = f"[{recipient_mode}] {notes_extra}"
+                else:
+                    notes_extra = f"[{recipient_mode}]"
             cid = insert_returning_id(
                 conn,
                 """
@@ -2344,7 +2525,7 @@ def create_mailing_blueprint(permission_required):
                 VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?)
                 """,
                 (
-                    name, template_id, domain_id, tag_filter, (data.get("notes") or "").strip(),
+                    name, template_id, domain_id, tag_filter, notes_extra,
                     scheduled_raw, rate, max_recipients, 1 if exclude_sent else 0,
                     now, now,
                 ),
@@ -2352,6 +2533,8 @@ def create_mailing_blueprint(permission_required):
             attached = _attach_campaign_recipients(
                 conn, cid, tag_filter=tag_filter, max_recipients=max_recipients,
                 exclude_previously_sent=exclude_sent, now=now, only_verified=only_verified,
+                contact_ids=contact_ids if recipient_mode in ("selected", "manual") else None,
+                emails=emails if recipient_mode == "manual" else None,
             )
             execute(
                 conn,
@@ -2373,6 +2556,21 @@ def create_mailing_blueprint(permission_required):
         exclude_sent = data.get("exclude_previously_sent")
         exclude_sent = True if exclude_sent is None else bool(exclude_sent)
         max_recipients = data.get("max_recipients")
+        recipient_mode = (data.get("recipient_mode") or "tag").strip().lower()
+        raw_ids = data.get("contact_ids") or []
+        contact_ids = []
+        if isinstance(raw_ids, list):
+            for x in raw_ids:
+                try:
+                    contact_ids.append(int(x))
+                except (TypeError, ValueError):
+                    continue
+        manual_raw = data.get("manual_emails") or data.get("emails") or ""
+        if isinstance(manual_raw, list):
+            emails = [str(x) for x in manual_raw]
+        else:
+            emails = re.split(r"[\s,;]+", str(manual_raw or ""))
+        emails = [e.strip().lower() for e in emails if e and EMAIL_RE.match(e.strip().lower())]
         try:
             max_recipients = int(max_recipients)
             if max_recipients <= 0:
@@ -2387,25 +2585,39 @@ def create_mailing_blueprint(permission_required):
                 only_verified = bool(scrub_cfg.get("scrub_campaign_only_valid"))
             else:
                 only_verified = bool(only_verified)
-            where_sql, params = _campaign_selection_where(
-                tag_filter, exclude_sent, only_verified=only_verified,
-            )
-            total = None
-            # Tag filtreliyse registry sayısı; değilse approx. Exact COUNT yasak.
-            if tag_filter and not exclude_sent:
-                total = _registry_tag_count(conn, tag_filter)
-            if total is None:
-                try:
-                    total, _approx = _approx_contact_total(conn)
-                except Exception:
-                    total = 0
-            total = int(total or 0)
+            approx = True
+            if recipient_mode == "manual":
+                total = len(emails)
+                approx = False
+            elif recipient_mode == "selected":
+                filtered = _filter_sendable_contact_ids(
+                    conn, contact_ids,
+                    exclude_previously_sent=exclude_sent,
+                    only_verified=only_verified,
+                )
+                total = len(filtered)
+                approx = False
+            else:
+                where_sql, params = _campaign_selection_where(
+                    tag_filter, exclude_sent, only_verified=only_verified,
+                )
+                total = None
+                if tag_filter and not exclude_sent and not only_verified:
+                    total = _registry_tag_count(conn, tag_filter)
+                if total is None:
+                    try:
+                        total, approx = _approx_contact_total(conn)
+                    except Exception:
+                        total = 0
+                        approx = True
+                total = int(total or 0)
         will_attach = min(total, max_recipients) if max_recipients else total
         return jsonify({
             "matching_count": total,
             "will_attach": will_attach,
             "max_recipients": max_recipients,
-            "approx": True,
+            "approx": approx,
+            "recipient_mode": recipient_mode,
         })
 
     @bp.route("/campaigns/<int:campaign_id>", methods=["PATCH"])

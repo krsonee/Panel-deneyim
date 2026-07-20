@@ -2,14 +2,14 @@
   <div class="topbar">
     <div>
       <h2>Mailing <span class="role-badge" id="mail-role-badge"></span></h2>
-      <p>CRM · şablon · kampanya · IVR tetikleme · raporlar</p>
+      <p>Mail Rehber · şablon · kampanya · IVR tetikleme · raporlar</p>
     </div>
     <div class="live-pill" id="mail-provider-pill" style="background:var(--amber);border-color:rgba(245,158,11,0.35);color:var(--amber);">Stub mod</div>
   </div>
 
   <div class="acc-tabs" id="mail-tabs">
     <button type="button" class="acc-tab active" data-mail-tab="dashboard" data-perm="mailing.dashboard">Özet</button>
-    <button type="button" class="acc-tab" data-mail-tab="crm" data-perm="mailing.crm">CRM</button>
+    <button type="button" class="acc-tab" data-mail-tab="crm" data-perm="mailing.crm">Mail Rehber</button>
     <button type="button" class="acc-tab" data-mail-tab="templates" data-perm="mailing.templates">Şablonlar</button>
     <button type="button" class="acc-tab" data-mail-tab="campaigns" data-perm="mailing.campaigns">Kampanyalar</button>
     <button type="button" class="acc-tab" data-mail-tab="ivr" data-perm="mailing.ivr">IVR</button>
@@ -223,9 +223,12 @@
             <button type="button" class="btn btn-sm" id="mail-tag-remove-btn" title="Kaynak etiketi kaldır">Kaldır</button>
           </div>
         </div>
-        <p class="hint" style="margin:0.55rem 0 0;">
-          Örn. <code>Davet datasi</code> → <code>uye_oldu</code>: üye olanları taşı.
-          İşlem seçili satırlara uygulanır; seçim yoksa kaynak etiketteki <strong>tüm</strong> kontaklılara uygulanır.
+        <label style="display:flex;align-items:center;gap:0.4rem;margin:0.55rem 0 0;cursor:pointer;font-size:0.82rem;">
+          <input type="checkbox" id="mail-tag-move-all"> Seçim yoksa kaynak etiketteki <strong>tümünü</strong> işle
+        </label>
+        <p class="hint" style="margin:0.4rem 0 0;">
+          Varsayılan: sadece listeden işaretlediğin kişilere uygulanır (bazılarını taşı, bazılarını bırak).
+          Tüm etiketi işlemek için yukarıdaki kutuyu işaretle.
         </p>
         <p class="hint" id="mail-tag-move-status" style="margin:0.35rem 0 0;">—</p>
       </div>
@@ -235,6 +238,7 @@
           <input type="search" id="mail-contact-q" placeholder="Ara…" style="width:160px;">
           <select id="mail-contact-tag-filter" class="mail-tag-select" style="width:auto;min-width:140px;"><option value="">Tüm etiketler</option></select>
           <button type="button" class="btn btn-sm" id="mail-contacts-select-page">Sayfayı seç</button>
+          <button type="button" class="btn btn-sm btn-primary" id="mail-contacts-to-campaign" title="Seçilileri kampanya alıcısı yap">Seçilileri kampanyaya</button>
           <button type="button" class="btn btn-sm" id="mail-contacts-export">CSV export</button>
           <button type="button" class="btn btn-sm" id="mail-contacts-refresh">Yenile</button>
         </div>
@@ -278,9 +282,9 @@
           <p class="hint mail-tpl-hint">
             Değişkenler: <code>{{ '{{name}}' }}</code> <code>{{ '{{email}}' }}</code> <code>{{ '{{phone}}' }}</code>
             (isim kayıtlı değilse otomatik olarak “değerli üye” yazılır, “Merhaba ,” gibi bozuk çıkmaz)
-            · Takip linki: <code>{{ '{{link:https://site.com}}' }}</code> (tıklayan kişi CRM’e <code>mail_tiklayan</code> etiketiyle düşer)
+            · Takip linki: <code>{{ '{{link:https://site.com}}' }}</code> (tıklayan kişi Mail Rehber’e <code>mail_tiklayan</code> etiketiyle düşer)
             · Smartico linki: aşağıdaki "Smartico linki" kutusunu işaretle — tıklayan kişi Smartico'ya kendi
-            contact ID'siyle yönlenir, CRM &gt; "Smartico segmentlerini güncelle" ile kayıt/FTD durumu otomatik etiketlenir.
+            contact ID'siyle yönlenir, Mail Rehber &gt; "Smartico segmentlerini güncelle" ile kayıt/FTD durumu otomatik etiketlenir.
           </p>
 
           <div class="mail-tpl-toolbar">
@@ -344,11 +348,32 @@
           <div><label>Kampanya adı</label><input type="text" id="mail-camp-name" required placeholder="Mart VIP / Davet batch 1"></div>
           <div><label>Şablon</label><select id="mail-camp-tpl" required></select></div>
           <div><label>Gönderen domain</label><select id="mail-camp-domain" required></select></div>
-          <div>
+          <div style="grid-column:1/-1;">
+            <label>Alıcı kaynağı</label>
+            <div style="display:flex;flex-wrap:wrap;gap:0.85rem;margin-top:0.35rem;">
+              <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;font-weight:500;">
+                <input type="radio" name="mail-camp-recipient-mode" value="tag" checked> Etiket
+              </label>
+              <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;font-weight:500;">
+                <input type="radio" name="mail-camp-recipient-mode" value="selected"> Seçili kontaklar
+              </label>
+              <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;font-weight:500;">
+                <input type="radio" name="mail-camp-recipient-mode" value="manual"> Elle e-posta
+              </label>
+            </div>
+          </div>
+          <div id="mail-camp-mode-tag">
             <label>Hedef etiket</label>
             <select id="mail-camp-tag">
               <option value="">Tüm aktif kontaklar</option>
             </select>
+          </div>
+          <div id="mail-camp-mode-selected" hidden style="grid-column:1/-1;">
+            <p class="hint" id="mail-camp-selected-hint" style="margin:0;">Mail Rehber’de kişi seçip «Seçilileri kampanyaya» de — veya burada bekleyen seçim yok.</p>
+          </div>
+          <div id="mail-camp-mode-manual" hidden style="grid-column:1/-1;">
+            <label>E-posta listesi (tekli / çoklu)</label>
+            <textarea id="mail-camp-manual-emails" rows="4" placeholder="ornek@mail.com&#10;iki@mail.com, uc@mail.com"></textarea>
           </div>
           <div><label>Maks alıcı</label><input type="number" id="mail-camp-max" min="1" placeholder="örn. 150000 — boş = hepsi"></div>
           <div><label>Saatlik hız (mail/dk)</label><input type="number" id="mail-camp-rate" min="1" max="6000" value="120" title="SMTP için önerilen 60–180"></div>
@@ -369,8 +394,8 @@
         </form>
         <p class="hint" id="mail-camp-preview-hint" style="margin-top:0.65rem;"></p>
         <p class="hint" style="margin-top:0.35rem;">
-          Akış: etiket + limit seç → taslak oluştur → listeden <strong>Şimdi gönder</strong> veya zamanı dolunca otomatik başlar.
-          Ayarlar’da mod <code>smtp</code> + DirectMail bilgileri doluysa gerçek mail gider; <code>stub</code> ise simülasyon kaydı üretir.
+          Alıcı: etiket / Mail Rehber seçimi / elle e-posta → taslak → <strong>Şimdi gönder</strong>.
+          Ayarlar’da mod <code>smtp</code> ise gerçek mail; <code>stub</code> ise simülasyon.
         </p>
       </div>
     </section>
