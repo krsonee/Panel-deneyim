@@ -64,7 +64,7 @@ _BIOLINK_PACKS = {
         "bonus_chip_label": "Kampanya Kartı",
         "bonus_color": "#b2ff4f",
         "bonus_icon": "💎",
-        "bonus_skin": "ticket",
+        "bonus_skin": "table",
         "bonus_kicker": "BIZZO KAMPANYA",
         "bonus_default_label": "%100 Slot Hoş Geldin",
         "bonus_default_badge": "SINIRSIZ",
