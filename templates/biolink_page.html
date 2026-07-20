@@ -350,66 +350,126 @@
   }
 
   @media (max-width: 560px) {
-    body.brand-bizzo .wrap { max-width: 420px; }
-    body.brand-bizzo .links { gap: 0.45rem; }
-    body.brand-bizzo .link-row-pair,
-    body.brand-bizzo .link-row-triple { gap: 0.35rem; }
+    body.brand-bizzo .wrap { max-width: 420px; padding-left: 0.85rem; padding-right: 0.85rem; }
+    body.brand-bizzo .links { gap: 0.5rem; }
+
+    /* 3’lü WhatsApp vb. mobilde alt alta — dar sütunda okunmaz */
+    body.brand-bizzo .link-row-triple {
+      grid-template-columns: 1fr;
+      gap: 0.4rem;
+    }
+    body.brand-bizzo .link-row-pair { gap: 0.4rem; }
+
     body.brand-bizzo .link-row-pair a.link-btn,
     body.brand-bizzo .link-row-triple a.link-btn,
     body.brand-bizzo .link-row-half-left a.link-btn,
     body.brand-bizzo .link-row-half-center a.link-btn,
     body.brand-bizzo .link-row-half-right a.link-btn {
-      padding: 0.72rem 0.55rem;
-      font-size: 0.72rem;
-      gap: 0.4rem;
+      padding: 0.78rem 0.75rem;
+      font-size: 0.8rem;
+      gap: 0.5rem;
     }
-    body.brand-bizzo .link-row-triple a.link-btn::after { display: none; }
-    body.brand-bizzo .link-row-triple .link-icon {
-      width: 28px; height: 28px; font-size: 0.85rem; border-radius: 8px;
-    }
-    body.brand-bizzo .link-row-pair .link-icon,
-    body.brand-bizzo .link-row-half-left .link-icon,
-    body.brand-bizzo .link-row-half-center .link-icon,
-    body.brand-bizzo .link-row-half-right .link-icon {
-      width: 30px; height: 30px; font-size: 0.88rem; border-radius: 9px;
-    }
-    body.brand-bizzo .link-row-pair .platform-svg,
-    body.brand-bizzo .link-row-half-left .platform-svg,
-    body.brand-bizzo .link-row-half-center .platform-svg,
-    body.brand-bizzo .link-row-half-right .platform-svg { width: 18px; height: 18px; }
+    body.brand-bizzo .link-row-triple a.link-btn::after,
     body.brand-bizzo .link-row-pair a.link-btn::after,
     body.brand-bizzo .link-row-half-left a.link-btn::after,
     body.brand-bizzo .link-row-half-center a.link-btn::after,
     body.brand-bizzo .link-row-half-right a.link-btn::after { display: none; }
+    body.brand-bizzo .link-row-triple .link-icon,
+    body.brand-bizzo .link-row-pair .link-icon,
+    body.brand-bizzo .link-row-half-left .link-icon,
+    body.brand-bizzo .link-row-half-center .link-icon,
+    body.brand-bizzo .link-row-half-right .link-icon {
+      width: 32px; height: 32px; font-size: 0.9rem; border-radius: 9px;
+    }
+    body.brand-bizzo .link-row-triple .platform-svg,
+    body.brand-bizzo .link-row-pair .platform-svg,
+    body.brand-bizzo .link-row-half-left .platform-svg,
+    body.brand-bizzo .link-row-half-center .platform-svg,
+    body.brand-bizzo .link-row-half-right .platform-svg { width: 18px; height: 18px; }
+
+    /* Kampanya yarım kart: rozet alta, metin kesilmesin */
     body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table,
     body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table,
     body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table,
     body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table {
-      padding: 0.65rem 0.65rem 0.7rem;
-      gap: 0.35rem;
+      padding: 0.6rem 0.6rem 0.65rem;
+      gap: 0.32rem;
     }
     body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-kicker,
     body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-kicker,
     body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-kicker,
     body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-kicker {
-      font-size: 0.5rem; letter-spacing: 0.04em; padding: 0.2rem 0.45rem;
+      font-size: 0.48rem; letter-spacing: 0.04em; padding: 0.18rem 0.42rem;
     }
-    body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-amount,
-    body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-amount,
-    body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-amount,
-    body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-amount {
-      font-size: 0.5rem; padding: 0.28rem 0.4rem; max-width: 36%;
+    body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-main,
+    body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-main,
+    body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-main,
+    body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-main {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.35rem;
+    }
+    body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-main-left,
+    body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-main-left,
+    body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-main-left,
+    body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-main-left {
+      width: 100%;
+    }
+    body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-title-row,
+    body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-title-row,
+    body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-title-row,
+    body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-title-row {
+      gap: 0.4rem;
+    }
+    body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-title-row .link-icon,
+    body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-title-row .link-icon,
+    body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-title-row .link-icon,
+    body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-title-row .link-icon {
+      width: 22px; height: 22px; font-size: 0.85rem;
     }
     body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-title-row .link-label,
     body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-title-row .link-label,
     body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-title-row .link-label,
     body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-title-row .link-label {
-      font-size: 0.78rem;
+      font-size: 0.72rem;
+      line-height: 1.2;
+    }
+    body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-amount,
+    body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-amount,
+    body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-amount,
+    body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-amount {
+      align-self: flex-start;
+      max-width: 100%;
+      font-size: 0.55rem;
+      padding: 0.28rem 0.5rem;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: unset;
+      line-height: 1.2;
+      text-align: center;
     }
     body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-cta,
     body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-cta,
     body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-cta,
-    body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-cta { font-size: 0.62rem; }
+    body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-cta {
+      font-size: 0.62rem;
+      white-space: nowrap;
+    }
+    /* Yarım kartta ikinci satır CTA’yı gizle — “Bonusu Al →” tek satır kalsın */
+    body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-table .bonus-cta-rest,
+    body.brand-bizzo .link-row-half-left a.bonus-card.bonus-skin-table .bonus-cta-rest,
+    body.brand-bizzo .link-row-half-center a.bonus-card.bonus-skin-table .bonus-cta-rest,
+    body.brand-bizzo .link-row-half-right a.bonus-card.bonus-skin-table .bonus-cta-rest {
+      display: none;
+    }
+  }
+
+  /* Çok dar ekran: kampanya çiftlerini de tek sütun */
+  @media (max-width: 380px) {
+    body.brand-bizzo .link-row-pair {
+      grid-template-columns: 1fr;
+      gap: 0.45rem;
+    }
   }
 
   a.link-btn {
@@ -871,7 +931,7 @@
                     <span class="link-icon">{{ b.display_icon or b.icon or bonus_icon }}</span>
                     <span class="link-label">{{ b.label }}</span>
                   </div>
-                  <div class="bonus-cta"><span>{{ cta_strong }}</span> {{ cta_rest }}</div>
+                  <div class="bonus-cta"><span>{{ cta_strong }}</span><span class="bonus-cta-rest"> {{ cta_rest }}</span></div>
                 </div>
                 {% if b.badge_text %}<span class="bonus-amount">{{ b.badge_text }}</span>{% endif %}
               </div>
