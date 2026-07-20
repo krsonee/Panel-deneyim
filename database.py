@@ -2605,6 +2605,11 @@ def seed_mailing_defaults(conn):
         upsert_mail_setting(conn, "smartico_affiliate_id", "")
     if get_mail_setting(conn, "smartico_subid_param") is None:
         upsert_mail_setting(conn, "smartico_subid_param", "afp1")
+    try:
+        from mail_template_seeds import seed_makrobet_mail_templates
+        seed_makrobet_mail_templates(conn)
+    except Exception as exc:
+        print(f"⚠️  makrobet mail template seed: {exc}")
     # Default IVR rule if none
     rule_count = scalar(conn, "SELECT COUNT(*) FROM mail_ivr_rules") or 0
     if not rule_count:

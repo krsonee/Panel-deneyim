@@ -1435,6 +1435,13 @@ def create_mailing_blueprint(permission_required):
         with closing(get_db()) as conn:
             ensure_mail_ops_schema(conn)
             ensure_mail_scrub_schema(conn)
+            try:
+                from mail_template_seeds import seed_makrobet_mail_templates
+                n = seed_makrobet_mail_templates(conn)
+                if n:
+                    print(f"✉️  seeded {n} Makrobet mail templates")
+            except Exception as seed_exc:
+                print(f"⚠️  mail template seed: {seed_exc}")
     except Exception as exc:
         print(f"⚠️  mail_ops/scrub ensure: {exc}")
     try:
