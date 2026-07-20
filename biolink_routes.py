@@ -25,9 +25,10 @@ def render_public_biolink_page(page, *, preview=False, site_mode=False):
     if preview:
         page = biolink_api.apply_preview_overrides(page, request.args)
         theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
+        layout_rows = biolink_api.group_layout_rows(page.get("buttons") or [])
         return render_template(
             "biolink_page.html", page=page, theme=theme, preview=True,
-            click_prefix=f"/p/{page['slug']}", **brand_ctx,
+            click_prefix=f"/p/{page['slug']}", layout_rows=layout_rows, **brand_ctx,
         )
     biolink_api.send_ga4_event(page, event_name="biolink_page_view")
     theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
@@ -39,9 +40,10 @@ def render_public_biolink_page(page, *, preview=False, site_mode=False):
         click_prefix = ""
     else:
         click_prefix = f"/p/{page['slug']}"
+    layout_rows = biolink_api.group_layout_rows(page.get("buttons") or [])
     return render_template(
         "biolink_page.html", page=page, theme=theme, click_prefix=click_prefix,
-        **brand_ctx,
+        layout_rows=layout_rows, **brand_ctx,
     )
 
 

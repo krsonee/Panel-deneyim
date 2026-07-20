@@ -269,67 +269,50 @@
   }
   .links {
     width: 100%;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-direction: column;
     gap: 0.55rem;
+  }
+  .link-row { width: 100%; }
+  .link-row-full > .heading,
+  .link-row-full > .link-slot {
+    width: 100%;
+  }
+  .link-row-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.45rem;
     align-items: stretch;
   }
-  /* Tam genişlik — her iki sütunu kaplar */
-  .link-col-full,
-  .links > .heading {
-    grid-column: 1 / -1;
-    width: 100%;
-    max-width: none;
-    justify-self: stretch;
-  }
-  .link-col-full > a,
-  .link-col-left > a,
-  .link-col-right > a {
+  .link-slot { min-width: 0; }
+  .link-slot > a {
     width: 100%;
     height: 100%;
     display: flex;
     box-sizing: border-box;
   }
-  /* Sol / sağ yarım — telefonda da 2 sütun (isteğe göre boş hücre kalır) */
-  .link-col-left { grid-column: 1; min-width: 0; }
-  .link-col-right { grid-column: 2; min-width: 0; }
 
   @media (max-width: 560px) {
     .wrap { max-width: 420px; }
     .links { gap: 0.45rem; }
-    .link-col-left a.link-btn,
-    .link-col-right a.link-btn {
+    .link-row-pair { gap: 0.4rem; }
+    .link-row-pair a.link-btn {
       padding: 0.72rem 0.65rem;
       font-size: 0.78rem;
       gap: 0.45rem;
     }
-    .link-col-left .link-icon,
-    .link-col-right .link-icon {
+    .link-row-pair .link-icon {
       width: 30px; height: 30px; font-size: 0.88rem; border-radius: 9px;
     }
-    .link-col-left .platform-svg,
-    .link-col-right .platform-svg { width: 18px; height: 18px; }
-    .link-col-left a.link-btn::after,
-    .link-col-right a.link-btn::after { display: none; }
-    .link-col-left a.bonus-card,
-    .link-col-right a.bonus-card {
-      padding: 0.65rem 0.55rem 0.7rem;
-    }
-    .link-col-left .bonus-kicker,
-    .link-col-right .bonus-kicker {
+    .link-row-pair .platform-svg { width: 18px; height: 18px; }
+    .link-row-pair a.link-btn::after { display: none; }
+    .link-row-pair a.bonus-card { padding: 0.65rem 0.55rem 0.7rem; }
+    .link-row-pair .bonus-kicker {
       font-size: 0.52rem; letter-spacing: 0.08em; padding: 0.15rem 0.4rem;
     }
-    .link-col-left .bonus-cta,
-    .link-col-right .bonus-cta { font-size: 0.58rem; }
-    /* Yarım kampanya kartında bilet çentiklerini gizle */
-    body.brand-bizzo a.bonus-card.bonus-skin-ticket.link-in-half::before,
-    body.brand-bizzo a.bonus-card.bonus-skin-ticket.link-in-half::after,
-    .link-col-left a.bonus-card.bonus-skin-ticket::before,
-    .link-col-left a.bonus-card.bonus-skin-ticket::after,
-    .link-col-right a.bonus-card.bonus-skin-ticket::before,
-    .link-col-right a.bonus-card.bonus-skin-ticket::after {
-      display: none;
-    }
+    .link-row-pair .bonus-cta { font-size: 0.58rem; }
+    .link-row-pair a.bonus-card.bonus-skin-ticket::before,
+    .link-row-pair a.bonus-card.bonus-skin-ticket::after { display: none; }
   }
 
   a.link-btn {
@@ -705,44 +688,49 @@
     </div>
 
     <div class="links">
-      {% for b in page.buttons %}
-        {% set col = b.layout_col or 'full' %}
-        {% set align = b.text_align or 'left' %}
-        {% if b.button_type == 'heading' %}
-          <div class="heading link-col-full text-align-{{ align }} hs-{{ b.heading_style or 'classic' }}"><span class="hs-inner">{{ b.label }}</span></div>
-        {% elif b.button_type == 'bonus' %}
-          {% set bonus_skin = pack.bonus_skin if page_brand == 'bizzo' and pack.bonus_skin else 'classic' %}
-          {% set bonus_icon = pack.bonus_icon if page_brand == 'bizzo' and pack.bonus_icon else '🎁' %}
-          {% set cta_strong = pack.bonus_cta_strong if page_brand == 'bizzo' and pack.bonus_cta_strong else 'Katıl →' %}
-          {% set cta_rest = pack.bonus_cta_rest if page_brand == 'bizzo' and pack.bonus_cta_rest else 'Promosyonu görüntüle' %}
-          <div class="link-col-{{ col }}">
-          <a class="link-btn bonus-card bonus-skin-{{ bonus_skin }} highlight text-align-{{ align }}{% if col in ('left', 'right') %} link-in-half{% endif %}" href="{{ click_prefix }}/go/{{ b.id }}">
-            {% if page_brand == 'bizzo' and pack.bonus_kicker %}
-            <div class="bonus-kicker">{{ pack.bonus_kicker }}</div>
-            {% endif %}
-            <div class="bonus-top">
-              <span class="link-icon">{{ b.display_icon or b.icon or bonus_icon }}</span>
-              <span class="link-label">{{ b.label }}</span>
-              {% if b.badge_text %}<span class="bonus-amount">{{ b.badge_text }}</span>{% endif %}
-            </div>
-            <div class="bonus-cta"><span>{{ cta_strong }}</span> {{ cta_rest }}</div>
-          </a>
-          </div>
-        {% else %}
-          <div class="link-col-{{ col }}">
-          <a class="link-btn platform-{{ b.button_type }} text-align-{{ align }}{% if b.highlight %} highlight{% endif %}{% if col in ('left', 'right') %} link-in-half{% endif %}" href="{{ click_prefix }}/go/{{ b.id }}">
-            <span class="link-icon">
-              {% if b.button_type in ['whatsapp','telegram','instagram','twitter','tiktok','youtube'] %}
-                {% set platform = b.button_type %}{% include 'partials/biolink_platform_icon.html' %}
-              {% else %}
-                {{ b.display_icon or b.icon or '🔗' }}
+      {% set rows = layout_rows if layout_rows is defined else [] %}
+      {% for row in rows %}
+        <div class="link-row link-row-{{ row.kind }}">
+        {% for b in row.items %}
+          {% set align = b.text_align or 'left' %}
+          {% set half = row.kind == 'pair' %}
+          {% if b.button_type == 'heading' %}
+            <div class="heading text-align-{{ align }} hs-{{ b.heading_style or 'classic' }}"><span class="hs-inner">{{ b.label }}</span></div>
+          {% elif b.button_type == 'bonus' %}
+            {% set bonus_skin = pack.bonus_skin if page_brand == 'bizzo' and pack.bonus_skin else 'classic' %}
+            {% set bonus_icon = pack.bonus_icon if page_brand == 'bizzo' and pack.bonus_icon else '🎁' %}
+            {% set cta_strong = pack.bonus_cta_strong if page_brand == 'bizzo' and pack.bonus_cta_strong else 'Katıl →' %}
+            {% set cta_rest = pack.bonus_cta_rest if page_brand == 'bizzo' and pack.bonus_cta_rest else 'Promosyonu görüntüle' %}
+            <div class="link-slot">
+            <a class="link-btn bonus-card bonus-skin-{{ bonus_skin }} highlight text-align-{{ align }}{% if half %} link-in-half{% endif %}" href="{{ click_prefix }}/go/{{ b.id }}">
+              {% if page_brand == 'bizzo' and pack.bonus_kicker %}
+              <div class="bonus-kicker">{{ pack.bonus_kicker }}</div>
               {% endif %}
-            </span>
-            <span class="link-label">{{ b.label }}</span>
-            {% if b.badge_text and b.button_type != 'whatsapp' %}<span class="link-badge">{{ b.badge_text }}</span>{% endif %}
-          </a>
-          </div>
-        {% endif %}
+              <div class="bonus-top">
+                <span class="link-icon">{{ b.display_icon or b.icon or bonus_icon }}</span>
+                <span class="link-label">{{ b.label }}</span>
+                {% if b.badge_text %}<span class="bonus-amount">{{ b.badge_text }}</span>{% endif %}
+              </div>
+              <div class="bonus-cta"><span>{{ cta_strong }}</span> {{ cta_rest }}</div>
+            </a>
+            </div>
+          {% else %}
+            <div class="link-slot">
+            <a class="link-btn platform-{{ b.button_type }} text-align-{{ align }}{% if b.highlight %} highlight{% endif %}{% if half %} link-in-half{% endif %}" href="{{ click_prefix }}/go/{{ b.id }}">
+              <span class="link-icon">
+                {% if b.button_type in ['whatsapp','telegram','instagram','twitter','tiktok','youtube'] %}
+                  {% set platform = b.button_type %}{% include 'partials/biolink_platform_icon.html' %}
+                {% else %}
+                  {{ b.display_icon or b.icon or '🔗' }}
+                {% endif %}
+              </span>
+              <span class="link-label">{{ b.label }}</span>
+              {% if b.badge_text and b.button_type != 'whatsapp' %}<span class="link-badge">{{ b.badge_text }}</span>{% endif %}
+            </a>
+            </div>
+          {% endif %}
+        {% endfor %}
+        </div>
       {% endfor %}
     </div>
 

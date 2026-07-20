@@ -605,6 +605,43 @@ def _page_row(row):
     return d
 
 
+def group_layout_rows(buttons):
+    """Blokları satırlara ayır.
+
+    - Sol + Sağ ardışık → yan yana çift
+    - Tek kalan Sol/Sağ → tam genişlik (sağa/sola kaymış tek buton olmasın)
+    - Tam / başlık → tam satır
+    """
+    items = list(buttons or [])
+    rows = []
+    i = 0
+    n = len(items)
+    while i < n:
+        b = items[i]
+        bt = (b.get("button_type") or "link").strip().lower()
+        col = (b.get("layout_col") or "full").strip().lower()
+        if bt == HEADING_TYPE or col not in ("left", "right"):
+            rows.append({"kind": "full", "items": [b]})
+            i += 1
+            continue
+        nxt = items[i + 1] if i + 1 < n else None
+        nxt_col = ((nxt or {}).get("layout_col") or "full").strip().lower()
+        nxt_bt = ((nxt or {}).get("button_type") or "link").strip().lower()
+        if (
+            col == "left"
+            and nxt
+            and nxt_bt != HEADING_TYPE
+            and nxt_col == "right"
+        ):
+            rows.append({"kind": "pair", "items": [b, nxt]})
+            i += 2
+            continue
+        # Yetim yarım → tam genişlik göster
+        rows.append({"kind": "full", "items": [b]})
+        i += 1
+    return rows
+
+
 def _button_row(row):
     if not row:
         return None

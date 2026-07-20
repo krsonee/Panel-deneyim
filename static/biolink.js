@@ -1328,8 +1328,8 @@
       '<label class="bl-col-layout-lbl">Yerleşim</label>' +
       '<select data-bl-field="layout_col" data-bl-id="' + b.id + '" title="Tam / sol yarım / sağ yarım — yan yana iki yarım kullan">' +
       '<option value="full"' + (col === "full" ? " selected" : "") + ">Tam geni\u015flik</option>" +
-      '<option value="left"' + (col === "left" ? " selected" : "") + ">Sol yar\u0131m (yan bo\u015f)</option>" +
-      '<option value="right"' + (col === "right" ? " selected" : "") + ">Sa\u011f yar\u0131m (yan bo\u015f)</option>" +
+      '<option value="left"' + (col === "left" ? " selected" : "") + ">Yan yana \u2014 Sol (sonraki Sa\u011f)</option>" +
+      '<option value="right"' + (col === "right" ? " selected" : "") + ">Yan yana \u2014 Sa\u011f (önceki Sol)</option>" +
       "</select></div>";
   }
 
