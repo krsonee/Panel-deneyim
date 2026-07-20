@@ -1453,27 +1453,44 @@ def upload_asset(conn, kind, file_storage, *, label="", created_by=""):
     _ensure_biolink_upload_dir()
     stored = f"{kind}_{utcnow().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}{ext}"
     path = os.path.join(BIOLINK_UPLOAD_DIR, stored)
-    file_storage.save(path)
+    file_storage.stream.seek(0)
+    raw = file_storage.stream.read()
+    if not raw:
+        raise ValueError("Boş dosya yüklenemez.")
+    with open(path, "wb") as fh:
+        fh.write(raw)
 
     public_url = f"{BIOLINK_UPLOAD_URL_PREFIX}/{stored}"
     label = (label or os.path.splitext(orig)[0] or "Yüklediğim").strip()[:120]
     now = iso(utcnow())
+    mime = (file_storage.mimetype or "")[:120]
+    # Postgres BYTEA / SQLite BLOB — Render disk silinse bile görsel kalsın
+    try:
+        from database import uses_postgres
+        if uses_postgres():
+            from psycopg2 import Binary
+            blob = Binary(raw)
+        else:
+            blob = raw
+    except Exception:
+        blob = raw
     asset_id = insert_returning_id(
         conn,
         """
         INSERT INTO biolink_assets
-          (kind, label, stored_name, public_url, mime_type, file_size, created_by, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (kind, label, stored_name, public_url, mime_type, file_size, created_by, created_at, file_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             kind,
             label,
             stored,
             public_url,
-            (file_storage.mimetype or "")[:120],
-            size,
+            mime,
+            len(raw),
             (created_by or "")[:64],
             now,
+            blob,
         ),
     )
     conn.commit()
@@ -1505,3 +1522,49 @@ def biolink_upload_path(filename):
     if not os.path.isfile(path):
         return None
     return path
+
+
+def get_asset_payload(conn, filename):
+    """Disk yoksa DB file_data'dan (mime, bytes) döner; varsa diske geri yazar."""
+    safe = os.path.basename(filename or "")
+    if not safe or safe != filename:
+        return None
+    path = os.path.join(BIOLINK_UPLOAD_DIR, safe)
+    if os.path.isfile(path):
+        mime = ""
+        row = fetchone(
+            conn,
+            "SELECT mime_type FROM biolink_assets WHERE stored_name = ?",
+            (safe,),
+        )
+        if row:
+            mime = (dict(row).get("mime_type") or "").strip()
+        return {"path": path, "mime": mime, "data": None}
+    row = fetchone(
+        conn,
+        "SELECT mime_type, file_data FROM biolink_assets WHERE stored_name = ?",
+        (safe,),
+    )
+    if not row:
+        return None
+    d = dict(row)
+    raw = d.get("file_data")
+    if raw is None:
+        return None
+    if isinstance(raw, memoryview):
+        raw = raw.tobytes()
+    elif not isinstance(raw, (bytes, bytearray)):
+        try:
+            raw = bytes(raw)
+        except Exception:
+            return None
+    if not raw:
+        return None
+    # Sonraki istekler için diske geri koy
+    try:
+        _ensure_biolink_upload_dir()
+        with open(path, "wb") as fh:
+            fh.write(raw)
+    except OSError:
+        pass
+    return {"path": path if os.path.isfile(path) else None, "mime": (d.get("mime_type") or "").strip(), "data": bytes(raw)}

@@ -1,6 +1,8 @@
 """Bio Sayfa — admin API (/api/biolink/*) + herkese açık sayfa/tıklama rotaları (/p/<slug>)."""
 
+import os
 from contextlib import closing
+from io import BytesIO
 
 from flask import Blueprint, jsonify, redirect, render_template, request, send_file, session
 
@@ -326,10 +328,23 @@ def create_biolink_blueprint(permission_required):
     # ── Public sayfa + tıklama ─────────────────────────────────
     @bp.route("/uploads/biolink/<path:filename>")
     def biolink_upload_file(filename):
-        path = biolink_api.biolink_upload_path(filename)
-        if not path:
+        # Disk (ephemeral) veya Postgres file_data — Render deploy sonrası da çalışsın
+        with closing(get_db()) as conn:
+            payload = biolink_api.get_asset_payload(conn, filename)
+        if not payload:
             return ("Dosya bulunamadı.", 404)
-        return send_file(path)
+        mime = payload.get("mime") or "application/octet-stream"
+        if payload.get("path"):
+            return send_file(payload["path"], mimetype=mime)
+        data = payload.get("data")
+        if not data:
+            return ("Dosya bulunamadı.", 404)
+        return send_file(
+            BytesIO(data),
+            mimetype=mime,
+            download_name=os.path.basename(filename),
+            max_age=86400,
+        )
 
     @bp.route("/p/<slug>")
     def public_page(slug):

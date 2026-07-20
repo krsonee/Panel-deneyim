@@ -892,6 +892,13 @@ def migrate_biolink(conn):
             """,
         )
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_biolink_assets_kind ON biolink_assets(kind)")
+    # Render ephemeral disk: yüklenen dosyayı DB'de de tut
+    asset_cols = _table_columns(conn, "biolink_assets")
+    if "file_data" not in asset_cols:
+        if uses_postgres():
+            execute(conn, "ALTER TABLE biolink_assets ADD COLUMN file_data BYTEA")
+        else:
+            execute(conn, "ALTER TABLE biolink_assets ADD COLUMN file_data BLOB")
     if uses_postgres():
         execute(
             conn,
