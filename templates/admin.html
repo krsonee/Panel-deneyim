@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#060a10">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/static/biolink-admin.css?v=20260716b">
+  <link rel="stylesheet" href="/static/biolink-admin.css?v=20260720d">
   <link rel="stylesheet" href="/static/biolink-skins.css?v=20260716b">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -1034,16 +1034,13 @@
       contain: layout style paint;
       overscroll-behavior: contain;
     }
-    /* Gizli modüller — DOM boyutu büyük olsa bile render/paint maliyeti sıfır */
+    /* Gizli modüller — DOM boyutu büyük olsa bile render/paint maliyeti sıfır.
+       NOT: görünür modülde contain/layout kullanma — sticky + iframe ile tıklama kaçırma yapar. */
     .module-panel[hidden] {
       display: none !important;
       content-visibility: hidden;
       contain: strict;
       pointer-events: none;
-    }
-    .module-panel:not([hidden]) {
-      content-visibility: visible;
-      contain: layout style;
     }
     #makrolink-table-scroll {
       max-height: min(520px, 62vh);
@@ -2744,7 +2741,7 @@
       domainPrefix: {{ panel.domain_prefix_placeholder|tojson }}
     };
   </script>
-  <script src="/static/biolink.js?v=20260720c"></script>
+  <script src="/static/biolink.js?v=20260720d"></script>
   {% if panel.features.marketing %}
   <script src="/static/marketing.js?v=20260712d"></script>
   {% endif %}

@@ -30,6 +30,17 @@
   gap: 1.25rem;
   align-items: start;
 }
+.biolink-editor-form {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+}
+.biolink-editor-preview {
+  position: relative;
+  z-index: 0;
+  min-width: 0;
+  align-self: start;
+}
 .biolink-editor-form h4,
 .biolink-studio-section-title {
   margin: 0 0 0.65rem;
@@ -298,10 +309,25 @@
   gap: 0.5rem;
   margin-top: 0.85rem;
   flex-wrap: wrap;
+  position: relative;
+  z-index: 3;
+}
+.bl-composer-actions .btn,
+.bl-quick-chip,
+#btn-biolink-add-button,
+#btn-biolink-new,
+#btn-biolink-save {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+  z-index: 3;
 }
 .bl-composer-actions .btn-primary {
   background: linear-gradient(135deg, var(--accent), #818cf8);
   border: none;
+  min-height: 40px;
+  min-width: 120px;
+  color: var(--accent-ink, #fff);
 }
 
 /* Blok listesi */
@@ -517,7 +543,7 @@
 }
 .bl-emoji-popover button:hover { background: rgba(255,255,255,0.08); }
 
-/* Önizleme telefon */
+/* Önizleme telefon — sticky sağ kolonda kalsın; sola taşarsa tıklamayı yutmasın */
 .biolink-preview-frame-wrap {
   width: 100%;
   max-width: 300px;
@@ -529,6 +555,10 @@
   background: #000;
   position: sticky;
   top: 1rem;
+  z-index: 0;
+  isolation: isolate;
+  /* Form kolonuna taşan hit-area'yı kes — iframe yine tıklanır */
+  pointer-events: none;
 }
 .biolink-preview-frame-wrap::before {
   content: "";
@@ -543,6 +573,7 @@
   border: none;
   display: block;
   background: #030912;
+  pointer-events: auto;
 }
 .biolink-preview-label {
   text-align: center;

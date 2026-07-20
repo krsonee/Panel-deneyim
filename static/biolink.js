@@ -980,6 +980,14 @@
         openEmojiPopover(btn.getAttribute("data-bl-emoji-target"), btn);
       };
     });
+    box.querySelectorAll("input").forEach(function (inp) {
+      inp.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addButton();
+        }
+      });
+    });
     var hsBox = document.getElementById("bl-composer-hs");
     if (hsBox) {
       hsBox.querySelectorAll("[data-hs]").forEach(function (btn) {
@@ -1009,25 +1017,53 @@
     return body;
   }
 
+  var blAddBusy = false;
+
   function addButton() {
-    if (!blCurrentPage) return;
+    if (blAddBusy) return;
+    if (!blCurrentPage) {
+      alert("Önce bir sayfa açın.");
+      return;
+    }
     var body = readComposerPayload();
     if (!body.label) { alert("Başlık / etiket gerekli."); return; }
     if (blComposerType !== "heading" && !body.url) {
       alert("Hedef alanı gerekli.");
       return;
     }
+    var btn = document.getElementById("btn-biolink-add-button");
+    var orig = btn ? (btn.dataset.origText || btn.textContent) : "";
+    blAddBusy = true;
+    if (btn) {
+      btn.dataset.origText = orig;
+      btn.disabled = true;
+      btn.classList.add("is-busy");
+      btn.textContent = "Ekleniyor…";
+    }
+    blToast("Blok ekleniyor…");
     blApi("/api/biolink/pages/" + blCurrentPage.id + "/buttons", { method: "POST", body: body }).then(function (r) {
-      if (r && r.ok) {
+      if (r && r.ok && r.data && r.data.button) {
         blCurrentPage.buttons = blCurrentPage.buttons || [];
         blCurrentPage.buttons.push(r.data.button);
         renderButtonsList(blCurrentPage.buttons);
         renderComposerFields();
         schedulePreviewRefresh();
-        loadPages();
         scheduleLoadStats();
+        /* Sayfa tablosu arka planda — tıklamayı / UI’yi kilitlemesin */
+        setTimeout(function () { loadPages(); }, 0);
         blToast("Blok eklendi");
-      } else if (r) alert((r.data && r.data.error) || "Eklenemedi");
+      } else if (r) {
+        alert((r.data && r.data.error) || ("Eklenemedi (" + (r.status || "?") + ")"));
+      } else {
+        alert("Sunucuya ulaşılamadı");
+      }
+    }).finally(function () {
+      blAddBusy = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.classList.remove("is-busy");
+        btn.textContent = btn.dataset.origText || "Blok Ekle";
+      }
     });
   }
 
@@ -1318,8 +1354,17 @@
     if (btnClose) btnClose.onclick = closeEditor;
     var restoreBtn = document.getElementById("btn-biolink-restore-assets");
     if (restoreBtn) restoreBtn.onclick = blRestoreBrandAssets;
-    var btnAdd = document.getElementById("btn-biolink-add-button");
-    if (btnAdd) btnAdd.onclick = addButton;
+    /* Capture: sticky önizleme tıklamayı kaçırsa bile Blok Ekle çalışsın (busy ile tek tetik) */
+    var composer = document.getElementById("bl-composer");
+    if (composer && composer.dataset.blBound !== "1") {
+      composer.dataset.blBound = "1";
+      composer.addEventListener("click", function (e) {
+        if (!e.target.closest("#btn-biolink-add-button")) return;
+        e.preventDefault();
+        e.stopPropagation();
+        addButton();
+      }, true);
+    }
     var logoFile = document.getElementById("bl-logo-file");
     var bannerFile = document.getElementById("bl-banner-file");
     var faviconFile = document.getElementById("bl-favicon-file");
