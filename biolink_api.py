@@ -391,7 +391,7 @@ def _validate_button(button_type, label, url, badge_text=""):
     if not label:
         raise ValueError("Başlık / etiket gerekli.")
     if button_type == HEADING_TYPE:
-        return button_type, label, "", (badge_text or "").strip()[:32]
+        return button_type, label, "", (badge_text or "").strip()[:80]
     dest = resolve_button_url(button_type, url, badge_text)
     if not dest:
         hints = {
@@ -406,7 +406,7 @@ def _validate_button(button_type, label, url, badge_text=""):
         }
         raise ValueError(hints.get(button_type, "Geçerli bir hedef girin."))
     stored_url = (url or "").strip()[:500]
-    return button_type, label[:200], stored_url, (badge_text or "").strip()[:32]
+    return button_type, label[:200], stored_url, (badge_text or "").strip()[:80]
 
 
 def _slugify(text):
@@ -971,7 +971,7 @@ def add_button(conn, page_id, *, button_type="link", label="", url="", icon="",
     if uses_brand_icon(button_type):
         icon = ""
     else:
-        icon = (icon or default_icon(button_type)).strip()[:8]
+        icon = (icon or default_icon(button_type)).strip()[:16]
     hs = normalize_heading_style(heading_style) if button_type == HEADING_TYPE else DEFAULT_HEADING_STYLE
     lc = (layout_col or DEFAULT_LAYOUT_COL).strip()
     if button_type == HEADING_TYPE:
@@ -1015,13 +1015,13 @@ def update_button(conn, button_id, data):
         button_type, label, url, badge_text = _validate_button(button_type, label, url, badge_text)
     else:
         label = label[:200]
-        badge_text = (badge_text or "").strip()[:32]
+        badge_text = (badge_text or "").strip()[:80]
     if uses_brand_icon(button_type):
         icon = ""
     elif "icon" in data:
-        icon = (data.get("icon") or default_icon(button_type)).strip()[:8]
+        icon = (data.get("icon") or default_icon(button_type)).strip()[:16]
     else:
-        icon = (row["icon"] or default_icon(button_type)).strip()[:8]
+        icon = (row["icon"] or default_icon(button_type)).strip()[:16]
     highlight = int(bool(data["highlight"])) if "highlight" in data else int(row["highlight"] or 0)
     is_active = int(bool(data["is_active"])) if "is_active" in data else int(row["is_active"] or 0)
     if button_type == HEADING_TYPE:

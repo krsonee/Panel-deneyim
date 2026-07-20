@@ -176,21 +176,45 @@
     return blPerms.indexOf(key) >= 0 || blPerms.indexOf("module.biolink") >= 0;
   }
 
+  var blMutePreview = 0;
+
   function blApi(path, opts) {
     opts = opts || {};
-    var fetchOpts = Object.assign({ headers: {} }, opts);
-    if (fetchOpts.body instanceof FormData) {
-      /* multipart — Content-Type tarayıcı ayarlar */
-    } else if (fetchOpts.body && typeof fetchOpts.body === "object") {
+    var retries = opts._retries != null ? opts._retries : 1;
+    var fetchOpts = {
+      method: opts.method || "GET",
+      credentials: "same-origin",
+      headers: Object.assign({}, opts.headers || {}),
+    };
+    if (opts.body instanceof FormData) {
+      fetchOpts.body = opts.body;
+    } else if (opts.body && typeof opts.body === "object") {
       fetchOpts.headers["Content-Type"] = "application/json";
-      fetchOpts.body = JSON.stringify(fetchOpts.body);
+      fetchOpts.body = JSON.stringify(opts.body);
+    } else if (typeof opts.body === "string") {
+      fetchOpts.body = opts.body;
     }
     return fetch(path, fetchOpts).then(function (r) {
       if (r.status === 401) { location.href = "/admin/login"; return null; }
-      return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; }).catch(function () {
-        return { ok: r.ok, status: r.status, data: {} };
+      return r.text().then(function (text) {
+        var data = {};
+        if (text) {
+          try { data = JSON.parse(text); }
+          catch (e) { data = { error: "Sunucu yanıtı okunamadı", raw: text.slice(0, 120) }; }
+        }
+        return { ok: r.ok, status: r.status, data: data };
       });
-    }).catch(function () { return null; });
+    }).catch(function (err) {
+      /* Render / proxy ara sıra ilk isteği düşürür — bir kez sessizce tekrar dene */
+      if (retries > 0 && (!err || err.name !== "AbortError")) {
+        return new Promise(function (resolve) {
+          setTimeout(function () {
+            resolve(blApi(path, Object.assign({}, opts, { _retries: retries - 1 })));
+          }, 450);
+        });
+      }
+      return { ok: false, status: 0, data: { error: "Sunucuya ulaşılamadı", network: true }, network: true };
+    });
   }
 
   function blToast(msg) {
@@ -783,6 +807,7 @@
   }
 
   function schedulePreviewRefresh() {
+    if (blMutePreview > 0) return;
     clearTimeout(blPreviewTimer);
     blPreviewTimer = setTimeout(refreshPreview, 500);
   }
@@ -942,16 +967,25 @@
       btn.classList.add("is-busy");
       btn.textContent = "Kaydediliyor…";
     }
+    blMutePreview += 1;
+    clearTimeout(blPreviewTimer);
     blApi("/api/biolink/pages/" + blCurrentPage.id, { method: "PUT", body: payload }).then(function (r) {
-      if (r && r.ok) {
+      if (r && r.ok && r.data && r.data.page) {
         blToast("Kaydedildi");
         blCurrentPage = r.data.page;
         blUpdatePageLinks(blCurrentPage);
         document.getElementById("biolink-editor-title").textContent = "Studio — " + blCurrentPage.title;
-        refreshPreview();
         loadPages();
-      } else if (r) alert((r.data && r.data.error) || "Kaydedilemedi");
+        setTimeout(function () { refreshPreview(); }, 200);
+      } else if (r && r.network) {
+        alert("Bağlantı koptu. Bir kez daha Kaydet’e bas — çoğu zaman ikinci denemede geçer.");
+      } else if (r) {
+        alert((r.data && r.data.error) || ("Kaydedilemedi (" + (r.status || "?") + ")"));
+      } else {
+        alert("Sunucuya ulaşılamadı");
+      }
     }).finally(function () {
+      blMutePreview = Math.max(0, blMutePreview - 1);
       if (btn) {
         btn.dataset.busy = "0";
         btn.disabled = false;
@@ -1065,6 +1099,39 @@
 
   var blAddBusy = false;
 
+  function blApplyAddedButton(button) {
+    if (!button || !blCurrentPage) return;
+    blCurrentPage.buttons = blCurrentPage.buttons || [];
+    var exists = blCurrentPage.buttons.some(function (b) { return String(b.id) === String(button.id); });
+    if (!exists) blCurrentPage.buttons.push(button);
+    renderButtonsList(blCurrentPage.buttons);
+    renderComposerFields();
+    scheduleLoadStats();
+    setTimeout(function () { loadPages(); }, 80);
+    blToast("Blok eklendi");
+    setTimeout(function () { schedulePreviewRefresh(); }, 200);
+  }
+
+  function blReconcileAfterAdd(prevCount) {
+    if (!blCurrentPage) return Promise.resolve(null);
+    return blApi("/api/biolink/pages/" + blCurrentPage.id).then(function (r) {
+      if (!r || !r.ok || !r.data || !r.data.page) return null;
+      var page = r.data.page;
+      blCurrentPage = page;
+      var buttons = page.buttons || [];
+      if (buttons.length > (prevCount || 0)) {
+        renderButtonsList(buttons);
+        renderComposerFields();
+        scheduleLoadStats();
+        setTimeout(function () { loadPages(); }, 80);
+        setTimeout(function () { schedulePreviewRefresh(); }, 200);
+        blToast("Blok eklendi");
+        return buttons[buttons.length - 1];
+      }
+      return null;
+    });
+  }
+
   function addButton() {
     if (blAddBusy) return;
     if (!blCurrentPage) {
@@ -1079,7 +1146,10 @@
     }
     var btn = document.getElementById("btn-biolink-add-button");
     var orig = btn ? (btn.dataset.origText || btn.textContent) : "";
+    var prevCount = (blCurrentPage.buttons || []).length;
     blAddBusy = true;
+    blMutePreview += 1;
+    clearTimeout(blPreviewTimer);
     if (btn) {
       btn.dataset.origText = orig;
       btn.disabled = true;
@@ -1089,22 +1159,23 @@
     blToast("Blok ekleniyor…");
     blApi("/api/biolink/pages/" + blCurrentPage.id + "/buttons", { method: "POST", body: body }).then(function (r) {
       if (r && r.ok && r.data && r.data.button) {
-        blCurrentPage.buttons = blCurrentPage.buttons || [];
-        blCurrentPage.buttons.push(r.data.button);
-        renderButtonsList(blCurrentPage.buttons);
-        renderComposerFields();
-        schedulePreviewRefresh();
-        scheduleLoadStats();
-        /* Sayfa tablosu arka planda — tıklamayı / UI’yi kilitlemesin */
-        setTimeout(function () { loadPages(); }, 0);
-        blToast("Blok eklendi");
-      } else if (r) {
-        alert((r.data && r.data.error) || ("Eklenemedi (" + (r.status || "?") + ")"));
-      } else {
-        alert("Sunucuya ulaşılamadı");
+        blApplyAddedButton(r.data.button);
+        return;
       }
+      /* Yanıt kopsa bile kayıt düşmüş olabilir — sayfayı doğrula */
+      return blReconcileAfterAdd(prevCount).then(function (recovered) {
+        if (recovered) return;
+        if (r && r.network) {
+          alert("Bağlantı koptu. Sayfa yenilenince blok görünüyorsa kayıt olmuştur — yoksa tekrar dene.");
+        } else if (r) {
+          alert((r.data && r.data.error) || ("Eklenemedi (" + (r.status || "?") + ")"));
+        } else {
+          alert("Sunucuya ulaşılamadı");
+        }
+      });
     }).finally(function () {
       blAddBusy = false;
+      blMutePreview = Math.max(0, blMutePreview - 1);
       if (btn) {
         btn.disabled = false;
         btn.classList.remove("is-busy");

@@ -278,6 +278,9 @@ def create_biolink_blueprint(permission_required):
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            print(f"biolink add_button error: {exc}")
+            return jsonify({"error": "Blok eklenirken sunucu hatası oluştu. Tekrar dene."}), 500
         return jsonify({"button": btn}), 201
 
     @api.route("/buttons/<int:button_id>", methods=["PUT"])
