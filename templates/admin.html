@@ -2503,15 +2503,15 @@
           </div>
           <div class="card-body">
             <p class="hint" style="margin-bottom:0.75rem;">
-              Oyuncu ID yaz → mevcut kanal tabloda görünür.
+              Oyuncu ID / Registration ID / username yaz → mevcut kanal tabloda görünür (taşıma için casino player ID otomatik dolar).
               <strong>Yeni Affiliate ID boş</strong> = başka kanala taşımadan <strong>normal link</strong>e düşür (kanal ID yok, organik üye gibi).
               Deal ID doluysa o baskın. İşlem geri alınamaz.
             </p>
             <form id="move-aff-form">
               <div class="form-row-4">
                 <div>
-                  <label for="move-aff-customer">Oyuncu ID (ext_customer_id)</label>
-                  <input id="move-aff-customer" placeholder="casino player id" autocomplete="off" required>
+                  <label for="move-aff-customer">Oyuncu / Reg ID / Username</label>
+                  <input id="move-aff-customer" placeholder="örn. 7927047 veya 146966589" autocomplete="off" required>
                 </div>
                 <div style="align-self:end;">
                   <button type="button" class="btn btn-sm" id="btn-move-aff-lookup">Kanalı Sorgula</button>
@@ -2544,12 +2544,13 @@
                       <th>Affiliate ID</th>
                       <th>Link</th>
                       <th>Username</th>
+                      <th>Oyuncu ID</th>
                       <th>Registration ID</th>
                       <th>Kayıt</th>
                       <th>FTD</th>
                       <th>Yatırım</th>
                     </tr></thead>
-                    <tbody id="move-aff-lookup-table"><tr><td colspan="8" class="empty">—</td></tr></tbody>
+                    <tbody id="move-aff-lookup-table"><tr><td colspan="9" class="empty">—</td></tr></tbody>
                   </table>
                 </div>
               </div>
@@ -5605,13 +5606,25 @@
         if (!box || !tbody) return;
         box.style.display = "";
         var rows = (res && res.rows) || [];
+        var q = (res && (res.query || res.ext_customer_id)) || "";
+        var by = res && res.matched_by ? (" · eşleşen: " + res.matched_by) : "";
         if (status) {
           status.textContent = rows.length
-            ? (res.ext_customer_id + " · " + rows.length + " kayıt bulundu")
-            : ((res && res.ext_customer_id ? res.ext_customer_id + " · " : "") + "kayıt bulunamadı");
+            ? (q + by + " · " + rows.length + " kayıt bulundu")
+            : (q + " · son dönemde kanal kaydı bulunamadı");
+        }
+        // Taşıma API ext_customer_id ister — registration_id ile arandıysa doldur
+        if (res && res.ext_customer_id) {
+          var custEl = document.getElementById("move-aff-customer");
+          if (custEl && String(custEl.value || "").trim() !== String(res.ext_customer_id)) {
+            custEl.value = res.ext_customer_id;
+            if (status) {
+              status.textContent += " · taşıma için oyuncu ID: " + res.ext_customer_id;
+            }
+          }
         }
         if (!rows.length) {
-          tbody.innerHTML = '<tr><td colspan="8" class="empty">Bu oyuncu ID ile aktif kanal kaydı yok</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="9" class="empty">Bu arama ile kanal kaydı yok (oyuncu ID / reg ID / username dene)</td></tr>';
           return;
         }
         tbody.innerHTML = rows.map(function(r) {
@@ -5631,6 +5644,7 @@
             "<td>" + esc(affIdLabel) + "</td>" +
             "<td>" + esc(linkLabel) + "</td>" +
             "<td>" + esc(r.username || "—") + "</td>" +
+            "<td>" + esc(r.ext_customer_id || "—") + "</td>" +
             "<td>" + esc(r.registration_id || "—") + "</td>" +
             "<td>" + esc(String(r.registration_count != null ? r.registration_count : 0)) + "</td>" +
             "<td>" + esc(String(r.ftd_count != null ? r.ftd_count : 0)) + "</td>" +
@@ -5644,25 +5658,39 @@
         var box = document.getElementById("move-aff-lookup-box");
         var status = document.getElementById("move-aff-lookup-status");
         var tbody = document.getElementById("move-aff-lookup-table");
+        var btn = document.getElementById("btn-move-aff-lookup");
         if (!customer) {
           if (box) box.style.display = "none";
           return;
         }
         if (box) box.style.display = "";
         if (status) status.textContent = "Sorgulanıyor…";
-        if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty">Yükleniyor…</td></tr>';
-        fetch(API + "/api/smartico/lookup-player?ext_customer_id=" + encodeURIComponent(customer))
+        if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="empty">Yükleniyor…</td></tr>';
+        if (btn) { btn.disabled = true; btn.textContent = "Sorgulanıyor…"; }
+        var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+        var timer = setTimeout(function() { if (ctrl) ctrl.abort(); }, 90000);
+        fetch(API + "/api/smartico/lookup-player?ext_customer_id=" + encodeURIComponent(customer),
+          ctrl ? { signal: ctrl.signal } : undefined)
           .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
           .then(function(res) {
+            clearTimeout(timer);
+            if (btn) { btn.disabled = false; btn.textContent = "Kanalı Sorgula"; }
             if (!res.ok) {
-              if (status) status.textContent = res.data.error || "Sorgu başarısız";
-              if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty">' + esc(res.data.error || "Hata") + "</td></tr>";
+              var err = (res.data && (res.data.error || res.data.message)) || "Sorgu başarısız";
+              if (status) status.textContent = err;
+              if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="empty">' + esc(err) + "</td></tr>";
               return;
             }
             renderMoveAffLookup(res.data);
           })
-          .catch(function() {
-            if (status) status.textContent = "İstek başarısız";
+          .catch(function(err) {
+            clearTimeout(timer);
+            if (btn) { btn.disabled = false; btn.textContent = "Kanalı Sorgula"; }
+            var msg = (err && err.name === "AbortError")
+              ? "Sorgu zaman aşımı — tekrar dene"
+              : "İstek başarısız";
+            if (status) status.textContent = msg;
+            if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="empty">' + esc(msg) + "</td></tr>";
           });
       }
 

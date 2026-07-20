@@ -981,10 +981,49 @@ def _int_api_post(conn, body):
         raise
 
 
-def lookup_player_by_ext_id(conn, ext_customer_id):
-    """ext_customer_id ile oyuncunun mevcut affiliate/kanal kayıtlarını getir.
+def _lookup_row_matches(row, needle):
+    """needle: ext_customer_id, registration_id veya username (case-insensitive)."""
+    if not isinstance(row, dict) or not needle:
+        return False, None
+    n = needle.lower()
+    ext = str(row.get("ext_customer_id") or "").strip()
+    reg = str(row.get("registration_id") or "").strip()
+    user = str(row.get("username") or "").strip()
+    if ext and ext.lower() == n:
+        return True, "ext_customer_id"
+    if reg and reg.lower() == n:
+        return True, "registration_id"
+    if user and user.lower() == n:
+        return True, "username"
+    return False, None
 
-    boapi media report (Registrations yetkisi gerekir). Lifetime aggregate.
+
+def _lookup_date_windows():
+    """Küçük pencereden büyüğe — lifetime tüm oyuncu dump'ı timeout eder."""
+    today = datetime.now(timezone.utc).date()
+    end = today + timedelta(days=1)
+    windows = [
+        (today - timedelta(days=6), end, "7days"),
+        (today - timedelta(days=29), end, "30days"),
+        (today - timedelta(days=89), end, "90days"),
+        (today - timedelta(days=179), end, "180days"),
+    ]
+    # Daha eski: ay ay geriye (max ~18 ay)
+    cursor = today - timedelta(days=180)
+    for _ in range(18):
+        chunk_end = cursor
+        chunk_start = cursor - timedelta(days=30)
+        windows.append((chunk_start, chunk_end, f"{chunk_start.isoformat()}:{chunk_end.isoformat()}"))
+        cursor = chunk_start
+    return windows
+
+
+def lookup_player_by_ext_id(conn, ext_customer_id):
+    """Oyuncunun mevcut affiliate/kanal kayıtlarını getir.
+
+    Aranan değer: ext_customer_id, registration_id veya username.
+    TAP media report'u oyuncu bazında filtrelemez; kısa tarih pencerelerinde
+    aranır (lifetime dump timeout / 100k satır limiti yüzünden).
     """
     cfg = get_config(conn)
     if not cfg["api_key"]:
@@ -992,80 +1031,155 @@ def lookup_player_by_ext_id(conn, ext_customer_id):
             "Smartico rapor API anahtarı yok (Link Takip → Smartico Ayarlar). "
             "Oyuncu sorgusu için Media reports key gerekli."
         )
-    ext_id = (ext_customer_id or "").strip()
-    if not ext_id:
-        raise ValueError("ext_customer_id gerekli.")
+    query = (ext_customer_id or "").strip()
+    if not query:
+        raise ValueError("Oyuncu ID / registration ID / username gerekli.")
 
-    int_cfg = get_int_config(conn)
     group_attempts = [
         "affiliate_id,link_id,ext_customer_id,username,registration_id",
         "affiliate_id,ext_customer_id,username,registration_id",
-        "affiliate_id,ext_customer_id,username",
-        "affiliate_id,ext_customer_id",
     ]
     last_error = None
-    data = None
     used_group = None
-    for group_by in group_attempts:
-        params = {"group_by": group_by}
-        if int_cfg.get("brand_id"):
-            params["brand_id"] = str(int_cfg["brand_id"])
-        try:
-            data = _request(
-                cfg["api_host"], "af2_media_report_op", cfg["api_key"], params,
-                timeout=_PLAYER_HTTP_TIMEOUT,
-            )
-        except SmarticoError as exc:
-            last_error = str(exc)
-            data = None
-            continue
-        if isinstance(data, dict) and isinstance(data.get("data"), list):
-            used_group = group_by
-            break
-        if isinstance(data, str) and data.strip():
-            last_error = f"Smartico API hatası: {data.strip()}"
-        else:
-            last_error = "Smartico API beklenmeyen cevap."
-        data = None
-
-    if data is None:
-        raise SmarticoError(last_error or "Oyuncu sorgusu başarısız.")
-
-    aff_names = fetch_affiliate_names(conn)
-    needle = ext_id.lower()
+    used_period = None
+    currency = ""
+    matched_field = None
     rows = []
-    for r in data.get("data") or []:
-        if not isinstance(r, dict):
+    aff_names = None  # lazy
+
+    for date_from, date_to, period_label in _lookup_date_windows():
+        data = None
+        for group_by in group_attempts:
+            params = {
+                "group_by": group_by,
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+            }
+            try:
+                data = _request(
+                    cfg["api_host"], "af2_media_report_op", cfg["api_key"], params,
+                    timeout=25,
+                )
+            except SmarticoError as exc:
+                last_error = str(exc)
+                data = None
+                continue
+            if isinstance(data, dict) and isinstance(data.get("data"), list):
+                used_group = group_by
+                break
+            if isinstance(data, str) and data.strip():
+                last_error = f"Smartico API hatası: {data.strip()}"
+            else:
+                last_error = "Smartico API beklenmeyen cevap."
+            data = None
+
+        if data is None:
             continue
-        rid = str(r.get("ext_customer_id") or "").strip()
-        if not rid or rid.lower() != needle:
-            continue
-        # Sadece gerçek kayıt satırları (saf ziyaret gürültüsü at)
-        if (
-            _num(r.get("registration_count")) <= 0
-            and not str(r.get("registration_id") or "").strip()
-            and not str(r.get("username") or "").strip()
-        ):
-            continue
-        aff_id = r.get("affiliate_id")
-        rows.append({
-            "ext_customer_id": rid,
-            "username": str(r.get("username") or "").strip(),
-            "registration_id": str(r.get("registration_id") or "").strip(),
-            "affiliate_id": aff_id,
-            "affiliate_name": (
-                aff_names.get(str(aff_id))
-                if aff_id is not None
-                else None
-            ) or (f"Affiliate #{aff_id}" if aff_id is not None else "—"),
-            "link_id": r.get("link_id"),
-            "link_name": str(r.get("link_name") or "").strip(),
-            "brand_id": r.get("brand_id"),
-            "brand_name": str(r.get("brand_name") or "").strip(),
-            "registration_count": int(_num(r.get("registration_count"))),
-            "ftd_count": int(_num(r.get("ftd_count"))),
-            "deposit_total": round(_num(r.get("deposit_total")), 2),
-        })
+
+        currency = (data.get("meta") or {}).get("operator_currency") or currency
+        hits = []
+        for r in data.get("data") or []:
+            ok, field = _lookup_row_matches(r, query)
+            if not ok:
+                continue
+            if (
+                _num(r.get("registration_count")) <= 0
+                and not str(r.get("registration_id") or "").strip()
+                and not str(r.get("username") or "").strip()
+            ):
+                continue
+            if matched_field is None:
+                matched_field = field
+            aff_id = r.get("affiliate_id")
+            if aff_id is not None and str(aff_id).strip() == "":
+                aff_id = None
+            name_from_row = str(r.get("affiliate_name") or "").strip()
+            if not name_from_row and aff_id is not None:
+                if aff_names is None:
+                    aff_names = fetch_affiliate_names(conn)
+                name_from_row = aff_names.get(str(aff_id)) or f"Affiliate #{aff_id}"
+            hits.append({
+                "ext_customer_id": str(r.get("ext_customer_id") or "").strip(),
+                "username": str(r.get("username") or "").strip(),
+                "registration_id": str(r.get("registration_id") or "").strip(),
+                "affiliate_id": aff_id,
+                "affiliate_name": name_from_row or ("—" if aff_id is None else f"Affiliate #{aff_id}"),
+                "link_id": r.get("link_id") if r.get("link_id") not in ("", None) else None,
+                "link_name": str(r.get("link_name") or "").strip(),
+                "brand_id": r.get("brand_id"),
+                "brand_name": str(r.get("brand_name") or "").strip(),
+                "registration_count": int(_num(r.get("registration_count"))),
+                "ftd_count": int(_num(r.get("ftd_count"))),
+                "deposit_total": round(_num(r.get("deposit_total")), 2),
+                "matched_by": field,
+            })
+
+        if hits:
+            rows = hits
+            used_period = period_label
+            break
+
+        # 100k satır tavanı: oyuncu kesilmiş olabilir → haftalık alt pencere
+        raw_n = len(data.get("data") or [])
+        if raw_n >= 100000 and (date_to - date_from).days > 7:
+            cursor = date_from
+            while cursor < date_to and not rows:
+                week_end = min(cursor + timedelta(days=7), date_to)
+                for group_by in group_attempts:
+                    params = {
+                        "group_by": group_by,
+                        "date_from": cursor.isoformat(),
+                        "date_to": week_end.isoformat(),
+                    }
+                    try:
+                        sub = _request(
+                            cfg["api_host"], "af2_media_report_op", cfg["api_key"], params,
+                            timeout=25,
+                        )
+                    except SmarticoError as exc:
+                        last_error = str(exc)
+                        continue
+                    if not (isinstance(sub, dict) and isinstance(sub.get("data"), list)):
+                        continue
+                    used_group = group_by
+                    for r in sub.get("data") or []:
+                        ok, field = _lookup_row_matches(r, query)
+                        if not ok:
+                            continue
+                        if matched_field is None:
+                            matched_field = field
+                        aff_id = r.get("affiliate_id")
+                        if aff_id is not None and str(aff_id).strip() == "":
+                            aff_id = None
+                        name_from_row = str(r.get("affiliate_name") or "").strip()
+                        if not name_from_row and aff_id is not None:
+                            if aff_names is None:
+                                aff_names = fetch_affiliate_names(conn)
+                            name_from_row = aff_names.get(str(aff_id)) or f"Affiliate #{aff_id}"
+                        rows.append({
+                            "ext_customer_id": str(r.get("ext_customer_id") or "").strip(),
+                            "username": str(r.get("username") or "").strip(),
+                            "registration_id": str(r.get("registration_id") or "").strip(),
+                            "affiliate_id": aff_id,
+                            "affiliate_name": name_from_row or ("—" if aff_id is None else f"Affiliate #{aff_id}"),
+                            "link_id": r.get("link_id") if r.get("link_id") not in ("", None) else None,
+                            "link_name": str(r.get("link_name") or "").strip(),
+                            "brand_id": r.get("brand_id"),
+                            "brand_name": str(r.get("brand_name") or "").strip(),
+                            "registration_count": int(_num(r.get("registration_count"))),
+                            "ftd_count": int(_num(r.get("ftd_count"))),
+                            "deposit_total": round(_num(r.get("deposit_total")), 2),
+                            "matched_by": field,
+                        })
+                    if rows:
+                        used_period = f"{cursor.isoformat()}:{week_end.isoformat()}"
+                        break
+                cursor = week_end
+            if rows:
+                break
+
+    if not rows and last_error and used_group is None:
+        raise SmarticoError(last_error)
 
     rows.sort(
         key=lambda x: (
@@ -1074,12 +1188,22 @@ def lookup_player_by_ext_id(conn, ext_customer_id):
             str(x.get("affiliate_name") or ""),
         )
     )
+    # Taşıma API'si ext_customer_id ister — registration_id ile arandıysa çöz
+    resolved_ext = ""
+    for r in rows:
+        if r.get("ext_customer_id"):
+            resolved_ext = r["ext_customer_id"]
+            break
+
     return {
-        "ext_customer_id": ext_id,
+        "query": query,
+        "ext_customer_id": resolved_ext or (query if matched_field == "ext_customer_id" else ""),
+        "matched_by": matched_field,
         "rows": rows,
         "count": len(rows),
         "group_by": used_group,
-        "currency": (data.get("meta") or {}).get("operator_currency") or "",
+        "period": used_period,
+        "currency": currency,
     }
 
 

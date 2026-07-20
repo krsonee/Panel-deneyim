@@ -202,10 +202,13 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
     @perm(*MODULE_ACCESS)
     @admin_only
     def lookup_player():
-        """ext_customer_id ile mevcut affiliate/kanal kayıtlarını getir."""
-        ext_id = (request.args.get("ext_customer_id") or "").strip()
+        """Oyuncu ID / registration_id / username ile mevcut kanal kayıtlarını getir."""
+        ext_id = (
+            (request.args.get("ext_customer_id") or "").strip()
+            or (request.args.get("q") or "").strip()
+        )
         if not ext_id:
-            return jsonify({"error": "ext_customer_id gerekli."}), 400
+            return jsonify({"error": "Oyuncu ID / registration ID / username gerekli."}), 400
         try:
             with closing(get_db()) as conn:
                 result = smartico_api.lookup_player_by_ext_id(conn, ext_id)
