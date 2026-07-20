@@ -17,20 +17,23 @@ from database import (
     utcnow,
 )
 
-SEED_FLAG = "seeded_makrobet_templates_v4"
+SEED_FLAG = "seeded_makrobet_templates_v5"
 
-# Site / VIP destek
-PROMO_URL = "https://makrobet.com/tr/pages/promotions"
-SITE_URL = "https://makrobet.com/tr/"
-VIP_URL = "https://vipmakro.com"
+# Aff panel tracking link (tüm HTML CTA’lar buraya)
+AFF_URL = "https://makrovip.com/Vipmail"
+AFF_TOKEN = "{{link:sc:https://makrovip.com/Vipmail}}"
 
-CTA_TOKEN = "{{link:sc:https://makrobet.com/tr/pages/promotions}}"
-CTA_SITE = "{{link:sc:https://makrobet.com/tr/}}"
-CTA_VIP = "{{link:sc:https://vipmakro.com}}"
-CTA_CASINO = "{{link:sc:https://makrobet.com/tr/game/casino}}"
-CTA_SPORT = "{{link:sc:https://makrobet.com/tr/sport/live}}"
-CTA_PROMO = CTA_TOKEN
-CTA_LIVE = "{{link:sc:https://makrobet.com/tr/game/live-casino}}"
+# Geriye dönük isimler — hepsi aff linkine gider
+PROMO_URL = AFF_URL
+SITE_URL = AFF_URL
+VIP_URL = AFF_URL
+CTA_TOKEN = AFF_TOKEN
+CTA_SITE = AFF_TOKEN
+CTA_VIP = AFF_TOKEN
+CTA_CASINO = AFF_TOKEN
+CTA_SPORT = AFF_TOKEN
+CTA_PROMO = AFF_TOKEN
+CTA_LIVE = AFF_TOKEN
 
 # Site ile aynı (promosyonlar sayfası)
 _MB_BG = "#061c3d"
@@ -43,6 +46,21 @@ _MB_BORDER = "#2a4a7a"
 
 # Preview + gönderimde absolute URL’e çevrilir
 _LOGO_PLACEHOLDER = "__MAIL_LOGO__"
+
+
+def _spam_tip_banner():
+    """Gmail/Outlook’ta spam klasöründe butonlar çalışmasın diye uyarı şeridi."""
+    return f"""
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#050505;">
+    <tr>
+      <td align="center" style="padding:11px 18px;font-family:Urbanist,Arial,Helvetica,sans-serif;font-size:12px;line-height:1.45;color:#ffffff;">
+        <span style="color:{_MB_GOLD};font-size:13px;vertical-align:middle;">⚠</span>
+        &nbsp;Butonların tıklanabilir olması için
+        <strong style="color:{_MB_GOLD};">Spam olmadığını bildir</strong>
+        seçeneğine tıklayın.
+      </td>
+    </tr>
+  </table>"""
 
 
 def _promo_chip(label):
@@ -113,9 +131,10 @@ def _html_shell(
   <title>{title}</title>
 </head>
 <body style="margin:0;padding:0;background:{_MB_BG};">
+  {_spam_tip_banner()}
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_MB_BG};">
     <tr>
-      <td align="center" style="padding:28px 12px;">
+      <td align="center" style="padding:20px 12px 28px;">
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:{_MB_CARD};border-radius:12px;overflow:hidden;border:1px solid {_MB_BORDER};">
           <tr>
             <td align="center" style="padding:22px 28px 10px;background:{_MB_BG};">
@@ -206,28 +225,25 @@ HTML_TEMPLATES = [
             Merhaba <strong style="color:#fff;">{{{{name}}}}</strong>,<br><br>
             <strong style="color:{_MB_GOLD};font-size:17px;">Hesabına şans bonusu eklendi.</strong><br><br>
             Bonusunu almak için hemen
-            <a href="{CTA_VIP}" style="color:{_MB_GOLD};font-weight:800;text-decoration:underline;">vipmakro.com</a>
-            üzerinden WhatsApp destek hattımızdan <strong style="color:#fff;">talep et</strong>,
-            ya da siteye bağlanıp talep oluştur.<br><br>
+            <a href="{AFF_TOKEN}" style="color:{_MB_GOLD};font-weight:800;text-decoration:underline;">makrovip.com/Vipmail</a>
+            üzerinden talep et — WhatsApp destek veya site bağlantısı bu linkte.<br><br>
             Aynı dönemde prim bonusu, çevrim bonusu, görev bonusu, Makro Kasa ve bilet etkinlikleri de aktif olabilir —
             vurgu senin <strong style="color:{_MB_GOLD};">şans bonusunda</strong>.
             """,
-            "WhatsApp’tan Talep Et",
-            CTA_VIP,
+            "Hemen Talep Et",
+            AFF_TOKEN,
             note="Talep sonrası bonus hesabına tanımlanır. Şartlar ve çevrim koşulları geçerlidir.",
             badge="Şans Bonusu",
-            secondary_label="Siteye Bağlan · Talep Et",
-            secondary_token=CTA_SITE,
+            secondary_label="Linke Git · makrovip.com/Vipmail",
+            secondary_token=AFF_TOKEN,
             extra_html=_SANS_EXTRA,
         ),
         "text_body": f"""Merhaba {{{{name}}}},
 
 Hesabına şans bonusu eklendi.
 
-Hemen vipmakro.com üzerinden WhatsApp hesabımızdan talep et,
-veya siteye bağlanıp talep oluştur:
-{VIP_URL}
-{SITE_URL}
+Hemen talep et:
+{AFF_URL}
 
 Ayrıca: Prim Bonusu · Çevrim Bonusu · Görev Bonusu · Makro Kasa · Bilet Etkinliği
 
@@ -376,10 +392,8 @@ TEXT_TEMPLATES = [
 
 Hesabına şans bonusu eklendi.
 
-Hemen vipmakro.com üzerinden WhatsApp hesabımızdan talep et,
-veya siteye bağlanıp talep oluştur:
-{VIP_URL}
-{SITE_URL}
+Hemen talep et:
+{AFF_URL}
 
 Ayrıca aktif olabilir: Prim Bonusu · Çevrim Bonusu · Görev Bonusu · Makro Kasa · Bilet Etkinliği
 
@@ -446,7 +460,7 @@ Makrobet
 Konuştuğumuz fırsatları ve güncel Makrobet kampanyalarını buradan inceleyebilirsin:
 {CTA_TOKEN}
 
-VIP destek: {VIP_URL}
+VIP / aff link: {AFF_URL}
 Makrobet
 """,
     },

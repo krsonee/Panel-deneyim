@@ -1622,6 +1622,29 @@
     }
   }
 
+  function mailSpamTipBannerHtml() {
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#050505;">' +
+      '<tr><td align="center" style="padding:11px 18px;font-family:Urbanist,Arial,Helvetica,sans-serif;' +
+      'font-size:12px;line-height:1.45;color:#ffffff;">' +
+      '<span style="color:#ffd400;font-size:13px;vertical-align:middle;">⚠</span>' +
+      "&nbsp;Butonların tıklanabilir olması için " +
+      '<strong style="color:#ffd400;">Spam olmadığını bildir</strong> ' +
+      "seçeneğine tıklayın." +
+      "</td></tr></table>";
+  }
+
+  function ensureMailSpamTip(html) {
+    var s = html || "";
+    if (s.indexOf("Spam olmadığını bildir") >= 0) return s;
+    var banner = mailSpamTipBannerHtml();
+    var m = s.match(/<body[^>]*>/i);
+    if (m) {
+      var idx = s.indexOf(m[0]) + m[0].length;
+      return s.slice(0, idx) + banner + s.slice(idx);
+    }
+    return banner + s;
+  }
+
   function substituteTplPlaceholders(html) {
     var s = html || "<p class='muted'>Önizleme boş</p>";
     function linkUrl(raw) {
@@ -1629,6 +1652,7 @@
     }
     // Panelde barındırılan Makrobet logosu (CDN hotlink / iframe’de kırılıyordu)
     s = s.replace(/__MAIL_LOGO__/g, mailLogoPreviewUrl());
+    s = ensureMailSpamTip(s);
     // href="{{link:...}}" → sadece URL; aksi halde butonlar patlıyor
     s = s.replace(/href\s*=\s*(["'])\s*\{\{\s*link\s*:\s*([^}]+)\s*\}\}\s*\1/gi, function (_m, q, raw) {
       return "href=" + q + linkUrl(raw) + q;

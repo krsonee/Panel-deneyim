@@ -288,10 +288,44 @@ def _mail_logo_url():
     return (base + path) if base else path
 
 
+def _spam_tip_banner_html():
+    """Spam tip şeridi — seed şablonları + elle HTML’ler için ortak."""
+    gold = "#ffd400"
+    return (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#050505;">'
+        '<tr><td align="center" style="padding:11px 18px;font-family:Urbanist,Arial,Helvetica,sans-serif;'
+        'font-size:12px;line-height:1.45;color:#ffffff;">'
+        f'<span style="color:{gold};font-size:13px;vertical-align:middle;">⚠</span>'
+        "&nbsp;Butonların tıklanabilir olması için "
+        f'<strong style="color:{gold};">Spam olmadığını bildir</strong> '
+        "seçeneğine tıklayın."
+        "</td></tr></table>"
+    )
+
+
+def _ensure_spam_tip(html):
+    """HTML gövdede spam şeridi yoksa <body> hemen ardına ekler (yeni şablonlar dahil)."""
+    html = html or ""
+    marker = "Spam olmadığını bildir"
+    if marker in html:
+        return html
+    banner = _spam_tip_banner_html()
+    low = html.lower()
+    body_idx = low.find("<body")
+    if body_idx >= 0:
+        gt = html.find(">", body_idx)
+        if gt >= 0:
+            return html[: gt + 1] + banner + html[gt + 1 :]
+    return banner + html
+
+
 def _apply_mail_assets(text):
     text = text or ""
     if "__MAIL_LOGO__" in text:
         text = text.replace("__MAIL_LOGO__", _mail_logo_url())
+    # HTML e-postaysa spam tip şeridini garanti et
+    if "<" in text and ("<html" in text.lower() or "<body" in text.lower() or "<table" in text.lower()):
+        text = _ensure_spam_tip(text)
     return text
 
 
