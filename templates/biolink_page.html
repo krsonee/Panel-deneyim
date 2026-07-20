@@ -14,8 +14,14 @@
 <link rel="apple-touch-icon" href="{{ page.resolved_favicon }}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+{% set pack = biolink_pack if biolink_pack is defined else {} %}
+{% set page_brand = brand if brand is defined else 'makro' %}
+{% if page_brand == 'bizzo' and pack.font_url %}
+<link href="{{ pack.font_url }}" rel="stylesheet">
+{% else %}
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/biolink-skins.css?v=20260716b">
+{% endif %}
+<link rel="stylesheet" href="/static/biolink-skins.css?v=20260720e">
 {% if page.ga4_measurement_id %}
 <script async src="https://www.googletagmanager.com/gtag/js?id={{ page.ga4_measurement_id }}"></script>
 <script>
@@ -45,7 +51,7 @@
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; min-height: 100%;
-    font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: {% if page_brand == 'bizzo' %}"{{ pack.font or 'Outfit' }}", {% endif %}"Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
     background: var(--bg);
     color: var(--text);
   }
@@ -89,6 +95,28 @@
   }
   body.anim-makrobet .brand-watermark {
     animation: watermarkPulse 8s ease-in-out infinite;
+  }
+
+  /* Bizzo — mor / lime / altın (Makro animasyonuna dokunulmaz) */
+  body.anim-bizzo { background: #2b1234; }
+  body.anim-bizzo .bg-glow.g1 {
+    width: 460px; height: 460px; top: -140px; left: 50%; transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(178,255,79,0.32), transparent 70%);
+    animation: floatA 10s ease-in-out infinite;
+  }
+  body.anim-bizzo .bg-glow.g2 {
+    width: 380px; height: 380px; bottom: -90px; right: -70px;
+    background: radial-gradient(circle, rgba(245,215,110,0.28), transparent 70%);
+    animation: floatB 12s ease-in-out infinite;
+  }
+  body.anim-bizzo .bg-glow.g3 {
+    width: 300px; height: 300px; bottom: 18%; left: -90px;
+    background: radial-gradient(circle, rgba(124,58,150,0.45), transparent 70%);
+    animation: floatC 14s ease-in-out infinite;
+  }
+  body.anim-bizzo .brand-watermark {
+    opacity: 0.08; filter: saturate(1.1) drop-shadow(0 0 24px rgba(178,255,79,0.25));
+    animation: watermarkPulse 9s ease-in-out infinite;
   }
 
   body.anim-aurora .bg-glow.g1 {
@@ -360,6 +388,57 @@
   a.bonus-card .bonus-cta { font-size: 0.72rem; color: var(--muted); }
   a.bonus-card .bonus-cta span { color: var(--accent); font-weight: 700; }
 
+  /* Bizzo kampanya bileti — Makro classic bonus kartından ayrı */
+  body.brand-bizzo a.bonus-card.bonus-skin-ticket {
+    position: relative;
+    border-radius: 18px;
+    padding: 0.85rem 1rem 1rem;
+    background:
+      linear-gradient(155deg, rgba(178,255,79,0.16), rgba(43,18,52,0.95) 42%, rgba(18,8,24,0.98)),
+      repeating-linear-gradient(-45deg, transparent, transparent 8px, rgba(255,255,255,0.02) 8px, rgba(255,255,255,0.02) 16px);
+    border: 1.5px solid color-mix(in srgb, var(--accent) 55%, #f5d76e);
+    box-shadow: 0 0 0 1px rgba(245,215,110,0.12), 0 16px 40px -18px rgba(178,255,79,0.35);
+    overflow: hidden;
+  }
+  body.brand-bizzo a.bonus-card.bonus-skin-ticket::before {
+    content: "";
+    position: absolute; left: -10px; top: 50%; transform: translateY(-50%);
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  body.brand-bizzo a.bonus-card.bonus-skin-ticket::after {
+    content: "";
+    position: absolute; right: -10px; top: 50%; transform: translateY(-50%);
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  body.brand-bizzo .bonus-kicker {
+    display: inline-flex; align-self: flex-start;
+    font-size: 0.62rem; font-weight: 800; letter-spacing: 0.14em;
+    text-transform: uppercase; color: #1a0f20;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    padding: 0.22rem 0.55rem; border-radius: 999px; margin-bottom: 0.45rem;
+  }
+  body.brand-bizzo a.bonus-card.bonus-skin-ticket .bonus-amount {
+    border-radius: 10px;
+    background: #1a0f20;
+    color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  body.brand-bizzo a.bonus-card.bonus-skin-ticket .bonus-cta span {
+    color: var(--accent2);
+  }
+  body.brand-bizzo .heading.hs-vip .hs-inner,
+  body.brand-bizzo .heading.hs-casino .hs-inner {
+    background: linear-gradient(135deg, #b2ff4f, #f5d76e);
+    color: #1a0f20;
+    border-color: transparent;
+  }
+  body.brand-bizzo .heading.hs-gold_line::before,
+  body.brand-bizzo .heading.hs-gold_line::after {
+    background: linear-gradient(90deg, transparent, #b2ff4f, transparent);
+  }
+
   /* Yarım sütun — kompakt kart */
   .link-col-left a.link-btn,
   .link-col-right a.link-btn,
@@ -552,7 +631,7 @@
   .bl-popup-cta:hover { filter: brightness(1.05); }
 </style>
 </head>
-<body class="skel-{{ theme.style or 'classic' }}{% if theme.animated %} animated-bg anim-{{ theme.animation }}{% endif %} banner-layout-{{ page.banner_layout or 'top' }}">
+<body class="brand-{{ page_brand }} skel-{{ theme.style or 'classic' }}{% if theme.animated %} animated-bg anim-{{ theme.animation }}{% endif %} banner-layout-{{ page.banner_layout or 'top' }}">
   <div class="bg-layer" aria-hidden="true">
     {% if theme.brand_logo and theme.brand_logo_src %}
     <img class="brand-watermark" src="{{ theme.brand_logo_src }}" alt="">
@@ -598,14 +677,21 @@
         {% if b.button_type == 'heading' %}
           <div class="heading link-col-full text-align-{{ align }} hs-{{ b.heading_style or 'classic' }}"><span class="hs-inner">{{ b.label }}</span></div>
         {% elif b.button_type == 'bonus' %}
+          {% set bonus_skin = pack.bonus_skin if page_brand == 'bizzo' and pack.bonus_skin else 'classic' %}
+          {% set bonus_icon = pack.bonus_icon if page_brand == 'bizzo' and pack.bonus_icon else '🎁' %}
+          {% set cta_strong = pack.bonus_cta_strong if page_brand == 'bizzo' and pack.bonus_cta_strong else 'Katıl →' %}
+          {% set cta_rest = pack.bonus_cta_rest if page_brand == 'bizzo' and pack.bonus_cta_rest else 'Promosyonu görüntüle' %}
           <div class="link-col-{{ col }}">
-          <a class="link-btn bonus-card highlight text-align-{{ align }}" href="{{ click_prefix }}/go/{{ b.id }}">
+          <a class="link-btn bonus-card bonus-skin-{{ bonus_skin }} highlight text-align-{{ align }}" href="{{ click_prefix }}/go/{{ b.id }}">
+            {% if page_brand == 'bizzo' and pack.bonus_kicker %}
+            <div class="bonus-kicker">{{ pack.bonus_kicker }}</div>
+            {% endif %}
             <div class="bonus-top">
-              <span class="link-icon">{{ b.display_icon or b.icon or '🎁' }}</span>
+              <span class="link-icon">{{ b.display_icon or b.icon or bonus_icon }}</span>
               <span class="link-label">{{ b.label }}</span>
               {% if b.badge_text %}<span class="bonus-amount">{{ b.badge_text }}</span>{% endif %}
             </div>
-            <div class="bonus-cta"><span>Katıl →</span> Promosyonu görüntüle</div>
+            <div class="bonus-cta"><span>{{ cta_strong }}</span> {{ cta_rest }}</div>
           </a>
           </div>
         {% else %}

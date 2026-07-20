@@ -121,6 +121,47 @@
     },
   };
 
+  /* Yalnızca Bizzo: materyalleri Makro kopyası olmaktan çıkar */
+  (function applyBizzoBiolinkPack() {
+    var cfg = window.PANEL_BIOLINK || {};
+    if (cfg.brand !== "bizzo") return;
+    var p = cfg.pack || {};
+    var handle = p.handle || "bizzocasino";
+    var site = p.site_url || cfg.promoPlaceholder || "https://www.bizzocasino168.com";
+    BL_PRESETS.whatsapp.defaults.label = p.wa_default || "Bizzo WhatsApp Destek";
+    BL_PRESETS.whatsapp.fields[0].placeholder = p.wa_default || "Bizzo WhatsApp Destek";
+    BL_PRESETS.telegram.defaults.label = p.tg_default || "Bizzo Telegram";
+    BL_PRESETS.telegram.fields[0].placeholder = p.tg_default || "Bizzo Telegram";
+    BL_PRESETS.telegram.fields[1].placeholder = handle;
+    BL_PRESETS.instagram.fields[1].placeholder = handle;
+    BL_PRESETS.twitter.fields[1].placeholder = handle;
+    BL_PRESETS.tiktok.fields[1].placeholder = handle;
+    BL_PRESETS.youtube.fields[1].placeholder = p.youtube_url || ("https://youtube.com/@" + handle);
+    BL_PRESETS.bonus.label = p.bonus_chip_label || "Kampanya Kartı";
+    BL_PRESETS.bonus.color = p.bonus_color || "#b2ff4f";
+    BL_PRESETS.bonus.icon = p.bonus_icon || "💎";
+    BL_PRESETS.bonus.defaults = {
+      label: p.bonus_default_label || "%100 Slot Hoş Geldin",
+      icon: p.bonus_icon || "💎",
+      badge_text: p.bonus_default_badge || "SINIRSIZ",
+      highlight: true,
+    };
+    BL_PRESETS.bonus.fields = [
+      { key: "label", label: p.bonus_title_field || "Kampanya adı", placeholder: p.bonus_title_placeholder || "%100 Slot Hoş Geldin Bonusu", full: false },
+      { key: "badge_text", label: p.bonus_badge_field || "Vurgu metni", placeholder: p.bonus_badge_placeholder || "Çekim Yapana kadar SINIRSIZ", full: false },
+      { key: "url", label: "Kampanya linki", placeholder: cfg.promoPlaceholder || site, full: true },
+    ];
+    BL_PRESETS.link.color = p.link_color || "#b2ff4f";
+    BL_PRESETS.link.defaults.label = p.link_default_label || "Bizzo'ya Git";
+    BL_PRESETS.link.fields[0].placeholder = p.link_label_placeholder || "Güncel Giriş";
+    BL_PRESETS.link.fields[1].placeholder = site;
+    BL_PRESETS.heading.defaults.label = p.heading_default || "🎰 Canlı Promosyonlar";
+    BL_PRESETS.heading.fields[0].placeholder = p.heading_default || "🎰 Canlı Promosyonlar";
+    if (cfg.defaultLogo) {
+      blAssets.default_logo = cfg.defaultLogo;
+    }
+  })();
+
   function blSlugify(text) {
     text = String(text || "").trim().toLowerCase();
     text = text.replace(/ı/g, "i").replace(/ğ/g, "g").replace(/ü/g, "u")
@@ -836,13 +877,17 @@
 
   function createNewPage() {
     var theme = (window.PANEL_BIOLINK && window.PANEL_BIOLINK.defaultTheme) || "";
+    var pageTitle = "Yeni Sayfa";
+    if (window.PANEL_BIOLINK && window.PANEL_BIOLINK.brand === "bizzo") {
+      pageTitle = (window.PANEL_BIOLINK.pack && window.PANEL_BIOLINK.pack.new_page_title) || "Bizzo Bio";
+    }
     var btn = document.getElementById("btn-biolink-new");
     if (btn) {
       if (btn.dataset.busy === "1") return;
       btn.dataset.busy = "1";
       btn.disabled = true;
     }
-    blApi("/api/biolink/pages", { method: "POST", body: { title: "Yeni Sayfa", theme: theme } }).then(function (r) {
+    blApi("/api/biolink/pages", { method: "POST", body: { title: pageTitle, theme: theme } }).then(function (r) {
       if (r && r.ok && r.data && r.data.page) {
         blToast("Sayfa oluşturuldu");
         loadPages();
@@ -942,8 +987,9 @@
     var hintEl = document.getElementById("bl-composer-hint");
     if (labelEl) labelEl.textContent = p.label;
     if (hintEl) {
+      var packHint = (window.PANEL_BIOLINK && window.PANEL_BIOLINK.pack && window.PANEL_BIOLINK.pack.bonus_composer_hint) || "";
       hintEl.textContent = blComposerType === "heading" ? "Sayfada ayraç / bölüm başlığı"
-        : blComposerType === "bonus" ? "Promo kartı — etiket + link"
+        : blComposerType === "bonus" ? (packHint || "Promo kartı — etiket + link")
         : blComposerType === "whatsapp" ? "wa.me linki otomatik oluşturulur"
         : "Hedef otomatik formatlanır";
     }

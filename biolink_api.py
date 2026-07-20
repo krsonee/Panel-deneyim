@@ -296,15 +296,29 @@ def uses_brand_icon(button_type):
 def default_icon(button_type):
     if uses_brand_icon(button_type):
         return ""
+    try:
+        from panel_config import BIOLINK_PACK, PANEL_BRAND
+        if PANEL_BRAND == "bizzo" and button_type == "bonus":
+            return (BIOLINK_PACK.get("bonus_icon") or "💎")
+    except Exception:
+        pass
     meta = BUTTON_TYPE_META.get(button_type) or {}
     return meta.get("icon") or "🔗"
 
 
 def button_type_catalog():
-    return [
-        {"key": k, **v}
-        for k, v in BUTTON_TYPE_META.items()
-    ]
+    items = [{"key": k, **dict(v)} for k, v in BUTTON_TYPE_META.items()]
+    try:
+        from panel_config import BIOLINK_PACK, PANEL_BRAND
+        if PANEL_BRAND == "bizzo":
+            for item in items:
+                if item["key"] == "bonus":
+                    item["label"] = BIOLINK_PACK.get("bonus_chip_label") or item["label"]
+                    item["icon"] = BIOLINK_PACK.get("bonus_icon") or item["icon"]
+                    item["color"] = BIOLINK_PACK.get("bonus_color") or item["color"]
+    except Exception:
+        pass
+    return items
 
 
 def is_clickable(button_type):

@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#060a10">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/static/biolink-admin.css?v=20260720d">
+  <link rel="stylesheet" href="/static/biolink-admin.css?v=20260720e">
   <link rel="stylesheet" href="/static/biolink-skins.css?v=20260716b">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -1860,7 +1860,7 @@
     }
   </style>
 </head>
-<body>
+<body class="panel-brand-{{ panel.brand }}">
   <div class="app">
     <aside class="sidebar" id="sidebar-nav">
       <div class="sidebar-brand">
@@ -2734,14 +2734,17 @@
   {% endif %}
   <script>
     window.PANEL_BIOLINK = {
+      brand: {{ panel.brand|tojson }},
       defaultTheme: {{ panel.biolink_default_theme|tojson }},
       casinoName: {{ panel.casino_name|tojson }},
       promoPlaceholder: {{ panel.biolink_promo_placeholder|tojson }},
       shortlinkLabel: {{ panel.shortlink_label|tojson }},
-      domainPrefix: {{ panel.domain_prefix_placeholder|tojson }}
+      domainPrefix: {{ panel.domain_prefix_placeholder|tojson }},
+      defaultLogo: {{ (panel.default_brand_logo or '')|tojson }},
+      pack: {{ panel.biolink_pack|tojson }}
     };
   </script>
-  <script src="/static/biolink.js?v=20260720d"></script>
+  <script src="/static/biolink.js?v=20260720e"></script>
   {% if panel.features.marketing %}
   <script src="/static/marketing.js?v=20260712d"></script>
   {% endif %}

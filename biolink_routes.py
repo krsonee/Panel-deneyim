@@ -16,12 +16,18 @@ _BIOLINK_DOMAIN_SKIP_PREFIXES = (
 
 
 def render_public_biolink_page(page, *, preview=False, site_mode=False):
+    from panel_config import BIOLINK_PACK, PANEL_BRAND
+
+    brand_ctx = {
+        "brand": PANEL_BRAND,
+        "biolink_pack": BIOLINK_PACK,
+    }
     if preview:
         page = biolink_api.apply_preview_overrides(page, request.args)
         theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
         return render_template(
             "biolink_page.html", page=page, theme=theme, preview=True,
-            click_prefix=f"/p/{page['slug']}",
+            click_prefix=f"/p/{page['slug']}", **brand_ctx,
         )
     biolink_api.send_ga4_event(page, event_name="biolink_page_view")
     theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
@@ -35,6 +41,7 @@ def render_public_biolink_page(page, *, preview=False, site_mode=False):
         click_prefix = f"/p/{page['slug']}"
     return render_template(
         "biolink_page.html", page=page, theme=theme, click_prefix=click_prefix,
+        **brand_ctx,
     )
 
 

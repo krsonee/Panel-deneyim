@@ -256,6 +256,22 @@
   background: linear-gradient(165deg, rgba(99,102,241,0.06), rgba(15,22,35,0.5));
   margin-bottom: 1rem;
 }
+/* Bizzo studio — Makro indigo composer'dan ayrı (mor/lime) */
+body.panel-brand-bizzo .bl-composer {
+  background: linear-gradient(165deg, rgba(178,255,79,0.08), rgba(43,18,52,0.55));
+  border-color: rgba(178,255,79,0.28);
+}
+body.panel-brand-bizzo .bl-composer-actions .btn-primary {
+  background: linear-gradient(135deg, #b2ff4f, #f5d76e);
+  color: #1a0f20;
+}
+body.panel-brand-bizzo .bl-quick-chip[data-bl-quick="bonus"] {
+  border-color: rgba(178,255,79,0.55);
+  box-shadow: 0 0 0 1px rgba(178,255,79,0.15);
+}
+body.panel-brand-bizzo .biolink-studio-section-title {
+  color: #b2ff4f;
+}
 .bl-composer-head {
   display: flex;
   justify-content: space-between;

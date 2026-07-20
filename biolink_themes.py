@@ -578,7 +578,7 @@ THEMES = {
         bg="#2b1234", text="#ffffff", muted="#c4b5d4",
         card_bg="rgba(255,255,255,0.07)", card_border="rgba(178, 255, 79, 0.35)",
         card_hover="rgba(255,255,255,0.12)", accent="#b2ff4f", accent2="#f5d76e",
-        category="Bizzo", style="neon", animated=True, animation="makrobet", brand_logo=True,
+        category="Bizzo", style="neon", animated=True, animation="bizzo", brand_logo=True,
     ),
     "bz_classic": _theme(
         "Bizzo Klasik",
@@ -593,7 +593,7 @@ THEMES = {
         text="#f7ffe8", muted="#d4e8b0",
         card_bg="rgba(178, 255, 79, 0.10)", card_border="rgba(178, 255, 79, 0.45)",
         card_hover="rgba(178, 255, 79, 0.18)", accent="#b2ff4f", accent2="#ffffff",
-        category="Bizzo", style="neon", animated=True, animation="makrobet", brand_logo=True,
+        category="Bizzo", style="neon", animated=True, animation="bizzo", brand_logo=True,
     ),
     "bz_gold": _theme(
         "Bizzo Altın",
@@ -601,7 +601,7 @@ THEMES = {
         text="#fffaf0", muted="#e8d5a3",
         card_bg="rgba(245, 215, 110, 0.10)", card_border="rgba(245, 215, 110, 0.42)",
         card_hover="rgba(245, 215, 110, 0.18)", accent="#f5d76e", accent2="#b2ff4f",
-        category="Bizzo", style="glow", animated=True, animation="gold", brand_logo=True,
+        category="Bizzo", style="glow", animated=True, animation="bizzo", brand_logo=True,
     ),
     "bz_night": _theme(
         "Bizzo Gece",
@@ -617,7 +617,7 @@ THEMES = {
         text="#fff8e7", muted="#e8d5a3",
         card_bg="rgba(245, 215, 110, 0.08)", card_border="rgba(245, 215, 110, 0.38)",
         card_hover="rgba(245, 215, 110, 0.15)", accent="#f5d76e", accent2="#b2ff4f",
-        category="Bizzo", style="glow", animated=True, animation="gold", brand_logo=True,
+        category="Bizzo", style="glow", animated=True, animation="bizzo", brand_logo=True,
     ),
     "bz_promo": _theme(
         "Bizzo Promo",
