@@ -347,8 +347,11 @@
             <select id="mail-tag-move-from" class="mail-tag-select"><option value="">Seç…</option></select>
           </div>
           <div>
-            <label>Hedef etiket</label>
+            <label>Hedef etiket — listeden seç veya yeni yaz</label>
             <select id="mail-tag-move-to" class="mail-tag-select"><option value="">Seç…</option></select>
+            <div class="mail-tag-target-list" id="mail-tag-target-list" aria-label="Hedef etiket listesi"></div>
+            <input type="text" id="mail-tag-move-to-new" placeholder="Yeni hedef etiket yaz…" style="margin-top:0.4rem;width:100%;">
+            <p class="hint" id="mail-tag-move-to-picked" style="margin:0.35rem 0 0;">Hedef: —</p>
           </div>
           <div style="display:flex;gap:0.4rem;align-items:flex-end;flex-wrap:wrap;">
             <button type="button" class="btn btn-sm btn-primary" id="mail-tag-move-btn" title="Kaynaktan çıkar, hedefe ekle">Taşı</button>
@@ -360,7 +363,7 @@
           <input type="checkbox" id="mail-tag-move-all"> Seçim yoksa kaynak etiketteki <strong>tümünü</strong> işle
         </label>
         <p class="hint" style="margin:0.4rem 0 0;">
-          Varsayılan: sadece listeden işaretlediğin kişilere uygulanır (bazılarını taşı, bazılarını bırak).
+          Varsayılan: alttaki kontak tablosundan işaretlediğin kişilere uygulanır.
           Tüm etiketi işlemek için yukarıdaki kutuyu işaretle.
         </p>
         <p class="hint" id="mail-tag-move-status" style="margin:0.35rem 0 0;">—</p>

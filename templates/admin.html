@@ -1326,12 +1326,19 @@
     .mail-camp-status.cancelled, .mail-camp-status.cancelling { background: rgba(251,146,60,0.18); color: #fdba74; }
     .mail-camp-status.paused { background: rgba(56,189,248,0.16); color: #7dd3fc; }
     .mail-camp-status.error { background: rgba(244,63,94,0.18); color: #fb7185; }
+    /* Kart overflow select menüsünü yutmasın */
+    #mail-pane-crm > .card {
+      overflow: visible;
+    }
     .mail-tag-move {
       margin: 0 1rem 0.85rem;
       padding: 0.75rem 0.9rem;
       border: 1px solid var(--border);
       border-radius: 12px;
       background: rgba(15,23,42,0.28);
+      position: relative;
+      z-index: 30;
+      overflow: visible;
     }
     .mail-tag-move-title {
       font-size: 0.78rem;
@@ -1340,9 +1347,42 @@
     }
     .mail-tag-move-grid {
       display: grid;
-      grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto;
+      grid-template-columns: minmax(160px, 1fr) minmax(220px, 1.2fr) auto;
       gap: 0.55rem;
-      align-items: end;
+      align-items: start;
+    }
+    .mail-tag-move select.mail-tag-select {
+      width: 100%;
+      min-height: 2.4rem;
+      position: relative;
+      z-index: 31;
+    }
+    .mail-tag-target-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.4rem;
+      max-height: 140px;
+      overflow: auto;
+      padding: 0.35rem;
+      border: 1px solid rgba(148,163,184,0.22);
+      border-radius: 10px;
+      background: rgba(2,6,23,0.35);
+    }
+    .mail-tag-target-chip {
+      border: 1px solid rgba(148,163,184,0.35);
+      background: rgba(30,41,59,0.9);
+      color: inherit;
+      border-radius: 999px;
+      padding: 0.28rem 0.65rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .mail-tag-target-chip.is-active {
+      border-color: rgba(250,204,21,0.65);
+      background: rgba(250,204,21,0.16);
+      color: #fde047;
     }
     @media (max-width: 720px) {
       .mail-tag-move-grid { grid-template-columns: 1fr; }
@@ -2730,7 +2770,7 @@
 
   <script src="/static/accounting.js?v=20260717b"></script>
   {% if panel.features.mailing %}
-  <script src="/static/mailing.js?v=20260720d"></script>
+  <script src="/static/mailing.js?v=20260720e"></script>
   {% endif %}
   <script>
     window.PANEL_BIOLINK = {
