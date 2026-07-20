@@ -767,8 +767,9 @@ def apply_preview_overrides(page, args):
     if not page or not args:
         return page
     theme = (args.get("theme") or "").strip()
-    if theme in THEMES:
-        page["theme"] = theme
+    if theme:
+        # Marka filtresi: Makro preview'da Bizzo temaları açılamasın
+        page["theme"] = resolve_theme_key(theme)
     shape = (args.get("button_shape") or "").strip()
     if shape in BUTTON_SHAPES:
         page["button_shape"] = shape

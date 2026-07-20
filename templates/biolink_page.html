@@ -21,7 +21,7 @@
 {% else %}
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 {% endif %}
-<link rel="stylesheet" href="/static/biolink-skins.css?v=20260720g">
+<link rel="stylesheet" href="/static/biolink-skins.css?v=20260720i">
 {% if page.ga4_measurement_id %}
 <script async src="https://www.googletagmanager.com/gtag/js?id={{ page.ga4_measurement_id }}"></script>
 <script>
@@ -267,25 +267,57 @@
     font-size: 0.88rem; color: var(--muted); text-align: center; margin: 0 0 1.75rem;
     max-width: 340px; line-height: 1.5;
   }
-  .links {
+  /* Makro: eski ortalanmış tek sütun + 2 kolon grid (Bizzo dokunmasın) */
+  body.brand-makro .links {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    align-items: start;
+  }
+  body.brand-makro .link-col-full,
+  body.brand-makro .links > .heading {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: min(100%, 420px);
+  }
+  body.brand-makro .link-col-full > a { width: 100%; display: flex; }
+  body.brand-makro .link-col-left { grid-column: 1; min-width: 0; }
+  body.brand-makro .link-col-right { grid-column: 2; min-width: 0; }
+
+  @media (max-width: 560px) {
+    body.brand-makro .wrap { max-width: 420px; }
+    body.brand-makro .links { grid-template-columns: 1fr; }
+    body.brand-makro .link-col-full,
+    body.brand-makro .links > .heading,
+    body.brand-makro .link-col-left,
+    body.brand-makro .link-col-right {
+      grid-column: 1 / -1;
+      width: 100%;
+      max-width: none;
+    }
+  }
+
+  /* Bizzo: yan yana satır motoru (yalnızca brand-bizzo) */
+  body.brand-bizzo .links {
     width: 100%;
     display: flex;
     flex-direction: column;
     gap: 0.55rem;
   }
-  .link-row { width: 100%; }
-  .link-row-full > .heading,
-  .link-row-full > .link-slot {
+  body.brand-bizzo .link-row { width: 100%; }
+  body.brand-bizzo .link-row-full > .heading,
+  body.brand-bizzo .link-row-full > .link-slot {
     width: 100%;
   }
-  .link-row-pair {
+  body.brand-bizzo .link-row-pair {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.45rem;
     align-items: stretch;
   }
-  .link-slot { min-width: 0; }
-  .link-slot > a {
+  body.brand-bizzo .link-slot { min-width: 0; }
+  body.brand-bizzo .link-slot > a {
     width: 100%;
     height: 100%;
     display: flex;
@@ -293,26 +325,26 @@
   }
 
   @media (max-width: 560px) {
-    .wrap { max-width: 420px; }
-    .links { gap: 0.45rem; }
-    .link-row-pair { gap: 0.4rem; }
-    .link-row-pair a.link-btn {
+    body.brand-bizzo .wrap { max-width: 420px; }
+    body.brand-bizzo .links { gap: 0.45rem; }
+    body.brand-bizzo .link-row-pair { gap: 0.4rem; }
+    body.brand-bizzo .link-row-pair a.link-btn {
       padding: 0.72rem 0.65rem;
       font-size: 0.78rem;
       gap: 0.45rem;
     }
-    .link-row-pair .link-icon {
+    body.brand-bizzo .link-row-pair .link-icon {
       width: 30px; height: 30px; font-size: 0.88rem; border-radius: 9px;
     }
-    .link-row-pair .platform-svg { width: 18px; height: 18px; }
-    .link-row-pair a.link-btn::after { display: none; }
-    .link-row-pair a.bonus-card { padding: 0.65rem 0.55rem 0.7rem; }
-    .link-row-pair .bonus-kicker {
+    body.brand-bizzo .link-row-pair .platform-svg { width: 18px; height: 18px; }
+    body.brand-bizzo .link-row-pair a.link-btn::after { display: none; }
+    body.brand-bizzo .link-row-pair a.bonus-card { padding: 0.65rem 0.55rem 0.7rem; }
+    body.brand-bizzo .link-row-pair .bonus-kicker {
       font-size: 0.52rem; letter-spacing: 0.08em; padding: 0.15rem 0.4rem;
     }
-    .link-row-pair .bonus-cta { font-size: 0.58rem; }
-    .link-row-pair a.bonus-card.bonus-skin-ticket::before,
-    .link-row-pair a.bonus-card.bonus-skin-ticket::after { display: none; }
+    body.brand-bizzo .link-row-pair .bonus-cta { font-size: 0.58rem; }
+    body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-ticket::before,
+    body.brand-bizzo .link-row-pair a.bonus-card.bonus-skin-ticket::after { display: none; }
   }
 
   a.link-btn {
@@ -456,36 +488,36 @@
     background: linear-gradient(90deg, transparent, #b2ff4f, transparent);
   }
 
-  /* Yarım sütun — kompakt kart */
-  .link-col-left a.link-btn,
-  .link-col-right a.link-btn,
-  .link-col-left a.bonus-card,
-  .link-col-right a.bonus-card {
+  /* Makro yarım sütun — kompakt kart (Bizzo link-row kullanır) */
+  body.brand-makro .link-col-left a.link-btn,
+  body.brand-makro .link-col-right a.link-btn,
+  body.brand-makro .link-col-left a.bonus-card,
+  body.brand-makro .link-col-right a.bonus-card {
     padding: 0.75rem 0.8rem;
     font-size: 0.82rem;
     gap: 0.55rem;
   }
-  .link-col-left a.bonus-card,
-  .link-col-right a.bonus-card {
+  body.brand-makro .link-col-left a.bonus-card,
+  body.brand-makro .link-col-right a.bonus-card {
     padding: 0.7rem 0.75rem;
   }
-  .link-col-left .link-icon,
-  .link-col-right .link-icon {
+  body.brand-makro .link-col-left .link-icon,
+  body.brand-makro .link-col-right .link-icon {
     width: 34px; height: 34px; font-size: 0.95rem;
   }
-  .link-col-left .link-label,
-  .link-col-right .link-label {
+  body.brand-makro .link-col-left .link-label,
+  body.brand-makro .link-col-right .link-label {
     font-size: 0.78rem;
     line-height: 1.2;
   }
-  .link-col-left a.link-btn::after,
-  .link-col-right a.link-btn::after { display: none; }
-  .link-col-left .bonus-top,
-  .link-col-right .bonus-top { flex-wrap: wrap; gap: 0.35rem; }
-  .link-col-left .bonus-amount,
-  .link-col-right .bonus-amount { margin-left: 0; font-size: 0.62rem; }
-  .link-col-left .bonus-cta,
-  .link-col-right .bonus-cta { font-size: 0.62rem; }
+  body.brand-makro .link-col-left a.link-btn::after,
+  body.brand-makro .link-col-right a.link-btn::after { display: none; }
+  body.brand-makro .link-col-left .bonus-top,
+  body.brand-makro .link-col-right .bonus-top { flex-wrap: wrap; gap: 0.35rem; }
+  body.brand-makro .link-col-left .bonus-amount,
+  body.brand-makro .link-col-right .bonus-amount { margin-left: 0; font-size: 0.62rem; }
+  body.brand-makro .link-col-left .bonus-cta,
+  body.brand-makro .link-col-right .bonus-cta { font-size: 0.62rem; }
 
   .footer {
     margin-top: 2rem;
@@ -688,6 +720,7 @@
     </div>
 
     <div class="links">
+      {% if page_brand == 'bizzo' %}
       {% set rows = layout_rows if layout_rows is defined else [] %}
       {% for row in rows %}
         <div class="link-row link-row-{{ row.kind }}">
@@ -697,13 +730,13 @@
           {% if b.button_type == 'heading' %}
             <div class="heading text-align-{{ align }} hs-{{ b.heading_style or 'classic' }}"><span class="hs-inner">{{ b.label }}</span></div>
           {% elif b.button_type == 'bonus' %}
-            {% set bonus_skin = pack.bonus_skin if page_brand == 'bizzo' and pack.bonus_skin else 'classic' %}
-            {% set bonus_icon = pack.bonus_icon if page_brand == 'bizzo' and pack.bonus_icon else '🎁' %}
-            {% set cta_strong = pack.bonus_cta_strong if page_brand == 'bizzo' and pack.bonus_cta_strong else 'Katıl →' %}
-            {% set cta_rest = pack.bonus_cta_rest if page_brand == 'bizzo' and pack.bonus_cta_rest else 'Promosyonu görüntüle' %}
+            {% set bonus_skin = pack.bonus_skin if pack.bonus_skin else 'classic' %}
+            {% set bonus_icon = pack.bonus_icon if pack.bonus_icon else '💎' %}
+            {% set cta_strong = pack.bonus_cta_strong if pack.bonus_cta_strong else 'Bonusu Al →' %}
+            {% set cta_rest = pack.bonus_cta_rest if pack.bonus_cta_rest else 'Hemen oyna' %}
             <div class="link-slot">
             <a class="link-btn bonus-card bonus-skin-{{ bonus_skin }} highlight text-align-{{ align }}{% if half %} link-in-half{% endif %}" href="{{ click_prefix }}/go/{{ b.id }}">
-              {% if page_brand == 'bizzo' and pack.bonus_kicker %}
+              {% if pack.bonus_kicker %}
               <div class="bonus-kicker">{{ pack.bonus_kicker }}</div>
               {% endif %}
               <div class="bonus-top">
@@ -732,6 +765,41 @@
         {% endfor %}
         </div>
       {% endfor %}
+      {% else %}
+      {# Makro: eski flat render — layout_rows / Bizzo satır motoru YOK #}
+      {% for b in page.buttons %}
+        {% set col = b.layout_col or 'full' %}
+        {% set align = b.text_align or 'left' %}
+        {% if b.button_type == 'heading' %}
+          <div class="heading link-col-full text-align-{{ align }} hs-{{ b.heading_style or 'classic' }}"><span class="hs-inner">{{ b.label }}</span></div>
+        {% elif b.button_type == 'bonus' %}
+          <div class="link-col-{{ col }}">
+          <a class="link-btn bonus-card bonus-skin-classic highlight text-align-{{ align }}" href="{{ click_prefix }}/go/{{ b.id }}">
+            <div class="bonus-top">
+              <span class="link-icon">{{ b.display_icon or b.icon or '🎁' }}</span>
+              <span class="link-label">{{ b.label }}</span>
+              {% if b.badge_text %}<span class="bonus-amount">{{ b.badge_text }}</span>{% endif %}
+            </div>
+            <div class="bonus-cta"><span>Katıl →</span> Promosyonu görüntüle</div>
+          </a>
+          </div>
+        {% else %}
+          <div class="link-col-{{ col }}">
+          <a class="link-btn platform-{{ b.button_type }} text-align-{{ align }}{% if b.highlight %} highlight{% endif %}" href="{{ click_prefix }}/go/{{ b.id }}">
+            <span class="link-icon">
+              {% if b.button_type in ['whatsapp','telegram','instagram','twitter','tiktok','youtube'] %}
+                {% set platform = b.button_type %}{% include 'partials/biolink_platform_icon.html' %}
+              {% else %}
+                {{ b.display_icon or b.icon or '🔗' }}
+              {% endif %}
+            </span>
+            <span class="link-label">{{ b.label }}</span>
+            {% if b.badge_text and b.button_type != 'whatsapp' %}<span class="link-badge">{{ b.badge_text }}</span>{% endif %}
+          </a>
+          </div>
+        {% endif %}
+      {% endfor %}
+      {% endif %}
     </div>
 
     <div class="footer">

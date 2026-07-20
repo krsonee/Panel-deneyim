@@ -1021,7 +1021,8 @@
     var hintEl = document.getElementById("bl-composer-hint");
     if (labelEl) labelEl.textContent = p.label;
     if (hintEl) {
-      var packHint = (window.PANEL_BIOLINK && window.PANEL_BIOLINK.pack && window.PANEL_BIOLINK.pack.bonus_composer_hint) || "";
+      var isBizzo = window.PANEL_BIOLINK && window.PANEL_BIOLINK.brand === "bizzo";
+      var packHint = (isBizzo && window.PANEL_BIOLINK.pack && window.PANEL_BIOLINK.pack.bonus_composer_hint) || "";
       hintEl.textContent = blComposerType === "heading" ? "Sayfada ayraç / bölüm başlığı"
         : blComposerType === "bonus" ? (packHint || "Promo kartı — etiket + link")
         : blComposerType === "whatsapp" ? "wa.me linki otomatik oluşturulur"

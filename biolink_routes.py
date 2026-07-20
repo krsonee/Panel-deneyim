@@ -22,10 +22,17 @@ def render_public_biolink_page(page, *, preview=False, site_mode=False):
         "brand": PANEL_BRAND,
         "biolink_pack": BIOLINK_PACK,
     }
+    # layout_rows yalnızca Bizzo — Makro eski flat/link-col render kullanır
+    layout_rows = (
+        biolink_api.group_layout_rows(page.get("buttons") or [])
+        if PANEL_BRAND == "bizzo"
+        else None
+    )
     if preview:
         page = biolink_api.apply_preview_overrides(page, request.args)
         theme = biolink_api.theme_vars(page["theme"], page.get("accent_color") or "")
-        layout_rows = biolink_api.group_layout_rows(page.get("buttons") or [])
+        if PANEL_BRAND == "bizzo":
+            layout_rows = biolink_api.group_layout_rows(page.get("buttons") or [])
         return render_template(
             "biolink_page.html", page=page, theme=theme, preview=True,
             click_prefix=f"/p/{page['slug']}", layout_rows=layout_rows, **brand_ctx,
@@ -40,7 +47,6 @@ def render_public_biolink_page(page, *, preview=False, site_mode=False):
         click_prefix = ""
     else:
         click_prefix = f"/p/{page['slug']}"
-    layout_rows = biolink_api.group_layout_rows(page.get("buttons") or [])
     return render_template(
         "biolink_page.html", page=page, theme=theme, click_prefix=click_prefix,
         layout_rows=layout_rows, **brand_ctx,
