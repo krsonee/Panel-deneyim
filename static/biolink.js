@@ -596,12 +596,45 @@
     blBindAssetPickers(logoBox, bannerBox, faviconBox);
   }
 
+  function loadDomainOverview() {
+    var tb = document.getElementById("biolink-domain-overview");
+    if (!tb) return Promise.resolve();
+    return blApi("/api/biolink/domain-overview").then(function (r) {
+      if (!r || !r.ok) {
+        tb.innerHTML = '<tr><td colspan="6" class="empty">Yüklenemedi</td></tr>';
+        return;
+      }
+      var list = r.data.domains || [];
+      if (!list.length) {
+        tb.innerHTML = '<tr><td colspan="6" class="empty">Özel domain’li sayfa yok — Studio’da Özel Domain kaydet</td></tr>';
+        return;
+      }
+      tb.innerHTML = list.map(function (d) {
+        var on = d.online_count > 0
+          ? '<span class="tag online">' + d.online_count + "</span>"
+          : '<span class="tag offline">0</span>';
+        return "<tr>" +
+          '<td><a href="' + blEsc(d.public_url) + '" target="_blank" rel="noopener"><strong>' + blEsc(d.domain) + "</strong></a></td>" +
+          "<td>" + blEsc(d.title) + "</td>" +
+          "<td>" + (d.view_count || 0) + "</td>" +
+          "<td>" + (d.total_clicks || 0) + "</td>" +
+          "<td>" + on + "</td>" +
+          '<td><button type="button" class="btn btn-sm" data-bl-edit="' + d.page_id + '">Düzenle</button></td>' +
+          "</tr>";
+      }).join("");
+      tb.querySelectorAll("[data-bl-edit]").forEach(function (btn) {
+        btn.onclick = function () { openEditorById(parseInt(btn.getAttribute("data-bl-edit"), 10)); };
+      });
+    });
+  }
+
   function loadPages() {
     if (!blHas("biolink.pages")) return Promise.resolve();
     return blApi("/api/biolink/pages").then(function (r) {
       if (!r || !r.ok) return;
       blPages = r.data.pages || [];
       renderPagesTable();
+      loadDomainOverview();
       var upd = document.getElementById("biolink-updated");
       if (upd) upd.textContent = "Son: " + new Date().toLocaleTimeString("tr-TR");
     });
@@ -1521,9 +1554,15 @@
       if (!box) return;
       if (!r || !r.ok) { box.innerHTML = '<p class="muted-sm">Yüklenemedi.</p>'; return; }
       var s = r.data;
-      var html = '<div class="biolink-stats-grid">' +
+      var domainLine = s.custom_domain
+        ? '<p class="muted-sm" style="margin:0 0 0.55rem;">Domain: <strong>' + blEsc(s.custom_domain) + "</strong></p>"
+        : "";
+      var html = domainLine + '<div class="biolink-stats-grid">' +
         '<div class="biolink-stat-card"><div class="lbl">Görüntülenme</div><div class="val">' + (s.view_count || 0) + "</div></div>" +
-        '<div class="biolink-stat-card"><div class="lbl">Toplam tıklama</div><div class="val">' + (s.total_clicks || 0) + "</div></div></div>";
+        '<div class="biolink-stat-card"><div class="lbl">Toplam tıklama</div><div class="val">' + (s.total_clicks || 0) + "</div></div>" +
+        '<div class="biolink-stat-card"><div class="lbl">Bugün tıklama</div><div class="val">' + (s.clicks_today || 0) + "</div></div>" +
+        '<div class="biolink-stat-card"><div class="lbl">7 gün tıklama</div><div class="val">' + (s.clicks_7d || 0) + "</div></div>" +
+        "</div>";
       if (s.buttons && s.buttons.length) {
         html += '<div class="biolink-stat-rows">' + s.buttons.map(function (b) {
           return '<div class="biolink-stat-row"><span>' + blEsc(b.label) + '</span><span class="val">' + b.click_count + "</span></div>";
@@ -1538,6 +1577,8 @@
     if (btnNew) btnNew.onclick = createNewPage;
     var btnRefresh = document.getElementById("btn-biolink-refresh");
     if (btnRefresh) btnRefresh.onclick = loadPages;
+    var btnDomRefresh = document.getElementById("btn-biolink-domain-refresh");
+    if (btnDomRefresh) btnDomRefresh.onclick = loadDomainOverview;
     var btnSave = document.getElementById("btn-biolink-save");
     if (btnSave) btnSave.onclick = savePage;
     var btnClose = document.getElementById("btn-biolink-close");

@@ -669,6 +669,9 @@ body.panel-brand-bizzo .bl-layout-ico-right::before { right: 1px; }
   grid-template-columns: repeat(2, 1fr);
   gap: 0.5rem;
 }
+@media (min-width: 720px) {
+  .biolink-stats-grid { grid-template-columns: repeat(4, 1fr); }
+}
 .biolink-stat-card {
   border: 1px solid var(--border);
   border-radius: 12px;

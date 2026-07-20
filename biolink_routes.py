@@ -7,7 +7,7 @@ from io import BytesIO
 from flask import Blueprint, jsonify, redirect, render_template, request, send_file, session
 
 import biolink_api
-from database import get_db
+from database import fetchall, get_db
 
 MODULE_ACCESS = ("module.biolink", "biolink.pages")
 
@@ -217,6 +217,11 @@ def create_biolink_blueprint(permission_required):
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+        try:
+            from track_domains import sync_biolink_custom_domain
+            sync_biolink_custom_domain(page)
+        except Exception:
+            pass
         return jsonify({"page": page}), 201
 
     @api.route("/pages/<int:page_id>", methods=["GET"])
@@ -237,6 +242,11 @@ def create_biolink_blueprint(permission_required):
                 page = biolink_api.update_page(conn, page_id, data)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+        try:
+            from track_domains import sync_biolink_custom_domain
+            sync_biolink_custom_domain(page)
+        except Exception:
+            pass
         return jsonify({"page": page})
 
     @api.route("/pages/<int:page_id>", methods=["DELETE"])
@@ -257,6 +267,11 @@ def create_biolink_blueprint(permission_required):
                 page = biolink_api.duplicate_page(conn, page_id, created_by=username)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+        try:
+            from track_domains import sync_biolink_custom_domain
+            sync_biolink_custom_domain(page)
+        except Exception:
+            pass
         return jsonify({"page": page}), 201
 
     @api.route("/pages/<int:page_id>/stats", methods=["GET"])
@@ -267,6 +282,55 @@ def create_biolink_blueprint(permission_required):
         if stats is None:
             return jsonify({"error": "Sayfa bulunamadı."}), 404
         return jsonify(stats)
+
+    @api.route("/domain-overview", methods=["GET"])
+    @perm(*MODULE_ACCESS)
+    def domain_overview():
+        """Bio özel domainler: görüntülenme + tıklama + anlık online (tracker)."""
+        from datetime import timedelta
+
+        from database import iso, utcnow
+
+        try:
+            from track_domains import normalize_track_domain
+        except Exception:
+            normalize_track_domain = lambda d: (d or "").strip().lower().removeprefix("www.")
+
+        cutoff = iso(utcnow() - timedelta(seconds=90))
+        with closing(get_db()) as conn:
+            pages = biolink_api.list_pages(conn)
+            online_rows = fetchall(
+                conn,
+                """
+                SELECT tl.domain, COUNT(*) AS cnt
+                FROM visitor_sessions vs
+                INNER JOIN tracked_links tl ON tl.id = vs.tracked_link_id
+                WHERE vs.last_seen_at >= ?
+                GROUP BY tl.domain
+                """,
+                (cutoff,),
+            )
+        online_map = {
+            normalize_track_domain(r["domain"]): int(r["cnt"] or 0)
+            for r in (online_rows or [])
+        }
+        items = []
+        for p in pages or []:
+            domain = normalize_track_domain(p.get("custom_domain") or "")
+            if not domain:
+                continue
+            items.append({
+                "page_id": p.get("id"),
+                "title": p.get("title") or "",
+                "domain": domain,
+                "public_url": p.get("public_url") or f"https://{domain}/",
+                "view_count": int(p.get("view_count") or 0),
+                "total_clicks": int(p.get("total_clicks") or 0),
+                "online_count": online_map.get(domain, 0),
+                "is_active": bool(p.get("is_active")),
+            })
+        items.sort(key=lambda x: (-x["total_clicks"], -x["view_count"], x["domain"]))
+        return jsonify({"domains": items})
 
     @api.route("/pages/<int:page_id>/buttons", methods=["POST"])
     @perm(*MODULE_ACCESS)

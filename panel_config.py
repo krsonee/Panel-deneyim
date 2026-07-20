@@ -136,6 +136,7 @@ _BRANDS = {
         "totp_issuer": "MakroPanel",
         "tracker_comment": "MakroPanel — ortak takip kodu",
         "biolink_pack": _BIOLINK_PACKS["makro"],
+        "default_tracked_domains": [],
     },
     "bizzo": {
         "brand": "bizzo",
@@ -168,6 +169,10 @@ _BRANDS = {
         "totp_issuer": "BizzoPanel",
         "tracker_comment": "BizzoPanel — ortak takip kodu",
         "biolink_pack": _BIOLINK_PACKS["bizzo"],
+        # Link Takip’e otomatik eklenen domainler (online sayacı; www normalize edilir)
+        "default_tracked_domains": [
+            {"domain": "bizzocasino168.com", "label": "Bizzo Casino (ana site)"},
+        ],
     },
 }
 

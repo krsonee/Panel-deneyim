@@ -117,6 +117,11 @@ def init_db():
         print(f"\n🧹 PANEL_WIPE_DATA: operasyonel veri temizlendi ({PANEL_BRAND}).\n")
     migrate_domains()
     migrate_biolink_themes_for_brand()
+    try:
+        from track_domains import ensure_brand_tracked_domains
+        ensure_brand_tracked_domains()
+    except Exception as exc:
+        print(f"⚠️  ensure_brand_tracked_domains: {exc}")
     ensure_primary_admin()
     seed_admin_users()
     print(f"\n🏷️  Panel markası: {BRAND['product_name']} (PANEL_BRAND={PANEL_BRAND})\n")
@@ -1193,7 +1198,7 @@ def demo_page():
 
 
 @app.route("/api/links", methods=["GET"])
-@superadmin_required
+@permission_required("tracking.domains", "module.tracking")
 def list_links():
     cutoff = iso(utcnow() - timedelta(seconds=ONLINE_THRESHOLD_SECONDS))
     with closing(get_db()) as conn:

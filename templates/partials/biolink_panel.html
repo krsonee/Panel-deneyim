@@ -11,6 +11,29 @@
     </div>
   </div>
 
+  <section class="card" data-perm="biolink.pages" id="biolink-domain-overview-card">
+    <div class="card-head">
+      <span>Domain Performans</span>
+      <button type="button" class="btn btn-sm" id="btn-biolink-domain-refresh">Yenile</button>
+    </div>
+    <div class="card-body" style="padding-top:0;">
+      <p class="hint">
+        Özel domain’li bio sayfalar (örn. <strong>girbize.com</strong>): görüntülenme, tıklama ve anlık online.
+        Online için sayfada tracker otomatik çalışır — domain’i kaydetmen yeterli.
+      </p>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th>Domain</th><th>Sayfa</th><th>Görüntülenme</th><th>Tıklama</th><th>Online</th><th></th>
+            </tr></thead>
+            <tbody id="biolink-domain-overview"><tr><td colspan="6" class="empty">Özel domain’li sayfa yok</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="card" data-perm="biolink.pages">
     <div class="card-head"><span>Sayfalarım</span></div>
     <div class="card-body">
@@ -181,6 +204,7 @@
 
           <div class="biolink-studio-section">
             <div class="biolink-studio-section-title">Performans</div>
+            <p class="muted-sm" style="margin:-0.25rem 0 0.55rem;">Görüntülenme + buton tıklamaları (girbize.com / canlı sayfa)</p>
             <div id="biolink-stats"><p class="muted-sm">Henüz veri yok.</p></div>
           </div>
         </div>

@@ -16,6 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from contextlib import closing
+from datetime import timedelta
 from urllib.parse import urlparse
 
 from werkzeug.utils import secure_filename
@@ -1213,9 +1214,27 @@ def get_stats(conn, page_id):
     buttons = [b for b in page["buttons"] if is_clickable(b["button_type"])]
     buttons.sort(key=lambda b: -b["click_count"])
     total_clicks = sum(b["click_count"] for b in buttons)
+    now = utcnow()
+    day_ago = iso(now - timedelta(days=1))
+    week_ago = iso(now - timedelta(days=7))
+    clicks_today = scalar(
+        conn,
+        "SELECT COUNT(*) FROM biolink_clicks WHERE page_id = ? AND clicked_at >= ?",
+        (int(page_id), day_ago),
+    ) or 0
+    clicks_7d = scalar(
+        conn,
+        "SELECT COUNT(*) FROM biolink_clicks WHERE page_id = ? AND clicked_at >= ?",
+        (int(page_id), week_ago),
+    ) or 0
     return {
         "view_count": page["view_count"],
         "total_clicks": total_clicks,
+        "clicks_today": int(clicks_today),
+        "clicks_7d": int(clicks_7d),
+        "custom_domain": page.get("custom_domain") or "",
+        "public_url": page.get("public_url") or "",
+        "title": page.get("title") or "",
         "buttons": [
             {"id": b["id"], "label": b["label"], "url": b["url"], "click_count": b["click_count"]}
             for b in buttons

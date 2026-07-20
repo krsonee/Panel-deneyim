@@ -1085,5 +1085,9 @@
       if (!seen()) setTimeout(openPopup, Math.max(0, delay));
     })();
   </script>
+  {% if not preview %}
+  {# Link Takip online sayacı — domain panelde kayıtlıysa heartbeat gider #}
+  <script src="/static/tracker.js" async></script>
+  {% endif %}
 </body>
 </html>

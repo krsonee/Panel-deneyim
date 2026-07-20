@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#060a10">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/static/biolink-admin.css?v=20260720t">
+  <link rel="stylesheet" href="/static/biolink-admin.css?v=20260721a">
   <link rel="stylesheet" href="/static/biolink-skins.css?v=20260716b">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -2349,10 +2349,18 @@
           </div>
         </section>
 
-        <section class="card" data-superadmin-only="1">
+        <section class="card" data-perm="tracking.domains">
           <div class="card-head"><span>Takip Edilen Domainler</span><a href="/demo" target="_blank" class="btn btn-sm">Demo Site</a></div>
           <div class="card-body" style="padding-top:0;">
-            <div class="tracking-code-panel" data-superadmin-only="1">
+            {% if panel.brand == "bizzo" %}
+            <p class="hint" style="margin:0.75rem 0 0.5rem;">
+              <strong>bizzocasino168.com online:</strong> domain listede otomatik görünür.
+              Anlık online için aşağıdaki takip kodunu <strong>casino sitesinin HTML’ine</strong> (tüm sayfalar / &lt;head&gt; veya body sonu) bir kez eklemen gerekir.
+              Bio domain’ler (girbize.com) için kod otomatik gömülü — ekstra ekleme yok.
+              Tıklama sayıları için <strong>Bio Sayfa → Domain Performans</strong> sekmesine bak.
+            </p>
+            {% endif %}
+            <div class="tracking-code-panel">
               <div class="tracking-code-head">
                 <h4>📋 Ortak Takip Kodu</h4>
                 <button type="button" class="btn btn-sm btn-success" onclick="copyCode('global-tracking-code')">Kopyala</button>
@@ -3037,7 +3045,7 @@
       pack: {{ panel.biolink_pack|tojson }}
     };
   </script>
-  <script src="/static/biolink.js?v=20260720t"></script>
+  <script src="/static/biolink.js?v=20260721a"></script>
   {% if panel.features.marketing %}
   <script src="/static/marketing.js?v=20260712d"></script>
   {% endif %}
@@ -3610,14 +3618,18 @@
           return;
         }
 
+        var canManageDomains = (myPermissions || []).indexOf("*") !== -1;
         tbody.innerHTML = links.map(function(l) {
           var ref = l.ref_code ? '<span class="tag">'+esc(refDisplayLabel(l.ref_code))+'</span>' : '<span class="tag">Tüm site</span>';
           var on = l.online_count>0 ? '<span class="tag online">'+l.online_count+'</span>' : '<span class="tag offline">0</span>';
           var nameCell = l.label
             ? '<span class="link-label">'+esc(l.label)+'</span>'
             : '<span class="link-label-empty">—</span>';
+          var actions = canManageDomains
+            ? '<button class="btn btn-sm btn-danger" onclick="deleteLink('+l.id+')">Sil</button>'
+            : '';
           return '<tr><td>'+nameCell+'</td><td><strong>'+esc(l.domain)+'</strong></td><td>'+ref+'</td><td>'+on+'</td>'+
-            '<td><button class="btn btn-sm btn-danger" onclick="deleteLink('+l.id+')">Sil</button></td></tr>';
+            '<td>'+actions+'</td></tr>';
         }).join("");
 
         updateTableFoot("links-table", cachedLinks.length);
