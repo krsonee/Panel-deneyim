@@ -39,6 +39,7 @@
   var MAIL_TAB_PERMS = {
     dashboard: "mailing.dashboard",
     relations: ["mailing.relations", "mailing.crm"],
+    smartico: "mailing.crm",
     crm: "mailing.crm",
     templates: "mailing.templates",
     campaigns: "mailing.campaigns",
@@ -60,7 +61,7 @@
   }
 
   function mailFirstAllowedTab() {
-    var order = ["dashboard", "relations", "crm", "templates", "campaigns", "ivr", "reports", "settings"];
+    var order = ["dashboard", "relations", "smartico", "crm", "templates", "campaigns", "ivr", "reports", "settings"];
     for (var i = 0; i < order.length; i++) {
       if (mailHas(MAIL_TAB_PERMS[order[i]])) return order[i];
     }
@@ -621,6 +622,7 @@
   function mailLoadTab(tab) {
     if (tab === "dashboard") mailLoadDashboard();
     else if (tab === "relations") mailLoadRelations();
+    else if (tab === "smartico") mailLoadSmarticoPlayers(false);
     else if (tab === "crm") {
       // Mail Rehber — açılışta refresh ile etiket sayıları canlı dolsun
       mailLoadContacts();
@@ -635,6 +637,102 @@
     else if (tab === "ivr") { mailLoadSelects().then(mailLoadIvr); }
     else if (tab === "reports") mailLoadReports();
     else if (tab === "settings") mailLoadSettings();
+  }
+
+  var mailScSearchTimer = null;
+  var mailScLastRows = [];
+
+  function mailFmtMoney(n, cur) {
+    var v = Number(n || 0);
+    var s = v.toLocaleString("tr-TR", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    return cur ? (s + " " + cur) : s;
+  }
+
+  function mailLoadSmarticoPlayers(force) {
+    var status = document.getElementById("mail-sc-status");
+    var tbody = document.getElementById("mail-sc-table");
+    var period = ((document.getElementById("mail-sc-period") || {}).value) || "30days";
+    var q = ((document.getElementById("mail-sc-q") || {}).value || "").trim();
+    var matched = !!(document.getElementById("mail-sc-matched") || {}).checked;
+    var ftd = !!(document.getElementById("mail-sc-ftd") || {}).checked;
+    var url = "/api/mailing/crm/smartico-players?period=" + encodeURIComponent(period);
+    if (force) url += "&force=1";
+    if (q) url += "&q=" + encodeURIComponent(q);
+    if (matched) url += "&matched=1";
+    if (ftd) url += "&ftd=1";
+    if (status) status.textContent = "Smartico’dan çekiliyor…";
+    if (tbody) tbody.innerHTML = '<tr><td colspan="11" class="empty">Yükleniyor…</td></tr>';
+    return mailApi(url, { timeoutMs: 60000 }).then(function (res) {
+      if (!res || !res.ok) {
+        var err = (res && res.data && (res.data.message || res.data.error)) || "Smartico üyeleri alınamadı";
+        if (status) status.textContent = err;
+        if (tbody) tbody.innerHTML = '<tr><td colspan="11" class="empty">' + esc(err) + "</td></tr>";
+        setText("mail-sc-kpi-players", "—");
+        setText("mail-sc-kpi-matched", "—");
+        setText("mail-sc-kpi-ftd", "—");
+        setText("mail-sc-kpi-deposit", "—");
+        setText("mail-sc-kpi-withdraw", "—");
+        setText("mail-sc-kpi-bonus", "—");
+        return;
+      }
+      var d = res.data || {};
+      var rows = d.rows || [];
+      var cur = d.currency || "";
+      mailScLastRows = rows;
+      var ftdSum = 0, dep = 0, wit = 0, bon = 0, matchedN = 0;
+      rows.forEach(function (r) {
+        ftdSum += Number(r.ftd_count || 0);
+        dep += Number(r.deposit_total || 0);
+        wit += Number(r.withdrawal_total || 0);
+        bon += Number(r.bonus_total || 0);
+        if (r.matched) matchedN += 1;
+      });
+      setText("mail-sc-kpi-players", fmtNum(rows.length));
+      setText("mail-sc-kpi-matched", fmtNum(matchedN));
+      setText("mail-sc-kpi-ftd", fmtNum(ftdSum));
+      setText("mail-sc-kpi-deposit", mailFmtMoney(dep, cur));
+      setText("mail-sc-kpi-withdraw", mailFmtMoney(wit, cur));
+      setText("mail-sc-kpi-bonus", mailFmtMoney(bon, cur));
+      var src = d.source === "cache" ? "önbellek" : "canlı";
+      if (status) {
+        status.textContent = rows.length + " satır · aff #" + (d.affiliate_id || "?") +
+          " · " + src + (d.group_by ? (" · group " + d.group_by) : "") +
+          (d.error ? (" · uyarı: " + d.error) : "");
+      }
+      if (!tbody) return;
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="11" class="empty">Bu dönemde üye yok — affiliate ID / API anahtarını kontrol et</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(function (r) {
+        var tags = (r.tags || []).slice(0, 4).map(function (t) {
+          return '<span class="tag">' + esc(t) + "</span>";
+        }).join(" ");
+        var userCell = r.username
+          ? ("<strong>" + esc(r.username) + "</strong>")
+          : '<span class="muted">—</span>';
+        var emailCell = r.email
+          ? esc(r.email)
+          : (r.matched ? '<span class="muted">—</span>' : '<span class="muted">eşleşmedi</span>');
+        var cid = r.contact_id != null ? r.contact_id : (r.subid || "—");
+        return "<tr>" +
+          "<td>" + userCell + "</td>" +
+          "<td>" + emailCell + "</td>" +
+          "<td>" + esc(r.first_name || "") + "</td>" +
+          "<td>" + esc(r.last_name || "") + "</td>" +
+          "<td><span class=\"muted\">#" + esc(String(cid)) + "</span></td>" +
+          "<td>" + ((r.ftd_count || 0) > 0
+            ? ('<span class="tag" style="background:rgba(34,197,94,0.18);color:#86efac;">' + fmtNum(r.ftd_count) + "</span>")
+            : '<span class="muted">0</span>') + "</td>" +
+          "<td>" + mailFmtMoney(r.ftd_total, cur) + "</td>" +
+          "<td><strong>" + mailFmtMoney(r.deposit_total, cur) + "</strong>" +
+            (r.deposit_count ? (' <span class="muted">(' + fmtNum(r.deposit_count) + ")</span>") : "") + "</td>" +
+          "<td>" + mailFmtMoney(r.withdrawal_total, cur) + "</td>" +
+          "<td>" + mailFmtMoney(r.bonus_total, cur) + "</td>" +
+          "<td>" + (tags || '<span class="muted">—</span>') + "</td>" +
+          "</tr>";
+      }).join("");
+    });
   }
 
   var mailRelContactId = null;
@@ -2838,8 +2936,34 @@
         mailToast(res.data.message || "Segmentler güncellendi");
         mailLoadContacts();
         mailLoadTags();
+        if (mailActiveTab === "smartico") mailLoadSmarticoPlayers(true);
       });
     });
+    bindClick("mail-sc-refresh", function () { mailLoadSmarticoPlayers(true); });
+    bindClick("mail-sc-sync", function () {
+      mailToast("Smartico segmentleri güncelleniyor…");
+      mailApi("/api/mailing/crm/sync-smartico", { method: "POST", timeoutMs: 30000 }).then(function (res) {
+        if (!res || !res.ok) {
+          mailToast((res && res.data && res.data.error) || "Güncellenemedi");
+          return;
+        }
+        mailToast(res.data.message || "Segmentler güncellendi");
+        mailLoadSmarticoPlayers(true);
+      });
+    });
+    var scPeriod = document.getElementById("mail-sc-period");
+    if (scPeriod) scPeriod.addEventListener("change", function () { mailLoadSmarticoPlayers(false); });
+    ["mail-sc-matched", "mail-sc-ftd"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener("change", function () { mailLoadSmarticoPlayers(false); });
+    });
+    var scQ = document.getElementById("mail-sc-q");
+    if (scQ) {
+      scQ.addEventListener("input", function () {
+        clearTimeout(mailScSearchTimer);
+        mailScSearchTimer = setTimeout(function () { mailLoadSmarticoPlayers(false); }, 350);
+      });
+    }
     bindClick("mail-btn-rotate-secret", function () {
       if (!confirm("Webhook secret yenilensin mi? IVR tarafını da güncellemen gerekir.")) return;
       mailApi("/api/mailing/settings", {

@@ -49,9 +49,12 @@ _FETCH_ERRORS = (
 # Kısa süreli bellek içi önbellek — panel her 30 sn'de bir yenilediği için
 # Smartico tarafına gereksiz yük binmesin.
 _report_cache = {}
+_player_cache = {}
 _aff_cache = {"fetched_at": None, "data": {}}
 _CACHE_SECONDS = 45
+_PLAYER_CACHE_SECONDS = 90
 _AFF_CACHE_SECONDS = 300
+_PLAYER_HTTP_TIMEOUT = 45
 
 
 def get_config(conn):
@@ -77,6 +80,7 @@ def save_config(conn, api_key, api_host):
     upsert_smartico_setting(conn, _SETTING_API_KEY, api_key)
     upsert_smartico_setting(conn, _SETTING_API_HOST, api_host)
     _report_cache.clear()
+    _player_cache.clear()
     _aff_cache["fetched_at"] = None
     _aff_cache["data"] = {}
     return get_config(conn)
@@ -85,6 +89,7 @@ def save_config(conn, api_key, api_host):
 def clear_config(conn):
     upsert_smartico_setting(conn, _SETTING_API_KEY, "")
     _report_cache.clear()
+    _player_cache.clear()
 
 
 class SmarticoError(Exception):
@@ -266,12 +271,12 @@ def _attach_online_counts(conn, rows):
     return rows
 
 
-def _request(host, path, api_key, params=None):
+def _request(host, path, api_key, params=None, timeout=None):
     query = ("?" + urllib.parse.urlencode(params)) if params else ""
     url = f"{host.rstrip('/')}/api/{path}{query}"
     req = urllib.request.Request(url, headers={"authorization": api_key, "User-Agent": "MakroPanel/1.0"})
     try:
-        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=timeout or _HTTP_TIMEOUT) as resp:
             body = resp.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         detail = ""
@@ -547,6 +552,9 @@ def fetch_subid_conversions(conn, affiliate_id, subid_param, force=False):
                 "ftd_total": 0.0,
                 "deposit_count": 0,
                 "deposit_total": 0.0,
+                "withdrawal_count": 0,
+                "withdrawal_total": 0.0,
+                "bonus_total": 0.0,
             }
         m = merged[subid]
         m["visit_count"] += _num(r.get("visit_count"))
@@ -555,12 +563,207 @@ def fetch_subid_conversions(conn, affiliate_id, subid_param, force=False):
         m["ftd_total"] += _num(r.get("ftd_total"))
         m["deposit_count"] += _num(r.get("deposit_count"))
         m["deposit_total"] += _num(r.get("deposit_total"))
+        m["withdrawal_count"] += _num(r.get("withdrawal_count"))
+        m["withdrawal_total"] += _num(r.get("withdrawal_total"))
+        m["bonus_total"] += _num(r.get("bonus_amount"))
 
     rows = sorted(merged.values(), key=lambda x: x["subid"])
     for row in rows:
-        for f in ("ftd_total", "deposit_total"):
+        for f in ("ftd_total", "deposit_total", "withdrawal_total", "bonus_total"):
             row[f] = round(row[f], 2)
     return {"rows": rows, "error": None}
+
+
+def _empty_player_row(subid_param, r=None):
+    r = r or {}
+    subid = str(r.get(subid_param) or "").strip()
+    return {
+        "subid": subid,
+        "username": str(r.get("username") or "").strip(),
+        "registration_id": str(r.get("registration_id") or "").strip(),
+        "ext_customer_id": str(r.get("ext_customer_id") or "").strip(),
+        "visit_count": 0,
+        "registration_count": 0,
+        "ftd_count": 0,
+        "ftd_total": 0.0,
+        "deposit_count": 0,
+        "deposit_total": 0.0,
+        "withdrawal_count": 0,
+        "withdrawal_total": 0.0,
+        "bonus_total": 0.0,
+        "commissions_total": 0.0,
+        "net_deposit_total": 0.0,
+    }
+
+
+def _merge_player_metrics(target, src):
+    target["visit_count"] += _num(src.get("visit_count"))
+    target["registration_count"] += _num(src.get("registration_count"))
+    target["ftd_count"] += _num(src.get("ftd_count"))
+    target["ftd_total"] += _num(src.get("ftd_total"))
+    target["deposit_count"] += _num(src.get("deposit_count"))
+    target["deposit_total"] += _num(src.get("deposit_total"))
+    target["withdrawal_count"] += _num(src.get("withdrawal_count"))
+    target["withdrawal_total"] += _num(src.get("withdrawal_total"))
+    target["bonus_total"] += _num(src.get("bonus_amount"))
+    target["commissions_total"] += _num(src.get("commissions_total"))
+    target["net_deposit_total"] += _num(src.get("net_deposit_total") or src.get("net_deposits"))
+    if not target.get("username") and src.get("username"):
+        target["username"] = str(src.get("username") or "").strip()
+    if not target.get("registration_id") and src.get("registration_id"):
+        target["registration_id"] = str(src.get("registration_id") or "").strip()
+    if not target.get("ext_customer_id") and src.get("ext_customer_id"):
+        target["ext_customer_id"] = str(src.get("ext_customer_id") or "").strip()
+
+
+def fetch_mailing_players(conn, affiliate_id, subid_param="afp1", period="30days", force=False):
+    """Mailing aff linkinden gelen oyuncu bazlı kayıt/yatırım/çekim/bonus raporu.
+
+    group_by: username + registration_id + ext_customer_id + sub-id (afp1).
+    Registrations report yetkisi yoksa kademeli düşer (username+subid → sadece subid).
+
+    Dönüş: {rows, summary, currency, error, source, group_by}
+    """
+    cfg = get_config(conn)
+    if not cfg["api_key"]:
+        return {
+            "rows": [], "summary": _empty_player_summary(), "currency": "",
+            "error": "not_configured", "source": None, "group_by": None,
+        }
+    affiliate_id = str(affiliate_id or "").strip()
+    subid_param = (subid_param or "afp1").strip() or "afp1"
+    if not affiliate_id:
+        return {
+            "rows": [], "summary": _empty_player_summary(), "currency": "",
+            "error": "affiliate_id_missing", "source": None, "group_by": None,
+        }
+
+    cache_key = f"{affiliate_id}|{subid_param}|{period or 'all'}"
+    now = datetime.now(timezone.utc)
+    cached = _player_cache.get(cache_key)
+    if not force and cached and now - cached["fetched_at"] < timedelta(seconds=_PLAYER_CACHE_SECONDS):
+        payload = {**cached["payload"], "rows": [dict(r) for r in cached["payload"]["rows"]]}
+        return {**payload, "source": "cache"}
+
+    group_attempts = [
+        f"username,registration_id,ext_customer_id,{subid_param}",
+        f"username,{subid_param}",
+        subid_param,
+    ]
+    date_from, date_to = date_range_from_period(period)
+    last_error = None
+    data = None
+    used_group = None
+
+    for group_by in group_attempts:
+        params = {"group_by": group_by, "affiliate_id": affiliate_id}
+        if date_from and date_to:
+            params["date_from"] = date_from.isoformat()
+            params["date_to"] = date_to.isoformat()
+        try:
+            data = _request(
+                cfg["api_host"], "af2_media_report_op", cfg["api_key"], params,
+                timeout=_PLAYER_HTTP_TIMEOUT,
+            )
+        except SmarticoError as exc:
+            last_error = str(exc)
+            data = None
+            continue
+        if isinstance(data, dict) and isinstance(data.get("data"), list):
+            used_group = group_by
+            break
+        if isinstance(data, str) and data.strip():
+            last_error = f"Smartico API hatası: {data.strip()}"
+        else:
+            last_error = "Smartico API beklenmeyen bir cevap döndürdü."
+        data = None
+
+    if data is None:
+        if cached:
+            payload = {**cached["payload"], "rows": [dict(r) for r in cached["payload"]["rows"]]}
+            return {**payload, "source": "cache", "error": last_error}
+        return {
+            "rows": [], "summary": _empty_player_summary(), "currency": "",
+            "error": last_error or "Smartico oyuncu raporu alınamadı",
+            "source": None, "group_by": None,
+        }
+
+    rows_raw = data.get("data") or []
+    if not isinstance(rows_raw, list):
+        rows_raw = []
+    merged = {}
+    for r in rows_raw:
+        if not isinstance(r, dict):
+            continue
+        subid = str(r.get(subid_param) or "").strip()
+        username = str(r.get("username") or "").strip()
+        reg_id = str(r.get("registration_id") or "").strip()
+        ext_id = str(r.get("ext_customer_id") or "").strip()
+        # Sadece ziyaret (kayıt yok) ve subid boş satırları atla — gürültü
+        if not subid and not username and not reg_id and not ext_id:
+            continue
+        if (
+            _num(r.get("registration_count")) <= 0
+            and _num(r.get("ftd_count")) <= 0
+            and _num(r.get("deposit_count")) <= 0
+            and _num(r.get("withdrawal_count")) <= 0
+            and not username
+        ):
+            continue
+        key = "|".join([
+            username or "",
+            reg_id or "",
+            ext_id or "",
+            subid or "",
+        ])
+        if not any(key.split("|")):
+            continue
+        if key not in merged:
+            merged[key] = _empty_player_row(subid_param, r)
+        _merge_player_metrics(merged[key], r)
+
+    rows = list(merged.values())
+    for row in rows:
+        for f in ("ftd_total", "deposit_total", "withdrawal_total", "bonus_total",
+                  "commissions_total", "net_deposit_total"):
+            row[f] = round(row[f], 2)
+    rows.sort(key=lambda x: (x.get("deposit_total") or 0, x.get("ftd_total") or 0), reverse=True)
+
+    summary = _empty_player_summary()
+    for row in rows:
+        summary["players"] += 1
+        if row.get("registration_count", 0) > 0 or row.get("username") or row.get("registration_id"):
+            summary["registered"] += 1
+        summary["ftd_count"] += int(row.get("ftd_count") or 0)
+        summary["deposit_total"] += row.get("deposit_total") or 0
+        summary["withdrawal_total"] += row.get("withdrawal_total") or 0
+        summary["bonus_total"] += row.get("bonus_total") or 0
+        summary["ftd_total"] += row.get("ftd_total") or 0
+    for f in ("deposit_total", "withdrawal_total", "bonus_total", "ftd_total"):
+        summary[f] = round(summary[f], 2)
+
+    meta = (data or {}).get("meta") or {}
+    payload = {
+        "rows": rows,
+        "summary": summary,
+        "currency": meta.get("operator_currency") or "",
+        "error": None,
+        "group_by": used_group,
+    }
+    _player_cache[cache_key] = {"fetched_at": now, "payload": payload}
+    return {**payload, "rows": [dict(r) for r in rows], "source": "live"}
+
+
+def _empty_player_summary():
+    return {
+        "players": 0,
+        "registered": 0,
+        "ftd_count": 0,
+        "ftd_total": 0.0,
+        "deposit_total": 0.0,
+        "withdrawal_total": 0.0,
+        "bonus_total": 0.0,
+    }
 
 
 def _num(v):

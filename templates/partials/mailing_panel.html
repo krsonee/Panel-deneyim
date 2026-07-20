@@ -10,6 +10,7 @@
   <div class="acc-tabs" id="mail-tabs">
     <button type="button" class="acc-tab active" data-mail-tab="dashboard" data-perm="mailing.dashboard">Özet</button>
     <button type="button" class="acc-tab" data-mail-tab="relations" data-perm-any="mailing.relations,mailing.crm">CRM</button>
+    <button type="button" class="acc-tab" data-mail-tab="smartico" data-perm="mailing.crm">Smartico Üyeler</button>
     <button type="button" class="acc-tab" data-mail-tab="crm" data-perm="mailing.crm">Mail Rehber</button>
     <button type="button" class="acc-tab" data-mail-tab="templates" data-perm="mailing.templates">Şablonlar</button>
     <button type="button" class="acc-tab" data-mail-tab="campaigns" data-perm="mailing.campaigns">Kampanyalar</button>
@@ -124,6 +125,73 @@
         </div>
         <h4 style="margin:1rem 0 0.5rem;font-size:0.9rem;">Zaman çizelgesi</h4>
         <div id="mail-rel-timeline" class="hint" style="display:grid;gap:0.45rem;max-height:320px;overflow:auto;"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Smartico: mail linkinden kayıt olan üyeler -->
+  <div class="acc-pane" id="mail-pane-smartico" data-mail-pane="smartico" hidden>
+    <section class="card" style="margin-bottom:1rem;">
+      <div class="card-head">
+        <span>Smartico üye listesi</span>
+        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
+          <select id="mail-sc-period" style="width:auto;min-width:120px;">
+            <option value="today">Bugün</option>
+            <option value="7days">7 gün</option>
+            <option value="30days" selected>30 gün</option>
+            <option value="6months">6 ay</option>
+            <option value="all">Tümü</option>
+          </select>
+          <input type="search" id="mail-sc-q" placeholder="Kullanıcı / e-posta / ad ara…" style="width:200px;">
+          <label style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.78rem;cursor:pointer;">
+            <input type="checkbox" id="mail-sc-matched" style="width:auto;margin:0;"> Sadece Rehber eşleşen
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.78rem;cursor:pointer;">
+            <input type="checkbox" id="mail-sc-ftd" style="width:auto;margin:0;"> Sadece FTD
+          </label>
+          <button type="button" class="btn btn-sm" id="mail-sc-sync">Segment etiketle</button>
+          <button type="button" class="btn btn-sm btn-primary" id="mail-sc-refresh">Yenile</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="hint" style="margin:0 0 0.75rem;">
+          Şablonda <code>{{ '{{link:sc:https://…}}' }}</code> ile eklenen Smartico linkine tıklayıp kayıt olan üyeler.
+          Sub-ID (<code>afp1</code>) = Mail Rehber contact ID → e-posta / ad buradan gelir;
+          kullanıcı adı, yatırım, FTD, çekim, bonus Smartico’dan gelir.
+        </p>
+        <p class="hint" id="mail-sc-status" style="margin:0 0 0.75rem;">—</p>
+        <section class="kpi-grid acc-kpi-grid mail-sc-kpi" style="margin-bottom:0.85rem;">
+          <div class="kpi cyan"><div class="val" id="mail-sc-kpi-players">—</div><div class="lbl">Oyuncu satırı</div></div>
+          <div class="kpi green"><div class="val" id="mail-sc-kpi-matched">—</div><div class="lbl">Rehber eşleşen</div></div>
+          <div class="kpi amber"><div class="val" id="mail-sc-kpi-ftd">—</div><div class="lbl">FTD</div></div>
+          <div class="kpi"><div class="val" id="mail-sc-kpi-deposit">—</div><div class="lbl">Yatırım</div></div>
+          <div class="kpi"><div class="val" id="mail-sc-kpi-withdraw">—</div><div class="lbl">Çekim</div></div>
+          <div class="kpi"><div class="val" id="mail-sc-kpi-bonus">—</div><div class="lbl">Bonus</div></div>
+        </section>
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Kullanıcı adı</th>
+                  <th>E-posta</th>
+                  <th>Ad</th>
+                  <th>Soyad</th>
+                  <th>Contact</th>
+                  <th>FTD</th>
+                  <th>İlk yatırım</th>
+                  <th>Yatırım</th>
+                  <th>Çekim</th>
+                  <th>Bonus</th>
+                  <th>Etiket</th>
+                </tr>
+              </thead>
+              <tbody id="mail-sc-table">
+                <tr><td colspan="11" class="empty">Yüklemek için Yenile</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
   </div>

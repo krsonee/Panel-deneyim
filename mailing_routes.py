@@ -2382,6 +2382,145 @@ def create_mailing_blueprint(permission_required):
             "message": f"{matched} contact eşleşti · {tagged_uye} üye oldu · {tagged_ftd} FTD yaptı · {tagged_no_ftd} FTD yok",
         })
 
+    @bp.route("/crm/smartico-players", methods=["GET"])
+    @mail_perm(*MAIL_CRM)
+    def smartico_players_report():
+        """Mail {{link:sc:…}} tıklayıp kayıt olan üyelerin Smartico detayları.
+
+        Smartico: username, registration_id, FTD/yatırım/çekim/bonus.
+        Mail Rehber: e-posta, ad, telefon, etiketler (afp1 = contact_id eşleşmesi).
+        """
+        period = (request.args.get("period") or "30days").strip() or "30days"
+        force = (request.args.get("force") or "").strip() in ("1", "true", "yes")
+        q = (request.args.get("q") or "").strip().lower()
+        only_matched = (request.args.get("matched") or "").strip() in ("1", "true", "yes")
+        only_ftd = (request.args.get("ftd") or "").strip() in ("1", "true", "yes")
+
+        with closing(get_db()) as conn:
+            affiliate_id = (get_mail_setting(conn, "smartico_affiliate_id", "") or "").strip()
+            subid_param = (get_mail_setting(conn, "smartico_subid_param", "afp1") or "afp1").strip() or "afp1"
+            if not affiliate_id:
+                return jsonify({
+                    "error": "affiliate_id_missing",
+                    "message": "Önce Ayarlar → Smartico CRM eşleştirme: Affiliate ID gir.",
+                    "rows": [],
+                    "summary": {},
+                }), 400
+            if not smartico_api.is_configured(conn):
+                return jsonify({
+                    "error": "not_configured",
+                    "message": "Smartico API anahtarı yok (Link Takip → Smartico Ayarlar).",
+                    "rows": [],
+                    "summary": {},
+                }), 400
+
+            result = smartico_api.fetch_mailing_players(
+                conn, affiliate_id, subid_param, period=period, force=force,
+            )
+            if result.get("error") and not result.get("rows"):
+                return jsonify({
+                    "error": result["error"],
+                    "message": result["error"],
+                    "rows": [],
+                    "summary": result.get("summary") or {},
+                    "currency": result.get("currency") or "",
+                    "source": result.get("source"),
+                }), 400
+
+            rows = result.get("rows") or []
+            contact_ids = []
+            for row in rows:
+                try:
+                    cid = int(str(row.get("subid") or "").strip())
+                except (TypeError, ValueError):
+                    continue
+                if cid > 0:
+                    contact_ids.append(cid)
+            contact_ids = list(dict.fromkeys(contact_ids))
+            contacts = {}
+            # Postgres/SQLite IN — parçalı
+            chunk = 400
+            for i in range(0, len(contact_ids), chunk):
+                part = contact_ids[i:i + chunk]
+                placeholders = ",".join("?" * len(part))
+                found = fetchall(
+                    conn,
+                    f"SELECT id, email, name, phone, tags FROM mail_contacts WHERE id IN ({placeholders})",
+                    tuple(part),
+                )
+                for c in found or []:
+                    contacts[int(c["id"])] = dict(c)
+
+            enriched = []
+            for row in rows:
+                out = dict(row)
+                contact = None
+                try:
+                    cid = int(str(row.get("subid") or "").strip())
+                    contact = contacts.get(cid)
+                except (TypeError, ValueError):
+                    cid = None
+                if contact:
+                    tags_raw = contact.get("tags") or "[]"
+                    try:
+                        tags = json.loads(tags_raw) if isinstance(tags_raw, str) else (tags_raw or [])
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        tags = []
+                    full_name = (contact.get("name") or "").strip()
+                    parts = full_name.split(None, 1) if full_name else []
+                    out["contact_id"] = contact["id"]
+                    out["email"] = contact.get("email") or ""
+                    out["name"] = full_name
+                    out["first_name"] = parts[0] if parts else ""
+                    out["last_name"] = parts[1] if len(parts) > 1 else ""
+                    out["phone"] = contact.get("phone") or ""
+                    out["tags"] = tags
+                    out["matched"] = True
+                else:
+                    out["contact_id"] = cid
+                    out["email"] = ""
+                    out["name"] = ""
+                    out["first_name"] = ""
+                    out["last_name"] = ""
+                    out["phone"] = ""
+                    out["tags"] = []
+                    out["matched"] = False
+                enriched.append(out)
+
+            if only_matched:
+                enriched = [r for r in enriched if r.get("matched")]
+            if only_ftd:
+                enriched = [r for r in enriched if (r.get("ftd_count") or 0) > 0]
+            if q:
+                def _hit(r):
+                    blob = " ".join([
+                        str(r.get("username") or ""),
+                        str(r.get("email") or ""),
+                        str(r.get("name") or ""),
+                        str(r.get("subid") or ""),
+                        str(r.get("ext_customer_id") or ""),
+                        str(r.get("registration_id") or ""),
+                        str(r.get("phone") or ""),
+                    ]).lower()
+                    return q in blob
+                enriched = [r for r in enriched if _hit(r)]
+
+            matched_n = sum(1 for r in enriched if r.get("matched"))
+            return jsonify({
+                "ok": True,
+                "rows": enriched,
+                "summary": result.get("summary") or {},
+                "currency": result.get("currency") or "",
+                "source": result.get("source"),
+                "group_by": result.get("group_by"),
+                "affiliate_id": affiliate_id,
+                "subid_param": subid_param,
+                "period": period,
+                "matched_in_crm": matched_n,
+                "total": len(enriched),
+                "error": result.get("error"),
+            })
+
     @bp.route("/tags", methods=["POST"])
     @mail_perm(*MAIL_CRM)
     def create_tag():
