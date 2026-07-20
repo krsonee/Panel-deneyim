@@ -160,7 +160,12 @@
           <div class="biolink-studio-section">
             <div class="biolink-studio-section-title">Blok Ekle</div>
             {% if panel.brand == "bizzo" %}
-            <p class="muted-sm" style="margin:-0.35rem 0 0.65rem;">Yerleşim: <strong>Tam</strong> · <strong>Sol</strong> (sağ boş) · <strong>Orta</strong> (iki yan boş) · <strong>Sağ</strong> (sol boş). Yan yana için üst üste <strong>Sol</strong> + <strong>Sağ</strong>.</p>
+            <p class="muted-sm" style="margin:-0.35rem 0 0.65rem;">
+              Kırmızı kutu SS: 1. <strong>Tam</strong> → sonra 3’lü <strong>Sol+Orta+Sağ</strong> → kalanlar <strong>Sol+Sağ</strong> çiftleri.
+            </p>
+            <div style="margin:-0.15rem 0 0.75rem;">
+              <button type="button" class="btn btn-sm btn-primary" id="btn-biolink-redbox-layout" title="Attığın kırmızı kutu grid’ini uygula">Kırmızı kutu düzeni uygula</button>
+            </div>
             {% endif %}
             <div class="bl-quick-palette" id="bl-quick-palette"></div>
             <div class="bl-composer" id="bl-composer">

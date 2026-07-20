@@ -1484,6 +1484,54 @@
     });
   }
 
+  function applyRedBoxLayout() {
+    /* SS kırmızı kutular: 1 Tam → 3’lü Sol/Orta/Sağ → kalan Sol/Sağ çiftleri */
+    if (!(window.PANEL_BIOLINK && window.PANEL_BIOLINK.brand === "bizzo")) return;
+    if (!blCurrentPage || !blCurrentPage.buttons || !blCurrentPage.buttons.length) {
+      alert("Önce blok ekle.");
+      return;
+    }
+    var targets = blCurrentPage.buttons.filter(function (b) {
+      return (b.button_type || "") !== "heading";
+    });
+    if (!targets.length) { alert("Yerleşim uygulanacak blok yok."); return; }
+    var btn = document.getElementById("btn-biolink-redbox-layout");
+    if (btn) { btn.disabled = true; btn.textContent = "Uygulanıyor…"; }
+    blMutePreview += 1;
+    var plan = [];
+    targets.forEach(function (b, idx) {
+      var col = "full";
+      if (idx === 0) col = "full";
+      else if (idx === 1) col = "left";
+      else if (idx === 2) col = "center";
+      else if (idx === 3) col = "right";
+      else col = ((idx - 4) % 2 === 0) ? "left" : "right";
+      plan.push({ id: b.id, layout_col: col });
+    });
+    var chain = Promise.resolve();
+    plan.forEach(function (p) {
+      chain = chain.then(function () {
+        return blApi("/api/biolink/buttons/" + p.id, {
+          method: "PUT",
+          body: { layout_col: p.layout_col },
+        }).then(function (r) {
+          if (r && r.ok && r.data && r.data.button) updateLocalButton(r.data.button);
+        });
+      });
+    });
+    chain.then(function () {
+      renderButtonsList(blCurrentPage.buttons || []);
+      schedulePreviewRefresh();
+      blToast("Kırmızı kutu düzeni uygulandı");
+    }).finally(function () {
+      blMutePreview = Math.max(0, blMutePreview - 1);
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Kırmızı kutu düzeni uygula";
+      }
+    });
+  }
+
   function bindEvents() {
     var btnNew = document.getElementById("btn-biolink-new");
     if (btnNew) btnNew.onclick = createNewPage;
@@ -1495,6 +1543,8 @@
     if (btnClose) btnClose.onclick = closeEditor;
     var restoreBtn = document.getElementById("btn-biolink-restore-assets");
     if (restoreBtn) restoreBtn.onclick = blRestoreBrandAssets;
+    var redBoxBtn = document.getElementById("btn-biolink-redbox-layout");
+    if (redBoxBtn) redBoxBtn.onclick = applyRedBoxLayout;
     /* Capture: sticky önizleme tıklamayı kaçırsa bile Blok Ekle çalışsın (busy ile tek tetik) */
     var composer = document.getElementById("bl-composer");
     if (composer && composer.dataset.blBound !== "1") {

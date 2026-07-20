@@ -21,7 +21,7 @@
 {% else %}
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 {% endif %}
-<link rel="stylesheet" href="/static/biolink-skins.css?v=20260720n">
+<link rel="stylesheet" href="/static/biolink-skins.css?v=20260720p">
 {% if page.ga4_measurement_id %}
 <script async src="https://www.googletagmanager.com/gtag/js?id={{ page.ga4_measurement_id }}"></script>
 <script>
@@ -310,11 +310,17 @@
   body.brand-bizzo .link-row-full > .link-slot {
     width: 100%;
   }
-  /* Yan yana çift */
+  /* Yan yana — kırmızı kutu: 2’li / 3’lü */
   body.brand-bizzo .link-row-pair {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.45rem;
+    align-items: stretch;
+  }
+  body.brand-bizzo .link-row-triple {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.4rem;
     align-items: stretch;
   }
   /* SS gibi: Sol / Orta / Sağ — yarım genişlik, konum farklı */
@@ -346,14 +352,20 @@
   @media (max-width: 560px) {
     body.brand-bizzo .wrap { max-width: 420px; }
     body.brand-bizzo .links { gap: 0.45rem; }
-    body.brand-bizzo .link-row-pair { gap: 0.4rem; }
+    body.brand-bizzo .link-row-pair,
+    body.brand-bizzo .link-row-triple { gap: 0.35rem; }
     body.brand-bizzo .link-row-pair a.link-btn,
+    body.brand-bizzo .link-row-triple a.link-btn,
     body.brand-bizzo .link-row-half-left a.link-btn,
     body.brand-bizzo .link-row-half-center a.link-btn,
     body.brand-bizzo .link-row-half-right a.link-btn {
-      padding: 0.72rem 0.65rem;
-      font-size: 0.78rem;
-      gap: 0.45rem;
+      padding: 0.72rem 0.55rem;
+      font-size: 0.72rem;
+      gap: 0.4rem;
+    }
+    body.brand-bizzo .link-row-triple a.link-btn::after { display: none; }
+    body.brand-bizzo .link-row-triple .link-icon {
+      width: 28px; height: 28px; font-size: 0.85rem; border-radius: 8px;
     }
     body.brand-bizzo .link-row-pair .link-icon,
     body.brand-bizzo .link-row-half-left .link-icon,

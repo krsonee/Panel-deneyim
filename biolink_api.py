@@ -606,43 +606,58 @@ def _page_row(row):
 
 
 def group_layout_rows(buttons):
-    """Bizzo yerleşim: satırları ayır.
+    """Bizzo yerleşim — kırmızı kutu grid’i.
 
-    - Sol + Sağ ardışık → yan yana çift (pair)
-    - Sol → sola yaslı yarım (half-left)
-    - Orta → ortada yarım, iki yan boş (half-center)
-    - Sağ → sağa yaslı yarım (half-right)
+    - Sol + Orta + Sağ ardışık → 3’lü satır (triple)
+    - Sol + Sağ ardışık → 2’li satır (pair)
+    - Tek Sol / Orta / Sağ → yarım konum (karşı taraf boş kutu)
     - Tam / başlık → tam satır (full)
     """
     items = list(buttons or [])
     rows = []
     i = 0
     n = len(items)
+
+    def _col(b):
+        return ((b or {}).get("layout_col") or "full").strip().lower()
+
+    def _bt(b):
+        return ((b or {}).get("button_type") or "link").strip().lower()
+
     while i < n:
         b = items[i]
-        bt = (b.get("button_type") or "link").strip().lower()
-        col = (b.get("layout_col") or "full").strip().lower()
+        bt = _bt(b)
+        col = _col(b)
         if bt == HEADING_TYPE or col not in ("left", "center", "right"):
             rows.append({"kind": "full", "blocks": [b]})
             i += 1
             continue
-        if col == "center":
-            rows.append({"kind": "half-center", "blocks": [b]})
-            i += 1
-            continue
-        nxt = items[i + 1] if i + 1 < n else None
-        nxt_col = ((nxt or {}).get("layout_col") or "full").strip().lower()
-        nxt_bt = ((nxt or {}).get("button_type") or "link").strip().lower()
+
+        n1 = items[i + 1] if i + 1 < n else None
+        n2 = items[i + 2] if i + 2 < n else None
+        # 3’lü: Sol + Orta + Sağ
         if (
             col == "left"
-            and nxt
-            and nxt_bt != HEADING_TYPE
-            and nxt_col == "right"
+            and n1 and _bt(n1) != HEADING_TYPE and _col(n1) == "center"
+            and n2 and _bt(n2) != HEADING_TYPE and _col(n2) == "right"
         ):
-            rows.append({"kind": "pair", "blocks": [b, nxt]})
+            rows.append({"kind": "triple", "blocks": [b, n1, n2]})
+            i += 3
+            continue
+        # 2’li: Sol + Sağ
+        if (
+            col == "left"
+            and n1 and _bt(n1) != HEADING_TYPE and _col(n1) == "right"
+        ):
+            rows.append({"kind": "pair", "blocks": [b, n1]})
             i += 2
             continue
-        rows.append({"kind": "half-left" if col == "left" else "half-right", "blocks": [b]})
+        if col == "center":
+            rows.append({"kind": "half-center", "blocks": [b]})
+        elif col == "left":
+            rows.append({"kind": "half-left", "blocks": [b]})
+        else:
+            rows.append({"kind": "half-right", "blocks": [b]})
         i += 1
     return rows
 
