@@ -691,7 +691,7 @@
       {% set rows = layout_rows if layout_rows is defined else [] %}
       {% for row in rows %}
         <div class="link-row link-row-{{ row.kind }}">
-        {% for b in row.items %}
+        {% for b in row.blocks %}
           {% set align = b.text_align or 'left' %}
           {% set half = row.kind == 'pair' %}
           {% if b.button_type == 'heading' %}

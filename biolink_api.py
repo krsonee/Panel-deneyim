@@ -621,7 +621,7 @@ def group_layout_rows(buttons):
         bt = (b.get("button_type") or "link").strip().lower()
         col = (b.get("layout_col") or "full").strip().lower()
         if bt == HEADING_TYPE or col not in ("left", "right"):
-            rows.append({"kind": "full", "items": [b]})
+            rows.append({"kind": "full", "blocks": [b]})
             i += 1
             continue
         nxt = items[i + 1] if i + 1 < n else None
@@ -633,11 +633,11 @@ def group_layout_rows(buttons):
             and nxt_bt != HEADING_TYPE
             and nxt_col == "right"
         ):
-            rows.append({"kind": "pair", "items": [b, nxt]})
+            rows.append({"kind": "pair", "blocks": [b, nxt]})
             i += 2
             continue
         # Yetim yarım → tam genişlik göster
-        rows.append({"kind": "full", "items": [b]})
+        rows.append({"kind": "full", "blocks": [b]})
         i += 1
     return rows
 
