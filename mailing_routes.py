@@ -1613,7 +1613,8 @@ def create_mailing_blueprint(permission_required):
             ensure_mail_crm_schema(conn)
             try:
                 from mail_template_seeds import seed_makrobet_mail_templates
-                n = seed_makrobet_mail_templates(conn)
+                _seed_res = seed_makrobet_mail_templates(conn)
+                n = (_seed_res.get("added", 0) + _seed_res.get("updated", 0)) if isinstance(_seed_res, dict) else int(_seed_res or 0)
                 if n:
                     print(f"✉️  seeded {n} Makrobet mail templates")
             except Exception as seed_exc:
@@ -2623,16 +2624,20 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/templates/reseed", methods=["POST"])
     @mail_perm(*MAIL_TPL)
     def reseed_templates():
-        """Eksik Makrobet HTML/yazı şablonlarını ekler (mevcut olanlara dokunmaz)."""
+        """Makrobet HTML şablonlarını site (promosyonlar) stiline günceller / eksikleri ekler."""
         from mail_template_seeds import seed_makrobet_mail_templates
 
         with closing(get_db()) as conn:
-            added = seed_makrobet_mail_templates(conn, force_missing=True)
-        return jsonify({
-            "ok": True,
-            "added": added,
-            "message": (f"{added} şablon eklendi" if added else "Eksik şablon yok — hepsi zaten kayıtlı"),
-        })
+            result = seed_makrobet_mail_templates(conn, force_missing=True, overwrite=True)
+        if not isinstance(result, dict):
+            result = {"added": int(result or 0), "updated": 0}
+        added = int(result.get("added") or 0)
+        updated = int(result.get("updated") or 0)
+        if added or updated:
+            msg = f"{updated} HTML güncellendi · {added} yeni eklendi (Makrobet promosyon stili)"
+        else:
+            msg = "Değişiklik yok"
+        return jsonify({"ok": True, "added": added, "updated": updated, "message": msg})
 
     @bp.route("/templates", methods=["POST"])
     @mail_perm(*MAIL_TPL)

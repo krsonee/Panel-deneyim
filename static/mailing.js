@@ -2728,7 +2728,7 @@
     });
     bindClick("mail-tpl-refresh", mailLoadTemplates);
     bindClick("mail-tpl-reseed", function () {
-      mailToast("Eksik şablonlar yükleniyor…");
+      mailToast("Makrobet şablonları güncelleniyor…");
       mailApi("/api/mailing/templates/reseed", { method: "POST", timeoutMs: 30000 }).then(function (res) {
         if (!res || !res.ok) {
           mailToast((res && res.data && res.data.error) || "Yüklenemedi");
