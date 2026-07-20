@@ -589,6 +589,7 @@
               <span class="hint" id="mail-camp-tag-picked" style="margin:0;align-self:center;">Seçim yok = tüm aktif kontaklar</span>
             </div>
             <div class="mail-camp-tag-list" id="mail-camp-tag-list" aria-label="Kampanya etiketleri"></div>
+            <p class="hint" id="mail-camp-tag-breakdown" style="margin:0.45rem 0 0;"></p>
             <input type="hidden" id="mail-camp-tag" value="">
           </div>
           <div id="mail-camp-mode-selected" hidden style="grid-column:1/-1;">
@@ -691,8 +692,8 @@
       <div class="table-wrap">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Kampanya</th><th>Durum</th><th>İletilen</th><th>Açılma %</th><th>Tıklama %</th><th>Fail</th><th>Skip</th></tr></thead>
-            <tbody id="mail-rep-analytics"><tr><td colspan="7" class="empty">Veri yok</td></tr></tbody>
+            <thead><tr><th>Kampanya</th><th>Durum</th><th>İletilen</th><th>Açılma %</th><th>Tıklama %</th><th>Fail</th><th>Skip</th><th></th></tr></thead>
+            <tbody id="mail-rep-analytics"><tr><td colspan="8" class="empty">Veri yok</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -851,6 +852,26 @@
     </div>
     <div class="modal-body mail-tpl-view-body">
       <iframe id="mail-tpl-view-frame" class="mail-tpl-view-frame" title="Şablon önizleme" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="mail-camp-detail-modal">
+  <div class="modal" style="max-width:820px;width:96%;max-height:90vh;display:flex;flex-direction:column;">
+    <div class="modal-head">
+      <h3 id="mail-camp-detail-title">Kampanya alıcıları</h3>
+      <button type="button" class="modal-close" id="mail-camp-detail-close">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:0.85rem 1rem;overflow:auto;flex:1;min-height:0;">
+      <p class="hint" id="mail-camp-detail-meta" style="margin:0 0 0.75rem;">—</p>
+      <div class="table-wrap">
+        <div class="table-scroll" style="max-height:55vh;">
+          <table>
+            <thead><tr><th>E-posta</th><th>Ad</th><th>Etiketler</th><th>Durum</th><th>Aç / Tık</th></tr></thead>
+            <tbody id="mail-camp-detail-table"><tr><td colspan="5" class="empty">Yükleniyor…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </div>

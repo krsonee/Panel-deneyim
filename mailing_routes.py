@@ -737,6 +737,69 @@ def _campaign_selection_where(tag_filter, exclude_previously_sent, only_verified
     return " AND ".join(clauses), params
 
 
+def _count_tag_campaign_match(conn, tag, *, exclude_previously_sent=False, only_verified=False):
+    """Tek etiket için kampanya filtreleriyle eşleşen kontak sayısı.
+
+    Returns: (count, approx)
+    """
+    tag = (tag or "").strip()
+    if not tag:
+        return 0, False
+    # Ek filtre yoksa registry hızlı; unsub/suppression farkı için approx=True
+    if not exclude_previously_sent and not only_verified:
+        n = _registry_tag_count(conn, tag)
+        if n is not None:
+            return int(n), True
+    where_sql, params = _campaign_selection_where(
+        tag, exclude_previously_sent, only_verified=only_verified,
+    )
+    try:
+        n = int(scalar(
+            conn,
+            f"SELECT COUNT(*) FROM mail_contacts WHERE {where_sql}",
+            tuple(params),
+        ) or 0)
+        return n, False
+    except Exception:
+        n = _registry_tag_count(conn, tag)
+        return int(n or 0), True
+
+
+def _tag_breakdown_for_campaign(
+    conn, tags, *, exclude_previously_sent=False, only_verified=False, limit=25,
+):
+    """Seçilen etiketler için etiket başına sayı.
+
+    Büyük listelerde filtreli COUNT etiketi başına çok yavaş olabilir —
+    bu yüzden varsayılan: registry (yaklaşık). exact=True istenirse
+    filtreli sayım yapılır.
+    """
+    tags = _parse_tag_filter_list(tags)[: max(0, int(limit or 25))]
+    out = []
+    # Filtreliyse bile breakdown için önce registry (UI donmasın);
+    # birleşim toplamı select-preview'da ayrı exact COUNT ile gelir.
+    use_exact = bool(exclude_previously_sent or only_verified) and len(tags) <= 3
+    for tag in tags:
+        if use_exact:
+            count, approx = _count_tag_campaign_match(
+                conn, tag,
+                exclude_previously_sent=exclude_previously_sent,
+                only_verified=only_verified,
+            )
+        else:
+            n = _registry_tag_count(conn, tag)
+            if n is None:
+                count, approx = _count_tag_campaign_match(
+                    conn, tag,
+                    exclude_previously_sent=False,
+                    only_verified=False,
+                )
+            else:
+                count, approx = int(n), True
+        out.append({"tag": tag, "count": int(count or 0), "approx": bool(approx)})
+    return out
+
+
 def _insert_campaign_recipient_ids(conn, campaign_id, contact_ids, now):
     attached = 0
     chunk_size = 5000
@@ -3020,10 +3083,19 @@ def create_mailing_blueprint(permission_required):
                 "UPDATE mail_campaigns SET total_count = ?, updated_at = ? WHERE id = ?",
                 (attached, now, cid),
             )
+            tag_breakdown = []
+            if recipient_mode == "tag" and tag_filter:
+                tag_breakdown = _tag_breakdown_for_campaign(
+                    conn, tag_filter,
+                    exclude_previously_sent=exclude_sent,
+                    only_verified=only_verified,
+                )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (cid,))
             out = _row(row)
             out["recipient_count"] = attached
+            out["tag_breakdown"] = tag_breakdown
+            out["tag_filters"] = _parse_tag_filter_list(tag_filter)
         return jsonify({"campaign": out}), 201
 
     @bp.route("/campaigns/select-preview", methods=["POST"])
@@ -3060,6 +3132,7 @@ def create_mailing_blueprint(permission_required):
                 max_recipients = None
         except (TypeError, ValueError):
             max_recipients = None
+        tag_breakdown = []
         with closing(get_db()) as conn:
             from mail_scrub import scrub_settings as _scrub_settings
             scrub_cfg = _scrub_settings(conn)
@@ -3105,6 +3178,12 @@ def create_mailing_blueprint(permission_required):
                         total = 0
                         approx = True
                 total = int(total or 0)
+                if tags_list:
+                    tag_breakdown = _tag_breakdown_for_campaign(
+                        conn, tags_list,
+                        exclude_previously_sent=exclude_sent,
+                        only_verified=only_verified,
+                    )
         will_attach = min(total, max_recipients) if max_recipients else total
         return jsonify({
             "matching_count": total,
@@ -3113,6 +3192,7 @@ def create_mailing_blueprint(permission_required):
             "approx": approx,
             "recipient_mode": recipient_mode,
             "tag_filters": tags_list,
+            "tag_breakdown": tag_breakdown,
         })
 
     @bp.route("/campaigns/<int:campaign_id>", methods=["PATCH"])
@@ -3362,6 +3442,68 @@ def create_mailing_blueprint(permission_required):
         with closing(get_db()) as conn:
             rows = campaign_analytics(conn, int(cid) if cid else None)
         return jsonify({"campaigns": rows})
+
+    @bp.route("/campaigns/<int:campaign_id>/recipients", methods=["GET"])
+    @mail_perm(*MAIL_REP, *MAIL_CAMP)
+    def campaign_recipients_detail(campaign_id):
+        """Kampanya alıcıları: e-posta + etiketler + gönderim durumu."""
+        try:
+            limit = min(int(request.args.get("limit") or 500), 5000)
+        except (TypeError, ValueError):
+            limit = 500
+        status_filter = (request.args.get("status") or "").strip().lower()
+        with closing(get_db()) as conn:
+            camp = fetchone(conn, "SELECT id, name, tag_filter, status, total_count FROM mail_campaigns WHERE id = ?", (campaign_id,))
+            if not camp:
+                return jsonify({"error": "Kampanya bulunamadı."}), 404
+            where = ["r.campaign_id = ?"]
+            params = [campaign_id]
+            if status_filter:
+                where.append("r.status = ?")
+                params.append(status_filter)
+            where_sql = " AND ".join(where)
+            total = int(scalar(
+                conn,
+                f"SELECT COUNT(*) FROM mail_campaign_recipients r WHERE {where_sql}",
+                tuple(params),
+            ) or 0)
+            rows = fetchall(
+                conn,
+                f"""
+                SELECT
+                    r.id AS recipient_id,
+                    r.status AS recipient_status,
+                    r.created_at,
+                    c.id AS contact_id,
+                    c.email,
+                    c.name,
+                    c.tags,
+                    s.status AS send_status,
+                    s.opened_at,
+                    s.clicked_at,
+                    s.error AS send_error
+                FROM mail_campaign_recipients r
+                JOIN mail_contacts c ON c.id = r.contact_id
+                LEFT JOIN mail_sends s ON s.id = r.send_id
+                WHERE {where_sql}
+                ORDER BY r.id ASC
+                LIMIT ?
+                """,
+                tuple(params + [limit]),
+            )
+            out = []
+            for r in rows or []:
+                d = dict(r)
+                d["tags"] = _parse_tags(d.get("tags"))
+                out.append(d)
+            camp_d = _row(camp)
+        return jsonify({
+            "campaign": camp_d,
+            "recipients": out,
+            "total": total,
+            "limit": limit,
+            "truncated": total > len(out),
+        })
 
     @bp.route("/contacts/export", methods=["GET"])
     @mail_perm(*MAIL_CRM)

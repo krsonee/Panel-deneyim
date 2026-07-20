@@ -1786,15 +1786,61 @@
     ).filter(Boolean);
   }
 
+  function mailCampTagCountMap() {
+    var countMap = {};
+    (mailTagCounts || []).forEach(function (t) {
+      if (t && t.name) countMap[t.name] = t.count;
+    });
+    return countMap;
+  }
+
+  function mailFormatTagBreakdown(tags, countMap, opts) {
+    opts = opts || {};
+    var parts = (tags || []).map(function (t) {
+      var c = countMap && countMap[t];
+      if (c == null && opts.allowMissing === false) return esc(t);
+      if (c == null) return esc(t) + ": ?";
+      return esc(t) + ": " + fmtNum(c);
+    });
+    return parts.join(" · ");
+  }
+
   function mailSyncCampTagHidden() {
     var tags = mailCampSelectedTags();
     var hidden = document.getElementById("mail-camp-tag");
     if (hidden) hidden.value = tags.join(", ");
+    var countMap = mailCampTagCountMap();
     var picked = document.getElementById("mail-camp-tag-picked");
     if (picked) {
       if (!tags.length) picked.textContent = "Seçim yok = tüm aktif kontaklar";
-      else if (tags.length === 1) picked.textContent = "1 etiket: " + tags[0];
-      else picked.textContent = tags.length + " etiket (birleşim): " + tags.join(", ");
+      else if (tags.length === 1) {
+        var one = countMap[tags[0]];
+        picked.textContent = "1 etiket: " + tags[0] + (one == null ? "" : (" (" + fmtNum(one) + ")"));
+      } else {
+        picked.textContent = tags.length + " etiket (birleşim)";
+      }
+    }
+    var breakdown = document.getElementById("mail-camp-tag-breakdown");
+    if (breakdown) {
+      if (!tags.length) {
+        breakdown.textContent = "";
+      } else if (tags.length === 1) {
+        var n1 = countMap[tags[0]];
+        breakdown.textContent = n1 == null
+          ? "Seçili etiket: " + tags[0]
+          : ("Bu etiketten ≈ " + fmtNum(n1) + " mail (registry; filtreler «Kaç kişi?» ile uygulanır)");
+      } else {
+        var sum = 0;
+        var known = 0;
+        tags.forEach(function (t) {
+          if (countMap[t] != null) { sum += Number(countMap[t]) || 0; known += 1; }
+        });
+        breakdown.innerHTML =
+          "<strong>Etiket başına:</strong> " + mailFormatTagBreakdown(tags, countMap) +
+          (known === tags.length
+            ? (" <span class=\"muted\">· satır toplamı " + fmtNum(sum) + " (örtüşme olabilir; birleşim «Kaç kişi?»)</span>")
+            : "");
+      }
     }
     var box = document.getElementById("mail-camp-tag-list");
     if (box) {
@@ -1979,6 +2025,61 @@
     });
   }
 
+  function mailCloseCampDetailModal() {
+    var modal = document.getElementById("mail-camp-detail-modal");
+    if (modal) modal.classList.remove("open");
+  }
+
+  function mailOpenCampDetail(campaignId, campaignName) {
+    var modal = document.getElementById("mail-camp-detail-modal");
+    var title = document.getElementById("mail-camp-detail-title");
+    var meta = document.getElementById("mail-camp-detail-meta");
+    var tbody = document.getElementById("mail-camp-detail-table");
+    if (!modal || !tbody) return;
+    if (title) title.textContent = "Alıcılar — " + (campaignName || ("#" + campaignId));
+    if (meta) meta.textContent = "Yükleniyor…";
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Yükleniyor…</td></tr>';
+    modal.classList.add("open");
+    mailApi("/api/mailing/campaigns/" + campaignId + "/recipients?limit=1000", { timeoutMs: 60000 })
+      .then(function (res) {
+        if (!res || !res.ok) {
+          var err = (res && res.data && res.data.error) || "Alıcılar alınamadı";
+          if (meta) meta.textContent = err;
+          tbody.innerHTML = '<tr><td colspan="5" class="empty">' + esc(err) + "</td></tr>";
+          return;
+        }
+        var camp = res.data.campaign || {};
+        var rows = res.data.recipients || [];
+        var total = res.data.total != null ? res.data.total : rows.length;
+        var tagFilter = (camp.tag_filter || "").trim();
+        if (meta) {
+          meta.textContent = fmtNum(total) + " alıcı" +
+            (res.data.truncated ? " (ilk " + rows.length + " gösteriliyor)" : "") +
+            (tagFilter ? (" · kampanya etiket filtresi: " + tagFilter) : " · etiket filtresi yok");
+        }
+        if (!rows.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="empty">Alıcı yok</td></tr>';
+          return;
+        }
+        tbody.innerHTML = rows.map(function (r) {
+          var tags = (r.tags || []).map(function (t) {
+            return '<span class="tag">' + esc(t) + "</span>";
+          }).join(" ") || '<span class="muted">—</span>';
+          var st = r.send_status || r.recipient_status || "—";
+          var eng = [];
+          if (r.opened_at) eng.push("açıldı");
+          if (r.clicked_at) eng.push("tıkladı");
+          return "<tr>" +
+            "<td>" + esc(r.email || "") + "</td>" +
+            "<td>" + esc(r.name || "") + "</td>" +
+            "<td>" + tags + "</td>" +
+            "<td>" + esc(st) + "</td>" +
+            "<td>" + (eng.length ? esc(eng.join(" · ")) : '<span class="muted">—</span>') + "</td>" +
+            "</tr>";
+        }).join("");
+      });
+  }
+
   function mailLoadReports() {
     var channel = (document.getElementById("mail-rep-channel") || {}).value || "";
     var status = (document.getElementById("mail-rep-status") || {}).value || "";
@@ -2004,7 +2105,7 @@
       if (atbody) {
         var camps = (analyticsRes && analyticsRes.ok && analyticsRes.data.campaigns) || [];
         if (!camps.length) {
-          atbody.innerHTML = '<tr><td colspan="7" class="empty">Kampanya yok</td></tr>';
+          atbody.innerHTML = '<tr><td colspan="8" class="empty">Kampanya yok</td></tr>';
         } else {
           atbody.innerHTML = camps.map(function (c) {
             return "<tr>" +
@@ -2014,7 +2115,9 @@
               "<td>" + esc(String(c.open_rate)) + "%</td>" +
               "<td>" + esc(String(c.click_rate)) + "%</td>" +
               "<td>" + fmtNum(c.failed_count) + "</td>" +
-              "<td>" + fmtNum(c.skipped_count) + "</td></tr>";
+              "<td>" + fmtNum(c.skipped_count) + "</td>" +
+              '<td><button type="button" class="btn btn-sm mail-camp-detail-btn" data-id="' +
+              esc(String(c.id)) + '" data-name="' + esc(c.name || "") + '">Detay</button></td></tr>';
           }).join("");
         }
       }
@@ -2934,7 +3037,15 @@
             mailToast((res && res.data && res.data.error) || "Oluşturulamadı");
             return;
           }
-          mailToast("Kampanya oluşturuldu · " + fmtNum(res.data.campaign.recipient_count || 0) + " alıcı");
+          var camp = res.data.campaign || {};
+          var toastMsg = "Kampanya oluşturuldu · " + fmtNum(camp.recipient_count || 0) + " alıcı";
+          var tb = camp.tag_breakdown || [];
+          if (tb.length) {
+            toastMsg += " · " + tb.map(function (x) {
+              return (x.tag || "") + ": " + fmtNum(x.count || 0);
+            }).join(", ");
+          }
+          mailToast(toastMsg);
           if (mailCampRecipientMode() === "selected") mailWriteCampSelectedIds([]);
           campForm.reset();
           document.getElementById("mail-camp-exclude-sent").checked = true;
@@ -2959,12 +3070,30 @@
           var total = res.data.matching_count || 0;
           var willAttach = res.data.will_attach != null ? res.data.will_attach : total;
           var tags = res.data.tag_filters || [];
-          var tagBit = tags.length
-            ? (" · etiket: " + tags.join(", ") + (tags.length > 1 ? " (birleşim)" : ""))
-            : "";
+          var breakdown = res.data.tag_breakdown || [];
           var approxBit = res.data.approx ? " (yaklaşık)" : "";
-          hint.textContent = "Filtreye uyan: " + fmtNum(total) + approxBit +
-            " kişi · eklenecek: " + fmtNum(willAttach) + " kişi" + tagBit;
+          var html = "Filtreye uyan: <strong>" + fmtNum(total) + "</strong>" + approxBit +
+            " kişi · eklenecek: <strong>" + fmtNum(willAttach) + "</strong> kişi";
+          if (breakdown.length) {
+            var map = {};
+            var anyApprox = false;
+            breakdown.forEach(function (x) {
+              map[x.tag] = x.count;
+              if (x.approx) anyApprox = true;
+            });
+            html += "<br><strong>Etiket başına:</strong> " + mailFormatTagBreakdown(
+              breakdown.map(function (x) { return x.tag; }),
+              map
+            );
+            if (tags.length > 1) {
+              html += ' <span class="muted">· birleşim (OR)' +
+                (anyApprox ? ", etiket sayıları yaklaşık olabilir" : "") +
+                "; aynı kişi birden fazla etikette olabilir</span>";
+            }
+          } else if (tags.length) {
+            html += " · etiket: " + esc(tags.join(", "));
+          }
+          hint.innerHTML = html;
         });
     });
     bindClick("mail-camp-refresh", mailLoadCampaigns);
@@ -2997,6 +3126,20 @@
     bindClick("mail-ivr-refresh", mailLoadIvr);
     bindClick("mail-rep-refresh", mailLoadReports);
     bindClick("mail-rep-analytics-refresh", mailLoadReports);
+    bindClick("mail-camp-detail-close", mailCloseCampDetailModal);
+    var campDetailModal = document.getElementById("mail-camp-detail-modal");
+    if (campDetailModal) {
+      campDetailModal.addEventListener("click", function (e) {
+        if (e.target === campDetailModal) mailCloseCampDetailModal();
+      });
+    }
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest(".mail-camp-detail-btn");
+      if (!btn) return;
+      var id = Number(btn.getAttribute("data-id"));
+      if (!id) return;
+      mailOpenCampDetail(id, btn.getAttribute("data-name") || "");
+    });
     bindClick("mail-contacts-export", function () {
       var tag = (document.getElementById("mail-contact-tag-filter") || {}).value || "";
       var url = "/api/mailing/contacts/export?limit=50000";
