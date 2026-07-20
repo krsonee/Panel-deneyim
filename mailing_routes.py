@@ -281,10 +281,24 @@ def _contact_out(row):
 DEFAULT_GREETING_NAME = "değerli üye"
 
 
+def _mail_logo_url():
+    """Şablonlardaki __MAIL_LOGO__ için absolute URL (makrobet.com CDN kopyası, panel static)."""
+    base = _public_base()
+    path = "/static/mailing/makrobet-logo.png"
+    return (base + path) if base else path
+
+
+def _apply_mail_assets(text):
+    text = text or ""
+    if "__MAIL_LOGO__" in text:
+        text = text.replace("__MAIL_LOGO__", _mail_logo_url())
+    return text
+
+
 def _render_template(text, contact):
     """{{name}} boşsa 'Merhaba ,' gibi bozuk bir selamlama çıkmasın —
     isim yoksa nazik bir varsayılan ('değerli üye') kullanılır."""
-    text = text or ""
+    text = _apply_mail_assets(text or "")
     name = ((contact or {}).get("name") or "").strip()
     mapping = {
         "name": name or DEFAULT_GREETING_NAME,

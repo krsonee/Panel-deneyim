@@ -1,7 +1,8 @@
 """MakroBet markasına uygun hazır mailing şablonları.
 
 Görsel referans: https://makrobet.com/tr/pages/promotions
-Palet: biolink_themes (_MB_*) — navy #061c3d · altın #ffd53e · metin #e8efff
+Logo: makrobet.com CDN’den indirilip /static/mailing/makrobet-logo.png
+Palet: site body #061c3d · metin #e6f0fe · CTA altın #ffd400
 """
 
 from __future__ import annotations
@@ -16,31 +17,57 @@ from database import (
     utcnow,
 )
 
-SEED_FLAG = "seeded_makrobet_templates_v3"
+SEED_FLAG = "seeded_makrobet_templates_v4"
 
-# Site promosyon sayfası (kullanıcı referansı)
+# Site / VIP destek
 PROMO_URL = "https://makrobet.com/tr/pages/promotions"
-CTA = PROMO_URL
+SITE_URL = "https://makrobet.com/tr/"
+VIP_URL = "https://vipmakro.com"
+
 CTA_TOKEN = "{{link:sc:https://makrobet.com/tr/pages/promotions}}"
+CTA_SITE = "{{link:sc:https://makrobet.com/tr/}}"
+CTA_VIP = "{{link:sc:https://vipmakro.com}}"
 CTA_CASINO = "{{link:sc:https://makrobet.com/tr/game/casino}}"
 CTA_SPORT = "{{link:sc:https://makrobet.com/tr/sport/live}}"
 CTA_PROMO = CTA_TOKEN
 CTA_LIVE = "{{link:sc:https://makrobet.com/tr/game/live-casino}}"
 
-# Marka (site ile aynı)
+# Site ile aynı (promosyonlar sayfası)
 _MB_BG = "#061c3d"
-_MB_CARD = "#0b2347"
+_MB_CARD = "#0a2448"
 _MB_ROW = "#0f2d55"
-_MB_TEXT = "#e8efff"
-_MB_MUTED = "#8fa3cc"
-_MB_GOLD = "#ffd53e"
-_MB_BORDER = "rgba(255,213,62,0.35)"
+_MB_TEXT = "#e6f0fe"
+_MB_MUTED = "#9db3d4"
+_MB_GOLD = "#ffd400"
+_MB_BORDER = "#2a4a7a"
 
-# CDN logo (site); e-posta istemcileri çoğu zaman çekebilir
-_LOGO_CDN = "https://makrobet.com/cdn/makrobet/upload_files/logo.png"
+# Preview + gönderimde absolute URL’e çevrilir
+_LOGO_PLACEHOLDER = "__MAIL_LOGO__"
 
 
-def _html_shell(title, eyebrow, headline, body_html, cta_label, cta_token, note="", badge="Special"):
+def _promo_chip(label):
+    return (
+        f'<td style="padding:4px;">'
+        f'<span style="display:inline-block;background:{_MB_ROW};color:{_MB_TEXT};'
+        f"font-family:Urbanist,Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;"
+        f'padding:7px 10px;border-radius:8px;border:1px solid {_MB_BORDER};white-space:nowrap;">'
+        f"{label}</span></td>"
+    )
+
+
+def _html_shell(
+    title,
+    eyebrow,
+    headline,
+    body_html,
+    cta_label,
+    cta_token,
+    note="",
+    badge="Special",
+    secondary_label="",
+    secondary_token="",
+    extra_html="",
+):
     note_block = ""
     if note:
         note_block = f"""
@@ -53,10 +80,30 @@ def _html_shell(title, eyebrow, headline, body_html, cta_label, cta_token, note=
     if badge:
         badge_block = f"""
           <tr>
-            <td style="padding:4px 28px 0;font-family:Urbanist,Arial,Helvetica,sans-serif;">
+            <td style="padding:6px 28px 0;font-family:Urbanist,Arial,Helvetica,sans-serif;">
               <span style="display:inline-block;background:{_MB_GOLD};color:{_MB_BG};font-size:11px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;padding:5px 12px;border-radius:999px;">{badge}</span>
             </td>
           </tr>"""
+    secondary_block = ""
+    if secondary_label and secondary_token:
+        secondary_block = f"""
+          <tr>
+            <td align="center" style="padding:0 28px 20px;">
+              <a href="{secondary_token}" style="display:inline-block;background:transparent;color:{_MB_GOLD};font-family:Urbanist,Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;text-decoration:none;padding:11px 22px;border-radius:8px;border:1px solid {_MB_GOLD};">
+                {secondary_label}
+              </a>
+            </td>
+          </tr>"""
+    else:
+        secondary_block = f"""
+          <tr>
+            <td align="center" style="padding:0 28px 20px;">
+              <a href="{CTA_PROMO}" style="display:inline-block;background:transparent;color:{_MB_GOLD};font-family:Urbanist,Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;text-decoration:none;padding:11px 22px;border-radius:8px;border:1px solid {_MB_GOLD};">
+                Tüm Promosyonlar
+              </a>
+            </td>
+          </tr>"""
+
     return f"""<!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -69,13 +116,10 @@ def _html_shell(title, eyebrow, headline, body_html, cta_label, cta_token, note=
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_MB_BG};">
     <tr>
       <td align="center" style="padding:28px 12px;">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:{_MB_CARD};border-radius:14px;overflow:hidden;border:1px solid {_MB_BORDER};">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:{_MB_CARD};border-radius:12px;overflow:hidden;border:1px solid {_MB_BORDER};">
           <tr>
-            <td align="center" style="padding:26px 28px 12px;background:{_MB_BG};">
-              <img src="{_LOGO_CDN}" alt="Makrobet" width="168" style="display:block;margin:0 auto 8px;max-width:168px;height:auto;border:0;">
-              <div style="font-family:Urbanist,Arial,Helvetica,sans-serif;font-size:26px;font-weight:800;letter-spacing:0.02em;line-height:1;color:{_MB_GOLD};">
-                Makrobet
-              </div>
+            <td align="center" style="padding:22px 28px 10px;background:{_MB_BG};">
+              <img src="{_LOGO_PLACEHOLDER}" alt="Makrobet" width="168" height="39" style="display:block;margin:0 auto;max-width:168px;width:168px;height:auto;border:0;outline:none;text-decoration:none;">
             </td>
           </tr>
           {badge_block}
@@ -94,6 +138,7 @@ def _html_shell(title, eyebrow, headline, body_html, cta_label, cta_token, note=
               {body_html}
             </td>
           </tr>
+          {extra_html}
           <tr>
             <td align="center" style="padding:6px 28px 10px;">
               <a href="{cta_token}" style="display:inline-block;background:{_MB_GOLD};color:{_MB_BG};font-family:Urbanist,Arial,Helvetica,sans-serif;font-size:15px;font-weight:800;text-decoration:none;padding:14px 32px;border-radius:8px;">
@@ -101,18 +146,13 @@ def _html_shell(title, eyebrow, headline, body_html, cta_label, cta_token, note=
               </a>
             </td>
           </tr>
-          <tr>
-            <td align="center" style="padding:0 28px 22px;">
-              <a href="{CTA_PROMO}" style="display:inline-block;background:transparent;color:{_MB_GOLD};font-family:Urbanist,Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;text-decoration:none;padding:10px 22px;border-radius:8px;border:1px solid {_MB_GOLD};">
-                Tüm Promosyonlar
-              </a>
-            </td>
-          </tr>
+          {secondary_block}
           {note_block}
           <tr>
-            <td style="padding:16px 28px 22px;border-top:1px solid {_MB_ROW};font-family:Urbanist,Arial,Helvetica,sans-serif;font-size:11px;line-height:1.55;color:{_MB_MUTED};text-align:center;">
+            <td style="padding:16px 28px 22px;border-top:1px solid {_MB_BORDER};font-family:Urbanist,Arial,Helvetica,sans-serif;font-size:11px;line-height:1.55;color:{_MB_MUTED};text-align:center;">
               18+ · Sorumlu bahis · Şartlar ve çevrim koşulları geçerlidir.<br>
-              Makrobet · <a href="{CTA_TOKEN}" style="color:{_MB_GOLD};text-decoration:none;">Promosyonlar</a>
+              Makrobet · <a href="{CTA_PROMO}" style="color:{_MB_GOLD};text-decoration:none;">Promosyonlar</a>
+              · <a href="{CTA_VIP}" style="color:{_MB_GOLD};text-decoration:none;">VIP Destek</a>
             </td>
           </tr>
         </table>
@@ -123,7 +163,77 @@ def _html_shell(title, eyebrow, headline, body_html, cta_label, cta_token, note=
 </html>"""
 
 
+_SANS_EXTRA = f"""
+          <tr>
+            <td style="padding:0 24px 18px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_MB_BG};border-radius:10px;border:1px solid {_MB_BORDER};">
+                <tr>
+                  <td style="padding:14px 16px 6px;font-family:Urbanist,Arial,Helvetica,sans-serif;font-size:12px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:{_MB_GOLD};">
+                    Diğer aktif kampanyalar
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:4px 12px 14px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" align="center">
+                      <tr>
+                        {_promo_chip("Prim Bonusu")}
+                        {_promo_chip("Çevrim Bonusu")}
+                        {_promo_chip("Görev Bonusu")}
+                      </tr>
+                      <tr>
+                        {_promo_chip("Makro Kasa")}
+                        {_promo_chip("Bilet Etkinliği")}
+                        {_promo_chip("VIP Club")}
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+"""
+
+
 HTML_TEMPLATES = [
+    {
+        "name": "HTML · Şans Bonusu Eklendi",
+        "subject": "{{name}}, hesabına şans bonusu eklendi — hemen talep et",
+        "html_body": _html_shell(
+            "Şans Bonusu",
+            "Hesap bildirimi",
+            "Hesabına şans bonusu eklendi",
+            f"""
+            Merhaba <strong style="color:#fff;">{{{{name}}}}</strong>,<br><br>
+            <strong style="color:{_MB_GOLD};font-size:17px;">Hesabına şans bonusu eklendi.</strong><br><br>
+            Bonusunu almak için hemen
+            <a href="{CTA_VIP}" style="color:{_MB_GOLD};font-weight:800;text-decoration:underline;">vipmakro.com</a>
+            üzerinden WhatsApp destek hattımızdan <strong style="color:#fff;">talep et</strong>,
+            ya da siteye bağlanıp talep oluştur.<br><br>
+            Aynı dönemde prim bonusu, çevrim bonusu, görev bonusu, Makro Kasa ve bilet etkinlikleri de aktif olabilir —
+            vurgu senin <strong style="color:{_MB_GOLD};">şans bonusunda</strong>.
+            """,
+            "WhatsApp’tan Talep Et",
+            CTA_VIP,
+            note="Talep sonrası bonus hesabına tanımlanır. Şartlar ve çevrim koşulları geçerlidir.",
+            badge="Şans Bonusu",
+            secondary_label="Siteye Bağlan · Talep Et",
+            secondary_token=CTA_SITE,
+            extra_html=_SANS_EXTRA,
+        ),
+        "text_body": f"""Merhaba {{{{name}}}},
+
+Hesabına şans bonusu eklendi.
+
+Hemen vipmakro.com üzerinden WhatsApp hesabımızdan talep et,
+veya siteye bağlanıp talep oluştur:
+{VIP_URL}
+{SITE_URL}
+
+Ayrıca: Prim Bonusu · Çevrim Bonusu · Görev Bonusu · Makro Kasa · Bilet Etkinliği
+
+18+ · Makrobet
+""",
+    },
     {
         "name": "HTML · Hoş Geldin Casino",
         "subject": "{{name}}, Makrobet'e hoş geldin — casino başlangıç fırsatı",
@@ -134,12 +244,10 @@ HTML_TEMPLATES = [
             """
             Merhaba <strong style="color:#fff;">{{name}}</strong>,<br><br>
             Makrobet ailesine hoş geldin. Slot ve canlı casino’da ilk yatırımlarına özel
-            <strong style="color:#ffd53e;">hoş geldin bonusları</strong> seni bekliyor.
-            Promosyonlar sayfasından kampanyanı seç, oynamaya başla.
+            <strong style="color:#ffd400;">hoş geldin bonusları</strong> seni bekliyor.
             """,
             "Bonusları Gör",
             CTA_PROMO,
-            "Güncel oran ve şartlar Promosyonlar sayfasında.",
             badge="Hoş Geldin",
         ),
         "text_body": "",
@@ -154,8 +262,7 @@ HTML_TEMPLATES = [
             """
             Merhaba <strong style="color:#fff;">{{name}}</strong>,<br><br>
             Spor ve canlı bahiste aktif kampanyalarla yatırımlarına
-            <strong style="color:#ffd53e;">ekstra bonus</strong> yakalayabilirsin.
-            Maç öncesi veya canlı — seçim senin.
+            <strong style="color:#ffd400;">ekstra bonus</strong> yakalayabilirsin.
             """,
             "Spor Bonuslarını Aç",
             CTA_SPORT,
@@ -173,8 +280,7 @@ HTML_TEMPLATES = [
             """
             Merhaba <strong style="color:#fff;">{{name}}</strong>,<br><br>
             Casino / canlı casino kayıpların için dönemsel
-            <strong style="color:#ffd53e;">iade (cashback)</strong> kampanyaları aktif olabilir.
-            Uygunluğu kontrol et, bonusunu talep et.
+            <strong style="color:#ffd400;">iade (cashback)</strong> kampanyaları aktif olabilir.
             """,
             "Detayları Gör",
             CTA_PROMO,
@@ -192,7 +298,7 @@ HTML_TEMPLATES = [
             """
             Merhaba <strong style="color:#fff;">{{name}}</strong>,<br><br>
             Makrobet’te freebet ve freespin kampanyaları dönüyor.
-            Hesabına gir, <strong style="color:#ffd53e;">aktif promosyonları</strong> yakala.
+            Hesabına gir, <strong style="color:#ffd400;">aktif promosyonları</strong> yakala.
             """,
             "Promosyonlara Git",
             CTA_PROMO,
@@ -209,13 +315,14 @@ HTML_TEMPLATES = [
             "Seçili üyelere özel ayrıcalıklar",
             """
             Merhaba <strong style="color:#fff;">{{name}}</strong>,<br><br>
-            Seni <strong style="color:#ffd53e;">Makro VIP Club</strong> deneyimine davet ediyoruz:
+            Seni <strong style="color:#ffd400;">Makro VIP Club</strong> deneyimine davet ediyoruz:
             öncelikli destek, özel kampanyalar ve kişiselleştirilmiş fırsatlar.
             """,
-            "VIP’ye Göz At",
-            CTA_PROMO,
-            "Bu ileti seçili üyelere yönelik bilgilendirme amaçlıdır.",
+            "VIP Destek",
+            CTA_VIP,
             badge="VIP",
+            secondary_label="Promosyonlar",
+            secondary_token=CTA_PROMO,
         ),
         "text_body": "",
     },
@@ -229,8 +336,7 @@ HTML_TEMPLATES = [
             """
             Merhaba <strong style="color:#fff;">{{name}}</strong>,<br><br>
             Rulet, blackjack ve canlı masalar hafta sonu için hazır.
-            Aktif bonuslarını kontrol et, masanı seç,
-            <strong style="color:#ffd53e;">canlı casino</strong>’ya bağlan.
+            <strong style="color:#ffd400;">Canlı casino</strong>’ya bağlan.
             """,
             "Canlı Casino’yu Aç",
             CTA_LIVE,
@@ -248,12 +354,13 @@ HTML_TEMPLATES = [
             """
             Merhaba <strong style="color:#fff;">{{name}}</strong>,<br><br>
             Makrobet Promosyonlar sayfasında sana uygun
-            <strong style="color:#ffd53e;">güncel bonusları</strong> inceleyebilirsin.
-            Tek tıkla tüm kampanyalara ulaş.
+            <strong style="color:#ffd400;">güncel bonusları</strong> inceleyebilirsin.
             """,
             "Tüm Promosyonlar",
             CTA_PROMO,
             badge="Promosyon",
+            secondary_label="VIP Destek / WhatsApp",
+            secondary_token=CTA_VIP,
         ),
         "text_body": "",
     },
@@ -261,6 +368,24 @@ HTML_TEMPLATES = [
 
 
 TEXT_TEMPLATES = [
+    {
+        "name": "Yazı · Şans Bonusu Eklendi",
+        "subject": "{{name}}, hesabına şans bonusu eklendi — hemen talep et",
+        "html_body": "",
+        "text_body": f"""Merhaba {{{{name}}}},
+
+Hesabına şans bonusu eklendi.
+
+Hemen vipmakro.com üzerinden WhatsApp hesabımızdan talep et,
+veya siteye bağlanıp talep oluştur:
+{VIP_URL}
+{SITE_URL}
+
+Ayrıca aktif olabilir: Prim Bonusu · Çevrim Bonusu · Görev Bonusu · Makro Kasa · Bilet Etkinliği
+
+18+ · Makrobet
+""",
+    },
     {
         "name": "Yazı · Hoş Geldin Kısa",
         "subject": "{{name}}, Makrobet'e hoş geldin!",
@@ -282,9 +407,7 @@ Makrobet ekibi
         "html_body": "",
         "text_body": f"""Merhaba {{{{name}}}},
 
-Canlı bahis ve spor yatırımlarına özel kampanyalar aktif olabilir.
-Kuponunu güçlendirmek için güncel spor bonuslarını kontrol et:
-
+Canlı bahis ve spor yatırımlarına özel kampanyalar aktif olabilir:
 {CTA_SPORT}
 
 Makrobet
@@ -296,12 +419,9 @@ Makrobet
         "html_body": "",
         "text_body": f"""Merhaba {{{{name}}}},
 
-Casino veya spor tarafında dönemsel kayıp iadesi / cashback kampanyaları bulunabilir.
-Sana uyan bir kampanya var mı diye bakmanı öneririz:
-
+Casino veya spor tarafında dönemsel kayıp iadesi / cashback kampanyaları bulunabilir:
 {CTA_PROMO}
 
-Şartlar ve çevrim koşulları geçerlidir.
 Makrobet
 """,
     },
@@ -311,9 +431,7 @@ Makrobet
         "html_body": "",
         "text_body": f"""Merhaba {{{{name}}}},
 
-Hesabında bekleyen freespin veya freebet olabilir — ya da günlük hediye kampanyalarına katılma şansın açık olabilir.
-Hemen kontrol et:
-
+Hesabında bekleyen freespin veya freebet olabilir:
 {CTA_PROMO}
 
 Makrobet
@@ -325,11 +443,10 @@ Makrobet
         "html_body": "",
         "text_body": f"""Merhaba {{{{name}}}},
 
-Az önce / kısa süre önce seninle iletişim kurduk. Konuştuğumuz fırsatları ve güncel Makrobet kampanyalarını buradan inceleyebilirsin:
-
+Konuştuğumuz fırsatları ve güncel Makrobet kampanyalarını buradan inceleyebilirsin:
 {CTA_TOKEN}
 
-Sorun olursa canlı destek her zaman yanında.
+VIP destek: {VIP_URL}
 Makrobet
 """,
     },
@@ -339,9 +456,7 @@ Makrobet
         "html_body": "",
         "text_body": f"""Merhaba {{{{name}}}},
 
-Bir süredir görüşemedik. Spor, casino ve canlı casino tarafında seni bekleyen güncel fırsatlar olabilir.
-
-Tekrar uğra:
+Bir süredir görüşemedik. Güncel fırsatlar için:
 {CTA_TOKEN}
 
 18+ · Sorumlu bahis
@@ -352,22 +467,22 @@ Makrobet
 
 
 def seed_makrobet_mail_templates(conn, force_missing=False, overwrite=False):
-    """Eksik şablonları ekler; overwrite=True ise seed HTML’lerini site stiline günceller.
+    """Eksik şablonları ekler; overwrite=True ise seed HTML’lerini günceller.
 
-    v3 flag yoksa ilk boot’ta HTML seed’leri otomatik yenilenir (promosyon sayfası stili).
+    v4 flag yoksa ilk boot’ta HTML seed’leri otomatik yenilenir.
     """
     now = iso(utcnow())
     added = 0
     updated = 0
-    _ = force_missing  # API uyumu
-    already_v3 = (get_mail_setting(conn, SEED_FLAG, "") or "").strip() == "1"
-    if not already_v3:
+    _ = force_missing
+    already = (get_mail_setting(conn, SEED_FLAG, "") or "").strip() == "1"
+    if not already:
         overwrite = True
     for item in HTML_TEMPLATES + TEXT_TEMPLATES:
         name = item["name"]
         exists = fetchone(conn, "SELECT id FROM mail_templates WHERE name = ?", (name,))
         if exists:
-            if overwrite and (item.get("html_body") or "").strip():
+            if overwrite and ((item.get("html_body") or "").strip() or (item.get("text_body") or "").strip()):
                 execute(
                     conn,
                     """

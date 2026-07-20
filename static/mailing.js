@@ -1614,11 +1614,21 @@
       });
   }
 
+  function mailLogoPreviewUrl() {
+    try {
+      return (window.location.origin || "") + "/static/mailing/makrobet-logo.png";
+    } catch (e) {
+      return "/static/mailing/makrobet-logo.png";
+    }
+  }
+
   function substituteTplPlaceholders(html) {
     var s = html || "<p class='muted'>Önizleme boş</p>";
     function linkUrl(raw) {
       return String(raw || "").trim().replace(/^sc\s*:\s*/i, "");
     }
+    // Panelde barındırılan Makrobet logosu (CDN hotlink / iframe’de kırılıyordu)
+    s = s.replace(/__MAIL_LOGO__/g, mailLogoPreviewUrl());
     // href="{{link:...}}" → sadece URL; aksi halde butonlar patlıyor
     s = s.replace(/href\s*=\s*(["'])\s*\{\{\s*link\s*:\s*([^}]+)\s*\}\}\s*\1/gi, function (_m, q, raw) {
       return "href=" + q + linkUrl(raw) + q;
@@ -1628,7 +1638,7 @@
       .replace(/\{\{phone\}\}/g, "+90555…")
       .replace(/\{\{\s*link\s*:\s*([^}]+)\s*\}\}/gi, function (_m, raw) {
         var u = linkUrl(raw);
-        return '<a href="' + u + '" style="color:#ffd53e;">' + u + "</a>";
+        return '<a href="' + u + '" style="color:#ffd400;">' + u + "</a>";
       });
     return s;
   }
