@@ -1096,7 +1096,8 @@ def move_affiliate(
     """Oyuncuyu yeni affiliate / deal altına taşı (cid 30062).
 
     affiliate_id ve deal_id boşsa (veya use_default=True) ayardaki
-    default_affiliate_id kullanılır — genelde 'direkt / kanalsız' house aff.
+    default_affiliate_id kullanılır — normal link / organik (kanal yok).
+    TAP API null affiliate kabul etmez; Direct/Organic house ID ile temsil edilir.
     İkisi doluysa deal_id baskın.
     """
     if not is_int_configured(conn):
@@ -1123,17 +1124,17 @@ def move_affiliate(
             raise ValueError("affiliate_id sayı olmalı.") from exc
 
     if deal is None and aff is None:
-        # Boş hedef → default affiliate (kanalsız / direkt house)
+        # Boş hedef → normal link (kanal yok / organik)
         if cfg.get("default_affiliate_id") is None:
             raise ValueError(
-                "Affiliate ID boş. Default (kanalsız) affiliate ayarlanmamış — "
-                "int-api Ayarlar'dan default_affiliate_id gir."
+                "Affiliate ID boş = normal link. Normal link Affiliate ID ayarlanmamış — "
+                "int-api Ayarlar'dan Direct/Organic house ID gir."
             )
         aff = int(cfg["default_affiliate_id"])
         used_default = True
     elif use_default and deal is None:
         if cfg.get("default_affiliate_id") is None:
-            raise ValueError("default_affiliate_id ayarlanmamış.")
+            raise ValueError("Normal link Affiliate ID (default_affiliate_id) ayarlanmamış.")
         aff = int(cfg["default_affiliate_id"])
         used_default = True
 
@@ -1166,7 +1167,7 @@ def move_affiliate(
 
     msg = payload.get("message") or "Affiliate taşındı."
     if used_default:
-        msg = f"Default (kanalsız) affiliate #{aff} altına taşındı. " + msg
+        msg = "Normal linke (kanal yok) taşındı. " + msg
 
     return {
         "ok": True,

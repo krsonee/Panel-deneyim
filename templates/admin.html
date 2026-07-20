@@ -2479,7 +2479,8 @@
             <p class="hint">
               Smartico / TheAffiliatePlatform <strong>int-api</strong> bilgileri (rapor API key’den ayrı).
               <code>authorization_token</code> = Settings → submit registrations key.
-              <strong>Default Affiliate ID</strong> = Affiliate boş bırakılınca taşınacak “kanalsız / direkt” house affiliate.
+              <strong>Normal link Affiliate ID</strong> = Affiliate boş bırakılınca üye kanaldan düşer; normal (organik) linkten gelmiş gibi sayılır.
+              TAP teknik olarak yine bir affiliate_id ister — bunu Smartico’daki Direct / Organic / House hesabının ID’si yap.
             </p>
             <form id="move-aff-config-form">
               <div class="form-row-4">
@@ -2490,8 +2491,8 @@
               </div>
               <div class="form-row-4" style="margin-top:0.5rem;">
                 <div>
-                  <label for="move-aff-default">Default Affiliate ID <span class="muted">(kanalsız)</span></label>
-                  <input id="move-aff-default" list="move-aff-affiliate-list" placeholder="Affiliate boşken buraya taşınır" inputmode="numeric" autocomplete="off">
+                  <label for="move-aff-default">Normal link Affiliate ID <span class="muted">(kanal yok)</span></label>
+                  <input id="move-aff-default" list="move-aff-affiliate-list" placeholder="Direct / Organic house ID" inputmode="numeric" autocomplete="off">
                 </div>
               </div>
               <div style="margin-top:0.65rem;display:flex;gap:0.5rem;">
@@ -2503,7 +2504,7 @@
           <div class="card-body">
             <p class="hint" style="margin-bottom:0.75rem;">
               Oyuncu ID yaz → mevcut kanal tabloda görünür.
-              <strong>Yeni Affiliate ID boş</strong> bırakılırsa üye <strong>default (kanalsız)</strong> affiliate’e taşınır.
+              <strong>Yeni Affiliate ID boş</strong> = başka kanala taşımadan <strong>normal link</strong>e düşür (kanal ID yok, organik üye gibi).
               Deal ID doluysa o baskın. İşlem geri alınamaz.
             </p>
             <form id="move-aff-form">
@@ -2516,8 +2517,8 @@
                   <button type="button" class="btn btn-sm" id="btn-move-aff-lookup">Kanalı Sorgula</button>
                 </div>
                 <div>
-                  <label for="move-aff-affiliate">Yeni Affiliate ID <span class="muted">(boş = default)</span></label>
-                  <input id="move-aff-affiliate" list="move-aff-affiliate-list" placeholder="boş bırak = kanalsız" inputmode="numeric" autocomplete="off">
+                  <label for="move-aff-affiliate">Yeni Affiliate ID <span class="muted">(boş = normal link)</span></label>
+                  <input id="move-aff-affiliate" list="move-aff-affiliate-list" placeholder="boş bırak = normal link" inputmode="numeric" autocomplete="off">
                   <datalist id="move-aff-affiliate-list"></datalist>
                 </div>
                 <div>
@@ -5566,7 +5567,7 @@
         var el = document.getElementById("move-aff-status");
         if (!el) return;
         if (cfg && cfg.configured) {
-          var def = cfg.default_affiliate_id != null ? (" · default #" + cfg.default_affiliate_id) : " · default yok";
+          var def = cfg.default_affiliate_id != null ? (" · normal link #" + cfg.default_affiliate_id) : " · normal link yok";
           el.textContent = "hazır · label " + (cfg.label_id || "?") + " · brand " + (cfg.brand_id || "?") + def;
           el.style.color = "";
         } else {
@@ -5614,10 +5615,21 @@
           return;
         }
         tbody.innerHTML = rows.map(function(r) {
+          var isNormal = moveAffDefaultId != null && r.affiliate_id != null
+            && Number(r.affiliate_id) === Number(moveAffDefaultId);
+          var affLabel = isNormal
+            ? ("Normal link" + (r.affiliate_name ? (" · " + r.affiliate_name) : ""))
+            : (r.affiliate_name || "—");
+          var affIdLabel = isNormal
+            ? "—"
+            : (r.affiliate_id != null ? String(r.affiliate_id) : "—");
+          var linkLabel = isNormal
+            ? "normal link"
+            : (r.link_name || (r.link_id != null ? ("#" + r.link_id) : "—"));
           return "<tr>" +
-            "<td>" + esc(r.affiliate_name || "—") + "</td>" +
-            "<td>" + esc(r.affiliate_id != null ? String(r.affiliate_id) : "—") + "</td>" +
-            "<td>" + esc(r.link_name || (r.link_id != null ? ("#" + r.link_id) : "—")) + "</td>" +
+            "<td>" + esc(affLabel) + "</td>" +
+            "<td>" + esc(affIdLabel) + "</td>" +
+            "<td>" + esc(linkLabel) + "</td>" +
             "<td>" + esc(r.username || "—") + "</td>" +
             "<td>" + esc(r.registration_id || "—") + "</td>" +
             "<td>" + esc(String(r.registration_count != null ? r.registration_count : 0)) + "</td>" +
@@ -5741,14 +5753,14 @@
         var utmMedium = ((document.getElementById("move-aff-utm-medium") || {}).value || "").trim();
         if (!customer) { alert("Oyuncu ID gerekli."); return; }
         if (!affiliateId && !dealId && moveAffDefaultId == null) {
-          alert("Affiliate boş. Önce int-api Ayarlar'dan Default Affiliate ID (kanalsız) kaydet.");
+          alert("Affiliate boş = normal link. Önce int-api Ayarlar'dan Normal link Affiliate ID (Direct/Organic) kaydet.");
           return;
         }
         var msg = "Oyuncu " + customer + " → ";
         if (dealId) msg += "deal #" + dealId;
         else if (affiliateId) msg += "affiliate #" + affiliateId;
-        else msg += "default (kanalsız) #" + moveAffDefaultId;
-        msg += " taşınacak. Eski kayıt donar. Devam?";
+        else msg += "normal link (kanal yok)";
+        msg += " taşınacak. Eski kanal kaydı donar. Devam?";
         if (!confirm(msg)) return;
         var btn = document.getElementById("btn-move-aff-submit");
         if (btn) { btn.disabled = true; btn.textContent = "Taşınıyor…"; }

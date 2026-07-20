@@ -221,7 +221,7 @@ def create_smartico_blueprint(permission_required, admin_only_required=None):
     def move_affiliate():
         """Oyuncuyu yeni affiliate/deal altına taşı (TAP cid 30062).
 
-        affiliate_id + deal_id boşsa default_affiliate_id (kanalsız) kullanılır.
+        affiliate_id + deal_id boşsa default_affiliate_id (normal link / kanal yok) kullanılır.
         """
         data = request.get_json(silent=True) or {}
         try:
