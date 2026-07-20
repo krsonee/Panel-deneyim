@@ -25,7 +25,13 @@ from database import (
 )
 
 DEFAULT_API_HOST = "https://boapi.smartico.ai"
-DEFAULT_INT_API_BASE = "https://api.aff.makroaffi.com"
+DEFAULT_INT_API_BASE = "https://go.aff.makroaffi.com"
+# Eski yanlış default (DNS yok) → otomatik düzelt
+_LEGACY_INT_API_BASES = frozenset({
+    "https://api.aff.makroaffi.com",
+    "http://api.aff.makroaffi.com",
+    "api.aff.makroaffi.com",
+})
 
 _SETTING_API_KEY = "api_key"
 _SETTING_API_HOST = "api_host"
@@ -805,8 +811,15 @@ def _empty_summary():
 # ---------------------------------------------------------------------------
 
 
+def _normalize_int_api_base(base):
+    base = (base or "").strip().rstrip("/")
+    if not base or base in _LEGACY_INT_API_BASES:
+        return DEFAULT_INT_API_BASE
+    return base
+
+
 def get_int_config(conn):
-    base = (get_smartico_setting(conn, _SETTING_INT_API_BASE, "") or "").strip().rstrip("/")
+    base = _normalize_int_api_base(get_smartico_setting(conn, _SETTING_INT_API_BASE, ""))
     token = (get_smartico_setting(conn, _SETTING_INT_AUTH_TOKEN, "") or "").strip()
     label_raw = (get_smartico_setting(conn, _SETTING_LABEL_ID, "") or "").strip()
     brand_raw = (get_smartico_setting(conn, _SETTING_BRAND_ID, "") or "").strip()
@@ -824,7 +837,7 @@ def get_int_config(conn):
     except (TypeError, ValueError):
         default_affiliate_id = None
     return {
-        "int_api_base": base or DEFAULT_INT_API_BASE,
+        "int_api_base": base,
         "authorization_token": token,
         "label_id": label_id,
         "brand_id": brand_id,
@@ -846,7 +859,7 @@ def save_int_config(
     default_affiliate_id=None,
 ):
     token = (authorization_token or "").strip()
-    base = (int_api_base or "").strip().rstrip("/") or DEFAULT_INT_API_BASE
+    base = _normalize_int_api_base(int_api_base)
     try:
         lid = int(label_id)
     except (TypeError, ValueError) as exc:
