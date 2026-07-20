@@ -1326,10 +1326,10 @@
     var col = b.layout_col || "full";
     return '<div class="bl-col-layout">' +
       '<label class="bl-col-layout-lbl">Yerleşim</label>' +
-      '<select data-bl-field="layout_col" data-bl-id="' + b.id + '">' +
-      '<option value="full"' + (col === "full" ? " selected" : "") + ">Tam genişlik</option>" +
-      '<option value="left"' + (col === "left" ? " selected" : "") + ">Sol yarım</option>" +
-      '<option value="right"' + (col === "right" ? " selected" : "") + ">Sağ yarım</option>" +
+      '<select data-bl-field="layout_col" data-bl-id="' + b.id + '" title="Tam / sol yarım / sağ yarım — yan yana iki yarım kullan">' +
+      '<option value="full"' + (col === "full" ? " selected" : "") + ">Tam geni\u015flik</option>" +
+      '<option value="left"' + (col === "left" ? " selected" : "") + ">Sol yar\u0131m (yan bo\u015f)</option>" +
+      '<option value="right"' + (col === "right" ? " selected" : "") + ">Sa\u011f yar\u0131m (yan bo\u015f)</option>" +
       "</select></div>";
   }
 
