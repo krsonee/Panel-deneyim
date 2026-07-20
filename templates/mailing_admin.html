@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>MakroMail</title>
+  <meta name="theme-color" content="#060a10">
+  <link rel="stylesheet" href="/static/mailing_shell.css?v=20260720mm1">
+  <style>
+    :root { --accent: #38bdf8; --accent-soft: rgba(56,189,248,0.14); --accent-ink: #041018; }
+    .nav-item.active { color: #7dd3fc; border-color: rgba(56,189,248,0.35); }
+    .mm-top-actions { display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; }
+    .mm-tenant-bar {
+      display:flex; gap:0.65rem; align-items:center; flex-wrap:wrap;
+      margin-bottom:1rem; padding:0.75rem 1rem; background:var(--surface);
+      border:1px solid var(--border); border-radius:12px;
+    }
+    .mm-tenant-bar select { min-width:200px; }
+    #module-mailing-panel { display:block !important; }
+    #module-mailing-panel[hidden] { display:block !important; }
+  </style>
+</head>
+<body>
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h1>Makro<span>Mail</span></h1>
+        <p>{{ display_name }}{% if is_superadmin %} · süper admin{% endif %}</p>
+      </div>
+      <nav class="nav">
+        <div class="nav-label">Panel</div>
+        <button type="button" class="nav-item active" data-mm-view="mailing"><span class="icon">✉️</span> Mailing</button>
+        {% if is_superadmin %}
+        <button type="button" class="nav-item" data-mm-view="platform"><span class="icon">🏗</span> Platform</button>
+        {% endif %}
+      </nav>
+      <div class="sidebar-foot">
+        <a href="#" id="mm-logout">Çıkış</a>
+      </div>
+    </aside>
+    <main class="main">
+      <div class="main-inner">
+        {% if is_superadmin %}
+        <div class="mm-tenant-bar" id="mm-tenant-bar">
+          <strong style="font-size:0.8rem;">Aktif tenant</strong>
+          <select id="mm-tenant-select"><option value="">— seç / impersonate —</option></select>
+          <span class="hint" id="mm-tenant-hint" style="margin:0;">Kampanya API’leri için tenant seçin</span>
+        </div>
+        {% endif %}
+
+        <div id="mm-view-mailing">
+          {% include 'partials/mailing_panel.html' %}
+        </div>
+
+        {% if is_superadmin %}
+        <div id="mm-view-platform" hidden>
+          <div class="topbar">
+            <div>
+              <h2>Platform</h2>
+              <p>Tenant’lar · domain havuzu · tahsis · ısınma</p>
+            </div>
+          </div>
+          <section class="card" style="margin-bottom:1rem;">
+            <div class="card-head"><span>Yeni firma (tenant)</span></div>
+            <div class="card-body">
+              <form id="mm-tenant-form" class="form-row-4">
+                <div><label>Ad</label><input id="mm-t-name" required placeholder="Acme VIP"></div>
+                <div><label>Slug</label><input id="mm-t-slug" required placeholder="acme"></div>
+                <div><label>Owner kullanıcı</label><input id="mm-t-user" value="admin" required></div>
+                <div><label>Owner şifre</label><input id="mm-t-pass" type="password" required minlength="8"></div>
+                <div><label>Günlük send kotası</label><input id="mm-t-cap" type="number" value="50000"></div>
+                <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" type="submit">Oluştur</button></div>
+              </form>
+              <p class="hint" id="mm-tenant-create-hint"></p>
+            </div>
+          </section>
+          <section class="card" style="margin-bottom:1rem;">
+            <div class="card-head"><span>Firmalar</span><button type="button" class="btn btn-sm" id="mm-tenants-refresh">Yenile</button></div>
+            <div class="table-wrap"><div class="table-scroll">
+              <table>
+                <thead><tr><th>ID</th><th>Slug</th><th>Ad</th><th>Durum</th><th>Kota/gün</th><th>Domain</th><th></th></tr></thead>
+                <tbody id="mm-tenants-table"><tr><td colspan="7" class="empty">—</td></tr></tbody>
+              </table>
+            </div></div>
+          </section>
+          <section class="card" style="margin-bottom:1rem;">
+            <div class="card-head"><span>Domain havuzu</span><button type="button" class="btn btn-sm" id="mm-domains-refresh">Yenile</button></div>
+            <div class="card-body">
+              <form id="mm-domain-form" class="form-row-4" style="margin-bottom:1rem;">
+                <div><label>Domain</label><input id="mm-d-domain" required placeholder="vipozelileti.com"></div>
+                <div><label>From name</label><input id="mm-d-from" value="VIP"></div>
+                <div><label>Warm status</label>
+                  <select id="mm-d-warm"><option value="cold">cold</option><option value="warming">warming</option><option value="warm">warm</option><option value="paused">paused</option><option value="burned">burned</option></select>
+                </div>
+                <div><label>Daily cap</label><input id="mm-d-cap" type="number" value="500"></div>
+                <div><label>SMTP password</label><input id="mm-d-smtp" type="password" placeholder="opsiyonel"></div>
+                <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" type="submit">Domain ekle</button></div>
+              </form>
+            </div>
+            <div class="table-wrap"><div class="table-scroll">
+              <table>
+                <thead><tr><th>Domain</th><th>Warm</th><th>Cap</th><th>Health</th><th>Tahsis</th><th></th></tr></thead>
+                <tbody id="mm-domains-table"><tr><td colspan="6" class="empty">—</td></tr></tbody>
+              </table>
+            </div></div>
+          </section>
+        </div>
+        {% endif %}
+      </div>
+    </main>
+  </div>
+
+  <script>
+    window.PANEL_FEATURES = { mailing: true };
+    window.MAIL_STANDALONE = true;
+    window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
+  </script>
+  <script src="/static/mailing.js?v=20260720mm1"></script>
+  <script src="/static/mailing_platform.js?v=20260720mm1"></script>
+  <script>
+    (function () {
+      document.getElementById("module-mailing-panel")?.removeAttribute("hidden");
+      if (window.MakroMailing) {
+        try { window.MakroMailing.init(); window.MakroMailing.onShow && window.MakroMailing.onShow(); } catch (e) { console.error(e); }
+      }
+      document.getElementById("mm-logout")?.addEventListener("click", function (e) {
+        e.preventDefault();
+        fetch("/api/mail-auth/logout", { method: "POST" }).finally(function () { location.href = "/login"; });
+      });
+      document.querySelectorAll("[data-mm-view]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var v = btn.getAttribute("data-mm-view");
+          document.querySelectorAll("[data-mm-view]").forEach(function (b) { b.classList.toggle("active", b === btn); });
+          document.getElementById("mm-view-mailing").hidden = v !== "mailing";
+          var plat = document.getElementById("mm-view-platform");
+          if (plat) plat.hidden = v !== "platform";
+          if (v === "platform" && window.MakroMailPlatform) window.MakroMailPlatform.refresh();
+        });
+      });
+      if (window.MakroMailPlatform) window.MakroMailPlatform.init();
+    })();
+  </script>
+</body>
+</html>

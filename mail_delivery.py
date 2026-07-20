@@ -219,9 +219,26 @@ def deliver_mail(
     from_email, from_name = _domain_from(conn, domain_id)
     domain_smtp_pw = ""
     if domain_id:
-        drow = fetchone(conn, "SELECT smtp_password FROM mail_domains WHERE id = ?", (domain_id,))
+        drow = None
+        try:
+            drow = fetchone(
+                conn,
+                "SELECT smtp_password, smtp_password_enc FROM mail_domains WHERE id = ?",
+                (domain_id,),
+            )
+        except Exception:
+            drow = fetchone(conn, "SELECT smtp_password FROM mail_domains WHERE id = ?", (domain_id,))
         if drow:
-            domain_smtp_pw = (dict(drow).get("smtp_password") or "").strip()
+            d = dict(drow)
+            blob = (d.get("smtp_password_enc") or d.get("smtp_password") or "").strip()
+            if blob:
+                try:
+                    from mail_tenant import decrypt_secret
+                    domain_smtp_pw = decrypt_secret(blob) or blob
+                    if domain_smtp_pw.startswith("enc:v1:"):
+                        domain_smtp_pw = ""
+                except Exception:
+                    domain_smtp_pw = blob if not str(blob).startswith("enc:v1:") else ""
     if domain_smtp_pw:
         user = from_email
         password = domain_smtp_pw

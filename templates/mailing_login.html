@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Giriş — MakroMail</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 10% -10%, #1a2740 0%, #060a10 55%);
+      color: #e8edf5; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center; padding: 1.5rem;
+    }
+    .box {
+      width: 100%; max-width: 420px; background: #0f1623;
+      border: 1px solid #243044; border-radius: 18px; padding: 2.1rem 1.85rem;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+    }
+    .logo { font-size: 1.55rem; font-weight: 800; }
+    .logo span { color: #38bdf8; }
+    .sub { color: #7d8da6; font-size: 0.88rem; margin: 0.35rem 0 1.5rem; }
+    label { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: #7d8da6; margin-bottom: 0.35rem; }
+    input {
+      width: 100%; padding: 0.75rem 0.9rem; margin-bottom: 1rem;
+      background: #151e2e; border: 1px solid #243044; border-radius: 10px; color: #e8edf5;
+    }
+    input:focus { outline: none; border-color: #38bdf8; }
+    .btn {
+      width: 100%; padding: 0.85rem; border: none; border-radius: 10px;
+      background: #38bdf8; color: #041018; font-weight: 700; cursor: pointer;
+    }
+    .error {
+      display: none; background: rgba(244,63,94,0.12); border: 1px solid rgba(244,63,94,0.35);
+      color: #f43f5e; padding: 0.65rem 0.85rem; border-radius: 10px; font-size: 0.85rem; margin-bottom: 1rem;
+    }
+    .error.show { display: block; }
+    .hint { margin-top: 1.1rem; font-size: 0.75rem; color: #7d8da6; text-align: center; line-height: 1.45; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="logo">Makro<span>Mail</span></div>
+    <p class="sub">Gönderim paneli — firma veya süper admin girişi</p>
+    <div class="error" id="err"></div>
+    <form id="f">
+      <label for="u">Kullanıcı</label>
+      <input id="u" autocomplete="username" required placeholder="admin veya firma/admin">
+      <label for="p">Şifre</label>
+      <input id="p" type="password" autocomplete="current-password" required>
+      <button class="btn" type="submit">Giriş Yap</button>
+    </form>
+    <p class="hint">Firma kullanıcıları: <code>slug/kullanici</code><br>Örn. acme/admin</p>
+  </div>
+  <script>
+    document.getElementById("f").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var err = document.getElementById("err");
+      err.classList.remove("show");
+      try {
+        var res = await fetch("/api/mail-auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: document.getElementById("u").value.trim(),
+            password: document.getElementById("p").value
+          })
+        });
+        var data = await res.json();
+        if (!res.ok) {
+          err.textContent = data.error || "Giriş başarısız";
+          err.classList.add("show");
+          return;
+        }
+        location.href = data.redirect || "/app";
+      } catch (ex) {
+        err.textContent = "Bağlantı hatası";
+        err.classList.add("show");
+      }
+    });
+  </script>
+</body>
+</html>

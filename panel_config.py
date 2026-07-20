@@ -17,21 +17,32 @@ MAILING_ALLOWED_USERS = frozenset(
     u.strip() for u in _MAILING_USERS_RAW.split(",") if u.strip()
 )
 
-# Makro'da mailing açık; Bizzo'da kapalı
+# MakroMail ayrıldı: panelde mailing varsayılan kapalı (SERVICE_MODE=panel).
+# Embedded mailing yalnızca MAILING_EMBEDDED=1 ile açılır (geçiş dönemi).
+_SERVICE_MODE = (os.environ.get("SERVICE_MODE") or "panel").strip().lower()
+_MAILING_EMBEDDED = (os.environ.get("MAILING_EMBEDDED") or "").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+_MAILING_ON_PANEL = PANEL_BRAND == "makro" and (
+    _SERVICE_MODE == "mailing" or _MAILING_EMBEDDED
+)
+
+# Makro'da mailing (embedded) opsiyonel; Bizzo'da kapalı
 _BASE_MODULES = ("tracking", "accounting", "biolink")
-ENABLED_MODULES = _BASE_MODULES + (("mailing",) if PANEL_BRAND == "makro" else ())
+ENABLED_MODULES = _BASE_MODULES + (("mailing",) if _MAILING_ON_PANEL else ())
 
 FEATURES = {
     # Makro: Smartico TAP rapor + üye taşıma (int-api). Bizzo: kapalı.
     "smartico": PANEL_BRAND == "makro",
     "blink": False,
-    "mailing": PANEL_BRAND == "makro",
+    "mailing": _MAILING_ON_PANEL,
     "marketing": False,
     "makrolink": True,
     "accounting": True,
     "biolink": True,
     "tracking": True,
 }
+MAILING_STANDALONE = _SERVICE_MODE == "mailing"
 
 # Bio studio + public sayfa materyalleri (markaya özel — kopya görünümü engelle)
 _BIOLINK_PACKS = {
@@ -212,4 +223,6 @@ def panel_context(username: str | None = None) -> dict:
         "biolink_pack": pack,
         "enabled_modules": list(ENABLED_MODULES),
         "features": features,
+        "makromail_url": (os.environ.get("MAKROMAIL_URL") or "https://makromail.onrender.com").rstrip("/"),
+        "mailing_standalone": MAILING_STANDALONE,
     }

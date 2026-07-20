@@ -75,14 +75,22 @@
     var timer = controller ? setTimeout(function () { controller.abort(); }, timeoutMs) : null;
     var fetchOpts = Object.assign({ headers: {} }, opts);
     delete fetchOpts.timeoutMs;
+    fetchOpts.headers = Object.assign({}, fetchOpts.headers || {});
+    if (window.MAIL_STANDALONE && window.MAIL_TENANT_ID) {
+      fetchOpts.headers["X-Tenant-Id"] = String(window.MAIL_TENANT_ID);
+    }
     if (fetchOpts.body && typeof fetchOpts.body === "object" && !(fetchOpts.body instanceof FormData)) {
       fetchOpts.headers["Content-Type"] = "application/json";
       fetchOpts.body = JSON.stringify(fetchOpts.body);
     }
     if (controller) fetchOpts.signal = controller.signal;
+    fetchOpts.credentials = fetchOpts.credentials || "same-origin";
     return fetch(path, fetchOpts).then(function (r) {
       if (timer) clearTimeout(timer);
-      if (r.status === 401) { location.href = "/admin/login"; return null; }
+      if (r.status === 401) {
+        location.href = window.MAIL_STANDALONE ? "/login" : "/admin/login";
+        return null;
+      }
       return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; });
     }).catch(function () {
       if (timer) clearTimeout(timer);

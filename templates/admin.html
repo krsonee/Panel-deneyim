@@ -2070,6 +2070,8 @@
         <button type="button" class="nav-item" data-module="accounting" data-perm="module.accounting"><span class="icon">💰</span> Muhasebe</button>
         {% if panel.features.mailing %}
         <button type="button" class="nav-item" data-module="mailing" data-perm="module.mailing"><span class="icon">✉️</span> Mailing</button>
+        {% elif panel.brand == "makro" %}
+        <a class="nav-item" href="{{ panel.makromail_url or 'https://makromail.onrender.com' }}" target="_blank" rel="noopener"><span class="icon">✉️</span> MakroMail ↗</a>
         {% endif %}
         {% if panel.features.marketing %}
         <button type="button" class="nav-item" data-module="marketing" data-perm="module.marketing"><span class="icon">📣</span> Marketing</button>

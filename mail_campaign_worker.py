@@ -291,10 +291,24 @@ def _process_campaign(campaign_id):
                 )
                 if status in ("simulated", "sent"):
                     sent_count += 1
+                    try:
+                        from mail_tenant import bump_usage
+                        tid = camp.get("tenant_id")
+                        if tid:
+                            bump_usage(conn, int(tid), sent=1)
+                    except Exception:
+                        pass
                 elif status == "skipped":
                     skipped_count += 1
                 elif status == "failed":
                     failed_count += 1
+                    try:
+                        from mail_tenant import bump_usage
+                        tid = camp.get("tenant_id")
+                        if tid:
+                            bump_usage(conn, int(tid), failed=1)
+                    except Exception:
+                        pass
                 else:
                     failed_count += 1
 

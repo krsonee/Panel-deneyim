@@ -1761,12 +1761,24 @@ def create_mailing_blueprint(permission_required):
     from mail_ops import ensure_mail_ops_schema
     from mail_scrub import cancel_active_scrub_jobs, ensure_mail_scrub_schema
 
-    ensure_campaign_scheduler()
+    external_worker = (os.environ.get("MAILING_WORKER_EXTERNAL") or "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+    if external_worker:
+        print("✉️  mailing: external worker mode — in-process scheduler kapalı")
+    else:
+        ensure_campaign_scheduler()
     try:
         with closing(get_db()) as conn:
             ensure_mail_ops_schema(conn)
             ensure_mail_scrub_schema(conn)
             ensure_mail_crm_schema(conn)
+            try:
+                from mail_tenant import ensure_tenant_schema
+                ensure_tenant_schema(conn)
+                conn.commit()
+            except Exception as ten_exc:
+                print(f"⚠️  mail tenant schema: {ten_exc}")
             try:
                 from mail_template_seeds import seed_makrobet_mail_templates
                 _seed_res = seed_makrobet_mail_templates(conn)
@@ -1785,14 +1797,16 @@ def create_mailing_blueprint(permission_required):
         cancel_active_scrub_jobs()
     except Exception as exc:
         print(f"⚠️  startup scrub cancel: {exc}")
-    try:
-        _purge_all_mail_contacts_once()
-    except Exception as exc:
-        print(f"⚠️  startup contacts purge: {exc}")
+    # Standalone MakroMail'de kontak purge kapalı (satış verisi)
+    if not external_worker and (os.environ.get("SERVICE_MODE") or "").strip().lower() != "mailing":
+        try:
+            _purge_all_mail_contacts_once()
+        except Exception as exc:
+            print(f"⚠️  startup contacts purge: {exc}")
     bp = Blueprint("mailing", __name__, url_prefix="/api/mailing")
 
     def mail_perm(*keys):
-        """Yetki + Makro mailing allowlist (varsayılan: yalnızca tolgakt)."""
+        """Yetki + (embedded) Makro allowlist — standalone mail session muaf."""
         decorated = permission_required(*keys)
 
         def decorator(view):
@@ -1806,6 +1820,10 @@ def create_mailing_blueprint(permission_required):
 
             @wraps(view)
             def wrapped(*args, **kwargs):
+                if session.get("mail_logged_in"):
+                    return inner(*args, **kwargs)
+                if (os.environ.get("SERVICE_MODE") or "").strip().lower() == "mailing":
+                    return inner(*args, **kwargs)
                 if not can_access_mailing(session.get("admin_username")):
                     return jsonify({"error": "Mailing yalnızca yetkili hesap içindir."}), 403
                 return inner(*args, **kwargs)
@@ -1947,6 +1965,14 @@ def create_mailing_blueprint(permission_required):
                 clauses.append("(LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR LOWER(phone) LIKE ?)")
                 like = f"%{q}%"
                 params.extend([like, like, like])
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid:
+                    clauses.append("tenant_id = ?")
+                    params.append(int(_tid))
+            except Exception:
+                pass
             where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
 
             # 3M satırda COUNT(*) + LIKE paneli kilitler / 15s abort
@@ -2010,9 +2036,46 @@ def create_mailing_blueprint(permission_required):
         now = iso(utcnow())
         tags = _tags_json(data.get("tags"))
         with closing(get_db()) as conn:
-            existing = fetchone(conn, "SELECT id FROM mail_contacts WHERE LOWER(email) = ?", (email,))
+            _tid = None
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+            except Exception:
+                _tid = None
+            if _tid:
+                existing = fetchone(
+                    conn,
+                    "SELECT id FROM mail_contacts WHERE LOWER(email) = ? AND tenant_id = ?",
+                    (email, int(_tid)),
+                )
+            else:
+                existing = fetchone(conn, "SELECT id FROM mail_contacts WHERE LOWER(email) = ?", (email,))
             if existing:
                 return jsonify({"error": "Bu e-posta zaten kayıtlı.", "id": existing["id"]}), 409
+            if _tid:
+                cid = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_contacts
+                    (email, phone, name, tags, source, unsubscribed, notes, created_at, updated_at, tenant_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        email,
+                        (data.get("phone") or "").strip(),
+                        (data.get("name") or "").strip(),
+                        tags,
+                        (data.get("source") or "manual").strip() or "manual",
+                        1 if data.get("unsubscribed") in (True, 1, "1", "true", "yes", "on") else 0,
+                        (data.get("notes") or "").strip(),
+                        now,
+                        now,
+                        int(_tid),
+                    ),
+                )
+                conn.commit()
+                row = fetchone(conn, "SELECT * FROM mail_contacts WHERE id = ?", (cid,))
+                return jsonify({"contact": _contact_out(row)}), 201
             cid = insert_returning_id(
                 conn,
                 """
@@ -2953,7 +3016,19 @@ def create_mailing_blueprint(permission_required):
         from mail_campaign_worker import is_campaign_running, start_campaign_send
 
         with closing(get_db()) as conn:
-            rows = _rows(fetchall(conn, "SELECT * FROM mail_campaigns ORDER BY id DESC LIMIT 100"))
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+            except Exception:
+                _tid = None
+            if _tid:
+                rows = _rows(fetchall(
+                    conn,
+                    "SELECT * FROM mail_campaigns WHERE tenant_id = ? ORDER BY id DESC LIMIT 100",
+                    (int(_tid),),
+                ))
+            else:
+                rows = _rows(fetchall(conn, "SELECT * FROM mail_campaigns ORDER BY id DESC LIMIT 100"))
             for r in rows:
                 r["recipient_count"] = r.get("total_count") or scalar(
                     conn,
@@ -3049,6 +3124,19 @@ def create_mailing_blueprint(permission_required):
                 return jsonify({"error": "Şablon bulunamadı."}), 404
             if not fetchone(conn, "SELECT id FROM mail_domains WHERE id = ?", (domain_id,)):
                 return jsonify({"error": "Domain bulunamadı."}), 404
+            # Managed send: tenant sadece tahsisli domain kullanır
+            try:
+                from mail_tenant import assert_tenant_domain, current_tenant_id, tenant_send_allowed
+                _tid = current_tenant_id()
+                if _tid:
+                    assert_tenant_domain(conn, int(domain_id), int(_tid))
+                    ok_send, send_err = tenant_send_allowed(conn, int(_tid))
+                    if not ok_send:
+                        return jsonify({"error": send_err}), 400
+            except PermissionError as p_exc:
+                return jsonify({"error": str(p_exc)}), 403
+            except Exception:
+                pass
             notes_extra = (data.get("notes") or "").strip()
             if recipient_mode != "tag":
                 tag_filter = ""
@@ -3056,22 +3144,46 @@ def create_mailing_blueprint(permission_required):
                     notes_extra = f"[{recipient_mode}] {notes_extra}"
                 else:
                     notes_extra = f"[{recipient_mode}]"
-            cid = insert_returning_id(
-                conn,
-                """
-                INSERT INTO mail_campaigns
-                (name, campaign_type, template_id, domain_id, status, tag_filter, notes,
-                 scheduled_at, rate_per_minute, max_recipients, exclude_previously_sent,
-                 total_count, sent_count, failed_count, skipped_count, error,
-                 created_at, updated_at)
-                VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?)
-                """,
-                (
-                    name, template_id, domain_id, tag_filter, notes_extra,
-                    scheduled_raw, rate, max_recipients, 1 if exclude_sent else 0,
-                    now, now,
-                ),
-            )
+            _tid = None
+            try:
+                from mail_tenant import current_tenant_id as _ctid
+                _tid = _ctid()
+            except Exception:
+                _tid = None
+            if _tid:
+                cid = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_campaigns
+                    (name, campaign_type, template_id, domain_id, status, tag_filter, notes,
+                     scheduled_at, rate_per_minute, max_recipients, exclude_previously_sent,
+                     total_count, sent_count, failed_count, skipped_count, error,
+                     created_at, updated_at, tenant_id)
+                    VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?, ?)
+                    """,
+                    (
+                        name, template_id, domain_id, tag_filter, notes_extra,
+                        scheduled_raw, rate, max_recipients, 1 if exclude_sent else 0,
+                        now, now, int(_tid),
+                    ),
+                )
+            else:
+                cid = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_campaigns
+                    (name, campaign_type, template_id, domain_id, status, tag_filter, notes,
+                     scheduled_at, rate_per_minute, max_recipients, exclude_previously_sent,
+                     total_count, sent_count, failed_count, skipped_count, error,
+                     created_at, updated_at)
+                    VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?)
+                    """,
+                    (
+                        name, template_id, domain_id, tag_filter, notes_extra,
+                        scheduled_raw, rate, max_recipients, 1 if exclude_sent else 0,
+                        now, now,
+                    ),
+                )
             attached = _attach_campaign_recipients(
                 conn, cid, tag_filter=tag_filter, max_recipients=max_recipients,
                 exclude_previously_sent=exclude_sent, now=now, only_verified=only_verified,
@@ -3653,8 +3765,17 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/domains", methods=["GET"])
     @mail_perm(*MAIL_SET)
     def list_domains():
+        from flask import session as _sess
+        from mail_tenant import current_tenant_id, list_allocated_domains
+
         with closing(get_db()) as conn:
-            rows = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC")
+            tid = current_tenant_id()
+            if _sess.get("mail_is_superadmin") and not tid:
+                rows = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC")
+            elif tid:
+                rows = list_allocated_domains(conn, int(tid))
+            else:
+                rows = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC")
         return jsonify({"domains": [_domain_public(r) for r in (rows or [])]})
 
     @bp.route("/domains/<int:domain_id>", methods=["PATCH"])
@@ -3722,7 +3843,19 @@ def create_mailing_blueprint(permission_required):
             settings["webhook_secret_masked"] = _mask_secret(settings.get("webhook_secret") or "")
             scrub = _scrub_settings(conn)
             settings["scrub"] = scrub
-            domains = [_domain_public(r) for r in (fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC") or [])]
+            try:
+                from mail_tenant import current_tenant_id, list_allocated_domains
+                from flask import session as _sess
+                _tid = current_tenant_id()
+                if _sess.get("mail_is_superadmin") and not _tid:
+                    dom_rows = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC") or []
+                elif _tid:
+                    dom_rows = list_allocated_domains(conn, int(_tid)) or []
+                else:
+                    dom_rows = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC") or []
+            except Exception:
+                dom_rows = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC") or []
+            domains = [_domain_public(r) for r in dom_rows]
         return jsonify({"settings": settings, "domains": domains})
 
     @bp.route("/settings", methods=["PATCH"])
