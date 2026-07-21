@@ -97,6 +97,7 @@
                 <div><label>SMTP password</label><input id="mm-d-smtp" type="password" placeholder="opsiyonel"></div>
                 <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" type="submit">Domain ekle</button></div>
               </form>
+              <p class="hint" id="mm-domain-edit-hint" style="margin:0 0 0.75rem;"></p>
             </div>
             <div class="table-wrap"><div class="table-scroll">
               <table>
@@ -116,8 +117,8 @@
     window.MAIL_STANDALONE = true;
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
   </script>
-  <script src="/static/mailing.js?v=20260720mm1"></script>
-  <script src="/static/mailing_platform.js?v=20260720mm1"></script>
+  <script src="/static/mailing.js?v=20260721mm2"></script>
+  <script src="/static/mailing_platform.js?v=20260721mm2"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

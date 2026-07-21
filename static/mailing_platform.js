@@ -62,6 +62,36 @@
     });
   }
 
+  var _editDomainId = null;
+
+  function setDomainFormMode(editId, d) {
+    _editDomainId = editId || null;
+    var form = document.getElementById("mm-domain-form");
+    var btn = form && form.querySelector('button[type="submit"]');
+    var hint = document.getElementById("mm-domain-edit-hint");
+    var domainInp = document.getElementById("mm-d-domain");
+    if (!form) return;
+    if (editId && d) {
+      if (domainInp) {
+        domainInp.value = d.domain || "";
+        domainInp.readOnly = true;
+      }
+      document.getElementById("mm-d-from").value = d.from_name || "VIP";
+      document.getElementById("mm-d-warm").value = d.warm_status || "cold";
+      document.getElementById("mm-d-cap").value = d.daily_cap != null ? d.daily_cap : 500;
+      document.getElementById("mm-d-smtp").value = "";
+      document.getElementById("mm-d-smtp").placeholder = d.smtp_password_set ? "Boş = şifre aynı kalsın" : "SMTP şifresi";
+      if (btn) btn.textContent = "Domain kaydet";
+      if (hint) hint.textContent = "Düzenleniyor: " + (d.domain || ("#" + editId)) + " — iptal için Yenile";
+      form.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      if (domainInp) domainInp.readOnly = false;
+      if (btn) btn.textContent = "Domain ekle";
+      if (hint) hint.textContent = "";
+      document.getElementById("mm-d-smtp").placeholder = "opsiyonel";
+    }
+  }
+
   function refreshDomains() {
     return api("/api/platform/domains").then(function (res) {
       var tbody = document.getElementById("mm-domains-table");
@@ -71,6 +101,7 @@
         return;
       }
       var rows = res.data.domains || [];
+      window._mmDomainsCache = rows;
       if (!rows.length) {
         tbody.innerHTML = '<tr><td colspan="6" class="empty">Domain yok</td></tr>';
         return;
@@ -86,6 +117,7 @@
           "<td>" + esc(d.health_score) + "</td>" +
           "<td>" + alloc + "</td>" +
           '<td style="white-space:nowrap;">' +
+          '<button type="button" class="btn btn-sm mm-edit-domain" data-id="' + esc(d.id) + '">Düzenle</button> ' +
           '<button type="button" class="btn btn-sm mm-alloc" data-id="' + esc(d.id) + '">Tahsis</button> ' +
           '<button type="button" class="btn btn-sm mm-warm" data-id="' + esc(d.id) + '">Warming</button>' +
           "</td></tr>";
@@ -134,20 +166,36 @@
       });
       document.getElementById("mm-domain-form")?.addEventListener("submit", function (e) {
         e.preventDefault();
-        api("/api/platform/domains", {
-          method: "POST",
-          body: {
-            domain: document.getElementById("mm-d-domain").value.trim(),
-            from_name: document.getElementById("mm-d-from").value.trim(),
-            warm_status: document.getElementById("mm-d-warm").value,
-            daily_cap: Number(document.getElementById("mm-d-cap").value) || 500,
-            smtp_password: document.getElementById("mm-d-smtp").value
-          }
-        }).then(function (res) {
+        var body = {
+          from_name: document.getElementById("mm-d-from").value.trim(),
+          warm_status: document.getElementById("mm-d-warm").value,
+          daily_cap: Number(document.getElementById("mm-d-cap").value) || 500
+        };
+        var smtp = document.getElementById("mm-d-smtp").value;
+        if (smtp) body.smtp_password = smtp;
+        if (_editDomainId) {
+          api("/api/platform/domains/" + _editDomainId, { method: "PATCH", body: body }).then(function (res) {
+            if (!res.ok) { alert(res.data.error || "Kaydedilemedi"); return; }
+            e.target.reset();
+            setDomainFormMode(null);
+            refreshDomains();
+            alert("Domain güncellendi");
+          });
+          return;
+        }
+        body.domain = document.getElementById("mm-d-domain").value.trim();
+        body.smtp_password = smtp || "";
+        api("/api/platform/domains", { method: "POST", body: body }).then(function (res) {
           if (!res.ok) { alert(res.data.error || "Hata"); return; }
           e.target.reset();
+          setDomainFormMode(null);
           refreshDomains();
         });
+      });
+      document.getElementById("mm-domains-refresh")?.addEventListener("click", function () {
+        setDomainFormMode(null);
+        var form = document.getElementById("mm-domain-form");
+        if (form) form.reset();
       });
       document.addEventListener("click", function (e) {
         var sus = e.target.closest(".mm-suspend");
@@ -155,6 +203,13 @@
           var id = Number(sus.getAttribute("data-id"));
           var st = sus.getAttribute("data-status");
           api("/api/platform/tenants/" + id, { method: "PATCH", body: { status: st } }).then(refreshTenants);
+          return;
+        }
+        var editBtn = e.target.closest(".mm-edit-domain");
+        if (editBtn) {
+          var eid = Number(editBtn.getAttribute("data-id"));
+          var found = (window._mmDomainsCache || []).find(function (x) { return Number(x.id) === eid; });
+          if (found) setDomainFormMode(eid, found);
           return;
         }
         var warm = e.target.closest(".mm-warm");
@@ -167,7 +222,7 @@
         var alloc = e.target.closest(".mm-alloc");
         if (alloc) {
           var domainId = Number(alloc.getAttribute("data-id"));
-          var tid = prompt("Tahsis edilecek tenant id?");
+          var tid = prompt("Tahsis edilecek tenant id? (Makro = 1)");
           if (!tid) return;
           api("/api/platform/domains/" + domainId + "/allocate", {
             method: "POST",
