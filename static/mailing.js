@@ -2180,17 +2180,20 @@
       if (!tbody) return;
       var rows = (sendsRes && sendsRes.ok && sendsRes.data.sends) || [];
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty">Gönderim yok</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">Gönderim yok</td></tr>';
         return;
       }
       tbody.innerHTML = rows.map(function (s) {
+        var err = (s.error || "").trim();
         return "<tr>" +
           "<td>" + esc(fmtTime(s.created_at)) + "</td>" +
           "<td>" + esc(s.channel) + "</td>" +
           "<td>" + esc(s.to_email) + "</td>" +
           "<td>" + esc(s.subject) + "</td>" +
-          "<td>" + esc(s.status) + (s.error ? (' <span class="muted" title="' + esc(s.error) + '">!</span>') : "") + "</td>" +
-          "<td>" + esc(s.provider_msg_id) + "</td></tr>";
+          "<td>" + esc(s.status) + "</td>" +
+          "<td style=\"max-width:280px;font-size:0.78rem;color:#fca5a5;\">" +
+            (err ? esc(err) : '<span class="muted">—</span>') + "</td>" +
+          "<td>" + esc(s.provider_msg_id || "") + "</td></tr>";
       }).join("");
     });
   }
