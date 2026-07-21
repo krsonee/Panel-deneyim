@@ -1775,16 +1775,30 @@ def migrate_staff_roster(conn):
 
 def _table_columns(conn, table_name):
     if uses_postgres():
+        rows = fetchall(
+            conn,
+            """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = ?
+              AND table_schema NOT IN ('pg_catalog', 'information_schema')
+            """,
+            (table_name,),
+        ) or []
+        cols = {r["column_name"] for r in rows}
+        if cols:
+            return cols
+        # fallback: search_path şemaları
         return {
             r["column_name"]
             for r in fetchall(
                 conn,
                 """
                 SELECT column_name FROM information_schema.columns
-                WHERE table_name = ?
+                WHERE table_schema = ANY (current_schemas(false))
+                  AND table_name = ?
                 """,
                 (table_name,),
-            )
+            ) or []
         }
     exists = scalar(
         conn,
@@ -3053,9 +3067,6 @@ def ensure_mail_click_links_table(conn):
 
 def migrate_mail_campaigns_pro(conn):
     """Kampanya profesyonel gönderim alanları: zamanlama, hız, ilerleme, iptal."""
-    cols = _table_columns(conn, "mail_campaigns") or set()
-    if not cols:
-        return
     extras = [
         ("scheduled_at", "TEXT"),
         ("started_at", "TEXT"),
@@ -3069,17 +3080,31 @@ def migrate_mail_campaigns_pro(conn):
         ("error", "TEXT NOT NULL DEFAULT ''"),
     ]
     for name, typedef in extras:
-        if name not in cols:
+        cols = _table_columns(conn, "mail_campaigns") or set()
+        if not cols:
+            break
+        if name in cols:
+            continue
+        try:
+            execute(conn, f"ALTER TABLE mail_campaigns ADD COLUMN {name} {typedef}")
+            conn.commit()
+            print(f"✉️  mail_campaigns +{name}")
+        except Exception as exc:
+            print(f"⚠️  mail_campaigns ADD {name}: {exc}")
             try:
-                execute(conn, f"ALTER TABLE mail_campaigns ADD COLUMN {name} {typedef}")
+                conn.rollback()
             except Exception:
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
-    execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_campaigns_status ON mail_campaigns(status)")
-    execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_camp_recip_camp_status ON mail_campaign_recipients(campaign_id, status)")
-    conn.commit()
+                pass
+    try:
+        execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_campaigns_status ON mail_campaigns(status)")
+        execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_camp_recip_camp_status ON mail_campaign_recipients(campaign_id, status)")
+        conn.commit()
+    except Exception as exc:
+        print(f"⚠️  mail_campaigns indexes: {exc}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     # Etiket sayacı — CRM'in 3M satırda her seferinde taranmasını önler
     tag_cols = _table_columns(conn, "mail_contact_tags") or set()
     if tag_cols and "contact_count" not in tag_cols:

@@ -557,9 +557,12 @@ def _register_mailing():
 
 
 def _startup():
+    from database import migrate_mail_campaigns_pro
+
     with closing(get_db()) as conn:
         init_mailing_schema(conn)
         ensure_tenant_schema(conn)
+        migrate_mail_campaigns_pro(conn)
         conn.commit()
     init_mail_tenant_layer()
     _register_mailing()

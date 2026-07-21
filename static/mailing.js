@@ -3007,6 +3007,21 @@
       });
     });
 
+    function mailCampWhenMode() {
+      var el = document.querySelector('input[name="mail-camp-when"]:checked');
+      return (el && el.value) || "now";
+    }
+
+    function mailSyncCampWhenUI() {
+      var when = mailCampWhenMode();
+      var wrap = document.getElementById("mail-camp-schedule-wrap");
+      var sched = document.getElementById("mail-camp-schedule");
+      var btn = document.getElementById("mail-camp-submit");
+      if (wrap) wrap.hidden = when !== "schedule";
+      if (when !== "schedule" && sched) sched.value = "";
+      if (btn) btn.textContent = when === "schedule" ? "Zamanla ve oluştur" : "Oluştur ve gönder";
+    }
+
     function mailCampSelectionPayload() {
       var maxEl = document.getElementById("mail-camp-max");
       var maxVal = maxEl && maxEl.value ? Number(maxEl.value) : null;
@@ -3015,13 +3030,18 @@
       var onlyV = document.getElementById("mail-camp-only-verified");
       var mode = mailCampRecipientMode();
       var tags = mode === "tag" ? mailCampSelectedTags() : [];
+      var when = mailCampWhenMode();
+      var scheduled = when === "schedule"
+        ? ((document.getElementById("mail-camp-schedule") || {}).value || "").trim()
+        : "";
       var body = {
         recipient_mode: mode,
         tag_filter: tags.join(", "),
         tag_filters: tags,
         max_recipients: maxVal,
         rate_per_minute: rateVal || 120,
-        scheduled_at: (document.getElementById("mail-camp-schedule").value || "").trim(),
+        scheduled_at: scheduled,
+        send_mode: when,
         exclude_previously_sent: document.getElementById("mail-camp-exclude-sent").checked,
         only_verified: onlyV ? !!onlyV.checked : false
       };
@@ -3038,6 +3058,10 @@
       radio.addEventListener("change", mailSyncCampRecipientModeUI);
     });
     mailSyncCampRecipientModeUI();
+    document.querySelectorAll('input[name="mail-camp-when"]').forEach(function (radio) {
+      radio.addEventListener("change", mailSyncCampWhenUI);
+    });
+    mailSyncCampWhenUI();
 
     var campTagList = document.getElementById("mail-camp-tag-list");
     if (campTagList) {
@@ -3087,6 +3111,11 @@
           mailToast("Şablon ve domain seçin");
           return;
         }
+        var when = mailCampWhenMode();
+        if (when === "schedule" && !body.scheduled_at) {
+          mailToast("Zamanla seçili — gönderim zamanı seç");
+          return;
+        }
         var submitBtn = campForm.querySelector('button[type="submit"]');
         if (submitBtn) submitBtn.disabled = true;
         mailEnsureTenant().then(function (tid) {
@@ -3097,32 +3126,53 @@
           }
           return mailApi("/api/mailing/campaigns", { method: "POST", body: body, timeoutMs: 120000 });
         }).then(function (res) {
-          if (submitBtn) submitBtn.disabled = false;
-          if (!res) return;
+          if (!res) {
+            if (submitBtn) submitBtn.disabled = false;
+            return null;
+          }
           if (!res.ok) {
+            if (submitBtn) submitBtn.disabled = false;
             mailToast((res.data && res.data.error) || ("Oluşturulamadı (HTTP " + res.status + ")"));
-            return;
+            return null;
           }
           var camp = res.data.campaign || {};
-          var toastMsg = "Kampanya oluşturuldu · " + fmtNum(camp.recipient_count || 0) + " alıcı";
-          var tb = camp.tag_breakdown || [];
-          if (tb.length) {
-            toastMsg += " · " + tb.map(function (x) {
-              return (x.tag || "") + ": " + fmtNum(x.count || 0);
-            }).join(", ");
+          var campId = camp.id;
+          if (!campId) {
+            if (submitBtn) submitBtn.disabled = false;
+            mailToast("Kampanya oluştu ama id yok");
+            return null;
           }
-          mailToast(toastMsg);
-          if (mailCampRecipientMode() === "selected") mailWriteCampSelectedIds([]);
-          campForm.reset();
-          document.getElementById("mail-camp-exclude-sent").checked = true;
-          document.getElementById("mail-camp-rate").value = "120";
-          var modeTag = document.querySelector('input[name="mail-camp-recipient-mode"][value="tag"]');
-          if (modeTag) modeTag.checked = true;
-          mailSyncCampRecipientModeUI();
-          mailFillCampTagSelect();
-          var hint = document.getElementById("mail-camp-preview-hint");
-          if (hint) hint.textContent = "";
-          mailLoadCampaigns();
+          // Hemen / zamanla → kuyruğa al
+          return mailApi("/api/mailing/campaigns/" + campId + "/queue", {
+            method: "POST",
+            body: { send_now: when === "now" },
+            timeoutMs: 60000
+          }).then(function (qRes) {
+            if (submitBtn) submitBtn.disabled = false;
+            if (!qRes || !qRes.ok) {
+              mailToast(
+                "Taslak oluştu (#" + campId + ") ama kuyruk hatası: " +
+                ((qRes && qRes.data && qRes.data.error) || "bilinmiyor")
+              );
+              mailLoadCampaigns();
+              return;
+            }
+            mailToast(qRes.data.message || ("Kampanya #" + campId + " hazır"));
+            if (mailCampRecipientMode() === "selected") mailWriteCampSelectedIds([]);
+            campForm.reset();
+            document.getElementById("mail-camp-exclude-sent").checked = true;
+            document.getElementById("mail-camp-rate").value = "120";
+            var modeTag = document.querySelector('input[name="mail-camp-recipient-mode"][value="tag"]');
+            if (modeTag) modeTag.checked = true;
+            var whenNow = document.querySelector('input[name="mail-camp-when"][value="now"]');
+            if (whenNow) whenNow.checked = true;
+            mailSyncCampRecipientModeUI();
+            mailSyncCampWhenUI();
+            mailFillCampTagSelect();
+            var hint = document.getElementById("mail-camp-preview-hint");
+            if (hint) hint.textContent = "";
+            mailLoadCampaigns();
+          });
         }).catch(function () {
           if (submitBtn) submitBtn.disabled = false;
           mailToast("Kampanya isteği patladı — tekrar dene");

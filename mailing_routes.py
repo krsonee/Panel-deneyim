@@ -3216,9 +3216,32 @@ def create_mailing_blueprint(permission_required):
                 _tid = _ctid()
             except Exception:
                 _tid = None
-            from database import _table_columns
+            from database import _table_columns, migrate_mail_campaigns_pro
+
+            # Mikromail DB'de pro kolonlar eksik kalmış olabilir — insert öncesi garanti et
+            try:
+                migrate_mail_campaigns_pro(conn)
+            except Exception as mig_exc:
+                print(f"⚠️  campaign migrate before insert: {mig_exc}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
             camp_cols = _table_columns(conn, "mail_campaigns") or set()
+            required_pro = (
+                "scheduled_at", "rate_per_minute", "max_recipients",
+                "exclude_previously_sent", "total_count", "sent_count",
+                "failed_count", "skipped_count", "error",
+            )
+            missing = [c for c in required_pro if c not in camp_cols]
+            if missing:
+                return jsonify({
+                    "error": "Veritabanı güncel değil (eksik kolon: "
+                             + ", ".join(missing)
+                             + "). Render’da mikromail servisini Restart et."
+                }), 500
+
             insert_params = (
                 name, template_id, domain_id, tag_filter, notes_extra,
                 scheduled_raw, rate, max_recipients, 1 if exclude_sent else 0,
