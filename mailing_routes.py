@@ -822,10 +822,14 @@ def _insert_campaign_recipient_ids(conn, campaign_id, contact_ids, now):
 
 def _filter_sendable_contact_ids(conn, ids, *, exclude_previously_sent=False, only_verified=False):
     """Verilen ID listesini unsub/suppression/(opsiyonel) verify filtrelerinden geçir."""
+    from database import _table_columns
+
     ids = [int(x) for x in (ids or []) if str(x).isdigit() or isinstance(x, int)]
     ids = list(dict.fromkeys(ids))
     if not ids:
         return []
+    cols = _table_columns(conn, "mail_contacts") or set()
+    has_verify = "verify_status" in cols
     out = []
     for i in range(0, len(ids), 500):
         chunk = ids[i:i + 500]
@@ -833,14 +837,35 @@ def _filter_sendable_contact_ids(conn, ids, *, exclude_previously_sent=False, on
         clauses = [
             f"id IN ({ph})",
             "unsubscribed = 0",
-            "NOT EXISTS (SELECT 1 FROM mail_suppressions s WHERE s.email = LOWER(mail_contacts.email))",
         ]
         params = list(chunk)
+        # suppression tablosu yoksa transaction öldürmesin
+        try:
+            from database import uses_postgres
+            if uses_postgres():
+                exists = scalar(
+                    conn,
+                    """
+                    SELECT COUNT(*) FROM information_schema.tables
+                    WHERE table_name = 'mail_suppressions'
+                    """,
+                )
+            else:
+                exists = scalar(
+                    conn,
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='mail_suppressions'",
+                )
+            if exists:
+                clauses.append(
+                    "NOT EXISTS (SELECT 1 FROM mail_suppressions s WHERE s.email = LOWER(mail_contacts.email))"
+                )
+        except Exception:
+            pass
         if exclude_previously_sent:
             clauses.append(
                 "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
             )
-        if only_verified:
+        if only_verified and has_verify:
             clauses.append("LOWER(COALESCE(verify_status, '')) IN ('valid', 'mx_ok')")
         rows = fetchall(
             conn,
@@ -852,7 +877,13 @@ def _filter_sendable_contact_ids(conn, ids, *, exclude_previously_sent=False, on
 
 
 def _ensure_contacts_from_emails(conn, emails, now):
-    """Elle girilen e-postaları kontak olarak upsert eder; id listesi döner."""
+    """Elle girilen e-postaları kontak olarak upsert eder; id listesi döner.
+
+    Postgres'te başarısız SQL transaction'ı öldürür — try/except ile
+    ikinci sorgu çalışmaz. Bu yüzden kolonları önce kontrol ediyoruz.
+    """
+    from database import _table_columns
+
     cleaned = []
     seen = set()
     for raw in emails or []:
@@ -865,13 +896,14 @@ def _ensure_contacts_from_emails(conn, emails, now):
         cleaned.append(em)
     if not cleaned:
         return []
+    cols = _table_columns(conn, "mail_contacts") or set()
+    has_verify = "verify_status" in cols
     ids = []
     for em in cleaned:
         row = fetchone(conn, "SELECT id FROM mail_contacts WHERE LOWER(email) = ?", (em,))
         if row:
             ids.append(int(row["id"]))
-            # Elle test: doğrulanmış filtresine takılmasın
-            try:
+            if has_verify:
                 execute(
                     conn,
                     """
@@ -884,10 +916,8 @@ def _ensure_contacts_from_emails(conn, emails, now):
                     """,
                     (int(row["id"]),),
                 )
-            except Exception:
-                pass
             continue
-        try:
+        if has_verify:
             cid = insert_returning_id(
                 conn,
                 """
@@ -897,7 +927,7 @@ def _ensure_contacts_from_emails(conn, emails, now):
                 """,
                 (em, now, now),
             )
-        except Exception:
+        else:
             cid = insert_returning_id(
                 conn,
                 """
@@ -3186,30 +3216,28 @@ def create_mailing_blueprint(permission_required):
                 _tid = _ctid()
             except Exception:
                 _tid = None
+            from database import _table_columns
+
+            camp_cols = _table_columns(conn, "mail_campaigns") or set()
             insert_params = (
                 name, template_id, domain_id, tag_filter, notes_extra,
                 scheduled_raw, rate, max_recipients, 1 if exclude_sent else 0,
                 now, now,
             )
-            cid = None
-            if _tid:
-                try:
-                    cid = insert_returning_id(
-                        conn,
-                        """
-                        INSERT INTO mail_campaigns
-                        (name, campaign_type, template_id, domain_id, status, tag_filter, notes,
-                         scheduled_at, rate_per_minute, max_recipients, exclude_previously_sent,
-                         total_count, sent_count, failed_count, skipped_count, error,
-                         created_at, updated_at, tenant_id)
-                        VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?, ?)
-                        """,
-                        insert_params + (int(_tid),),
-                    )
-                except Exception as tid_exc:
-                    print(f"⚠️  campaign insert tenant_id: {tid_exc}")
-                    cid = None
-            if not cid:
+            if _tid and "tenant_id" in camp_cols:
+                cid = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_campaigns
+                    (name, campaign_type, template_id, domain_id, status, tag_filter, notes,
+                     scheduled_at, rate_per_minute, max_recipients, exclude_previously_sent,
+                     total_count, sent_count, failed_count, skipped_count, error,
+                     created_at, updated_at, tenant_id)
+                    VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?, ?)
+                    """,
+                    insert_params + (int(_tid),),
+                )
+            else:
                 cid = insert_returning_id(
                     conn,
                     """
@@ -3233,8 +3261,10 @@ def create_mailing_blueprint(permission_required):
                 )
             except Exception as attach_exc:
                 print(f"⚠️  campaign attach: {attach_exc}")
-                execute(conn, "DELETE FROM mail_campaigns WHERE id = ?", (cid,))
-                conn.commit()
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
                 return jsonify({"error": f"Alıcılar eklenemedi: {attach_exc}"}), 500
             if recipient_mode == "manual" and int(attached or 0) == 0:
                 execute(conn, "DELETE FROM mail_campaigns WHERE id = ?", (cid,))
