@@ -89,7 +89,8 @@
             <div class="card-body">
               <form id="mm-domain-form" class="form-row-4" style="margin-bottom:1rem;">
                 <div><label>Domain</label><input id="mm-d-domain" required placeholder="vipozelileti.com"></div>
-                <div><label>From name</label><input id="mm-d-from" value="VIP"></div>
+                <div><label>From name (görünen ad)</label><input id="mm-d-from" value="VIP"></div>
+                <div><label>From local (örn. info)</label><input id="mm-d-local" value="info" placeholder="info"></div>
                 <div><label>Warm status</label>
                   <select id="mm-d-warm"><option value="cold">cold</option><option value="warming">warming</option><option value="warm">warm</option><option value="paused">paused</option><option value="burned">burned</option></select>
                 </div>
@@ -117,8 +118,8 @@
     window.MAIL_STANDALONE = true;
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
   </script>
-  <script src="/static/mailing.js?v=20260721mm2"></script>
-  <script src="/static/mailing_platform.js?v=20260721mm2"></script>
+  <script src="/static/mailing.js?v=20260721mm3"></script>
+  <script src="/static/mailing_platform.js?v=20260721mm3"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

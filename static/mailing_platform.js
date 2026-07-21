@@ -77,6 +77,8 @@
         domainInp.readOnly = true;
       }
       document.getElementById("mm-d-from").value = d.from_name || "VIP";
+      var localEl = document.getElementById("mm-d-local");
+      if (localEl) localEl.value = d.from_local || "info";
       document.getElementById("mm-d-warm").value = d.warm_status || "cold";
       document.getElementById("mm-d-cap").value = d.daily_cap != null ? d.daily_cap : 500;
       document.getElementById("mm-d-smtp").value = "";
@@ -168,6 +170,9 @@
         e.preventDefault();
         var body = {
           from_name: document.getElementById("mm-d-from").value.trim(),
+          from_local: (document.getElementById("mm-d-local") || {}).value
+            ? document.getElementById("mm-d-local").value.trim()
+            : "info",
           warm_status: document.getElementById("mm-d-warm").value,
           daily_cap: Number(document.getElementById("mm-d-cap").value) || 500
         };
