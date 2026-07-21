@@ -384,68 +384,78 @@ def _platform_domain_public(row):
 @app.patch("/api/platform/domains/<int:domain_id>")
 @require_superadmin
 def platform_patch_domain(domain_id):
+    """Panel kaydı — DNS/NS/Cloudflare gerekmez; sadece DB günceller."""
     data = request.get_json(silent=True) or {}
     with closing(get_db()) as conn:
         row = fetchone(conn, "SELECT * FROM mail_domains WHERE id = ?", (domain_id,))
         if not row:
-            return jsonify({"error": "Yok."}), 404
+            return jsonify({"error": "Domain bulunamadı."}), 404
         row = dict(row)
-        fields = {
-            "from_name": (data.get("from_name") if "from_name" in data else row.get("from_name") or "").strip(),
-            "from_local": (data.get("from_local") if "from_local" in data else row.get("from_local") or "info").strip() or "info",
-            "status": (data.get("status") if "status" in data else row.get("status") or "pending").strip(),
-            "dns_status": (data.get("dns_status") if "dns_status" in data else row.get("dns_status") or "unconfigured").strip(),
-            "notes": (data.get("notes") if "notes" in data else row.get("notes") or "").strip(),
-            "warm_status": (data.get("warm_status") if "warm_status" in data else row.get("warm_status") or "cold").strip() or "cold",
-            "warm_day": int(data["warm_day"]) if "warm_day" in data else int(row.get("warm_day") or 0),
-            "daily_cap": int(data["daily_cap"]) if "daily_cap" in data else int(row.get("daily_cap") or 500),
-            "hourly_cap": int(data["hourly_cap"]) if "hourly_cap" in data else int(row.get("hourly_cap") or 50),
-            "health_score": int(data["health_score"]) if "health_score" in data else int(row.get("health_score") or 100),
-        }
+
+        from_name = (data["from_name"] if "from_name" in data else row.get("from_name") or "")
+        from_name = (str(from_name) if from_name is not None else "").strip() or "VIP"
+        from_local = (data["from_local"] if "from_local" in data else row.get("from_local") or "info")
+        from_local = (str(from_local) if from_local is not None else "").strip() or "info"
+        warm_status = (data["warm_status"] if "warm_status" in data else row.get("warm_status") or "cold")
+        warm_status = (str(warm_status) if warm_status is not None else "").strip() or "cold"
+        try:
+            daily_cap = int(data["daily_cap"]) if "daily_cap" in data else int(row.get("daily_cap") or 500)
+        except (TypeError, ValueError):
+            daily_cap = 500
+        if "warm_day" in data:
+            try:
+                warm_day = int(data["warm_day"])
+            except (TypeError, ValueError):
+                warm_day = int(row.get("warm_day") or 0)
+        else:
+            warm_day = int(row.get("warm_day") or 0)
+
         enc = row.get("smtp_password_enc") or row.get("smtp_password") or ""
         if data.get("smtp_password"):
-            enc = encrypt_secret(str(data["smtp_password"]).strip())
-        params = (
-            fields["from_name"], fields["from_local"], fields["status"], fields["dns_status"], fields["notes"],
-            fields["warm_status"], fields["warm_day"], fields["daily_cap"], fields["hourly_cap"],
-            fields["health_score"], enc, domain_id,
-        )
-        try:
-            execute(
-                conn,
+            try:
+                enc = encrypt_secret(str(data["smtp_password"]).strip())
+            except Exception as exc:
+                print(f"⚠️  smtp encrypt: {exc}")
+                return jsonify({"error": "SMTP şifresi şifrelenemedi. MAILING_SECRET_KEY kontrol et."}), 500
+
+        # Önce sade UPDATE (form alanları) — DNS kolonlarına dokunma
+        last_err = None
+        for sql, params in (
+            (
                 """
                 UPDATE mail_domains SET
-                    from_name=?, from_local=?, status=?, dns_status=?, notes=?,
-                    warm_status=?, warm_day=?, daily_cap=?, hourly_cap=?, health_score=?,
+                    from_name=?, from_local=?, warm_status=?, warm_day=?, daily_cap=?,
                     smtp_password_enc=?
                 WHERE id=?
                 """,
-                params,
-            )
-        except Exception as exc:
-            print(f"⚠️  platform domain patch (full): {exc}")
+                (from_name, from_local, warm_status, warm_day, daily_cap, enc, domain_id),
+            ),
+            (
+                """
+                UPDATE mail_domains SET
+                    from_name=?, from_local=?, warm_status=?, daily_cap=?,
+                    smtp_password=?
+                WHERE id=?
+                """,
+                (from_name, from_local, warm_status, daily_cap, enc, domain_id),
+            ),
+            (
+                """
+                UPDATE mail_domains SET from_name=?, from_local=? WHERE id=?
+                """,
+                (from_name, from_local, domain_id),
+            ),
+        ):
             try:
-                execute(
-                    conn,
-                    """
-                    UPDATE mail_domains SET
-                        from_name=?, from_local=?, status=?, dns_status=?, notes=?,
-                        smtp_password=?
-                    WHERE id=?
-                    """,
-                    (
-                        fields["from_name"], fields["from_local"], fields["status"],
-                        fields["dns_status"], fields["notes"], enc, domain_id,
-                    ),
-                )
-            except Exception as exc2:
-                print(f"⚠️  platform domain patch (basic): {exc2}")
-                return jsonify({"error": "Domain kaydedilemedi (veritabanı)."}), 500
-        else:
-            try:
-                execute(conn, "UPDATE mail_domains SET smtp_password = ? WHERE id = ?", ("", domain_id))
-            except Exception:
-                pass
+                execute(conn, sql, params)
+                last_err = None
+                break
+            except Exception as exc:
+                last_err = exc
+                print(f"⚠️  platform domain patch: {exc}")
+        if last_err:
+            return jsonify({"error": f"Domain kaydedilemedi: {last_err}"}), 500
+
         conn.commit()
         updated = fetchone(conn, "SELECT * FROM mail_domains WHERE id = ?", (domain_id,))
     return jsonify({"ok": True, "domain": _platform_domain_public(updated)})

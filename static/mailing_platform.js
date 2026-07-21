@@ -199,7 +199,11 @@
     api(path, { method: method, body: body })
       .then(function (res) {
         if (!res.ok) {
-          setDomainHint(res.data.error || "Kaydedilemedi", true);
+          var err = (res.data && res.data.error) || ("Kaydedilemedi (HTTP " + res.status + ")");
+          if (res.status === 401 || res.status === 403) {
+            err = "Oturum düşmüş — sayfayı yenile, tekrar giriş yap, sonra kaydet";
+          }
+          setDomainHint(err, true);
           return;
         }
         var saved = res.data.domain;
