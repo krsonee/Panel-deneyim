@@ -3345,22 +3345,48 @@
     }
     bindClick("mail-set-test-smtp", function () {
       var hint = document.getElementById("mail-set-test-hint");
-      if (hint) hint.textContent = "SMTP login deneniyor…";
+      if (hint) {
+        hint.textContent = "SMTP login deneniyor (birkaç host/user)…";
+        hint.style.color = "";
+      }
       var domId = Number((document.getElementById("mail-set-default-domain") || {}).value || 0) || null;
+      var body = {
+        domain_id: domId,
+        smtp_host: (document.getElementById("mail-set-host") || {}).value || "",
+        smtp_port: (document.getElementById("mail-set-port") || {}).value || "465",
+        smtp_user: (document.getElementById("mail-set-user") || {}).value || "",
+        probe_hosts: true,
+        save_working: true
+      };
+      var typedPw = (document.getElementById("mail-set-pass") || {}).value || "";
+      if (typedPw) body.smtp_password = typedPw;
       mailApi("/api/mailing/settings/test-smtp", {
         method: "POST",
-        body: { domain_id: domId },
-        timeoutMs: 45000
+        body: body,
+        timeoutMs: 90000
       }).then(function (res) {
         var d = (res && res.data) || {};
-        var msg = d.ok
-          ? (d.message || "SMTP OK")
-          : ((d.error || "Login başarısız") + (d.hint ? (" — " + d.hint) : ""));
+        var msg;
+        if (d.ok) {
+          msg = d.message || "SMTP OK";
+          if (d.hint) msg += " — " + d.hint;
+          if (d.host) document.getElementById("mail-set-host").value = d.host;
+          if (d.user) document.getElementById("mail-set-user").value = d.user;
+        } else {
+          msg = (d.error || "Login başarısız");
+          if (d.password_len != null) msg += " · şifre uzunluk=" + d.password_len;
+          if (d.hint) msg += " — " + d.hint;
+          if (d.attempts && d.attempts.length) {
+            msg += " | denenen: " + d.attempts.slice(0, 3).map(function (a) {
+              return a.user + "@" + a.host;
+            }).join(", ");
+          }
+        }
         if (hint) {
           hint.textContent = msg;
           hint.style.color = d.ok ? "#86efac" : "#fca5a5";
         }
-        mailToast(d.ok ? "SMTP login OK" : "SMTP login FAIL");
+        mailToast(d.ok ? "SMTP login OK" : "SMTP login FAIL — aşağıdaki kırmızı yazıyı oku");
       });
     });
     var scForm = document.getElementById("mail-smartico-form");

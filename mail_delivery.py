@@ -96,72 +96,111 @@ def _smtp_send(
     return (msg["Message-ID"] or "").strip("<>")
 
 
-def smtp_login_test(conn, *, domain_id=None) -> dict:
-    """Ayarlar SMTP ile login dene (domain eski şifresi ezmesin)."""
-    host = (get_mail_setting(conn, "smtp_host", "") or "").strip()
-    port = int((get_mail_setting(conn, "smtp_port", "465") or "465").strip() or 465)
-    settings_user = (get_mail_setting(conn, "smtp_user", "") or "").strip()
-    password = (get_mail_setting(conn, "smtp_password", "") or "").strip()
-    from_email, from_name = _domain_from(conn, domain_id)
-    # Alibaba: login user = gönderen adres. Ayarlar şifresi öncelik.
-    user = from_email if from_email and "@" in from_email else settings_user
-    auth_source = "settings"
+def _smtp_login_once(host, port, user, password) -> None:
+    port = int(port or 465)
+    context = ssl.create_default_context()
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=20, context=context) as smtp:
+            smtp.login(user, password or "")
+    else:
+        with smtplib.SMTP(host, port, timeout=20) as smtp:
+            smtp.ehlo()
+            try:
+                smtp.starttls(context=context)
+                smtp.ehlo()
+            except smtplib.SMTPException:
+                pass
+            smtp.login(user, password or "")
+
+
+# DirectMail bölge hostları (yanlış host → bazen 535)
+_ALI_SMTP_HOSTS = (
+    "smtpdm.aliyun.com",
+    "smtpdm-ap-southeast-1.aliyuncs.com",
+    "smtpdm-eu-central-1.aliyuncs.com",
+    "smtpdm-us-east-1.aliyuncs.com",
+    "smtpdm-ap-southeast-1.aliyun.com",
+)
+
+
+def smtp_login_test(conn, *, domain_id=None, override_password=None, override_user=None,
+                    override_host=None, override_port=None, probe_hosts=True) -> dict:
+    """Ayarlar SMTP login. Birden fazla user/host dener — 535 teşhisi için."""
+    cfg_host = (override_host or get_mail_setting(conn, "smtp_host", "") or "").strip()
+    port = int((override_port or get_mail_setting(conn, "smtp_port", "465") or "465").strip() or 465)
+    settings_user = (override_user or get_mail_setting(conn, "smtp_user", "") or "").strip()
+    password = (override_password if override_password is not None
+                else (get_mail_setting(conn, "smtp_password", "") or "")).strip()
+    from_email, _from_name = _domain_from(conn, domain_id)
+    domain_name = from_email.split("@")[-1] if "@" in (from_email or "") else ""
+
+    users = []
+    for u in (settings_user, from_email,
+              f"info@{domain_name}" if domain_name else "",
+              f"noreply@{domain_name}" if domain_name else ""):
+        u = (u or "").strip().lower()
+        if u and "@" in u and u not in users:
+            users.append(u)
+
     if not password and domain_id:
         drow = fetchone(conn, "SELECT smtp_password, smtp_password_enc FROM mail_domains WHERE id = ?", (domain_id,))
-        dom_pw = _resolve_domain_smtp_password(drow)
-        if dom_pw:
-            password = dom_pw
-            user = from_email
-            auth_source = "domain"
-    if not host:
-        return {"ok": False, "error": "SMTP host boş", "auth_source": auth_source}
-    if not user:
-        return {"ok": False, "error": "SMTP user boş", "auth_source": auth_source}
+        password = _resolve_domain_smtp_password(drow)
+
     if not password:
         return {
             "ok": False,
-            "error": "SMTP şifre boş — Ayarlar ve/veya Platform domain’e DirectMail SMTP şifresini kaydet",
-            "auth_source": auth_source,
-            "user": user,
+            "error": "SMTP şifre boş — Ayarlar’a DirectMail SMTP şifresini kaydet",
+            "users_tried": users,
+            "password_len": 0,
         }
-    try:
-        context = ssl.create_default_context()
-        if port == 465:
-            with smtplib.SMTP_SSL(host, port, timeout=20, context=context) as smtp:
-                smtp.login(user, password)
-        else:
-            with smtplib.SMTP(host, port, timeout=20) as smtp:
-                smtp.ehlo()
-                try:
-                    smtp.starttls(context=context)
-                    smtp.ehlo()
-                except smtplib.SMTPException:
-                    pass
-                smtp.login(user, password)
-        return {
-            "ok": True,
-            "message": f"SMTP login OK · {user} @ {host}:{port} ({auth_source})",
-            "user": user,
-            "host": host,
-            "port": port,
-            "auth_source": auth_source,
-            "from_email": from_email,
-        }
-    except Exception as exc:
-        return {
-            "ok": False,
-            "error": str(exc).strip()[:500],
-            "user": user,
-            "host": host,
-            "port": port,
-            "auth_source": auth_source,
-            "from_email": from_email,
-            "hint": (
-                "535 ise Alibaba’da bu adresin SMTP şifresi yanlış. "
-                "Hesap şifresi değil — DirectMail → Sender Address → SMTP password. "
-                "Render web+worker MAILING_SECRET_KEY aynı olmalı."
-            ),
-        }
+
+    hosts = []
+    for h in ((cfg_host,) + (_ALI_SMTP_HOSTS if probe_hosts else ())):
+        h = (h or "").strip()
+        if h and h not in hosts:
+            hosts.append(h)
+    if not hosts:
+        return {"ok": False, "error": "SMTP host boş", "password_len": len(password)}
+
+    attempts = []
+    for host in hosts:
+        for user in users:
+            try:
+                _smtp_login_once(host, port, user, password)
+                return {
+                    "ok": True,
+                    "message": f"SMTP login OK · user={user} @ {host}:{port}",
+                    "user": user,
+                    "host": host,
+                    "port": port,
+                    "from_email": from_email,
+                    "password_len": len(password),
+                    "hint": (
+                        f"Çalışan kombinasyon: User={user}, Host={host}. "
+                        "Ayarlar’a bunları kaydet; Platform from_local bu user ile aynı olsun."
+                    ),
+                }
+            except Exception as exc:
+                attempts.append({
+                    "user": user,
+                    "host": host,
+                    "error": str(exc).strip()[:180],
+                })
+
+    return {
+        "ok": False,
+        "error": "Tüm user/host kombinasyonları 535/fail — şifre veya bölge yanlış",
+        "password_len": len(password),
+        "from_email": from_email,
+        "settings_user": settings_user,
+        "attempts": attempts[:12],
+        "hint": (
+            "1) Alibaba Sender Addresses’te şifreyi hangi adrese set ettin? "
+            "Panel User aynısı olmalı (info@ vs noreply@). "
+            "2) DirectMail bölgesi SG ise host: smtpdm-ap-southeast-1.aliyuncs.com "
+            "3) Şifre setinden sonra ~10 dk bekle."
+        ),
+    }
 
 
 def deliver_mail(
@@ -307,16 +346,20 @@ def deliver_mail(
             drow = fetchone(conn, "SELECT smtp_password FROM mail_domains WHERE id = ?", (domain_id,))
         domain_smtp_pw = _resolve_domain_smtp_password(drow)
 
-    # ÖNEMLİ: Ayarlar şifresi öncelikli.
-    # Domain'de eski/yanlış şifre kalırsa 535 yiyorduk; yeni Ayarlar şifresi eziliyordu.
-    if settings_password:
-        user = from_email  # Alibaba: AUTH user = From adresi
+    # Alibaba kuralı: AUTH user == MAIL FROM. Ayarlar user+şifre varsa ikisini de ona kilitle.
+    if settings_password and settings_user and "@" in settings_user:
+        user = settings_user.strip().lower()
         password = settings_password
+        from_email = user  # From'u auth ile eşitle — aksi halde 535/436
         auth_source = "settings"
     elif domain_smtp_pw:
         user = from_email
         password = domain_smtp_pw
         auth_source = "domain"
+    elif settings_password:
+        user = from_email
+        password = settings_password
+        auth_source = "settings-from"
     else:
         user = settings_user or from_email
         password = ""
@@ -324,73 +367,68 @@ def deliver_mail(
 
     if not password:
         err = (
-            "SMTP şifresi boş. Ayarlar → SMTP Password’e DirectMail’de az önce set ettiğin "
-            "şifreyi yapıştırıp kaydet (domain eski şifresi artık öncelikli değil)."
+            "SMTP şifresi boş. Ayarlar → SMTP Password’e DirectMail SMTP şifresini kaydet. "
+            "SMTP User = Alibaba’da şifre set ettiğin adres (örn. info@… veya noreply@…)."
         )
         execute(conn, "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?", (err, send_id))
         return send_id, "failed", err
 
     extra = list_unsubscribe_headers(unsub_http) if unsub_http else None
 
-    def _try_send(smtp_user, smtp_password):
-        return _smtp_send(
-            host=host,
-            port=port,
-            user=smtp_user,
-            password=smtp_password,
-            from_email=from_email,
-            from_name=from_name,
-            to_email=to_email,
-            subject=subject,
-            html_body=tracked_html,
-            text_body=tracked_text,
-            extra_headers=extra,
-        )
+    # Yanlış bölge host’u 535 verebiliyor — sırayla dene
+    host_list = []
+    for h in (host,) + _ALI_SMTP_HOSTS:
+        h = (h or "").strip()
+        if h and h not in host_list:
+            host_list.append(h)
 
-    try:
-        msg_id = _try_send(user, password)
-        execute(
-            conn,
-            """
-            UPDATE mail_sends
-            SET status = 'sent', provider_msg_id = ?, sent_at = ?, error = ''
-            WHERE id = ?
-            """,
-            (msg_id or "", now, send_id),
-        )
-        return send_id, "sent", ""
-    except Exception as exc:
-        err = str(exc).strip()[:500] or "SMTP gönderim hatası"
-        is_auth = "535" in err or "Authentication" in err or "auth" in err.lower()
-        if (
-            is_auth
-            and auth_source == "settings"
-            and domain_smtp_pw
-            and domain_smtp_pw != password
-        ):
-            try:
-                msg_id = _try_send(from_email, domain_smtp_pw)
-                execute(
-                    conn,
-                    """
-                    UPDATE mail_sends
-                    SET status = 'sent', provider_msg_id = ?, sent_at = ?, error = ''
-                    WHERE id = ?
-                    """,
-                    (msg_id or "", now, send_id),
-                )
-                return send_id, "sent", ""
-            except Exception as exc2:
-                err = f"535 auth (ayarlar+domain denendi): {str(exc2).strip()[:400]}"
-        else:
-            err = f"{err} [auth={auth_source}; user={user}]"
-        execute(
-            conn,
-            """
-            UPDATE mail_sends
-            SET status = 'failed', error = ?, provider_msg_id = ''
-            WHERE id = ?
-            """,
-            (err, send_id),
-        )
-        return send_id, "failed", err
+    last_err = ""
+    for try_host in host_list:
+        try:
+            msg_id = _smtp_send(
+                host=try_host,
+                port=port,
+                user=user,
+                password=password,
+                from_email=from_email,
+                from_name=from_name,
+                to_email=to_email,
+                subject=subject,
+                html_body=tracked_html,
+                text_body=tracked_text,
+                extra_headers=extra,
+            )
+            if try_host != host:
+                try:
+                    from database import upsert_mail_setting
+                    upsert_mail_setting(conn, "smtp_host", try_host)
+                except Exception:
+                    pass
+            execute(
+                conn,
+                """
+                UPDATE mail_sends
+                SET status = 'sent', provider_msg_id = ?, sent_at = ?, error = ''
+                WHERE id = ?
+                """,
+                (msg_id or "", now, send_id),
+            )
+            return send_id, "sent", ""
+        except Exception as exc:
+            last_err = str(exc).strip()[:400] or "SMTP gönderim hatası"
+            if "535" not in last_err and "Authentication" not in last_err and "auth" not in last_err.lower():
+                # Timeout / network — diğer host’a geç; auth değilse de dene
+                continue
+            continue
+
+    err = f"{last_err} [auth={auth_source}; user={user}; hosts_tried={len(host_list)}]"
+    execute(
+        conn,
+        """
+        UPDATE mail_sends
+        SET status = 'failed', error = ?, provider_msg_id = ''
+        WHERE id = ?
+        """,
+        (err, send_id),
+    )
+    return send_id, "failed", err

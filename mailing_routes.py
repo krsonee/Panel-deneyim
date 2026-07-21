@@ -4044,7 +4044,23 @@ def create_mailing_blueprint(permission_required):
                     domain_id = int(raw) if raw else None
                 except (TypeError, ValueError):
                     domain_id = None
-            result = smtp_login_test(conn, domain_id=domain_id)
+            # Formdaki değerlerle anlık test (henüz kaydetmeden)
+            result = smtp_login_test(
+                conn,
+                domain_id=domain_id,
+                override_password=(data.get("smtp_password") or None),
+                override_user=(data.get("smtp_user") or None),
+                override_host=(data.get("smtp_host") or None),
+                override_port=(data.get("smtp_port") or None),
+                probe_hosts=bool(data.get("probe_hosts", True)),
+            )
+            # Çalışan host/user bulunduysa Ayarlar’a yaz
+            if result.get("ok") and data.get("save_working"):
+                if result.get("host"):
+                    upsert_mail_setting(conn, "smtp_host", result["host"])
+                if result.get("user"):
+                    upsert_mail_setting(conn, "smtp_user", result["user"])
+                conn.commit()
         status = 200 if result.get("ok") else 400
         return jsonify(result), status
 
