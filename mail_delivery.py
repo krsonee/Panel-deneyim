@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import ssl
 import smtplib
-from email.headerregistry import Address
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
@@ -98,28 +97,21 @@ def _smtp_send(
 
 
 def smtp_login_test(conn, *, domain_id=None) -> dict:
-    """Ayarlar / domain SMTP ile login dene — kampanya olmadan hızlı teşhis."""
+    """Ayarlar SMTP ile login dene (domain eski şifresi ezmesin)."""
     host = (get_mail_setting(conn, "smtp_host", "") or "").strip()
     port = int((get_mail_setting(conn, "smtp_port", "465") or "465").strip() or 465)
-    user = (get_mail_setting(conn, "smtp_user", "") or "").strip()
+    settings_user = (get_mail_setting(conn, "smtp_user", "") or "").strip()
     password = (get_mail_setting(conn, "smtp_password", "") or "").strip()
     from_email, from_name = _domain_from(conn, domain_id)
+    # Alibaba: login user = gönderen adres. Ayarlar şifresi öncelik.
+    user = from_email if from_email and "@" in from_email else settings_user
     auth_source = "settings"
-    if domain_id:
-        drow = None
-        try:
-            drow = fetchone(
-                conn,
-                "SELECT smtp_password, smtp_password_enc, from_local, domain, from_name FROM mail_domains WHERE id = ?",
-                (domain_id,),
-            )
-        except Exception:
-            drow = fetchone(conn, "SELECT * FROM mail_domains WHERE id = ?", (domain_id,))
+    if not password and domain_id:
+        drow = fetchone(conn, "SELECT smtp_password, smtp_password_enc FROM mail_domains WHERE id = ?", (domain_id,))
         dom_pw = _resolve_domain_smtp_password(drow)
         if dom_pw:
-            from_email, from_name = _domain_from(conn, domain_id)
-            user = from_email
             password = dom_pw
+            user = from_email
             auth_source = "domain"
     if not host:
         return {"ok": False, "error": "SMTP host boş", "auth_source": auth_source}
@@ -315,29 +307,25 @@ def deliver_mail(
             drow = fetchone(conn, "SELECT smtp_password FROM mail_domains WHERE id = ?", (domain_id,))
         domain_smtp_pw = _resolve_domain_smtp_password(drow)
 
-    # Makro gibi: domain düz şifre varsa onu kullan; yoksa Ayarlar
-    if domain_smtp_pw:
+    # ÖNEMLİ: Ayarlar şifresi öncelikli.
+    # Domain'de eski/yanlış şifre kalırsa 535 yiyorduk; yeni Ayarlar şifresi eziliyordu.
+    if settings_password:
+        user = from_email  # Alibaba: AUTH user = From adresi
+        password = settings_password
+        auth_source = "settings"
+    elif domain_smtp_pw:
         user = from_email
         password = domain_smtp_pw
         auth_source = "domain"
     else:
-        user = settings_user
-        password = settings_password
-        auth_source = "settings"
-        user_domain = user.split("@")[-1].lower() if "@" in (user or "") else ""
-        from_domain = from_email.split("@")[-1].lower() if "@" in (from_email or "") else ""
-        if user_domain and from_domain and user_domain != from_domain:
-            err = (
-                f"SMTP kullanıcı ({user}) ile gönderen ({from_email}) uyuşmuyor. "
-                "Platform → domain SMTP şifresini kaydet (Makro paneldeki gibi)."
-            )
-            execute(conn, "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?", (err, send_id))
-            return send_id, "failed", err
+        user = settings_user or from_email
+        password = ""
+        auth_source = "none"
 
     if not password:
         err = (
-            f"SMTP şifresi boş [auth={auth_source}]. "
-            "DirectMail SMTP şifresini Ayarlar + Platform domain’e tekrar kaydet."
+            "SMTP şifresi boş. Ayarlar → SMTP Password’e DirectMail’de az önce set ettiğin "
+            "şifreyi yapıştırıp kaydet (domain eski şifresi artık öncelikli değil)."
         )
         execute(conn, "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?", (err, send_id))
         return send_id, "failed", err
@@ -376,12 +364,12 @@ def deliver_mail(
         is_auth = "535" in err or "Authentication" in err or "auth" in err.lower()
         if (
             is_auth
-            and auth_source == "domain"
-            and settings_password
-            and settings_password != password
+            and auth_source == "settings"
+            and domain_smtp_pw
+            and domain_smtp_pw != password
         ):
             try:
-                msg_id = _try_send(settings_user or from_email, settings_password)
+                msg_id = _try_send(from_email, domain_smtp_pw)
                 execute(
                     conn,
                     """
@@ -393,7 +381,7 @@ def deliver_mail(
                 )
                 return send_id, "sent", ""
             except Exception as exc2:
-                err = f"535 auth (domain+ayarlar denendi): {str(exc2).strip()[:400]}"
+                err = f"535 auth (ayarlar+domain denendi): {str(exc2).strip()[:400]}"
         else:
             err = f"{err} [auth={auth_source}; user={user}]"
         execute(
