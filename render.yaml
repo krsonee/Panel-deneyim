@@ -80,10 +80,17 @@ services:
         value: mailing-worker
       - key: MAILING_WORKER_EXTERNAL
         value: "1"
+      # Web ile AYNI secret — ayrı generateValue 535/decrypt kırıyordu
       - key: SECRET_KEY
-        sync: false
+        fromService:
+          name: mikromail
+          type: web
+          envVarKey: SECRET_KEY
       - key: MAILING_SECRET_KEY
-        sync: false
+        fromService:
+          name: mikromail
+          type: web
+          envVarKey: MAILING_SECRET_KEY
       - key: PUBLIC_BASE_URL
         value: https://mikromail.onrender.com
       - key: DATABASE_URL

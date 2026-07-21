@@ -4009,6 +4009,16 @@ def create_mailing_blueprint(permission_required):
                     continue
                 if key == "smtp_password" and (val is None or val == ""):
                     continue  # empty = keep existing
+                if key == "smtp_password" and val is not None:
+                    # Yapıştırma artığı / gizli karakter temizliği
+                    val = (
+                        str(val)
+                        .replace("\u200b", "")
+                        .replace("\ufeff", "")
+                        .replace("\r", "")
+                        .replace("\n", "")
+                        .strip()
+                    )
                 if key in bool_keys:
                     if isinstance(val, bool):
                         val = "1" if val else "0"
