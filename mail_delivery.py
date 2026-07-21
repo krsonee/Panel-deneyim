@@ -346,29 +346,47 @@ def deliver_mail(
             drow = fetchone(conn, "SELECT smtp_password FROM mail_domains WHERE id = ?", (domain_id,))
         domain_smtp_pw = _resolve_domain_smtp_password(drow)
 
-    # Alibaba kuralı: AUTH user == MAIL FROM. Ayarlar user+şifre varsa ikisini de ona kilitle.
-    if settings_password and settings_user and "@" in settings_user:
-        user = settings_user.strip().lower()
-        password = settings_password
-        from_email = user  # From'u auth ile eşitle — aksi halde 535/436
-        auth_source = "settings"
-    elif domain_smtp_pw:
-        user = from_email
+    # Alibaba: AUTH user == MAIL FROM.
+    # 1) Domain kendi SMTP şifresi → o domainin from'u (çoklu domain)
+    # 2) Ayarlar şifresi sadece AYNI adres/domain için (From'u başka domain'e ezme!)
+    settings_user = (settings_user or "").strip().lower()
+    from_email_l = (from_email or "").strip().lower()
+    from_dom = from_email_l.split("@")[-1] if "@" in from_email_l else ""
+    settings_dom = settings_user.split("@")[-1] if "@" in settings_user else ""
+
+    if domain_smtp_pw:
+        user = from_email_l
         password = domain_smtp_pw
+        from_email = from_email_l
         auth_source = "domain"
-    elif settings_password:
-        user = from_email
+    elif settings_password and settings_user and settings_user == from_email_l:
+        user = settings_user
         password = settings_password
-        auth_source = "settings-from"
+        from_email = settings_user
+        auth_source = "settings"
+    elif settings_password and settings_dom and settings_dom == from_dom:
+        # Aynı domain, farklı local (info vs noreply) — From kampanya domaininden kalsın
+        user = from_email_l
+        password = settings_password
+        auth_source = "settings-same-domain"
+    elif settings_password and settings_user:
+        # Eskiden From'u vipozelileti'ye kilitliyorduk — diğer domainler kayboluyordu.
+        err = (
+            f"Bu kampanya {from_email_l} göndermeli ama Ayarlar SMTP "
+            f"sadece {settings_user} için. Alibaba’da {from_email_l} için "
+            f"SMTP şifresi set et → Platform → bu domain Düzenle → şifreyi kaydet."
+        )
+        execute(conn, "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?", (err, send_id))
+        return send_id, "failed", err
     else:
-        user = settings_user or from_email
+        user = from_email_l or settings_user
         password = ""
         auth_source = "none"
 
     if not password:
         err = (
-            "SMTP şifresi boş. Ayarlar → SMTP Password’e DirectMail SMTP şifresini kaydet. "
-            "SMTP User = Alibaba’da şifre set ettiğin adres (örn. info@… veya noreply@…)."
+            f"SMTP şifresi yok ({from_email_l}). Platform → domain Düzenle → "
+            "DirectMail SMTP şifresini kaydet (her domain ayrı)."
         )
         execute(conn, "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?", (err, send_id))
         return send_id, "failed", err

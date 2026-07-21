@@ -2432,6 +2432,10 @@ def migrate_tracked_links(conn):
         execute(conn, "ALTER TABLE tracked_links ADD COLUMN label TEXT NOT NULL DEFAULT ''")
     if "created_by" not in cols:
         execute(conn, "ALTER TABLE tracked_links ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
+    if "redirect_url" not in cols:
+        execute(conn, "ALTER TABLE tracked_links ADD COLUMN redirect_url TEXT NOT NULL DEFAULT ''")
+    if "redirect_hits" not in cols:
+        execute(conn, "ALTER TABLE tracked_links ADD COLUMN redirect_hits INTEGER NOT NULL DEFAULT 0")
     conn.commit()
 
 
