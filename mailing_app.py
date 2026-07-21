@@ -509,10 +509,21 @@ def _mail_permission_required(*required_perms):
         def wrapped(*args, **kwargs):
             if session.get("mail_is_superadmin"):
                 tid = current_tenant_id()
+                # Tenant seçilmemişse makro'ya düş — kampanya/API takılmasın
+                if tid is None and (request.path or "").startswith("/api/mailing"):
+                    try:
+                        with closing(get_db()) as conn:
+                            makro = fetchone(conn, "SELECT id FROM mail_tenants WHERE slug = ?", ("makro",))
+                            if makro:
+                                tid = int(makro["id"])
+                                session["mail_tenant_id"] = tid
+                    except Exception:
+                        pass
                 if tid is None and request.method not in ("GET", "HEAD", "OPTIONS"):
-                    # Mutations need a selected tenant except platform APIs (already separate)
                     if (request.path or "").startswith("/api/mailing"):
-                        return jsonify({"error": "Süper admin: önce tenant seçin (X-Tenant-Id veya select-tenant)."}), 400
+                        return jsonify({
+                            "error": "Süper admin: üstten Aktif tenant seç (örn. makro), sonra tekrar dene."
+                        }), 400
                 g.mail_tenant_id = tid
                 return view(*args, **kwargs)
             perms = session.get("mail_permissions") or []

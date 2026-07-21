@@ -870,15 +870,42 @@ def _ensure_contacts_from_emails(conn, emails, now):
         row = fetchone(conn, "SELECT id FROM mail_contacts WHERE LOWER(email) = ?", (em,))
         if row:
             ids.append(int(row["id"]))
+            # Elle test: doğrulanmış filtresine takılmasın
+            try:
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_contacts
+                    SET verify_status = CASE
+                        WHEN COALESCE(verify_status, '') IN ('valid', 'mx_ok') THEN verify_status
+                        ELSE 'mx_ok'
+                    END
+                    WHERE id = ? AND unsubscribed = 0
+                    """,
+                    (int(row["id"]),),
+                )
+            except Exception:
+                pass
             continue
-        cid = insert_returning_id(
-            conn,
-            """
-            INSERT INTO mail_contacts (email, name, tags, source, unsubscribed, notes, created_at, updated_at)
-            VALUES (?, '', '[]', 'manual_campaign', 0, '', ?, ?)
-            """,
-            (em, now, now),
-        )
+        try:
+            cid = insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_contacts
+                (email, name, tags, source, unsubscribed, notes, verify_status, created_at, updated_at)
+                VALUES (?, '', '[]', 'manual_campaign', 0, '', 'mx_ok', ?, ?)
+                """,
+                (em, now, now),
+            )
+        except Exception:
+            cid = insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_contacts (email, name, tags, source, unsubscribed, notes, created_at, updated_at)
+                VALUES (?, '', '[]', 'manual_campaign', 0, '', ?, ?)
+                """,
+                (em, now, now),
+            )
         if cid:
             ids.append(int(cid))
     return ids
@@ -894,6 +921,8 @@ def _attach_campaign_recipients(
 
     if emails:
         contact_ids = _ensure_contacts_from_emails(conn, emails, now) + contact_ids
+        # Elle girilen adresler bilinçli test — verified filtresi uygulama
+        only_verified = False
 
     if contact_ids:
         filtered = _filter_sendable_contact_ids(
@@ -3184,12 +3213,25 @@ def create_mailing_blueprint(permission_required):
                         now, now,
                     ),
                 )
-            attached = _attach_campaign_recipients(
-                conn, cid, tag_filter=tag_filter, max_recipients=max_recipients,
-                exclude_previously_sent=exclude_sent, now=now, only_verified=only_verified,
-                contact_ids=contact_ids if recipient_mode in ("selected", "manual") else None,
-                emails=emails if recipient_mode == "manual" else None,
-            )
+            try:
+                attached = _attach_campaign_recipients(
+                    conn, cid, tag_filter=tag_filter, max_recipients=max_recipients,
+                    exclude_previously_sent=exclude_sent, now=now, only_verified=only_verified,
+                    contact_ids=contact_ids if recipient_mode in ("selected", "manual") else None,
+                    emails=emails if recipient_mode == "manual" else None,
+                )
+            except Exception as attach_exc:
+                print(f"⚠️  campaign attach: {attach_exc}")
+                execute(conn, "DELETE FROM mail_campaigns WHERE id = ?", (cid,))
+                conn.commit()
+                return jsonify({"error": f"Alıcılar eklenemedi: {attach_exc}"}), 500
+            if recipient_mode == "manual" and int(attached or 0) == 0:
+                execute(conn, "DELETE FROM mail_campaigns WHERE id = ?", (cid,))
+                conn.commit()
+                return jsonify({
+                    "error": "Elle listedeki e-postalar eklenemedi. Adresleri kontrol et; "
+                             "«Önceden mail atılmışları hariç tut» kutusunu kapatıp tekrar dene."
+                }), 400
             execute(
                 conn,
                 "UPDATE mail_campaigns SET total_count = ?, updated_at = ? WHERE id = ?",

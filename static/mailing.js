@@ -3042,7 +3042,9 @@
         }
         mailApi("/api/mailing/campaigns", { method: "POST", body: body, timeoutMs: 120000 }).then(function (res) {
           if (!res || !res.ok) {
-            var errMsg = (res && res.data && res.data.error) || "Oluşturulamadı";
+            var errMsg = (res && res.data && res.data.error) || "";
+            if (!errMsg && !res) errMsg = "Bağlantı/oturum hatası — sayfayı yenile, tenant seç, tekrar dene";
+            if (!errMsg) errMsg = "Oluşturulamadı" + (res && res.status ? (" (HTTP " + res.status + ")") : "");
             if (window.MAIL_STANDALONE && window.MAIL_IS_SUPERADMIN && !window.MAIL_TENANT_ID) {
               errMsg = "Üstten Aktif tenant seç (örn. makro), sonra tekrar dene";
             }
@@ -3078,7 +3080,10 @@
       mailApi("/api/mailing/campaigns/select-preview", { method: "POST", body: mailCampSelectionPayload(), timeoutMs: 60000 })
         .then(function (res) {
           if (!hint) return;
-          if (!res || !res.ok) { hint.textContent = "Hesaplanamadı"; return; }
+          if (!res || !res.ok) {
+            hint.textContent = (res && res.data && res.data.error) || "Hesaplanamadı — üstten tenant (makro) seçili mi?";
+            return;
+          }
           var total = res.data.matching_count || 0;
           var willAttach = res.data.will_attach != null ? res.data.will_attach : total;
           var tags = res.data.tag_filters || [];
