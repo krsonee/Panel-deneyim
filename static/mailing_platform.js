@@ -24,13 +24,26 @@
   function loadTenantSelect(tenants) {
     var sel = document.getElementById("mm-tenant-select");
     if (!sel) return;
-    var cur = sel.value;
+    var cur = sel.value || (window.MAIL_TENANT_ID ? String(window.MAIL_TENANT_ID) : "");
     sel.innerHTML = '<option value="">— seç / impersonate —</option>' +
       (tenants || []).map(function (t) {
         return '<option value="' + esc(String(t.id)) + '">' +
           esc(t.slug) + " — " + esc(t.name) + " (" + esc(t.status) + ")</option>";
       }).join("");
     if (cur) sel.value = cur;
+    // Süper admin tenant seçmeden kampanya oluşturamaz — makro varsa otomatik seç
+    if (!sel.value && tenants && tenants.length) {
+      var makro = tenants.find(function (t) { return t.slug === "makro"; }) || tenants[0];
+      if (makro) {
+        sel.value = String(makro.id);
+        api("/api/mail-auth/select-tenant", { method: "POST", body: { tenant_id: Number(makro.id) } })
+          .then(function () {
+            window.MAIL_TENANT_ID = Number(makro.id);
+            var hint = document.getElementById("mm-tenant-hint");
+            if (hint) hint.textContent = "Tenant #" + makro.id + " (" + makro.slug + ") otomatik seçildi";
+          });
+      }
+    }
   }
 
   function refreshTenants() {

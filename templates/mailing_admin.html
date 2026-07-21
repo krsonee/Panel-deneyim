@@ -15,9 +15,43 @@
       margin-bottom:1rem; padding:0.75rem 1rem; background:var(--surface);
       border:1px solid var(--border); border-radius:12px;
     }
-    .mm-tenant-bar select { min-width:200px; }
+    .mm-tenant-bar select { min-width:200px; width:auto; }
     #module-mailing-panel { display:block !important; }
     #module-mailing-panel[hidden] { display:block !important; }
+    /* radio/checkbox: global input{width:100%} bozuyordu */
+    #module-mailing-panel input[type="checkbox"],
+    #module-mailing-panel input[type="radio"],
+    #mm-view-platform input[type="checkbox"],
+    #mm-view-platform input[type="radio"] {
+      width: auto !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      padding: 0 !important;
+      margin: 0;
+      flex-shrink: 0;
+      accent-color: var(--accent);
+    }
+    #module-mailing-panel label:has(> input[type="checkbox"]),
+    #module-mailing-panel label:has(> input[type="radio"]) {
+      display: inline-flex !important;
+      align-items: center;
+      gap: 0.4rem;
+      text-transform: none;
+      letter-spacing: normal;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 0;
+      cursor: pointer;
+      width: auto;
+    }
+    .toast {
+      position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%);
+      background: #151e2e; border: 1px solid var(--border); color: var(--text);
+      padding: 0.7rem 1.1rem; border-radius: 10px; z-index: 9999;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s; max-width: 90vw;
+    }
+    .toast.show { opacity: 1; }
   </style>
 </head>
 <body>
@@ -118,8 +152,8 @@
     window.MAIL_STANDALONE = true;
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
   </script>
-  <script src="/static/mailing.js?v=20260721mm3"></script>
-  <script src="/static/mailing_platform.js?v=20260721mm3"></script>
+  <script src="/static/mailing.js?v=20260721mm4"></script>
+  <script src="/static/mailing_platform.js?v=20260721mm4"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

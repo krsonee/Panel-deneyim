@@ -3042,7 +3042,11 @@
         }
         mailApi("/api/mailing/campaigns", { method: "POST", body: body, timeoutMs: 120000 }).then(function (res) {
           if (!res || !res.ok) {
-            mailToast((res && res.data && res.data.error) || "Oluşturulamadı");
+            var errMsg = (res && res.data && res.data.error) || "Oluşturulamadı";
+            if (window.MAIL_STANDALONE && window.MAIL_IS_SUPERADMIN && !window.MAIL_TENANT_ID) {
+              errMsg = "Üstten Aktif tenant seç (örn. makro), sonra tekrar dene";
+            }
+            mailToast(errMsg);
             return;
           }
           var camp = res.data.campaign || {};
