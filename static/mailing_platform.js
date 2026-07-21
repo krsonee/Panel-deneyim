@@ -31,7 +31,6 @@
           esc(t.slug) + " — " + esc(t.name) + " (" + esc(t.status) + ")</option>";
       }).join("");
     if (cur) sel.value = cur;
-    // Süper admin tenant seçmeden kampanya oluşturamaz — makro varsa otomatik seç
     if (!sel.value && tenants && tenants.length) {
       var makro = tenants.find(function (t) { return t.slug === "makro"; }) || tenants[0];
       if (makro) {
@@ -76,6 +75,7 @@
   }
 
   var _editDomainId = null;
+  var _domainSaving = false;
 
   function setDomainFormMode(editId, d) {
     _editDomainId = editId || null;
@@ -96,15 +96,28 @@
       document.getElementById("mm-d-cap").value = d.daily_cap != null ? d.daily_cap : 500;
       document.getElementById("mm-d-smtp").value = "";
       document.getElementById("mm-d-smtp").placeholder = d.smtp_password_set ? "Boş = şifre aynı kalsın" : "SMTP şifresi";
-      if (btn) btn.textContent = "Domain kaydet";
-      if (hint) hint.textContent = "Düzenleniyor: " + (d.domain || ("#" + editId)) + " — iptal için Yenile";
+      if (btn) {
+        btn.textContent = "Domain kaydet";
+        btn.disabled = false;
+      }
+      if (hint) hint.textContent = "Düzenleniyor: " + (d.from_local || "info") + "@" + (d.domain || ("#" + editId)) + " — iptal için Yenile";
       form.scrollIntoView({ behavior: "smooth", block: "center" });
     } else {
       if (domainInp) domainInp.readOnly = false;
-      if (btn) btn.textContent = "Domain ekle";
+      if (btn) {
+        btn.textContent = "Domain ekle";
+        btn.disabled = false;
+      }
       if (hint) hint.textContent = "";
       document.getElementById("mm-d-smtp").placeholder = "opsiyonel";
     }
+  }
+
+  function setDomainHint(msg, isError) {
+    var hint = document.getElementById("mm-domain-edit-hint");
+    if (!hint) return;
+    hint.textContent = msg || "";
+    hint.style.color = isError ? "#c0392b" : "";
   }
 
   function refreshDomains() {
@@ -112,21 +125,24 @@
       var tbody = document.getElementById("mm-domains-table");
       if (!tbody) return;
       if (!res.ok) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty">Yüklenemedi</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">Yüklenemedi</td></tr>';
         return;
       }
       var rows = res.data.domains || [];
       window._mmDomainsCache = rows;
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty">Domain yok</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">Domain yok</td></tr>';
         return;
       }
       tbody.innerHTML = rows.map(function (d) {
         var alloc = (d.allocations || []).map(function (a) {
           return esc(a.slug) + (a.exclusive ? "*" : "");
         }).join(", ") || "—";
+        var fromAddr = esc(d.from_local || "info") + "@" + esc(d.domain);
+        var smtpTag = d.smtp_password_set ? " · SMTP ✓" : "";
         return "<tr>" +
           "<td>" + esc(d.domain) + "</td>" +
+          "<td>" + fromAddr + smtpTag + "</td>" +
           "<td>" + esc(d.warm_status || "cold") + " · day " + esc(d.warm_day || 0) + "</td>" +
           "<td>" + esc(d.daily_cap) + "/g · " + esc(d.hourly_cap) + "/s</td>" +
           "<td>" + esc(d.health_score) + "</td>" +
@@ -138,6 +154,78 @@
           "</td></tr>";
       }).join("");
     });
+  }
+
+  function resetDomainForm() {
+    var form = document.getElementById("mm-domain-form");
+    if (form) form.reset();
+    setDomainFormMode(null);
+  }
+
+  function saveDomainForm(e) {
+    e.preventDefault();
+    if (_domainSaving) return;
+
+    var form = e.target;
+    var btn = form.querySelector('button[type="submit"]');
+    var body = {
+      from_name: document.getElementById("mm-d-from").value.trim(),
+      from_local: (document.getElementById("mm-d-local") || {}).value
+        ? document.getElementById("mm-d-local").value.trim()
+        : "info",
+      warm_status: document.getElementById("mm-d-warm").value,
+      daily_cap: Number(document.getElementById("mm-d-cap").value) || 500
+    };
+    var smtp = document.getElementById("mm-d-smtp").value;
+    if (smtp) body.smtp_password = smtp;
+
+    if (!_editDomainId) {
+      body.domain = document.getElementById("mm-d-domain").value.trim();
+      body.smtp_password = smtp || "";
+    }
+
+    _domainSaving = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = _editDomainId ? "Kaydediliyor…" : "Ekleniyor…";
+    }
+    setDomainHint(_editDomainId ? "Kaydediliyor…" : "Ekleniyor…", false);
+
+    var path = _editDomainId
+      ? "/api/platform/domains/" + _editDomainId
+      : "/api/platform/domains";
+    var method = _editDomainId ? "PATCH" : "POST";
+
+    api(path, { method: method, body: body })
+      .then(function (res) {
+        if (!res.ok) {
+          setDomainHint(res.data.error || "Kaydedilemedi", true);
+          return;
+        }
+        var saved = res.data.domain;
+        resetDomainForm();
+        setDomainHint(
+          saved
+            ? ("Kaydedildi: " + (saved.from_local || "info") + "@" + (saved.domain || ""))
+            : "Domain kaydedildi",
+          false
+        );
+        return refreshDomains().then(function () {
+          if (window.MakroMailing && typeof window.MakroMailing.onShow === "function") {
+            window.MakroMailing.onShow();
+          }
+        });
+      })
+      .catch(function () {
+        setDomainHint("Bağlantı hatası — tekrar dene", true);
+      })
+      .finally(function () {
+        _domainSaving = false;
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = _editDomainId ? "Domain kaydet" : "Domain ekle";
+        }
+      });
   }
 
   var Platform = {
@@ -156,7 +244,10 @@
         });
       }
       document.getElementById("mm-tenants-refresh")?.addEventListener("click", refreshTenants);
-      document.getElementById("mm-domains-refresh")?.addEventListener("click", refreshDomains);
+      document.getElementById("mm-domains-refresh")?.addEventListener("click", function () {
+        resetDomainForm();
+        refreshDomains();
+      });
       document.getElementById("mm-tenant-form")?.addEventListener("submit", function (e) {
         e.preventDefault();
         api("/api/platform/tenants", {
@@ -179,42 +270,7 @@
           refreshTenants();
         });
       });
-      document.getElementById("mm-domain-form")?.addEventListener("submit", function (e) {
-        e.preventDefault();
-        var body = {
-          from_name: document.getElementById("mm-d-from").value.trim(),
-          from_local: (document.getElementById("mm-d-local") || {}).value
-            ? document.getElementById("mm-d-local").value.trim()
-            : "info",
-          warm_status: document.getElementById("mm-d-warm").value,
-          daily_cap: Number(document.getElementById("mm-d-cap").value) || 500
-        };
-        var smtp = document.getElementById("mm-d-smtp").value;
-        if (smtp) body.smtp_password = smtp;
-        if (_editDomainId) {
-          api("/api/platform/domains/" + _editDomainId, { method: "PATCH", body: body }).then(function (res) {
-            if (!res.ok) { alert(res.data.error || "Kaydedilemedi"); return; }
-            e.target.reset();
-            setDomainFormMode(null);
-            refreshDomains();
-            alert("Domain güncellendi");
-          });
-          return;
-        }
-        body.domain = document.getElementById("mm-d-domain").value.trim();
-        body.smtp_password = smtp || "";
-        api("/api/platform/domains", { method: "POST", body: body }).then(function (res) {
-          if (!res.ok) { alert(res.data.error || "Hata"); return; }
-          e.target.reset();
-          setDomainFormMode(null);
-          refreshDomains();
-        });
-      });
-      document.getElementById("mm-domains-refresh")?.addEventListener("click", function () {
-        setDomainFormMode(null);
-        var form = document.getElementById("mm-domain-form");
-        if (form) form.reset();
-      });
+      document.getElementById("mm-domain-form")?.addEventListener("submit", saveDomainForm);
       document.addEventListener("click", function (e) {
         var sus = e.target.closest(".mm-suspend");
         if (sus) {
@@ -228,6 +284,7 @@
           var eid = Number(editBtn.getAttribute("data-id"));
           var found = (window._mmDomainsCache || []).find(function (x) { return Number(x.id) === eid; });
           if (found) setDomainFormMode(eid, found);
+          else setDomainHint("Domain listesi güncel değil — Yenile'ye bas", true);
           return;
         }
         var warm = e.target.closest(".mm-warm");
