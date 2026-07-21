@@ -1230,9 +1230,12 @@ def create_link():
     domain = normalize_domain(data.get("domain", ""))
     ref_code = (data.get("ref_code") or "").strip()
     label = (data.get("label") or data.get("name") or "").strip()
+    redirect_url = normalize_redirect_url(data.get("redirect_url") or "")
 
     if not domain:
         return jsonify({"error": "Domain zorunludur."}), 400
+    if data.get("redirect_url") and not redirect_url:
+        return jsonify({"error": "Geçerli bir yönlendirme URL’si girin (https://…)."}), 400
 
     created_at = iso(utcnow())
     created_by = current_display_name()
@@ -1240,19 +1243,77 @@ def create_link():
         with closing(get_db()) as conn:
             link_id = insert_returning_id(
                 conn,
-                "INSERT INTO tracked_links (domain, ref_code, label, created_at, created_by) VALUES (?, ?, ?, ?, ?)",
-                (domain, ref_code, label, created_at, created_by),
+                """
+                INSERT INTO tracked_links
+                (domain, ref_code, label, created_at, created_by, redirect_url)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (domain, ref_code, label, created_at, created_by, redirect_url),
             )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM tracked_links WHERE id = ?", (link_id,))
     except IntegrityError:
-        if ref_code:
-            return jsonify({"error": "Bu domain + referans kombinasyonu zaten kayıtlı."}), 409
-        return jsonify({"error": "Bu domain zaten takip listesinde."}), 409
+        # Aynı domain varsa yönlendirme/etiket güncelle (girbize senaryosu)
+        with closing(get_db()) as conn:
+            existing = fetchone(
+                conn,
+                "SELECT * FROM tracked_links WHERE domain = ? AND ref_code = ?",
+                (domain, ref_code),
+            )
+            if not existing:
+                return jsonify({"error": "Bu domain zaten takip listesinde."}), 409
+            execute(
+                conn,
+                """
+                UPDATE tracked_links
+                SET label = CASE WHEN ? != '' THEN ? ELSE label END,
+                    redirect_url = ?
+                WHERE id = ?
+                """,
+                (label, label, redirect_url, existing["id"]),
+            )
+            conn.commit()
+            row = fetchone(conn, "SELECT * FROM tracked_links WHERE id = ?", (existing["id"],))
+        item = dict(row)
+        item["affiliate_url"] = affiliate_url(item["domain"], item["ref_code"])
+        item["online_count"] = 0
+        return jsonify({"link": item, "tracking_snippet": build_tracking_snippet(), "updated": True})
 
     item = dict(row)
     item["affiliate_url"] = affiliate_url(item["domain"], item["ref_code"])
     return jsonify({"link": item, "tracking_snippet": build_tracking_snippet()}), 201
+
+
+@app.route("/api/links/<int:link_id>", methods=["PUT", "PATCH"])
+@permission_required("tracking.domains", "module.tracking")
+def update_link(link_id):
+    data = request.get_json(silent=True) or {}
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT * FROM tracked_links WHERE id = ?", (link_id,))
+        if not row:
+            return jsonify({"error": "Link bulunamadı."}), 404
+        label = row["label"] or ""
+        redirect_url = row["redirect_url"] if "redirect_url" in row.keys() else ""
+        if "label" in data:
+            label = (data.get("label") or "").strip()[:120]
+        if "redirect_url" in data:
+            raw = data.get("redirect_url")
+            if raw is None or str(raw).strip() == "":
+                redirect_url = ""
+            else:
+                redirect_url = normalize_redirect_url(raw)
+                if not redirect_url:
+                    return jsonify({"error": "Geçerli bir yönlendirme URL’si girin (https://…)."}), 400
+        execute(
+            conn,
+            "UPDATE tracked_links SET label = ?, redirect_url = ? WHERE id = ?",
+            (label, redirect_url or "", link_id),
+        )
+        conn.commit()
+        row = fetchone(conn, "SELECT * FROM tracked_links WHERE id = ?", (link_id,))
+    item = dict(row)
+    item["affiliate_url"] = affiliate_url(item["domain"], item["ref_code"])
+    return jsonify({"link": item})
 
 
 @app.route("/api/links/bulk", methods=["POST"])
@@ -1335,6 +1396,121 @@ def build_tracking_snippet(domain=None, ref_code=None):
         f'<script src="{base}/static/tracker.js" '
         f'data-api="{base}" async></script>'
     )
+
+
+def normalize_redirect_url(raw):
+    """Boş veya geçersizse ''; aksi halde https://… hedef."""
+    url = (raw or "").strip()
+    if not url:
+        return ""
+    if "://" not in url:
+        url = "https://" + url
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return ""
+    return url[:500]
+
+
+def find_redirect_tracked_link(host):
+    """Host için redirect_url dolu tracked_links kaydı (ref boş tercih)."""
+    domain = normalize_domain(host)
+    if not domain:
+        return None
+    hosts = [domain]
+    if not domain.startswith("www."):
+        hosts.append("www." + domain)
+    with closing(get_db()) as conn:
+        for h in hosts:
+            row = fetchone(
+                conn,
+                """
+                SELECT * FROM tracked_links
+                WHERE domain = ? AND COALESCE(redirect_url, '') != '' AND ref_code = ''
+                LIMIT 1
+                """,
+                (normalize_domain(h),),
+            )
+            if row:
+                return dict(row)
+            row = fetchone(
+                conn,
+                """
+                SELECT * FROM tracked_links
+                WHERE domain = ? AND COALESCE(redirect_url, '') != ''
+                ORDER BY CASE WHEN ref_code = '' THEN 0 ELSE 1 END
+                LIMIT 1
+                """,
+                (normalize_domain(h),),
+            )
+            if row:
+                return dict(row)
+    return None
+
+
+def record_domain_redirect_hit(link):
+    """Yönlendirme ziyaretini say + kısa oturum aç (online KPI)."""
+    now = iso(utcnow())
+    session_id = "redir_" + uuid.uuid4().hex
+    client_ip = get_client_ip()
+    user_agent = get_user_agent()
+    domain = link.get("domain") or ""
+    ref_code = link.get("ref_code") or ""
+    with closing(get_db()) as conn:
+        execute(
+            conn,
+            "UPDATE tracked_links SET redirect_hits = COALESCE(redirect_hits, 0) + 1 WHERE id = ?",
+            (link["id"],),
+        )
+        execute(
+            conn,
+            """
+            INSERT INTO visitor_sessions
+            (session_id, tracked_link_id, domain, ref_code, started_at, last_seen_at,
+             ip_address, user_agent, total_seconds)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+            """,
+            (session_id, link["id"], domain, ref_code, now, now, client_ip, user_agent),
+        )
+        conn.commit()
+    return session_id
+
+
+def build_redirect_destination(base_url, incoming_query):
+    """Hedefe gelen ?ref= vb. query’yi birleştir."""
+    dest = (base_url or "").strip()
+    if not dest:
+        return ""
+    if not incoming_query:
+        return dest
+    sep = "&" if ("?" in dest) else "?"
+    return dest + sep + incoming_query
+
+
+_REDIRECT_SKIP_PREFIXES = (
+    "/admin", "/api/", "/static/", "/demo", "/health", "/login",
+    "/uploads/", "/p/", "/site/", "/robots.txt", "/favicon.ico",
+)
+
+
+def handle_tracked_domain_redirect():
+    """girbize.com gibi domainler: bio değil → takip + güncel siteye 302."""
+    path = request.path or "/"
+    if any(path.startswith(prefix) for prefix in _REDIRECT_SKIP_PREFIXES):
+        return None
+    if request.method not in ("GET", "HEAD"):
+        return None
+    link = find_redirect_tracked_link(request.host)
+    if not link:
+        return None
+    dest = normalize_redirect_url(link.get("redirect_url") or "")
+    if not dest:
+        return None
+    try:
+        record_domain_redirect_hit(link)
+    except Exception as exc:
+        print(f"⚠️  redirect hit: {exc}")
+    qs = (request.query_string or b"").decode("utf-8", errors="ignore")
+    return redirect(build_redirect_destination(dest, qs), code=302)
 
 
 # ── Tracker API ──
@@ -2265,6 +2441,13 @@ if feature_enabled("marketing"):
 @app.before_request
 def biolink_custom_domain():
     return handle_custom_domain_biolink()
+
+
+@app.before_request
+def tracked_domain_redirect():
+    """Bio olmayan özel domain → hedef siteye yönlendir + say."""
+    # Bio sayfa varsa o öncelikli (custom_domain dolu sayfa)
+    return handle_tracked_domain_redirect()
 
 
 @app.before_request

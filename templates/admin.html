@@ -2354,18 +2354,23 @@
           <div class="card-body" style="padding-top:0;">
             {% if panel.brand == "bizzo" %}
             <p class="hint" style="margin:0.75rem 0 0.5rem;">
-              <strong>bizzocasino168.com online:</strong> domain listede otomatik görünür.
-              Anlık online için aşağıdaki takip kodunu <strong>casino sitesinin HTML’ine</strong> (tüm sayfalar / &lt;head&gt; veya body sonu) bir kez eklemen gerekir.
-              Bio domain’ler (girbize.com) için kod otomatik gömülü — ekstra ekleme yok.
-              Tıklama sayıları için <strong>Bio Sayfa → Domain Performans</strong> sekmesine bak.
+              <strong>Yönlendirme domain (örn. girbize.com):</strong> Bio’daki Özel Domain’i boşalt.
+              Buraya domain + <em>Hedef URL</em> (güncel site) yaz — ziyaret panelde sayılır, kullanıcı siteye gider.
+              DNS: Namecheap <strong>A → 216.24.57.1</strong> + Render Custom Domain.
+              <strong>bizzocasino168.com online</strong> için takip kodunu casino HTML’ine ekle.
             </p>
             {% endif %}
             <form id="add-link-form" style="margin-top:0.85rem;">
               <div class="form-row-4">
-                <div><label for="input-label">İsim</label><input id="input-label" placeholder="Örn: Bizzo ana site" autocomplete="off"></div>
-                <div><label for="input-domain">Domain</label><input id="input-domain" placeholder="{% if panel.brand == 'bizzo' %}bizzocasino168.com{% else %}makrobet804.com{% endif %}" autocomplete="off"></div>
+                <div><label for="input-label">İsim</label><input id="input-label" placeholder="Örn: girbize yönlendirme" autocomplete="off"></div>
+                <div><label for="input-domain">Domain</label><input id="input-domain" placeholder="{% if panel.brand == 'bizzo' %}girbize.com{% else %}makrobet804.com{% endif %}" autocomplete="off"></div>
                 <div><label for="input-ref">Referans (?ref=) — opsiyonel</label><input id="input-ref" placeholder="Boş = tüm site" autocomplete="off"></div>
                 <div style="align-self:end"><button type="submit" class="btn btn-primary">Domain Ekle</button></div>
+              </div>
+              <div style="margin-top:0.55rem;">
+                <label for="input-redirect">Hedef URL (yönlendirme — opsiyonel)</label>
+                <input id="input-redirect" placeholder="{% if panel.brand == 'bizzo' %}https://www.bizzocasino168.com{% else %}https://makrogir.com{% endif %}" autocomplete="off">
+                <span class="muted-sm" style="display:block;margin-top:0.25rem;">Doluysa bu domain bio açmaz; ziyareti sayıp bu adrese yönlendirir.</span>
               </div>
             </form>
             <div class="tools-grid" style="margin-top:0.85rem;">
@@ -2404,10 +2409,12 @@
                   <th class="col-sortable" data-sort="label">İsim</th>
                   <th class="col-sortable" data-sort="domain">Domain</th>
                   <th class="col-sortable" data-sort="ref_code">Referans</th>
+                  <th class="col-sortable" data-sort="redirect_url">Hedef</th>
+                  <th class="col-sortable" data-sort="redirect_hits">Yönlendirme</th>
                   <th class="col-sortable" data-sort="online_count">Online</th>
                   <th></th>
                 </tr></thead>
-                <tbody id="links-table"><tr><td colspan="5" class="empty">Henüz domain yok</td></tr></tbody>
+                <tbody id="links-table"><tr><td colspan="7" class="empty">Henüz domain yok</td></tr></tbody>
               </table>
             </div>
             <div class="table-foot" id="links-table-foot" style="display:none;">
@@ -3636,11 +3643,13 @@
           label: function(l) { return l.label || ""; },
           domain: function(l) { return l.domain || ""; },
           ref_code: function(l) { return l.ref_code || ""; },
+          redirect_url: function(l) { return l.redirect_url || ""; },
+          redirect_hits: function(l) { return l.redirect_hits || 0; },
           online_count: function(l) { return l.online_count || 0; }
         });
 
         if (!cachedLinks.length) {
-          tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz domain yok</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" class="empty">Henüz domain yok</td></tr>';
           updateTableFoot("links-table", 0);
           return;
         }
@@ -3652,12 +3661,36 @@
           var nameCell = l.label
             ? '<span class="link-label">'+esc(l.label)+'</span>'
             : '<span class="link-label-empty">—</span>';
+          var dest = l.redirect_url || "";
+          var destCell = dest
+            ? '<span title="'+esc(dest)+'">'+(dest.length > 36 ? esc(dest.slice(0, 36)) + "…" : esc(dest))+"</span>"
+            : '<span class="muted">—</span>';
+          var hits = l.redirect_hits || 0;
           var actions = canManageDomains
-            ? '<button class="btn btn-sm btn-danger" onclick="deleteLink('+l.id+')">Sil</button>'
+            ? '<button type="button" class="btn btn-sm" data-edit-redirect="'+l.id+'" data-current="'+esc(dest)+'">Hedef</button> '+
+              '<button class="btn btn-sm btn-danger" onclick="deleteLink('+l.id+')">Sil</button>'
             : '';
-          return '<tr><td>'+nameCell+'</td><td><strong>'+esc(l.domain)+'</strong></td><td>'+ref+'</td><td>'+on+'</td>'+
-            '<td>'+actions+'</td></tr>';
+          return '<tr><td>'+nameCell+'</td><td><strong>'+esc(l.domain)+'</strong></td><td>'+ref+'</td><td>'+destCell+'</td><td>'+hits+'</td><td>'+on+'</td>'+
+            '<td style="white-space:nowrap;">'+actions+'</td></tr>';
         }).join("");
+        tbody.querySelectorAll("[data-edit-redirect]").forEach(function(btn) {
+          btn.onclick = function() {
+            var id = btn.getAttribute("data-edit-redirect");
+            var cur = btn.getAttribute("data-current") || "";
+            var next = prompt("Hedef URL (boş = yönlendirme kapat)", cur);
+            if (next === null) return;
+            fetch(API+"/api/links/"+id, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ redirect_url: next.trim() })
+            }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+              .then(function(res){
+                if (!res.ok) { alert((res.data && res.data.error) || "Kaydedilemedi"); return; }
+                toast("Hedef güncellendi");
+                refreshAll();
+              });
+          };
+        });
 
         updateTableFoot("links-table", cachedLinks.length);
         updateSortHeaders("links-table");
@@ -4523,7 +4556,7 @@
       }
 
       function renderLinksIfChanged(links, trackingSnippet) {
-        var sig = listSig(links, ["id", "online_count", "domain", "ref_code", "label"]);
+        var sig = listSig(links, ["id", "online_count", "domain", "ref_code", "label", "redirect_url", "redirect_hits"]);
         if (sig === lastLinksSig) {
           if (trackingSnippet) updateTrackingSnippet(trackingSnippet);
           return;
@@ -5414,14 +5447,16 @@
             body:JSON.stringify({
               domain:domain,
               label:document.getElementById("input-label").value.trim(),
-              ref_code:document.getElementById("input-ref").value.trim()
+              ref_code:document.getElementById("input-ref").value.trim(),
+              redirect_url:(document.getElementById("input-redirect") || {}).value.trim()
             })
           }).then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});}).then(function(res){
             if(!res.ok){alert(res.data.error || "Eklenemedi");return;}
             document.getElementById("input-label").value="";
             document.getElementById("input-domain").value="";
             document.getElementById("input-ref").value="";
-            refreshAll(); toast("Eklendi!");
+            if (document.getElementById("input-redirect")) document.getElementById("input-redirect").value="";
+            refreshAll(); toast(res.data.updated ? "Güncellendi!" : "Eklendi!");
           });
         }, "Ekleniyor…");
       });
