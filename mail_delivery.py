@@ -217,6 +217,8 @@ def deliver_mail(
         return send_id, "failed", "SMTP host tanımlı değil"
 
     from_email, from_name = _domain_from(conn, domain_id)
+    settings_user = user
+    settings_password = password
     domain_smtp_pw = ""
     if domain_id:
         drow = None
@@ -234,21 +236,25 @@ def deliver_mail(
             if blob:
                 try:
                     from mail_tenant import decrypt_secret
-                    domain_smtp_pw = decrypt_secret(blob) or blob
-                    if domain_smtp_pw.startswith("enc:v1:"):
-                        domain_smtp_pw = ""
+                    plain = decrypt_secret(blob) if str(blob).startswith("enc:v1:") else blob
+                    domain_smtp_pw = (plain or "").strip()
                 except Exception:
-                    domain_smtp_pw = blob if not str(blob).startswith("enc:v1:") else ""
+                    domain_smtp_pw = "" if str(blob).startswith("enc:v1:") else blob
+    # Domain şifresi varsa onu kullan (From = info@domain). Yoksa Ayarlar.
     if domain_smtp_pw:
         user = from_email
         password = domain_smtp_pw
+        auth_source = "domain"
     else:
+        user = settings_user
+        password = settings_password
+        auth_source = "settings"
         user_domain = user.split("@")[-1].lower() if "@" in (user or "") else ""
         from_domain = from_email.split("@")[-1].lower() if "@" in (from_email or "") else ""
         if user_domain and from_domain and user_domain != from_domain:
             err = (
                 f"SMTP kullanıcı ({user}) ile gönderen domain ({from_email}) uyuşmuyor. "
-                "Ayarlar → Domain düzenle → bu domain için DirectMail SMTP şifresini kaydet."
+                "Platform → domain Düzenle → bu domain için DirectMail SMTP şifresini kaydet."
             )
             execute(
                 conn,
@@ -257,13 +263,27 @@ def deliver_mail(
             )
             return send_id, "failed", err
 
+    if not (password or "").strip():
+        err = (
+            "SMTP şifresi boş (auth kaynağı: " + auth_source + "). "
+            "Alibaba DirectMail SMTP şifresini Platform domain + Ayarlar’a tekrar kaydet. "
+            "Render’da web ve worker MAILING_SECRET_KEY aynı olmalı."
+        )
+        execute(
+            conn,
+            "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?",
+            (err, send_id),
+        )
+        return send_id, "failed", err
+
     extra = list_unsubscribe_headers(unsub_http) if unsub_http else None
-    try:
-        msg_id = _smtp_send(
+
+    def _try_send(smtp_user, smtp_password):
+        return _smtp_send(
             host=host,
             port=port,
-            user=user,
-            password=password,
+            user=smtp_user,
+            password=smtp_password,
             from_email=from_email,
             from_name=from_name,
             to_email=to_email,
@@ -272,6 +292,9 @@ def deliver_mail(
             text_body=tracked_text,
             extra_headers=extra,
         )
+
+    try:
+        msg_id = _try_send(user, password)
         execute(
             conn,
             """
@@ -284,6 +307,33 @@ def deliver_mail(
         return send_id, "sent", ""
     except Exception as exc:
         err = str(exc).strip()[:500] or "SMTP gönderim hatası"
+        # Domain şifresi 535 verdiyse Ayarlar şifresiyle bir kez daha dene
+        is_auth = "535" in err or "Authentication" in err or "auth" in err.lower()
+        if (
+            is_auth
+            and auth_source == "domain"
+            and (settings_password or "").strip()
+            and settings_password != password
+        ):
+            try:
+                msg_id = _try_send(settings_user or from_email, settings_password)
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_sends
+                    SET status = 'sent', provider_msg_id = ?, sent_at = ?, error = ''
+                    WHERE id = ?
+                    """,
+                    (msg_id or "", now, send_id),
+                )
+                return send_id, "sent", ""
+            except Exception as exc2:
+                err = (
+                    f"535 auth (domain şifresi + Ayarlar şifresi denendi): "
+                    f"{str(exc2).strip()[:400]}"
+                )
+        else:
+            err = f"{err} [auth={auth_source}; user={user}]"
         execute(
             conn,
             """
