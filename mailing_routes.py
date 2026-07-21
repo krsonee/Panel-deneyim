@@ -3079,6 +3079,13 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/campaigns", methods=["POST"])
     @mail_perm(*MAIL_CAMP)
     def create_campaign():
+        try:
+            return _create_campaign_inner()
+        except Exception as exc:
+            print(f"⚠️  create_campaign: {exc}")
+            return jsonify({"error": f"Kampanya oluşturulamadı: {exc}"}), 500
+
+    def _create_campaign_inner():
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
         if not name:
@@ -3179,24 +3186,30 @@ def create_mailing_blueprint(permission_required):
                 _tid = _ctid()
             except Exception:
                 _tid = None
+            insert_params = (
+                name, template_id, domain_id, tag_filter, notes_extra,
+                scheduled_raw, rate, max_recipients, 1 if exclude_sent else 0,
+                now, now,
+            )
+            cid = None
             if _tid:
-                cid = insert_returning_id(
-                    conn,
-                    """
-                    INSERT INTO mail_campaigns
-                    (name, campaign_type, template_id, domain_id, status, tag_filter, notes,
-                     scheduled_at, rate_per_minute, max_recipients, exclude_previously_sent,
-                     total_count, sent_count, failed_count, skipped_count, error,
-                     created_at, updated_at, tenant_id)
-                    VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?, ?)
-                    """,
-                    (
-                        name, template_id, domain_id, tag_filter, notes_extra,
-                        scheduled_raw, rate, max_recipients, 1 if exclude_sent else 0,
-                        now, now, int(_tid),
-                    ),
-                )
-            else:
+                try:
+                    cid = insert_returning_id(
+                        conn,
+                        """
+                        INSERT INTO mail_campaigns
+                        (name, campaign_type, template_id, domain_id, status, tag_filter, notes,
+                         scheduled_at, rate_per_minute, max_recipients, exclude_previously_sent,
+                         total_count, sent_count, failed_count, skipped_count, error,
+                         created_at, updated_at, tenant_id)
+                        VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?, ?)
+                        """,
+                        insert_params + (int(_tid),),
+                    )
+                except Exception as tid_exc:
+                    print(f"⚠️  campaign insert tenant_id: {tid_exc}")
+                    cid = None
+            if not cid:
                 cid = insert_returning_id(
                     conn,
                     """
@@ -3207,12 +3220,10 @@ def create_mailing_blueprint(permission_required):
                      created_at, updated_at)
                     VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?)
                     """,
-                    (
-                        name, template_id, domain_id, tag_filter, notes_extra,
-                        scheduled_raw, rate, max_recipients, 1 if exclude_sent else 0,
-                        now, now,
-                    ),
+                    insert_params,
                 )
+            if not cid:
+                return jsonify({"error": "Kampanya kaydı yazılamadı (DB)."}), 500
             try:
                 attached = _attach_campaign_recipients(
                     conn, cid, tag_filter=tag_filter, max_recipients=max_recipients,

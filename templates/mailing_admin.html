@@ -153,13 +153,21 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260721mm5"></script>
-  <script src="/static/mailing_platform.js?v=20260721mm5"></script>
+  <script src="/static/mailing.js?v=20260721mm6"></script>
+  <script src="/static/mailing_platform.js?v=20260721mm6"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");
       if (window.MakroMailing) {
-        try { window.MakroMailing.init(); window.MakroMailing.onShow && window.MakroMailing.onShow(); } catch (e) { console.error(e); }
+        try {
+          window.MakroMailing.init();
+          var ready = (window.MakroMailing.ensureTenant
+            ? window.MakroMailing.ensureTenant()
+            : Promise.resolve());
+          ready.finally(function () {
+            window.MakroMailing.onShow && window.MakroMailing.onShow();
+          });
+        } catch (e) { console.error(e); }
       }
       document.getElementById("mm-logout")?.addEventListener("click", function (e) {
         e.preventDefault();

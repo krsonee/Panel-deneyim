@@ -89,13 +89,60 @@
       if (timer) clearTimeout(timer);
       if (r.status === 401) {
         location.href = window.MAIL_STANDALONE ? "/login" : "/admin/login";
-        return null;
+        return { ok: false, status: 401, data: { error: "Oturum düştü — tekrar giriş yap" } };
       }
-      return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; });
-    }).catch(function () {
+      return r.text().then(function (text) {
+        var data = {};
+        if (text) {
+          try {
+            data = JSON.parse(text);
+          } catch (parseErr) {
+            var snippet = String(text).replace(/\s+/g, " ").slice(0, 140);
+            data = {
+              error: "Sunucu JSON dönmedi (HTTP " + r.status + ")" +
+                (snippet ? (": " + snippet) : "")
+            };
+            return { ok: false, status: r.status, data: data };
+          }
+        }
+        return { ok: r.ok, status: r.status, data: data || {} };
+      });
+    }).catch(function (err) {
       if (timer) clearTimeout(timer);
-      return null;
+      var msg = (err && err.name === "AbortError")
+        ? "İstek zaman aşımı — tekrar dene"
+        : ("İstek başarısız: " + ((err && err.message) || "ağ hatası"));
+      return { ok: false, status: 0, data: { error: msg } };
     });
+  }
+
+  function mailEnsureTenant() {
+    if (!window.MAIL_STANDALONE || !window.MAIL_IS_SUPERADMIN) {
+      return Promise.resolve(window.MAIL_TENANT_ID || null);
+    }
+    if (window.MAIL_TENANT_ID) return Promise.resolve(window.MAIL_TENANT_ID);
+    return fetch("/api/platform/tenants", { credentials: "same-origin" })
+      .then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (data) {
+        var rows = (data && data.tenants) || [];
+        var makro = rows.find(function (t) { return t.slug === "makro"; }) || rows[0];
+        if (!makro) return null;
+        return fetch("/api/mail-auth/select-tenant", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tenant_id: Number(makro.id) })
+        }).then(function (r) {
+          if (!r.ok) return null;
+          window.MAIL_TENANT_ID = Number(makro.id);
+          var sel = document.getElementById("mm-tenant-select");
+          if (sel) sel.value = String(makro.id);
+          var hint = document.getElementById("mm-tenant-hint");
+          if (hint) hint.textContent = "Tenant #" + makro.id + " (" + makro.slug + ") seçildi";
+          return window.MAIL_TENANT_ID;
+        });
+      })
+      .catch(function () { return null; });
   }
 
   function mailToast(msg) {
@@ -3040,15 +3087,20 @@
           mailToast("Şablon ve domain seçin");
           return;
         }
-        mailApi("/api/mailing/campaigns", { method: "POST", body: body, timeoutMs: 120000 }).then(function (res) {
-          if (!res || !res.ok) {
-            var errMsg = (res && res.data && res.data.error) || "";
-            if (!errMsg && !res) errMsg = "Bağlantı/oturum hatası — sayfayı yenile, tenant seç, tekrar dene";
-            if (!errMsg) errMsg = "Oluşturulamadı" + (res && res.status ? (" (HTTP " + res.status + ")") : "");
-            if (window.MAIL_STANDALONE && window.MAIL_IS_SUPERADMIN && !window.MAIL_TENANT_ID) {
-              errMsg = "Üstten Aktif tenant seç (örn. makro), sonra tekrar dene";
-            }
-            mailToast(errMsg);
+        var submitBtn = campForm.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+        mailEnsureTenant().then(function (tid) {
+          if (window.MAIL_STANDALONE && window.MAIL_IS_SUPERADMIN && !tid && !window.MAIL_TENANT_ID) {
+            mailToast("Üstten Aktif tenant seç (örn. makro), sonra tekrar dene");
+            if (submitBtn) submitBtn.disabled = false;
+            return null;
+          }
+          return mailApi("/api/mailing/campaigns", { method: "POST", body: body, timeoutMs: 120000 });
+        }).then(function (res) {
+          if (submitBtn) submitBtn.disabled = false;
+          if (!res) return;
+          if (!res.ok) {
+            mailToast((res.data && res.data.error) || ("Oluşturulamadı (HTTP " + res.status + ")"));
             return;
           }
           var camp = res.data.campaign || {};
@@ -3071,14 +3123,22 @@
           var hint = document.getElementById("mail-camp-preview-hint");
           if (hint) hint.textContent = "";
           mailLoadCampaigns();
+        }).catch(function () {
+          if (submitBtn) submitBtn.disabled = false;
+          mailToast("Kampanya isteği patladı — tekrar dene");
         });
       });
     }
     bindClick("mail-camp-preview", function () {
       var hint = document.getElementById("mail-camp-preview-hint");
       if (hint) hint.textContent = "Hesaplanıyor…";
-      mailApi("/api/mailing/campaigns/select-preview", { method: "POST", body: mailCampSelectionPayload(), timeoutMs: 60000 })
-        .then(function (res) {
+      mailEnsureTenant().then(function () {
+        return mailApi("/api/mailing/campaigns/select-preview", {
+          method: "POST",
+          body: mailCampSelectionPayload(),
+          timeoutMs: 60000
+        });
+      }).then(function (res) {
           if (!hint) return;
           if (!res || !res.ok) {
             hint.textContent = (res && res.data && res.data.error) || "Hesaplanamadı — üstten tenant (makro) seçili mi?";
@@ -3445,6 +3505,7 @@
       bindEvents();
       setTplMode("simple");
     },
+    ensureTenant: mailEnsureTenant,
     onShow: function () {
       if (!mailLoaded) this.init();
       var tab = "dashboard";
