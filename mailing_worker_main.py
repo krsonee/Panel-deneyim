@@ -1,4 +1,4 @@
-"""MakroMail background worker — campaigns, imports/scrub reclaim, domain warm ticks.
+"""Mikromail background worker — campaigns, imports/scrub reclaim, domain warm ticks.
 
 Run: python mailing_worker_main.py
 Env: DATABASE_URL, MAILING_SECRET_KEY, same as web.
@@ -44,7 +44,7 @@ def _tick_warm_domains(conn):
 
 def main():
     os.environ["MAILING_WORKER_EXTERNAL"] = "1"
-    print("✉️  MakroMail worker starting…")
+    print("✉️  Mikromail worker starting…")
     with closing(get_db()) as conn:
         init_mailing_schema(conn)
         ensure_tenant_schema(conn)

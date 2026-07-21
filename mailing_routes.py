@@ -1797,7 +1797,7 @@ def create_mailing_blueprint(permission_required):
         cancel_active_scrub_jobs()
     except Exception as exc:
         print(f"⚠️  startup scrub cancel: {exc}")
-    # Standalone MakroMail'de kontak purge kapalı (satış verisi)
+    # Standalone Mikromail'de kontak purge kapalı (satış verisi)
     if not external_worker and (os.environ.get("SERVICE_MODE") or "").strip().lower() != "mailing":
         try:
             _purge_all_mail_contacts_once()

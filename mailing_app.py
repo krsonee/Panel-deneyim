@@ -1,4 +1,4 @@
-"""MakroMail — standalone mailing product (multi-tenant, domain pool).
+"""Mikromail — standalone mailing product (multi-tenant, domain pool).
 
 Run: gunicorn mailing_app:app
 Env: DATABASE_URL, SECRET_KEY, MAILING_SECRET_KEY, PUBLIC_BASE_URL,
@@ -43,14 +43,14 @@ from mail_tenant import (
 )
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY") or os.environ.get("MAILING_SECRET_KEY") or "dev-makromail"
+app.secret_key = os.environ.get("SECRET_KEY") or os.environ.get("MAILING_SECRET_KEY") or "dev-mikromail"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") == "production" or bool(
     os.environ.get("RENDER")
 )
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=31)
-app.config["SESSION_COOKIE_NAME"] = "makromail_session"
+app.config["SESSION_COOKIE_NAME"] = "mikromail_session"
 
 
 def _login_rate_ok(username: str) -> bool:
@@ -74,7 +74,7 @@ def _login_rate_ok(username: str) -> bool:
 
 @app.get("/health")
 def health():
-    return jsonify({"ok": True, "service": "makromail"})
+    return jsonify({"ok": True, "service": "mikromail"})
 
 
 @app.get("/")
@@ -510,7 +510,7 @@ def _startup():
         conn.commit()
     init_mail_tenant_layer()
     _register_mailing()
-    print("✉️  MakroMail app ready (standalone)")
+    print("✉️  Mikromail app ready (standalone)")
 
 
 _startup()

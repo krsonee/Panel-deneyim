@@ -17,7 +17,7 @@ MAILING_ALLOWED_USERS = frozenset(
     u.strip() for u in _MAILING_USERS_RAW.split(",") if u.strip()
 )
 
-# MakroMail ayrıldı: panelde mailing varsayılan kapalı (SERVICE_MODE=panel).
+# Mikromail ayrıldı: panelde mailing varsayılan kapalı (SERVICE_MODE=panel).
 # Embedded mailing yalnızca MAILING_EMBEDDED=1 ile açılır (geçiş dönemi).
 _SERVICE_MODE = (os.environ.get("SERVICE_MODE") or "panel").strip().lower()
 _MAILING_EMBEDDED = (os.environ.get("MAILING_EMBEDDED") or "").strip().lower() in (
@@ -228,6 +228,16 @@ def panel_context(username: str | None = None) -> dict:
         "biolink_pack": pack,
         "enabled_modules": list(ENABLED_MODULES),
         "features": features,
-        "makromail_url": (os.environ.get("MAKROMAIL_URL") or "https://makromail.onrender.com").rstrip("/"),
+        "mikromail_url": (
+            os.environ.get("MIKROMAIL_URL")
+            or os.environ.get("MAKROMAIL_URL")
+            or "https://mikromail.onrender.com"
+        ).rstrip("/"),
+        # Geriye uyumluluk
+        "makromail_url": (
+            os.environ.get("MIKROMAIL_URL")
+            or os.environ.get("MAKROMAIL_URL")
+            or "https://mikromail.onrender.com"
+        ).rstrip("/"),
         "mailing_standalone": MAILING_STANDALONE,
     }

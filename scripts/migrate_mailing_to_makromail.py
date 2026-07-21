@@ -155,7 +155,7 @@ def main():
     dc.close()
     sconn.close()
     dconn.close()
-    print("DONE — set makromail DATABASE_URL to mailing DB and deploy.")
+    print("DONE — set mikromail DATABASE_URL to mailing DB and deploy.")
 
 
 if __name__ == "__main__":

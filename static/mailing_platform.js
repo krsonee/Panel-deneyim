@@ -1,4 +1,4 @@
-/* MakroMail superadmin platform UI */
+/* Mikromail superadmin platform UI */
 (function () {
   function api(path, opts) {
     opts = opts || {};

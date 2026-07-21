@@ -1,4 +1,4 @@
-"""MakroMail multi-tenant + platform domain pool.
+"""Mikromail multi-tenant + platform domain pool.
 
 Tenants own contacts/campaigns/templates.
 Domains are platform-owned and allocated to tenants (managed send).
@@ -337,7 +337,7 @@ def ensure_tenant_schema(conn) -> None:
             """,
             (user.lower(), generate_password_hash(pw, method="pbkdf2:sha256"), user, now),
         )
-        print(f"✉️  MakroMail superadmin bootstrap: {user}")
+        print(f"✉️  Mikromail superadmin bootstrap: {user}")
 
 
 def current_tenant_id():

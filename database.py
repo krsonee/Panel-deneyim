@@ -2993,7 +2993,7 @@ def init_mailing_schema(conn):
             ensure_mail_ops_schema(conn)
         except Exception as exc:
             print(f"⚠️  mail_ops schema: {exc}")
-    # Tenant / domain pool katmanı (MakroMail) — mailing kapalı panelde de zararsız
+    # Tenant / domain pool katmanı (Mikromail) — mailing kapalı panelde de zararsız
     try:
         from mail_tenant import ensure_tenant_schema
         ensure_tenant_schema(conn)
