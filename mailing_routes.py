@@ -3899,11 +3899,18 @@ def create_mailing_blueprint(permission_required):
             status = (data.get("status") if "status" in data else row.get("status") or "pending").strip()
             dns_status = (data.get("dns_status") if "dns_status" in data else row.get("dns_status") or "unconfigured").strip()
             notes = (data.get("notes") if "notes" in data else row.get("notes") or "").strip()
-            smtp_enc = row.get("smtp_password_enc") or row.get("smtp_password") or ""
+            smtp_plain = row.get("smtp_password") or ""
+            if smtp_plain and str(smtp_plain).startswith("enc:v1:"):
+                smtp_plain = ""
+            smtp_enc = row.get("smtp_password_enc") or ""
             if "smtp_password" in data and data.get("smtp_password") not in (None, ""):
                 from mail_tenant import encrypt_secret
 
-                smtp_enc = encrypt_secret(str(data.get("smtp_password")).strip())
+                smtp_plain = str(data.get("smtp_password")).strip()
+                try:
+                    smtp_enc = encrypt_secret(smtp_plain)
+                except Exception:
+                    smtp_enc = ""
             try:
                 execute(
                     conn,
@@ -3913,7 +3920,7 @@ def create_mailing_blueprint(permission_required):
                         smtp_password_enc = ?, smtp_password = ?
                     WHERE id = ?
                     """,
-                    (from_name, from_local, status, dns_status, notes, smtp_enc, "", domain_id),
+                    (from_name, from_local, status, dns_status, notes, smtp_enc, smtp_plain, domain_id),
                 )
             except Exception:
                 try:
@@ -3925,7 +3932,7 @@ def create_mailing_blueprint(permission_required):
                             smtp_password = ?
                         WHERE id = ?
                         """,
-                        (from_name, from_local, status, dns_status, notes, smtp_enc, domain_id),
+                        (from_name, from_local, status, dns_status, notes, smtp_plain or smtp_enc, domain_id),
                     )
                 except Exception:
                     execute(
@@ -4017,6 +4024,29 @@ def create_mailing_blueprint(permission_required):
             from mail_scrub import scrub_settings as _scrub_settings
             settings["scrub"] = _scrub_settings(conn)
         return jsonify({"settings": settings})
+
+    @bp.route("/settings/test-smtp", methods=["POST"])
+    @mail_perm(*MAIL_SET)
+    def test_smtp_settings():
+        """Kampanya olmadan DirectMail login testi — 535 teşhisi için."""
+        data = request.get_json(silent=True) or {}
+        domain_id = data.get("domain_id")
+        try:
+            domain_id = int(domain_id) if domain_id not in (None, "") else None
+        except (TypeError, ValueError):
+            domain_id = None
+        from mail_delivery import smtp_login_test
+
+        with closing(get_db()) as conn:
+            if domain_id is None:
+                raw = get_mail_setting(conn, "default_domain_id", "") or ""
+                try:
+                    domain_id = int(raw) if raw else None
+                except (TypeError, ValueError):
+                    domain_id = None
+            result = smtp_login_test(conn, domain_id=domain_id)
+        status = 200 if result.get("ok") else 400
+        return jsonify(result), status
 
     def _mask_secret(s):
         if not s:

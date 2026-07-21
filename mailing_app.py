@@ -410,42 +410,53 @@ def platform_patch_domain(domain_id):
         else:
             warm_day = int(row.get("warm_day") or 0)
 
-        enc = row.get("smtp_password_enc") or row.get("smtp_password") or ""
+        # Makro panel gibi düz şifre de sakla (gönderim bunu tercih eder)
+        plain_pw = None
+        enc = row.get("smtp_password_enc") or ""
         if data.get("smtp_password"):
+            plain_pw = str(data["smtp_password"]).strip()
             try:
-                enc = encrypt_secret(str(data["smtp_password"]).strip())
+                enc = encrypt_secret(plain_pw)
             except Exception as exc:
                 print(f"⚠️  smtp encrypt: {exc}")
-                return jsonify({"error": "SMTP şifresi şifrelenemedi. MAILING_SECRET_KEY kontrol et."}), 500
+                enc = ""
+        elif row.get("smtp_password") and not str(row.get("smtp_password")).startswith("enc:v1:"):
+            plain_pw = str(row.get("smtp_password")).strip()
 
-        # Önce sade UPDATE (form alanları) — DNS kolonlarına dokunma
         last_err = None
-        for sql, params in (
-            (
-                """
-                UPDATE mail_domains SET
-                    from_name=?, from_local=?, warm_status=?, warm_day=?, daily_cap=?,
-                    smtp_password_enc=?
-                WHERE id=?
-                """,
-                (from_name, from_local, warm_status, warm_day, daily_cap, enc, domain_id),
-            ),
-            (
-                """
-                UPDATE mail_domains SET
-                    from_name=?, from_local=?, warm_status=?, daily_cap=?,
-                    smtp_password=?
-                WHERE id=?
-                """,
-                (from_name, from_local, warm_status, daily_cap, enc, domain_id),
-            ),
-            (
-                """
-                UPDATE mail_domains SET from_name=?, from_local=? WHERE id=?
-                """,
-                (from_name, from_local, domain_id),
-            ),
-        ):
+        if plain_pw is not None:
+            attempts = (
+                (
+                    """
+                    UPDATE mail_domains SET
+                        from_name=?, from_local=?, warm_status=?, warm_day=?, daily_cap=?,
+                        smtp_password=?, smtp_password_enc=?
+                    WHERE id=?
+                    """,
+                    (from_name, from_local, warm_status, warm_day, daily_cap, plain_pw, enc, domain_id),
+                ),
+                (
+                    """
+                    UPDATE mail_domains SET
+                        from_name=?, from_local=?, warm_status=?, daily_cap=?,
+                        smtp_password=?
+                    WHERE id=?
+                    """,
+                    (from_name, from_local, warm_status, daily_cap, plain_pw, domain_id),
+                ),
+            )
+        else:
+            attempts = (
+                (
+                    """
+                    UPDATE mail_domains SET
+                        from_name=?, from_local=?, warm_status=?, warm_day=?, daily_cap=?
+                    WHERE id=?
+                    """,
+                    (from_name, from_local, warm_status, warm_day, daily_cap, domain_id),
+                ),
+            )
+        for sql, params in attempts:
             try:
                 execute(conn, sql, params)
                 last_err = None

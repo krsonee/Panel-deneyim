@@ -1,33 +1,48 @@
 """Mail gönderim katmanı — stub simülasyon veya gerçek SMTP (Alibaba DirectMail)."""
-
 from __future__ import annotations
 
-import smtplib
 import ssl
+import smtplib
+from email.headerregistry import Address
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
-from database import (
-    execute,
-    fetchone,
-    get_mail_setting,
-    insert_returning_id,
-    iso,
-    utcnow,
-)
+from database import execute, fetchone, get_mail_setting, insert_returning_id, iso, utcnow
 
 
 def _domain_from(conn, domain_id):
     if not domain_id:
-        return "noreply@localhost", "MakroPanel"
+        return "noreply@localhost", "Mail"
     row = fetchone(conn, "SELECT * FROM mail_domains WHERE id = ?", (domain_id,))
     if not row:
-        return "noreply@localhost", "MakroPanel"
+        return "noreply@localhost", "Mail"
     row = dict(row)
     local = (row.get("from_local") or "noreply").strip() or "noreply"
-    domain = (row.get("domain") or "localhost").strip() or "localhost"
-    name = (row.get("from_name") or domain).strip() or domain
+    domain = (row.get("domain") or "localhost").strip()
+    name = (row.get("from_name") or domain or "Mail").strip() or "Mail"
     return f"{local}@{domain}", name
+
+
+def _resolve_domain_smtp_password(row) -> str:
+    """Makro panel uyumu: düz smtp_password öncelikli, sonra enc decrypt."""
+    if not row:
+        return ""
+    d = dict(row)
+    plain = (d.get("smtp_password") or "").strip()
+    enc = (d.get("smtp_password_enc") or "").strip()
+    if plain and not plain.startswith("enc:v1:"):
+        return plain
+    blob = enc or plain
+    if not blob:
+        return ""
+    if blob.startswith("enc:v1:"):
+        try:
+            from mail_tenant import decrypt_secret
+
+            return (decrypt_secret(blob) or "").strip()
+        except Exception:
+            return ""
+    return blob
 
 
 def _smtp_send(
@@ -80,6 +95,81 @@ def _smtp_send(
                 smtp.login(user, password or "")
             smtp.send_message(msg)
     return (msg["Message-ID"] or "").strip("<>")
+
+
+def smtp_login_test(conn, *, domain_id=None) -> dict:
+    """Ayarlar / domain SMTP ile login dene — kampanya olmadan hızlı teşhis."""
+    host = (get_mail_setting(conn, "smtp_host", "") or "").strip()
+    port = int((get_mail_setting(conn, "smtp_port", "465") or "465").strip() or 465)
+    user = (get_mail_setting(conn, "smtp_user", "") or "").strip()
+    password = (get_mail_setting(conn, "smtp_password", "") or "").strip()
+    from_email, from_name = _domain_from(conn, domain_id)
+    auth_source = "settings"
+    if domain_id:
+        drow = None
+        try:
+            drow = fetchone(
+                conn,
+                "SELECT smtp_password, smtp_password_enc, from_local, domain, from_name FROM mail_domains WHERE id = ?",
+                (domain_id,),
+            )
+        except Exception:
+            drow = fetchone(conn, "SELECT * FROM mail_domains WHERE id = ?", (domain_id,))
+        dom_pw = _resolve_domain_smtp_password(drow)
+        if dom_pw:
+            from_email, from_name = _domain_from(conn, domain_id)
+            user = from_email
+            password = dom_pw
+            auth_source = "domain"
+    if not host:
+        return {"ok": False, "error": "SMTP host boş", "auth_source": auth_source}
+    if not user:
+        return {"ok": False, "error": "SMTP user boş", "auth_source": auth_source}
+    if not password:
+        return {
+            "ok": False,
+            "error": "SMTP şifre boş — Ayarlar ve/veya Platform domain’e DirectMail SMTP şifresini kaydet",
+            "auth_source": auth_source,
+            "user": user,
+        }
+    try:
+        context = ssl.create_default_context()
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, timeout=20, context=context) as smtp:
+                smtp.login(user, password)
+        else:
+            with smtplib.SMTP(host, port, timeout=20) as smtp:
+                smtp.ehlo()
+                try:
+                    smtp.starttls(context=context)
+                    smtp.ehlo()
+                except smtplib.SMTPException:
+                    pass
+                smtp.login(user, password)
+        return {
+            "ok": True,
+            "message": f"SMTP login OK · {user} @ {host}:{port} ({auth_source})",
+            "user": user,
+            "host": host,
+            "port": port,
+            "auth_source": auth_source,
+            "from_email": from_email,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc).strip()[:500],
+            "user": user,
+            "host": host,
+            "port": port,
+            "auth_source": auth_source,
+            "from_email": from_email,
+            "hint": (
+                "535 ise Alibaba’da bu adresin SMTP şifresi yanlış. "
+                "Hesap şifresi değil — DirectMail → Sender Address → SMTP password. "
+                "Render web+worker MAILING_SECRET_KEY aynı olmalı."
+            ),
+        }
 
 
 def deliver_mail(
@@ -202,26 +292,19 @@ def deliver_mail(
 
     host = (get_mail_setting(conn, "smtp_host", "") or "").strip()
     port = (get_mail_setting(conn, "smtp_port", "465") or "465").strip()
-    user = (get_mail_setting(conn, "smtp_user", "") or "").strip()
-    password = get_mail_setting(conn, "smtp_password", "") or ""
+    settings_user = (get_mail_setting(conn, "smtp_user", "") or "").strip()
+    settings_password = (get_mail_setting(conn, "smtp_password", "") or "").strip()
     if not host:
         execute(
             conn,
-            """
-            UPDATE mail_sends
-            SET status = 'failed', error = ?
-            WHERE id = ?
-            """,
+            "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?",
             ("SMTP host tanımlı değil (Ayarlar → Gönderim sağlayıcı).", send_id),
         )
         return send_id, "failed", "SMTP host tanımlı değil"
 
     from_email, from_name = _domain_from(conn, domain_id)
-    settings_user = user
-    settings_password = password
     domain_smtp_pw = ""
     if domain_id:
-        drow = None
         try:
             drow = fetchone(
                 conn,
@@ -230,17 +313,9 @@ def deliver_mail(
             )
         except Exception:
             drow = fetchone(conn, "SELECT smtp_password FROM mail_domains WHERE id = ?", (domain_id,))
-        if drow:
-            d = dict(drow)
-            blob = (d.get("smtp_password_enc") or d.get("smtp_password") or "").strip()
-            if blob:
-                try:
-                    from mail_tenant import decrypt_secret
-                    plain = decrypt_secret(blob) if str(blob).startswith("enc:v1:") else blob
-                    domain_smtp_pw = (plain or "").strip()
-                except Exception:
-                    domain_smtp_pw = "" if str(blob).startswith("enc:v1:") else blob
-    # Domain şifresi varsa onu kullan (From = info@domain). Yoksa Ayarlar.
+        domain_smtp_pw = _resolve_domain_smtp_password(drow)
+
+    # Makro gibi: domain düz şifre varsa onu kullan; yoksa Ayarlar
     if domain_smtp_pw:
         user = from_email
         password = domain_smtp_pw
@@ -253,27 +328,18 @@ def deliver_mail(
         from_domain = from_email.split("@")[-1].lower() if "@" in (from_email or "") else ""
         if user_domain and from_domain and user_domain != from_domain:
             err = (
-                f"SMTP kullanıcı ({user}) ile gönderen domain ({from_email}) uyuşmuyor. "
-                "Platform → domain Düzenle → bu domain için DirectMail SMTP şifresini kaydet."
+                f"SMTP kullanıcı ({user}) ile gönderen ({from_email}) uyuşmuyor. "
+                "Platform → domain SMTP şifresini kaydet (Makro paneldeki gibi)."
             )
-            execute(
-                conn,
-                "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?",
-                (err, send_id),
-            )
+            execute(conn, "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?", (err, send_id))
             return send_id, "failed", err
 
-    if not (password or "").strip():
+    if not password:
         err = (
-            "SMTP şifresi boş (auth kaynağı: " + auth_source + "). "
-            "Alibaba DirectMail SMTP şifresini Platform domain + Ayarlar’a tekrar kaydet. "
-            "Render’da web ve worker MAILING_SECRET_KEY aynı olmalı."
+            f"SMTP şifresi boş [auth={auth_source}]. "
+            "DirectMail SMTP şifresini Ayarlar + Platform domain’e tekrar kaydet."
         )
-        execute(
-            conn,
-            "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?",
-            (err, send_id),
-        )
+        execute(conn, "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?", (err, send_id))
         return send_id, "failed", err
 
     extra = list_unsubscribe_headers(unsub_http) if unsub_http else None
@@ -307,12 +373,11 @@ def deliver_mail(
         return send_id, "sent", ""
     except Exception as exc:
         err = str(exc).strip()[:500] or "SMTP gönderim hatası"
-        # Domain şifresi 535 verdiyse Ayarlar şifresiyle bir kez daha dene
         is_auth = "535" in err or "Authentication" in err or "auth" in err.lower()
         if (
             is_auth
             and auth_source == "domain"
-            and (settings_password or "").strip()
+            and settings_password
             and settings_password != password
         ):
             try:
@@ -328,17 +393,14 @@ def deliver_mail(
                 )
                 return send_id, "sent", ""
             except Exception as exc2:
-                err = (
-                    f"535 auth (domain şifresi + Ayarlar şifresi denendi): "
-                    f"{str(exc2).strip()[:400]}"
-                )
+                err = f"535 auth (domain+ayarlar denendi): {str(exc2).strip()[:400]}"
         else:
             err = f"{err} [auth={auth_source}; user={user}]"
         execute(
             conn,
             """
             UPDATE mail_sends
-            SET status = 'failed', error = ?
+            SET status = 'failed', error = ?, provider_msg_id = ''
             WHERE id = ?
             """,
             (err, send_id),

@@ -3343,6 +3343,26 @@
         });
       });
     }
+    bindClick("mail-set-test-smtp", function () {
+      var hint = document.getElementById("mail-set-test-hint");
+      if (hint) hint.textContent = "SMTP login deneniyor…";
+      var domId = Number((document.getElementById("mail-set-default-domain") || {}).value || 0) || null;
+      mailApi("/api/mailing/settings/test-smtp", {
+        method: "POST",
+        body: { domain_id: domId },
+        timeoutMs: 45000
+      }).then(function (res) {
+        var d = (res && res.data) || {};
+        var msg = d.ok
+          ? (d.message || "SMTP OK")
+          : ((d.error || "Login başarısız") + (d.hint ? (" — " + d.hint) : ""));
+        if (hint) {
+          hint.textContent = msg;
+          hint.style.color = d.ok ? "#86efac" : "#fca5a5";
+        }
+        mailToast(d.ok ? "SMTP login OK" : "SMTP login FAIL");
+      });
+    });
     var scForm = document.getElementById("mail-smartico-form");
     if (scForm) {
       scForm.addEventListener("submit", function (e) {

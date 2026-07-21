@@ -765,12 +765,15 @@
           <div><label>Varsayılan domain ID</label><input type="text" id="mail-set-default-domain" placeholder="1"></div>
           <div style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
             <button type="submit" class="btn btn-primary">Ayarları kaydet</button>
+            <button type="button" class="btn" id="mail-set-test-smtp">SMTP test (login)</button>
             <span class="muted" id="mail-set-pass-hint" style="font-size:0.72rem;"></span>
           </div>
         </form>
+        <p class="hint" id="mail-set-test-hint" style="margin-top:0.55rem;"></p>
         <p class="hint" style="margin-top:0.75rem;">
           <strong>Stub:</strong> gerçek mail gitmez, Raporlar’da <code>simulated</code> kayıt oluşur (test için).
           <strong>SMTP:</strong> Alibaba DirectMail bilgilerini gir → Kampanyalar’dan gönderim gerçek mail atar (465 SSL önerilir).
+          535 hatası = yanlış SMTP şifresi (hesap şifresi değil). Önce <strong>SMTP test</strong> yeşil olsun, sonra kampanya at.
         </p>
         <p class="hint" style="margin-top:0.5rem;">
           Bounce webhook: <code>/api/mailing/webhooks/bounce</code> — header <code>X-Mailing-Webhook-Secret</code> (IVR secret ile aynı).
