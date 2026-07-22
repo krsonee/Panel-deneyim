@@ -1631,18 +1631,51 @@
     ];
     if (j.skipped_count) parts.push("skip " + j.skipped_count);
     var line = (j.status || "") + " · " + parts.join(" · ");
-    if (j.status === "pending") line += " · worker alıyor…";
+    if (j.status === "pending") line += " · başlıyor…";
     if (j.error) line += " · " + String(j.error).slice(0, 180);
     return line;
   }
 
-  function mailPollScrubJob(jobId) {
+  function mailScrubIsActive(j) {
+    if (!j) return false;
+    var st = j.status || "";
+    return st === "pending" || st === "running" || st === "cancelling";
+  }
+
+  function mailApplyScrubUi(j) {
     var prog = document.getElementById("mail-scrub-progress");
     var bar = document.getElementById("mail-scrub-progress-bar");
     var statusEl = document.getElementById("mail-scrub-status");
     var cancelBtn = document.getElementById("mail-scrub-cancel");
-    if (prog) prog.hidden = false;
-    if (cancelBtn) cancelBtn.hidden = false;
+    var banner = document.getElementById("mm-scrub-banner");
+    var bannerText = document.getElementById("mm-scrub-banner-text");
+    var active = mailScrubIsActive(j);
+    if (prog) prog.hidden = !j;
+    if (cancelBtn) cancelBtn.hidden = !active;
+    if (j) {
+      var pct = j.total > 0 ? Math.min(100, Math.round((j.processed / j.total) * 100)) : 0;
+      if (bar) bar.style.width = (j.total > 0 ? pct : (j.processed > 0 ? 40 : 12)) + "%";
+      var line = mailScrubStatusText(j);
+      if (j.status === "cancelling") line = "İptal ediliyor… · " + line;
+      if (statusEl) statusEl.textContent = line;
+      if (banner) banner.hidden = !active;
+      if (bannerText && active) {
+        bannerText.textContent = "Liste temizliği #" + (j.id || "?") + " · " +
+          (j.processed || 0) + "/" + (j.total || "?") +
+          " · valid " + (j.valid_count || 0) +
+          " · invalid " + (j.invalid_count || 0) +
+          (j.status === "pending" ? " · başlıyor…" : "");
+      }
+    } else {
+      if (banner) banner.hidden = true;
+    }
+    try {
+      if (active && j && j.id) localStorage.setItem("mm_scrub_job_id", String(j.id));
+      else localStorage.removeItem("mm_scrub_job_id");
+    } catch (e) { /* ignore */ }
+  }
+
+  function mailPollScrubJob(jobId) {
     mailScrubJobId = jobId;
     if (mailScrubPollTimer) { clearTimeout(mailScrubPollTimer); mailScrubPollTimer = null; }
     function poll() {
@@ -1652,25 +1685,57 @@
           return;
         }
         var j = res.data.job;
-        var pct = j.total > 0 ? Math.min(100, Math.round((j.processed / j.total) * 100)) : 0;
-        if (bar) bar.style.width = (j.total > 0 ? pct : (j.processed > 0 ? 40 : 12)) + "%";
-        if (statusEl) statusEl.textContent = mailScrubStatusText(j);
+        mailApplyScrubUi(j);
         if (j.status === "done" || j.status === "error" || j.status === "cancelled") {
-          if (cancelBtn) cancelBtn.hidden = true;
           mailScrubJobId = null;
           if (j.status === "done") mailToast("Liste temizliği bitti");
           else if (j.status === "error") mailToast(j.error || "Temizlik hatası");
-          mailLoadContacts();
-          mailLoadTags();
+          else if (j.status === "cancelled") mailToast("Liste temizliği iptal edildi");
+          // Son durumu 8 sn panoda bırak, banner kapanır (active değil)
+          setTimeout(function () {
+            var ban = document.getElementById("mm-scrub-banner");
+            if (ban) ban.hidden = true;
+          }, 50);
+          if (mailActiveTab === "crm") {
+            mailLoadContacts();
+            mailLoadTags();
+          }
           return;
-        }
-        if (j.status === "cancelling" && statusEl) {
-          statusEl.textContent = "İptal ediliyor… · " + mailScrubStatusText(j);
         }
         mailScrubPollTimer = setTimeout(poll, 1500);
       });
     }
     poll();
+  }
+
+  function mailResumeScrubIfActive() {
+    return mailApi("/api/mailing/contacts/scrub/latest", { timeoutMs: 30000 }).then(function (res) {
+      var j = res && res.ok ? res.data.job : null;
+      if (!j) {
+        // localStorage'daki id ile dene
+        var saved = null;
+        try { saved = localStorage.getItem("mm_scrub_job_id"); } catch (e) { /* ignore */ }
+        if (!saved) {
+          mailApplyScrubUi(null);
+          return;
+        }
+        return mailApi("/api/mailing/contacts/scrub/status/" + saved, { timeoutMs: 30000 }).then(function (r2) {
+          var j2 = r2 && r2.ok ? r2.data.job : null;
+          if (mailScrubIsActive(j2)) {
+            mailApplyScrubUi(j2);
+            if (!mailScrubJobId || Number(mailScrubJobId) !== Number(j2.id)) mailPollScrubJob(j2.id);
+          } else {
+            mailApplyScrubUi(j2 || null);
+          }
+        });
+      }
+      mailApplyScrubUi(j);
+      if (mailScrubIsActive(j)) {
+        if (!mailScrubJobId || Number(mailScrubJobId) !== Number(j.id)) {
+          mailPollScrubJob(j.id);
+        }
+      }
+    });
   }
 
   function mailStartScrub(opts) {
@@ -3727,11 +3792,32 @@
           mailToast((res && res.data && res.data.error) || "Sıfırlanamadı");
           return;
         }
+        if (mailScrubPollTimer) { clearTimeout(mailScrubPollTimer); mailScrubPollTimer = null; }
+        mailScrubJobId = null;
         mailToast("Sıfırlandı (" + ((res.data && res.data.cancelled) || 0) + " iş)");
-        var statusEl = document.getElementById("mail-scrub-status");
-        if (statusEl) statusEl.textContent = "Hazır — tekrar Listeyi temizle’ye bas";
-        var cancelBtn = document.getElementById("mail-scrub-cancel");
-        if (cancelBtn) cancelBtn.hidden = true;
+        mailApplyScrubUi({ status: "cancelled", processed: 0, total: 0, error: "Sıfırlandı — tekrar başlat" });
+        var ban = document.getElementById("mm-scrub-banner");
+        if (ban) ban.hidden = true;
+        try { localStorage.removeItem("mm_scrub_job_id"); } catch (e) { /* ignore */ }
+      });
+    });
+    bindClick("mm-scrub-banner-go", function () {
+      if (window.mmNavigate) window.mmNavigate("contacts");
+      else mailNavigate("contacts");
+      setTimeout(function () {
+        var el = document.getElementById("mail-scrub-progress");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 200);
+    });
+    bindClick("mm-scrub-banner-cancel", function () {
+      if (!mailScrubJobId) {
+        mailResumeScrubIfActive();
+        return;
+      }
+      if (!confirm("Liste temizliğini iptal et?")) return;
+      mailApi("/api/mailing/contacts/scrub/cancel/" + mailScrubJobId, { method: "POST" }).then(function (res) {
+        if (!res || !res.ok) mailToast((res && res.data && res.data.error) || "İptal edilemedi");
+        else mailToast("İptal isteniyor…");
       });
     });
     bindClick("mail-scrub-selected", function () {
@@ -4112,6 +4198,7 @@
       bindEvents();
       mailBindFloatingTips();
       setTplMode("simple");
+      mailResumeScrubIfActive();
     },
     ensureTenant: mailEnsureTenant,
     navigate: mailNavigate,
@@ -4127,12 +4214,14 @@
       // Standalone Mikromail: sekme geçişini sidebar (mmNavigate) yönetir — burada restore etme
       if (window.MAIL_STANDALONE) {
         mailRefreshImportStatus({ force: true });
+        mailResumeScrubIfActive();
         return;
       }
       var tab = "dashboard";
       try { tab = localStorage.getItem(MAIL_TAB_STORAGE_KEY) || "dashboard"; } catch (e) { /* ignore */ }
       switchMailTab(tab);
       mailRefreshImportStatus({ force: true });
+      mailResumeScrubIfActive();
     },
     onHide: function () {
       if (mailCampPollTimer) {

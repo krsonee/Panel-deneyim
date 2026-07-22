@@ -6,7 +6,7 @@
   <title>Mikromail</title>
   <meta name="theme-color" content="#090D16">
   <link rel="stylesheet" href="/static/mailing_shell.css?v=20260722mm11">
-  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260722mm12">
+  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260722mm15">
   <style>
     :root { --accent: #38bdf8; --accent-soft: rgba(56,189,248,0.14); --accent-ink: #041018; }
     #module-mailing-panel { display:block !important; }
@@ -123,6 +123,13 @@
       <div id="mm-warmup-banner" class="mm-warmup-banner" hidden>
         <span id="mm-warmup-banner-text">Isıtma görevleri bekliyor</span>
         <button type="button" class="btn btn-sm btn-primary" id="mm-warmup-banner-go">Programa git</button>
+      </div>
+      <div id="mm-scrub-banner" class="mm-scrub-banner" hidden>
+        <span id="mm-scrub-banner-text">Liste temizliği çalışıyor…</span>
+        <div class="mm-scrub-banner-actions">
+          <button type="button" class="btn btn-sm btn-secondary" id="mm-scrub-banner-go">CRM’e git</button>
+          <button type="button" class="btn btn-sm" id="mm-scrub-banner-cancel">İptal</button>
+        </div>
       </div>
 
       <div class="main-inner">
@@ -360,7 +367,7 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260722mm14"></script>
+  <script src="/static/mailing.js?v=20260722mm15"></script>
   <script src="/static/mailing_platform.js?v=20260722mm12"></script>
   <script>
     (function () {
