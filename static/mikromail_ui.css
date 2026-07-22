@@ -231,25 +231,79 @@ input:focus, select:focus, textarea:focus {
 }
 .mm-tip:hover::after, .mm-tip:focus::after { opacity: 1; }
 
-/* Icon-button hover tooltips */
+/* Icon-button hover tooltips — ikonun ortasına hizalı, tabloda kesilmesin */
 .mm-tip-btn {
   position: relative;
+  overflow: visible;
+}
+.mm-tip-btn[data-tip]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 2px);
+  width: 8px; height: 8px;
+  margin-left: -4px;
+  background: #1e293b;
+  border-right: 1px solid #334155;
+  border-bottom: 1px solid #334155;
+  transform: rotate(45deg) translateY(-2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 121;
 }
 .mm-tip-btn[data-tip]::after {
   content: attr(data-tip);
-  position: absolute; right: 0; bottom: calc(100% + 8px);
-  width: max-content; max-width: 220px;
-  padding: 0.35rem 0.55rem; border-radius: 6px;
-  background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
-  font-size: 0.68rem; font-weight: 500; line-height: 1.35; white-space: nowrap;
-  opacity: 0; pointer-events: none;
-  transition: opacity 0.16s ease, transform 0.16s ease;
-  transform: translateY(3px);
-  z-index: 90;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 8px);
+  transform: translateX(-50%) translateY(-2px);
+  width: max-content;
+  max-width: 148px;
+  padding: 0.4rem 0.55rem;
+  border-radius: 7px;
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: center;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 120;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.4);
 }
 .mm-tip-btn:hover::after, .mm-tip-btn:focus::after {
-  opacity: 1; transform: translateY(0);
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.mm-tip-btn:hover::before, .mm-tip-btn:focus::before { opacity: 1; }
+
+/* Tablo aksiyon hücresi — tooltip taşsın */
+.mm-actions-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+  overflow: visible;
+  position: relative;
+  z-index: 2;
+  vertical-align: middle;
+}
+.mm-actions-cell:has(.mm-tip-btn:hover),
+.mm-actions-cell:has(.mm-tip-btn:focus) {
+  z-index: 40;
+}
+#mm-view-platform .table-wrap,
+#mm-view-platform .table-scroll {
+  overflow: visible;
+}
+#mm-view-platform .table-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
 /* —— Modal —— */

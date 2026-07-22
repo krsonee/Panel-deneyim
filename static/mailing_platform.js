@@ -175,15 +175,15 @@
           "<td>" + mmStatusBadge(t.status) + "</td>" +
           "<td>" + esc(t.max_sends_day) + "</td>" +
           "<td>" + esc(t.domain_count) + "</td>" +
-          '<td style="white-space:nowrap;display:flex;gap:0.3rem;">' +
-          mmIconBtn("mm-edit-tenant", "Firmayı Düzenle", "edit", 'data-id="' + esc(t.id) + '"') +
+          '<td class="mm-actions-cell">' +
+          mmIconBtn("mm-edit-tenant", "Firmayı düzenle", "edit", 'data-id="' + esc(t.id) + '"') +
           mmIconBtn(
             "mm-suspend" + (suspend ? "" : " btn-primary"),
-            suspend ? "Askıya Al" : "Aktif Et",
+            suspend ? "Askıya al" : "Aktif et",
             suspend ? "pause" : "play",
             'data-id="' + esc(t.id) + '" data-status="' + (suspend ? "suspended" : "active") + '"'
           ) +
-          mmIconBtn("mm-del-tenant btn-danger", "Firmayı Sil", "trash", 'data-id="' + esc(t.id) + '" data-name="' + esc(t.name || t.slug || "") + '"') +
+          mmIconBtn("mm-del-tenant btn-danger", "Firmayı sil", "trash", 'data-id="' + esc(t.id) + '" data-name="' + esc(t.name || t.slug || "") + '"') +
           "</td></tr>";
       }).join("");
     });
@@ -250,10 +250,10 @@
         return;
       }
       function domainActions(d) {
-        return '<td style="white-space:nowrap;display:flex;gap:0.3rem;">' +
-          mmIconBtn("mm-edit-domain", "Domain / Ayarları Düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
-          mmIconBtn("mm-alloc", "Tenant'a / Firmaya Tahsis Et", "alloc", 'data-id="' + esc(d.id) + '"') +
-          mmIconBtn("mm-warm", "Warm-up / Isınma Moduna Al", "warm", 'data-id="' + esc(d.id) + '"') +
+        return '<td class="mm-actions-cell">' +
+          mmIconBtn("mm-edit-domain", "Domain düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
+          mmIconBtn("mm-alloc", "Firmaya tahsis et", "alloc", 'data-id="' + esc(d.id) + '"') +
+          mmIconBtn("mm-warm", "Isınmaya al", "warm", 'data-id="' + esc(d.id) + '"') +
           "</td>";
       }
       tbody.innerHTML = rows.map(function (d) {
@@ -284,10 +284,10 @@
             "<td>" + mmWarmProgress(d) + "</td>" +
             "<td>" + mmHealthGauge(d.health_score) + "</td>" +
             "<td>" + esc(d.daily_cap) + "/gün</td>" +
-            '<td style="display:flex;gap:0.3rem;">' +
-            mmIconBtn("mm-edit-domain", "Domain / Ayarları Düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
-            mmIconBtn("mm-alloc", "Tenant'a / Firmaya Tahsis Et", "alloc", 'data-id="' + esc(d.id) + '"') +
-            mmIconBtn("mm-warm", "Warm-up / Isınma Moduna Al", "warm", 'data-id="' + esc(d.id) + '"') +
+            '<td class="mm-actions-cell">' +
+            mmIconBtn("mm-edit-domain", "Domain düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
+            mmIconBtn("mm-alloc", "Firmaya tahsis et", "alloc", 'data-id="' + esc(d.id) + '"') +
+            mmIconBtn("mm-warm", "Isınmaya al", "warm", 'data-id="' + esc(d.id) + '"') +
             "</td></tr>";
         }).join("");
       }
