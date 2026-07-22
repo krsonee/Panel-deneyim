@@ -2397,7 +2397,7 @@
           <div class="card-body" style="padding-top:0;">
             {% if panel.brand == "bizzo" %}
             <p class="hint" style="margin:0.75rem 0 0.5rem;">
-              <strong>Yönlendirme domain (örn. girbize.com):</strong> Bio’daki Özel Domain’i boşalt.
+              <strong>Yönlendirme domain:</strong> Bio’daki Özel Domain’i boşalt.
               Buraya domain + <em>Hedef URL</em> (güncel site) yaz — ziyaret panelde sayılır, kullanıcı siteye gider.
               DNS: Namecheap <strong>A → 216.24.57.1</strong> + Render Custom Domain.
               <strong>bizzocasino168.com online</strong> için takip kodunu casino HTML’ine ekle.
@@ -2405,8 +2405,8 @@
             {% endif %}
             <form id="add-link-form" style="margin-top:0.85rem;">
               <div class="form-row-4">
-                <div><label for="input-label">İsim</label><input id="input-label" placeholder="Örn: girbize yönlendirme" autocomplete="off"></div>
-                <div><label for="input-domain">Domain</label><input id="input-domain" placeholder="{% if panel.brand == 'bizzo' %}girbize.com{% else %}makrobet804.com{% endif %}" autocomplete="off"></div>
+                <div><label for="input-label">İsim</label><input id="input-label" placeholder="Örn: giriş yönlendirme" autocomplete="off"></div>
+                <div><label for="input-domain">Domain</label><input id="input-domain" placeholder="{% if panel.brand == 'bizzo' %}ornek-giris.com{% else %}makrobet804.com{% endif %}" autocomplete="off"></div>
                 <div><label for="input-ref">Referans (?ref=) — opsiyonel</label><input id="input-ref" placeholder="Boş = tüm site" autocomplete="off"></div>
                 <div style="align-self:end"><button type="submit" class="btn btn-primary">Domain Ekle</button></div>
               </div>
@@ -2426,7 +2426,7 @@
                   Aralık: <strong>makrobet804 - 1084</strong> → otomatik ekler. Tek domain de yazabilirsin.
                   {% endif %}
                 </p>
-                <textarea id="bulk-domains" placeholder="{% if panel.brand == 'bizzo' %}bizzocasino168.com&#10;girbize.com{% else %}makrobet804 - 1084&#10;makrogir.com{% endif %}"></textarea>
+                <textarea id="bulk-domains" placeholder="{% if panel.brand == 'bizzo' %}bizzocasino168.com{% else %}makrobet804 - 1084&#10;makrogir.com{% endif %}"></textarea>
                 <div style="margin-top:0.45rem;display:flex;gap:0.4rem;flex-wrap:wrap;">
                   <input id="bulk-ref" placeholder="Ortak ref (opsiyonel)" style="flex:1;min-width:140px;" autocomplete="off">
                   <button type="button" class="btn" id="btn-bulk-preview">Önizle</button>

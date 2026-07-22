@@ -69,12 +69,48 @@ def upsert_tracked_domain(domain, *, label="", ref_code="", created_by="system")
             return int(row["id"]) if row else None
 
 
+# Operasyondan tamamen çıkarılan domainler — DB + bio bağını temizle (Namecheap’e dokunulmaz)
+_RETIRED_TRACK_DOMAINS = frozenset({"girbize.com"})
+
+
+def purge_retired_domains():
+    """Emekli domainleri tracked_links + biolink custom_domain’den siler."""
+    targets = sorted(_RETIRED_TRACK_DOMAINS)
+    if not targets:
+        return
+    with closing(get_db()) as conn:
+        for domain in targets:
+            d = normalize_track_domain(domain)
+            if not d:
+                continue
+            rows = fetchall(conn, "SELECT id FROM tracked_links WHERE domain = ?", (d,))
+            for row in rows or []:
+                lid = row["id"]
+                execute(conn, "DELETE FROM visitor_sessions WHERE tracked_link_id = ?", (lid,))
+                execute(conn, "DELETE FROM tracked_links WHERE id = ?", (lid,))
+            execute(
+                conn,
+                """
+                UPDATE biolink_pages
+                SET custom_domain = ''
+                WHERE LOWER(REPLACE(custom_domain, 'www.', '')) = ?
+                """,
+                (d,),
+            )
+        conn.commit()
+
+
 def ensure_brand_tracked_domains():
     """Marka varsayılan domainleri + tüm bio özel domainleri Link Takip’e alır."""
     try:
         from panel_config import BRAND, BIOLINK_PACK
     except Exception:
         return
+
+    try:
+        purge_retired_domains()
+    except Exception as exc:
+        print(f"⚠️  purge_retired_domains: {exc}")
 
     defaults = list(BRAND.get("default_tracked_domains") or [])
     site = (BIOLINK_PACK.get("site_url") or "").strip()
@@ -101,7 +137,7 @@ def ensure_brand_tracked_domains():
         )
     for row in rows or []:
         domain = normalize_track_domain(row.get("custom_domain") or "")
-        if not domain:
+        if not domain or domain in _RETIRED_TRACK_DOMAINS:
             continue
         title = (row.get("title") or domain).strip()[:80]
         upsert_tracked_domain(domain, label=f"Bio: {title}", created_by="biolink-sync")
@@ -112,7 +148,7 @@ def sync_biolink_custom_domain(page):
     if not page:
         return
     domain = normalize_track_domain(page.get("custom_domain") or "")
-    if not domain:
+    if not domain or domain in _RETIRED_TRACK_DOMAINS:
         return
     title = (page.get("title") or domain).strip()[:80]
     upsert_tracked_domain(domain, label=f"Bio: {title}", created_by="biolink-sync")

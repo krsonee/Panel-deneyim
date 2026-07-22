@@ -1253,7 +1253,7 @@ def create_link():
             conn.commit()
             row = fetchone(conn, "SELECT * FROM tracked_links WHERE id = ?", (link_id,))
     except IntegrityError:
-        # Aynı domain varsa yönlendirme/etiket güncelle (girbize senaryosu)
+        # Aynı domain varsa yönlendirme/etiket güncelle
         with closing(get_db()) as conn:
             existing = fetchone(
                 conn,
@@ -1493,7 +1493,7 @@ _REDIRECT_SKIP_PREFIXES = (
 
 
 def handle_tracked_domain_redirect():
-    """girbize.com gibi domainler: bio değil → takip + güncel siteye 302."""
+    """Yönlendirme domainleri: bio değil → takip + hedef siteye 302."""
     path = request.path or "/"
     if any(path.startswith(prefix) for prefix in _REDIRECT_SKIP_PREFIXES):
         return None
