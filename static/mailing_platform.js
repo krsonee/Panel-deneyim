@@ -27,6 +27,7 @@
       trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>',
       warm: '<path d="M12 2v6"/><path d="M12 18v4"/><path d="m4.9 4.9 4.2 4.2"/><path d="m14.9 14.9 4.2 4.2"/><path d="M2 12h6"/><path d="M16 12h6"/>',
       alloc: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11h-6"/><path d="M19 8v6"/>',
+      unlink: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/>',
       pause: '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>',
       play: '<path d="M8 5v14l11-7z"/>',
       eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>'
@@ -359,16 +360,24 @@
         return;
       }
       function domainActions(d) {
+        var hasAlloc = (d.allocations || []).length > 0;
         return '<td class="mm-actions-cell">' +
           mmIconBtn("mm-edit-domain", "Domain düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
-          mmIconBtn("mm-alloc", "Firmaya tahsis et", "alloc", 'data-id="' + esc(d.id) + '"') +
+          mmIconBtn("mm-alloc", hasAlloc ? "Tahsis değiştir / kaldır" : "Firmaya tahsis et", "alloc", 'data-id="' + esc(d.id) + '"') +
+          (hasAlloc
+            ? mmIconBtn("mm-dealloc-all btn-danger", "Tüm tahsisleri kaldır", "unlink", 'data-id="' + esc(d.id) + '"')
+            : "") +
           mmIconBtn("mm-warm", "Isınmaya al", "warm", 'data-id="' + esc(d.id) + '"') +
           "</td>";
       }
       tbody.innerHTML = rows.map(function (d) {
         var alloc = (d.allocations || []).map(function (a) {
-          return esc(a.slug) + (a.exclusive ? "*" : "");
-        }).join(", ") || "—";
+          return '<span class="mm-badge mm-badge-info" style="margin:0 0.15rem 0.15rem 0;">' +
+            esc(a.slug || a.name || ("#" + a.tenant_id)) +
+            ' <button type="button" class="mm-dealloc-one" data-domain-id="' + esc(d.id) +
+            '" data-tenant-id="' + esc(a.tenant_id) + '" title="Bu firmadan kaldır" ' +
+            'style="border:0;background:transparent;color:inherit;cursor:pointer;padding:0 0 0 0.15rem;">×</button></span>';
+        }).join(" ") || '<span class="muted">—</span>';
         var fromAddr = esc(d.from_local || "info") + "@" + esc(d.domain);
         var smtpTag = d.smtp_password_set
           ? ' <span class="mm-badge mm-badge-ok">SMTP</span>'
@@ -479,13 +488,53 @@
       });
   }
 
+  function renderAllocCurrentList(domainId) {
+    var list = document.getElementById("mm-alloc-current-list");
+    if (!list) return;
+    var d = (window._mmDomainsCache || []).find(function (x) { return Number(x.id) === Number(domainId); });
+    var allocs = (d && d.allocations) || [];
+    if (!allocs.length) {
+      list.innerHTML = '<span class="muted">Henüz kimseye tahsis yok</span>';
+      return;
+    }
+    list.innerHTML = allocs.map(function (a) {
+      return '<div style="display:flex;align-items:center;gap:0.45rem;margin:0.25rem 0;">' +
+        '<span class="mm-badge mm-badge-info">' + esc(a.slug || a.name || ("#" + a.tenant_id)) + "</span>" +
+        '<button type="button" class="btn btn-sm btn-danger mm-dealloc-one" data-domain-id="' +
+        esc(domainId) + '" data-tenant-id="' + esc(a.tenant_id) + '">Kaldır</button></div>';
+    }).join("");
+  }
+
   function openAllocModal(domainId) {
     var d = (window._mmDomainsCache || []).find(function (x) { return Number(x.id) === Number(domainId); });
     document.getElementById("mm-alloc-domain-id").value = String(domainId);
     var label = document.getElementById("mm-alloc-domain-label");
     if (label) label.textContent = d ? ("Domain: " + (d.domain || ("#" + domainId))) : ("Domain #" + domainId);
     fillAllocTenantSelect(window._mmTenantsCache || []);
+    var replaceChk = document.getElementById("mm-alloc-replace");
+    if (replaceChk) replaceChk.checked = true;
+    renderAllocCurrentList(domainId);
     openModal("mm-alloc-modal");
+  }
+
+  function deallocDomain(domainId, tenantId, all) {
+    var body = all ? { all: true } : { tenant_id: Number(tenantId) };
+    return api("/api/platform/domains/" + domainId + "/deallocate", {
+      method: "POST",
+      body: body
+    }).then(function (res) {
+      if (!res.ok) {
+        alert((res.data && res.data.error) || "Tahsis kaldırılamadı");
+        return;
+      }
+      return refreshDomains().then(function () {
+        var modal = document.getElementById("mm-alloc-modal");
+        if (modal && modal.classList.contains("open")) {
+          renderAllocCurrentList(domainId);
+        }
+        refreshTenants();
+      });
+    });
   }
 
   function openTenantDeleteModal(id, name) {
@@ -575,13 +624,22 @@
       document.getElementById("mm-alloc-cancel")?.addEventListener("click", function () {
         closeModal("mm-alloc-modal");
       });
+      document.getElementById("mm-alloc-clear")?.addEventListener("click", function () {
+        var domainId = Number(document.getElementById("mm-alloc-domain-id").value);
+        if (!domainId) return;
+        if (!confirm("Bu domaini tüm firmalardan kaldırmak istediğine emin misin?")) return;
+        deallocDomain(domainId, null, true).then(function () {
+          closeModal("mm-alloc-modal");
+        });
+      });
       document.getElementById("mm-alloc-confirm")?.addEventListener("click", function () {
         var domainId = Number(document.getElementById("mm-alloc-domain-id").value);
         var tid = Number(document.getElementById("mm-alloc-tenant").value);
+        var replace = !!(document.getElementById("mm-alloc-replace") || { checked: true }).checked;
         if (!domainId || !tid) return;
         api("/api/platform/domains/" + domainId + "/allocate", {
           method: "POST",
-          body: { tenant_id: tid }
+          body: { tenant_id: tid, replace: replace }
         }).then(function (res) {
           if (!res.ok) {
             alert((res.data && res.data.error) || "Tahsis başarısız");
@@ -663,6 +721,22 @@
         var alloc = e.target.closest(".mm-alloc");
         if (alloc) {
           openAllocModal(Number(alloc.getAttribute("data-id")));
+          return;
+        }
+        var deallocAll = e.target.closest(".mm-dealloc-all");
+        if (deallocAll) {
+          var didAll = Number(deallocAll.getAttribute("data-id"));
+          if (!confirm("Bu domaini tüm firmalardan kaldırmak istediğine emin misin?")) return;
+          deallocDomain(didAll, null, true);
+          return;
+        }
+        var deallocOne = e.target.closest(".mm-dealloc-one");
+        if (deallocOne) {
+          deallocDomain(
+            Number(deallocOne.getAttribute("data-domain-id")),
+            Number(deallocOne.getAttribute("data-tenant-id")),
+            false
+          );
         }
       });
       this.refresh();

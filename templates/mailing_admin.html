@@ -273,14 +273,26 @@
         <!-- Platform modals -->
         <div class="mm-modal-overlay" id="mm-alloc-modal" aria-hidden="true">
           <div class="mm-modal" role="dialog" aria-labelledby="mm-alloc-title">
-            <h3 id="mm-alloc-title">Tenant’a tahsis et</h3>
+            <h3 id="mm-alloc-title">Domain tahsisi</h3>
             <p id="mm-alloc-domain-label">Domain seçilmedi</p>
-            <div class="mm-label-row"><label for="mm-alloc-tenant">Firma (tenant)</label></div>
+            <div id="mm-alloc-current" style="margin:0.65rem 0 0.85rem;">
+              <p class="hint" style="margin:0 0 0.35rem;">Şu an tahsisli:</p>
+              <div id="mm-alloc-current-list" class="hint">—</div>
+            </div>
+            <div class="mm-label-row"><label for="mm-alloc-tenant">Firma (tenant)</label>
+              <span class="mm-tip" tabindex="0" data-tip="Aktar: eski firmadan koparır, seçtiğin firmaya verir">?</span>
+            </div>
             <select id="mm-alloc-tenant" style="width:100%;"></select>
+            <label class="mm-switch" style="margin-top:0.75rem;">
+              <input type="checkbox" id="mm-alloc-replace" checked>
+              <span class="mm-switch-track"></span>
+              <span>Önce diğer firmalardan kaldır (aktar)</span>
+            </label>
             <input type="hidden" id="mm-alloc-domain-id" value="">
-            <div class="mm-modal-actions">
+            <div class="mm-modal-actions" style="flex-wrap:wrap;">
               <button type="button" class="btn btn-secondary" id="mm-alloc-cancel">İptal</button>
-              <button type="button" class="btn btn-primary" id="mm-alloc-confirm">Tahsis Et</button>
+              <button type="button" class="btn btn-danger" id="mm-alloc-clear" title="Tüm tahsisleri kaldır">Tahsisi kaldır</button>
+              <button type="button" class="btn btn-primary" id="mm-alloc-confirm">Firmaya ver / aktar</button>
             </div>
           </div>
         </div>
@@ -306,8 +318,8 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260722mm6"></script>
-  <script src="/static/mailing_platform.js?v=20260722mm6"></script>
+  <script src="/static/mailing.js?v=20260722mm7"></script>
+  <script src="/static/mailing_platform.js?v=20260722mm7"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

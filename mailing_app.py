@@ -581,23 +581,34 @@ def platform_allocate(domain_id):
     tid = int(data.get("tenant_id") or 0)
     if not tid:
         return jsonify({"error": "tenant_id gerekli."}), 400
+    # replace=true → diğer firmalardan kopar, bu firmaya ver (aktar)
+    replace = bool(data.get("replace", True))
     with closing(get_db()) as conn:
         if not fetchone(conn, "SELECT id FROM mail_domains WHERE id = ?", (domain_id,)):
             return jsonify({"error": "Domain yok."}), 404
         if not fetchone(conn, "SELECT id FROM mail_tenants WHERE id = ?", (tid,)):
             return jsonify({"error": "Tenant yok."}), 404
+        if replace:
+            execute(conn, "DELETE FROM mail_domain_allocations WHERE domain_id = ?", (domain_id,))
         aid = allocate_domain(conn, domain_id, tid, exclusive=bool(data.get("exclusive")))
         conn.commit()
-    return jsonify({"ok": True, "allocation_id": aid})
+    return jsonify({"ok": True, "allocation_id": aid, "replaced": replace})
 
 
 @app.post("/api/platform/domains/<int:domain_id>/deallocate")
 @require_superadmin
 def platform_deallocate(domain_id):
+    """Tahsisi kaldır. tenant_id yoksa / all=true ise tüm firmalardan kopar."""
     data = request.get_json(silent=True) or {}
-    tid = int(data.get("tenant_id") or 0)
+    all_flag = bool(data.get("all"))
+    raw_tid = data.get("tenant_id")
     with closing(get_db()) as conn:
-        deallocate_domain(conn, domain_id, tid)
+        if not fetchone(conn, "SELECT id FROM mail_domains WHERE id = ?", (domain_id,)):
+            return jsonify({"error": "Domain yok."}), 404
+        if all_flag or raw_tid in (None, "", 0, "0"):
+            execute(conn, "DELETE FROM mail_domain_allocations WHERE domain_id = ?", (domain_id,))
+        else:
+            deallocate_domain(conn, domain_id, int(raw_tid))
         conn.commit()
     return jsonify({"ok": True})
 
