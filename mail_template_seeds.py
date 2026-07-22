@@ -487,11 +487,18 @@ Makrobet
 ]
 
 
-def seed_makrobet_mail_templates(conn, force_missing=False, overwrite=False):
+def seed_makrobet_mail_templates(conn, force_missing=False, overwrite=False, allow_when_skipped=False):
     """Eksik şablonları ekler; overwrite=True ise seed HTML’lerini günceller.
 
     v4 flag yoksa ilk boot’ta HTML seed’leri otomatik yenilenir.
     """
+    if not allow_when_skipped:
+        try:
+            from mail_template_wipe import auto_seed_disabled
+            if auto_seed_disabled(conn):
+                return {"added": 0, "updated": 0, "skipped": True}
+        except Exception:
+            pass
     now = iso(utcnow())
     added = 0
     updated = 0

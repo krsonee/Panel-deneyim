@@ -199,7 +199,14 @@ HTML_TEMPLATES = [
 ]
 
 
-def seed_bizzo_mail_templates(conn, force_missing=False, overwrite=False):
+def seed_bizzo_mail_templates(conn, force_missing=False, overwrite=False, allow_when_skipped=False):
+    if not allow_when_skipped:
+        try:
+            from mail_template_wipe import auto_seed_disabled
+            if auto_seed_disabled(conn):
+                return {"added": 0, "updated": 0, "skipped": True}
+        except Exception:
+            pass
     now = iso(utcnow())
     added = 0
     updated = 0

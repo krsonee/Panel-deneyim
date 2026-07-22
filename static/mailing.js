@@ -3476,6 +3476,17 @@
       refreshTplPreview();
     });
     bindClick("mail-tpl-refresh", mailLoadTemplates);
+    bindClick("mail-tpl-wipe-all", function () {
+      if (!confirm("Tüm mail şablonları silinsin mi? Kampanya/IVR şablon bağlantıları boşalır. Geri alınamaz.")) return;
+      mailApi("/api/mailing/templates/wipe-all", { method: "POST", timeoutMs: 30000 }).then(function (res) {
+        if (!res || !res.ok) {
+          mailToast((res && res.data && res.data.error) || "Silinemedi");
+          return;
+        }
+        mailToast(res.data.message || "Şablonlar silindi");
+        if (typeof mailLoadTemplates === "function") mailLoadTemplates();
+      });
+    });
     bindClick("mail-tpl-reseed", function () {
       mailToast("Makrobet şablonları güncelleniyor…");
       mailApi("/api/mailing/templates/reseed", { method: "POST", timeoutMs: 30000 }).then(function (res) {

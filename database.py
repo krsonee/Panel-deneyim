@@ -2631,6 +2631,13 @@ def seed_mailing_defaults(conn):
     if get_mail_setting(conn, "smartico_subid_param") is None:
         upsert_mail_setting(conn, "smartico_subid_param", "afp1")
     try:
+        from mail_template_wipe import ensure_templates_wiped_once
+        wiped = ensure_templates_wiped_once(conn)
+        if wiped:
+            print(f"✉️  wiped mail templates: deleted={wiped.get('deleted')}")
+    except Exception as exc:
+        print(f"⚠️  mail template wipe: {exc}")
+    try:
         from mail_template_seeds import seed_makrobet_mail_templates
         seed_makrobet_mail_templates(conn)
     except Exception as exc:

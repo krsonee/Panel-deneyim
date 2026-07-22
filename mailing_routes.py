@@ -2022,6 +2022,13 @@ def create_mailing_blueprint(permission_required):
             except Exception as ten_exc:
                 print(f"⚠️  mail tenant schema: {ten_exc}")
             try:
+                from mail_template_wipe import ensure_templates_wiped_once
+                wiped = ensure_templates_wiped_once(conn)
+                if wiped:
+                    print(f"✉️  wiped mail templates: deleted={wiped.get('deleted')}")
+            except Exception as wipe_exc:
+                print(f"⚠️  mail template wipe: {wipe_exc}")
+            try:
                 from mail_template_seeds import seed_makrobet_mail_templates
                 from mail_template_seeds_bizzo import seed_bizzo_mail_templates
                 _seed_res = seed_makrobet_mail_templates(conn)
@@ -3223,8 +3230,12 @@ def create_mailing_blueprint(permission_required):
         from mail_template_seeds_bizzo import seed_bizzo_mail_templates
 
         with closing(get_db()) as conn:
-            result = seed_makrobet_mail_templates(conn, force_missing=True, overwrite=True)
-            bizzo = seed_bizzo_mail_templates(conn, force_missing=True, overwrite=True)
+            result = seed_makrobet_mail_templates(
+                conn, force_missing=True, overwrite=True, allow_when_skipped=True
+            )
+            bizzo = seed_bizzo_mail_templates(
+                conn, force_missing=True, overwrite=True, allow_when_skipped=True
+            )
         if not isinstance(result, dict):
             result = {"added": int(result or 0), "updated": 0}
         if not isinstance(bizzo, dict):
@@ -3236,6 +3247,19 @@ def create_mailing_blueprint(permission_required):
         else:
             msg = "Değişiklik yok"
         return jsonify({"ok": True, "added": added, "updated": updated, "bizzo": bizzo, "message": msg})
+
+    @bp.route("/templates/wipe-all", methods=["POST"])
+    @mail_perm(*MAIL_TPL)
+    def wipe_all_templates():
+        """Tüm şablonları siler; otomatik seed tekrar eklemez."""
+        from mail_template_wipe import wipe_all_mail_templates
+
+        with closing(get_db()) as conn:
+            try:
+                result = wipe_all_mail_templates(conn)
+            except Exception as exc:
+                return jsonify({"error": str(exc)}), 500
+        return jsonify({"ok": True, **result, "message": f"{result.get('deleted', 0)} şablon silindi"})
 
     @bp.route("/templates", methods=["POST"])
     @mail_perm(*MAIL_TPL)
