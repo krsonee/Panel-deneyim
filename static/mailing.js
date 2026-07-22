@@ -1650,28 +1650,37 @@
     var banner = document.getElementById("mm-scrub-banner");
     var bannerText = document.getElementById("mm-scrub-banner-text");
     var active = mailScrubIsActive(j);
-    if (prog) prog.hidden = !j;
     if (cancelBtn) cancelBtn.hidden = !active;
-    if (j) {
-      var pct = j.total > 0 ? Math.min(100, Math.round((j.processed / j.total) * 100)) : 0;
-      if (bar) bar.style.width = (j.total > 0 ? pct : (j.processed > 0 ? 40 : 12)) + "%";
-      var line = mailScrubStatusText(j);
-      if (j.status === "cancelling") line = "İptal ediliyor… · " + line;
-      if (statusEl) statusEl.textContent = line;
-      if (banner) banner.hidden = !active;
-      if (bannerText && active) {
-        bannerText.textContent = "Liste temizliği #" + (j.id || "?") + " · " +
-          (j.processed || 0) + "/" + (j.total || "?") +
-          " · valid " + (j.valid_count || 0) +
-          " · invalid " + (j.invalid_count || 0) +
-          (j.status === "pending" ? " · başlıyor…" : "");
+    if (banner) banner.hidden = !active;
+    if (!j || !active) {
+      // İptal / bitmiş / sıfırlanmış — “takılı” gibi görünmesin
+      if (prog) prog.hidden = true;
+      if (bar) bar.style.width = "0%";
+      if (statusEl) {
+        if (j && (j.status === "done" || j.status === "error")) {
+          statusEl.textContent = mailScrubStatusText(j) + " — bitmiş. Yeniden başlatmak için Listeyi temizle.";
+        } else {
+          statusEl.textContent = "Hazır — SMTP kapalıysa daha hızlı biter. Listeyi temizle’ye bas.";
+        }
       }
-    } else {
-      if (banner) banner.hidden = true;
+      try { localStorage.removeItem("mm_scrub_job_id"); } catch (e) { /* ignore */ }
+      return;
+    }
+    if (prog) prog.hidden = false;
+    var pct = j.total > 0 ? Math.min(100, Math.round((j.processed / j.total) * 100)) : 0;
+    if (bar) bar.style.width = (j.total > 0 ? pct : (j.processed > 0 ? 40 : 12)) + "%";
+    var line = mailScrubStatusText(j);
+    if (j.status === "cancelling") line = "İptal ediliyor… · " + line;
+    if (statusEl) statusEl.textContent = line;
+    if (bannerText) {
+      bannerText.textContent = "Liste temizliği #" + (j.id || "?") + " · " +
+        (j.processed || 0) + "/" + (j.total || "?") +
+        " · valid " + (j.valid_count || 0) +
+        " · invalid " + (j.invalid_count || 0) +
+        (j.status === "pending" ? " · başlıyor…" : "");
     }
     try {
-      if (active && j && j.id) localStorage.setItem("mm_scrub_job_id", String(j.id));
-      else localStorage.removeItem("mm_scrub_job_id");
+      if (j.id) localStorage.setItem("mm_scrub_job_id", String(j.id));
     } catch (e) { /* ignore */ }
   }
 
@@ -3794,11 +3803,8 @@
         }
         if (mailScrubPollTimer) { clearTimeout(mailScrubPollTimer); mailScrubPollTimer = null; }
         mailScrubJobId = null;
-        mailToast("Sıfırlandı (" + ((res.data && res.data.cancelled) || 0) + " iş)");
-        mailApplyScrubUi({ status: "cancelled", processed: 0, total: 0, error: "Sıfırlandı — tekrar başlat" });
-        var ban = document.getElementById("mm-scrub-banner");
-        if (ban) ban.hidden = true;
-        try { localStorage.removeItem("mm_scrub_job_id"); } catch (e) { /* ignore */ }
+        mailToast("Sıfırlandı (" + ((res.data && res.data.cancelled) || 0) + " iş) — şimdi Listeyi temizle");
+        mailApplyScrubUi(null);
       });
     });
     bindClick("mm-scrub-banner-go", function () {
