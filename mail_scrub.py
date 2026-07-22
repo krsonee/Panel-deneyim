@@ -420,28 +420,42 @@ def _run_scrub_job(job_id: int):
 
 
 def reclaim_scrub_jobs(limit: int = 3) -> int:
-    """Worker: pending/yarım kalmış scrub işlerini bu process'te çalıştır."""
+    """Worker: web'in alamadığı / takılan scrub işlerini kurtar (stale only)."""
+    from datetime import datetime, timezone, timedelta
+
     started = 0
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=45)).isoformat()
     with closing(get_db()) as conn:
         ensure_mail_scrub_schema(conn)
         rows = fetchall(
             conn,
             """
-            SELECT id, status, updated_at FROM mail_scrub_jobs
+            SELECT id, status, updated_at, processed FROM mail_scrub_jobs
             WHERE status IN ('pending', 'running')
             ORDER BY id ASC LIMIT ?
             """,
-            (max(1, int(limit)),),
+            (max(1, int(limit) * 3),),
         ) or []
         conn.commit()
     for row in rows:
         jid = int(row["id"])
+        updated = str(_row_get(row, "updated_at") or "")
+        status = (_row_get(row, "status") or "").strip()
+        processed = int(_row_get(row, "processed") or 0)
+        # pending: 45sn'den eskiyse web thread düşmüş demektir
+        # running: ilerleme yok + stale ise kurtar
+        if status == "pending" and updated and updated >= cutoff:
+            continue
+        if status == "running" and processed > 0 and updated and updated >= cutoff:
+            continue
         with _SCRUB_LOCK:
             if jid in _SCRUB_RUNNING:
                 continue
         t = threading.Thread(target=_run_scrub_job, args=(jid,), daemon=True, name=f"mail-scrub-{jid}")
         t.start()
         started += 1
+        if started >= limit:
+            break
     return started
 
 
@@ -499,20 +513,33 @@ def _process_scrub_job(job_id: int):
             if resume_after:
                 selected_ids = [i for i in selected_ids if i > resume_after]
         elif not total:
-            clauses = ["unsubscribed = 0"]
-            params = []
-            if tag_filter:
-                clauses.append("tags LIKE ?")
-                params.append(f'%"{tag_filter}"%')
-            where = " AND ".join(clauses)
+            # Exact COUNT(*) 200k+ satırda dakikalar sürebilir → UI 0'da kalır.
+            # Postgres istatistiği veya hızlı üst sınır; iş bitince gerçek total yazılır.
             try:
-                total = int(scalar(conn, f"SELECT COUNT(*) FROM mail_contacts WHERE {where}", tuple(params)) or 0)
+                if uses_postgres():
+                    est = scalar(
+                        conn,
+                        """
+                        SELECT COALESCE(reltuples, 0)::bigint
+                        FROM pg_class
+                        WHERE oid = 'mail_contacts'::regclass
+                        """,
+                    )
+                    total = max(0, int(est or 0))
+                if not total:
+                    total = int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts WHERE unsubscribed = 0") or 0)
             except Exception:
+                with suppress(Exception):
+                    conn.rollback()
                 total = 0
 
         execute(
             conn,
-            "UPDATE mail_scrub_jobs SET total = ?, updated_at = ? WHERE id = ?",
+            """
+            UPDATE mail_scrub_jobs
+            SET total = ?, error = 'başladı — ilk batch işleniyor', updated_at = ?
+            WHERE id = ?
+            """,
             (total, iso(utcnow()), job_id),
         )
         conn.commit()
@@ -620,10 +647,17 @@ def _process_scrub_job(job_id: int):
                             counts["unknown"] += 1
                         processed += 1
                         last_contact_id = cid
-                        if processed % 10 == 0 or st == "invalid":
+                        # İlk 20 kayıtta her adımda yaz — UI hemen hareket etsin
+                        if processed <= 20 or processed % 10 == 0 or st == "invalid":
                             _update_job_progress(
                                 conn, job_id, processed, counts, suppressed_n, skipped_n, last_contact_id
                             )
+                            if processed == 1:
+                                execute(
+                                    conn,
+                                    "UPDATE mail_scrub_jobs SET error = '' WHERE id = ?",
+                                    (job_id,),
+                                )
                         conn.commit()
                 except Exception as row_exc:
                     row_errors += 1
@@ -725,19 +759,52 @@ def _update_job_progress(conn, job_id, processed, counts, suppressed_n, skipped_
     )
 
 
+def _cancel_stale_scrub_jobs(conn, *, older_seconds: int = 180) -> int:
+    """Takılı pending/running işleri temizle — yeni start bloklanmasın."""
+    from datetime import datetime, timezone, timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max(30, older_seconds))).isoformat()
+    rows = fetchall(
+        conn,
+        """
+        SELECT id, status, updated_at, processed FROM mail_scrub_jobs
+        WHERE status IN ('pending', 'running', 'cancelling')
+        """,
+    ) or []
+    n = 0
+    now = iso(utcnow())
+    for row in rows:
+        updated = str(_row_get(row, "updated_at") or "")
+        # ISO karşılaştırma (bizim iso() UTC)
+        if updated and updated >= cutoff:
+            continue
+        execute(
+            conn,
+            "UPDATE mail_scrub_jobs SET status = 'cancelled', error = ?, updated_at = ? WHERE id = ?",
+            ("Otomatik iptal: takılı iş (yeniden başlat).", now, int(row["id"])),
+        )
+        n += 1
+    return n
+
+
 def start_scrub_job(*, tag_filter="", contact_ids=None, scope="filter") -> int:
     now = iso(utcnow())
     ids = list(contact_ids or [])
     ids_json = json.dumps([int(x) for x in ids], ensure_ascii=False)
     with closing(get_db()) as conn:
         ensure_mail_scrub_schema(conn)
+        _cancel_stale_scrub_jobs(conn, older_seconds=120)
+        conn.commit()
         # Aynı anda tek aktif iş
         active = scalar(
             conn,
             "SELECT COUNT(*) FROM mail_scrub_jobs WHERE status IN ('pending', 'running', 'cancelling')",
         ) or 0
         if int(active) > 0:
-            raise RuntimeError("Zaten devam eden bir liste temizliği var. Bitmesini veya iptal etmeyi bekle.")
+            raise RuntimeError(
+                "Zaten devam eden bir liste temizliği var. "
+                "İptal’e bas veya 2 dk bekle (takılı işler otomatik temizlenir)."
+            )
         job_id = insert_returning_id(
             conn,
             """
@@ -751,15 +818,10 @@ def start_scrub_job(*, tag_filter="", contact_ids=None, scope="filter") -> int:
             (scope or "filter", (tag_filter or "").strip(), ids_json, now, now),
         )
         conn.commit()
-    # External worker varsa web thread'ine güvenme — worker reclaim eder.
-    # Yoksa (veya local) burada başlat.
-    if not _external_worker_mode():
-        t = threading.Thread(target=_run_scrub_job, args=(job_id,), daemon=True, name=f"mail-scrub-{job_id}")
-        t.start()
-    else:
-        # Yine de web'de dene (worker gecikirse); worker çift çalışmayı _SCRUB_RUNNING ile engelleyemez
-        # (ayrı process) — bu yüzden external'da SADECE worker çalıştırır.
-        pass
+    # Web process'te hemen başlat (external worker olsa bile).
+    # Worker reclaim sadece web düşerse / thread ölürse devreye girer.
+    t = threading.Thread(target=_run_scrub_job, args=(job_id,), daemon=True, name=f"mail-scrub-{job_id}")
+    t.start()
     return job_id
 
 

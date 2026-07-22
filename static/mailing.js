@@ -1683,14 +1683,24 @@
     }
     var n = opts.contact_ids ? opts.contact_ids.length : "filtre";
     if (!confirm("Liste temizliği başlasın mı? Kapsam: " + n)) return;
-    mailApi("/api/mailing/contacts/scrub/start", { method: "POST", body: body, timeoutMs: 30000 }).then(function (res) {
-      if (!res || !res.ok) {
-        mailToast((res && res.data && res.data.error) || "Başlatılamadı");
-        return;
-      }
-      mailToast("Temizlik başladı #" + res.data.job.id);
-      mailPollScrubJob(res.data.job.id);
-    });
+    function doStart() {
+      return mailApi("/api/mailing/contacts/scrub/start", { method: "POST", body: body, timeoutMs: 30000 }).then(function (res) {
+        if (!res || !res.ok) {
+          var err = (res && res.data && res.data.error) || "Başlatılamadı";
+          if (res && res.status === 409) {
+            if (confirm(err + "\n\nTakılı işi zorla iptal edip yeniden başlatalım mı?")) {
+              return mailApi("/api/mailing/contacts/scrub/force-reset", { method: "POST", timeoutMs: 30000 })
+                .then(function () { return doStart(); });
+            }
+          }
+          mailToast(err);
+          return;
+        }
+        mailToast("Temizlik başladı #" + res.data.job.id);
+        mailPollScrubJob(res.data.job.id);
+      });
+    }
+    doStart();
   }
 
   function mailPollImportJob(jobId, onSettled, fileLabel) {
@@ -3710,6 +3720,20 @@
       window.open(url, "_blank");
     });
     bindClick("mail-scrub-start", function () { mailStartScrub({}); });
+    bindClick("mail-scrub-force-reset", function () {
+      if (!confirm("Takılı / yarım kalmış tüm temizlik işlerini iptal et?")) return;
+      mailApi("/api/mailing/contacts/scrub/force-reset", { method: "POST", timeoutMs: 30000 }).then(function (res) {
+        if (!res || !res.ok) {
+          mailToast((res && res.data && res.data.error) || "Sıfırlanamadı");
+          return;
+        }
+        mailToast("Sıfırlandı (" + ((res.data && res.data.cancelled) || 0) + " iş)");
+        var statusEl = document.getElementById("mail-scrub-status");
+        if (statusEl) statusEl.textContent = "Hazır — tekrar Listeyi temizle’ye bas";
+        var cancelBtn = document.getElementById("mail-scrub-cancel");
+        if (cancelBtn) cancelBtn.hidden = true;
+      });
+    });
     bindClick("mail-scrub-selected", function () {
       var ids = Array.prototype.map.call(
         document.querySelectorAll(".mail-contact-check:checked"),

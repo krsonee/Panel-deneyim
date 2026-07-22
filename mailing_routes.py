@@ -2770,6 +2770,28 @@ def create_mailing_blueprint(permission_required):
             conn.commit()
         return jsonify({"ok": True, "status": "cancelling"})
 
+    @bp.route("/contacts/scrub/force-reset", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def scrub_force_reset():
+        """Takılı pending/running scrub işlerini iptal et — operatör kurtarma."""
+        from mail_scrub import ensure_mail_scrub_schema
+
+        with closing(get_db()) as conn:
+            ensure_mail_scrub_schema(conn)
+            rows = fetchall(
+                conn,
+                "SELECT id FROM mail_scrub_jobs WHERE status IN ('pending', 'running', 'cancelling')",
+            ) or []
+            now = iso(utcnow())
+            for row in rows:
+                execute(
+                    conn,
+                    "UPDATE mail_scrub_jobs SET status = 'cancelled', error = ?, updated_at = ? WHERE id = ?",
+                    ("Operatör force-reset", now, int(row["id"])),
+                )
+            conn.commit()
+        return jsonify({"ok": True, "cancelled": len(rows)})
+
     @bp.route("/tags", methods=["GET"])
     @mail_perm(*MAIL_CRM)
     def list_tags():
