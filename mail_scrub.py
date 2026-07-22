@@ -60,6 +60,16 @@ _SCRUB_LOCK = threading.Lock()
 _SCRUB_RUNNING: set[int] = set()
 
 
+def _add_contact_col(conn, col_sql: str) -> None:
+    """Kolon yoksa ekle; varsa / hata olursa yut (Postgres + SQLite)."""
+    try:
+        execute(conn, f"ALTER TABLE mail_contacts ADD COLUMN {col_sql}")
+        conn.commit()
+    except Exception:
+        with suppress(Exception):
+            conn.rollback()
+
+
 def ensure_mail_scrub_schema(conn):
     if uses_postgres():
         execute(
@@ -82,6 +92,7 @@ def ensure_mail_scrub_schema(conn):
                 suppressed_count INTEGER NOT NULL DEFAULT 0,
                 skipped_count INTEGER NOT NULL DEFAULT 0,
                 error TEXT NOT NULL DEFAULT '',
+                last_contact_id INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
@@ -108,23 +119,23 @@ def ensure_mail_scrub_schema(conn):
                 suppressed_count INTEGER NOT NULL DEFAULT 0,
                 skipped_count INTEGER NOT NULL DEFAULT 0,
                 error TEXT NOT NULL DEFAULT '',
+                last_contact_id INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
             """,
         )
+    # Eski tablolara last_contact_id
     try:
-        from database import _table_columns
-        cols = _table_columns(conn, "mail_contacts") or set()
-        if cols and "verify_status" not in cols:
-            execute(conn, "ALTER TABLE mail_contacts ADD COLUMN verify_status TEXT NOT NULL DEFAULT ''")
-        if cols and "verify_detail" not in cols:
-            execute(conn, "ALTER TABLE mail_contacts ADD COLUMN verify_detail TEXT NOT NULL DEFAULT ''")
-        if cols and "verified_at" not in cols:
-            execute(conn, "ALTER TABLE mail_contacts ADD COLUMN verified_at TEXT")
+        execute(conn, "ALTER TABLE mail_scrub_jobs ADD COLUMN last_contact_id INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
     except Exception:
         with suppress(Exception):
             conn.rollback()
+    # verify kolonları — tek tek (biri fail ederse hepsi rollback olmasın)
+    _add_contact_col(conn, "verify_status TEXT NOT NULL DEFAULT ''")
+    _add_contact_col(conn, "verify_detail TEXT NOT NULL DEFAULT ''")
+    _add_contact_col(conn, "verified_at TEXT")
     try:
         conn.commit()
     except Exception:
@@ -378,6 +389,24 @@ def _job_cancelled(conn, job_id) -> bool:
     return (row["status"] or "") in ("cancelling", "cancelled")
 
 
+def _row_get(row, key, default=None):
+    if row is None:
+        return default
+    if isinstance(row, dict):
+        return row.get(key, default)
+    try:
+        return row[key]
+    except Exception:
+        return default
+
+
+def _external_worker_mode() -> bool:
+    import os
+    return (os.environ.get("MAILING_WORKER_EXTERNAL") or "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
 def _run_scrub_job(job_id: int):
     with _SCRUB_LOCK:
         if job_id in _SCRUB_RUNNING:
@@ -390,17 +419,45 @@ def _run_scrub_job(job_id: int):
             _SCRUB_RUNNING.discard(job_id)
 
 
+def reclaim_scrub_jobs(limit: int = 3) -> int:
+    """Worker: pending/yarım kalmış scrub işlerini bu process'te çalıştır."""
+    started = 0
+    with closing(get_db()) as conn:
+        ensure_mail_scrub_schema(conn)
+        rows = fetchall(
+            conn,
+            """
+            SELECT id, status, updated_at FROM mail_scrub_jobs
+            WHERE status IN ('pending', 'running')
+            ORDER BY id ASC LIMIT ?
+            """,
+            (max(1, int(limit)),),
+        ) or []
+        conn.commit()
+    for row in rows:
+        jid = int(row["id"])
+        with _SCRUB_LOCK:
+            if jid in _SCRUB_RUNNING:
+                continue
+        t = threading.Thread(target=_run_scrub_job, args=(jid,), daemon=True, name=f"mail-scrub-{jid}")
+        t.start()
+        started += 1
+    return started
+
+
 def _process_scrub_job(job_id: int):
     now = iso(utcnow())
     with closing(get_db()) as conn:
+        ensure_mail_scrub_schema(conn)
         job = fetchone(conn, "SELECT * FROM mail_scrub_jobs WHERE id = ?", (job_id,))
         if not job:
             return
-        if (job["status"] or "") in ("cancelled", "done", "error"):
+        status = (_row_get(job, "status") or "").strip()
+        if status in ("cancelled", "done", "error"):
             return
         execute(
             conn,
-            "UPDATE mail_scrub_jobs SET status = 'running', updated_at = ? WHERE id = ?",
+            "UPDATE mail_scrub_jobs SET status = 'running', error = '', updated_at = ? WHERE id = ?",
             (now, job_id),
         )
         conn.commit()
@@ -411,28 +468,43 @@ def _process_scrub_job(job_id: int):
         if not mail_from:
             mail_from = "noreply@localhost"
 
-        # Kontakt kapsamı (milyonlarca satırı tek seferde belleğe alma)
         selected_ids = []
         try:
-            selected_ids = json.loads(job.get("contact_ids_json") or "[]")
+            selected_ids = json.loads(_row_get(job, "contact_ids_json") or "[]")
         except Exception:
             selected_ids = []
         selected_ids = sorted({
             int(x) for x in selected_ids
-            if isinstance(x, int) or (isinstance(x, str) and x.isdigit())
+            if isinstance(x, int) or (isinstance(x, str) and str(x).isdigit())
         })
-        tag_filter = (job.get("tag_filter") or "").strip()
+        tag_filter = (_row_get(job, "tag_filter") or "").strip()
+        resume_after = int(_row_get(job, "last_contact_id") or 0)
+        processed = int(_row_get(job, "processed") or 0)
+        counts = {
+            "valid": int(_row_get(job, "valid_count") or 0),
+            "invalid": int(_row_get(job, "invalid_count") or 0),
+            "unknown": int(_row_get(job, "unknown_count") or 0),
+            "catch_all": int(_row_get(job, "catch_all_count") or 0),
+            "disposable": int(_row_get(job, "disposable_count") or 0),
+            "role": int(_row_get(job, "role_count") or 0),
+            "mx_ok": 0,
+        }
+        # valid_count daha önce mx_ok ile birleşik yazılmış olabilir
+        suppressed_n = int(_row_get(job, "suppressed_count") or 0)
+        skipped_n = int(_row_get(job, "skipped_count") or 0)
+        total = int(_row_get(job, "total") or 0)
 
         if selected_ids:
             total = len(selected_ids)
-        else:
+            if resume_after:
+                selected_ids = [i for i in selected_ids if i > resume_after]
+        elif not total:
             clauses = ["unsubscribed = 0"]
             params = []
             if tag_filter:
                 clauses.append("tags LIKE ?")
                 params.append(f'%"{tag_filter}"%')
             where = " AND ".join(clauses)
-            # Exact COUNT pahalı olabilir — approx / registry yoksa processed ile ilerleriz
             try:
                 total = int(scalar(conn, f"SELECT COUNT(*) FROM mail_contacts WHERE {where}", tuple(params)) or 0)
             except Exception:
@@ -446,17 +518,13 @@ def _process_scrub_job(job_id: int):
         conn.commit()
 
     interval = 60.0 / float(settings["scrub_rate_per_minute"] or 30)
-    counts = {
-        "valid": 0, "invalid": 0, "unknown": 0, "catch_all": 0,
-        "disposable": 0, "role": 0, "mx_ok": 0,
-    }
-    suppressed_n = 0
-    skipped_n = 0
-    processed = 0
     skip_hours = settings["scrub_skip_hours"]
     batch_size = 200
+    last_contact_id = resume_after
+    row_errors = 0
 
     def _iter_batches():
+        nonlocal last_contact_id
         if selected_ids:
             for i in range(0, len(selected_ids), batch_size):
                 chunk = selected_ids[i:i + batch_size]
@@ -469,11 +537,11 @@ def _process_scrub_job(job_id: int):
                     ) or []
                 yield rows
             return
-        last_id = 0
+        cursor = last_contact_id
         while True:
             with closing(get_db()) as conn:
                 clauses = ["unsubscribed = 0", "id > ?"]
-                params = [last_id]
+                params = [cursor]
                 if tag_filter:
                     clauses.append("tags LIKE ?")
                     params.append(f'%"{tag_filter}"%')
@@ -485,12 +553,17 @@ def _process_scrub_job(job_id: int):
                 ) or []
             if not rows:
                 break
-            last_id = int(rows[-1]["id"])
+            cursor = int(rows[-1]["id"])
             yield rows
 
     try:
         for rows in _iter_batches():
             for row in rows:
+                cid = int(row["id"])
+                email = (row["email"] or "").strip().lower()
+                verified_at = _row_get(row, "verified_at")
+                verify_status = _row_get(row, "verify_status")
+
                 with closing(get_db()) as conn:
                     if _job_cancelled(conn, job_id):
                         execute(
@@ -501,49 +574,88 @@ def _process_scrub_job(job_id: int):
                         conn.commit()
                         return
 
-                    cid = int(row["id"])
-                    email = (row["email"] or "").strip().lower()
-                    if skip_hours > 0 and row.get("verified_at") and row.get("verify_status"):
-                        try:
-                            from datetime import datetime, timezone, timedelta
-                            raw_ts = str(row["verified_at"]).replace("Z", "+00:00")
-                            if "T" not in raw_ts and " " in raw_ts:
-                                raw_ts = raw_ts.replace(" ", "T", 1)
-                            vt = datetime.fromisoformat(raw_ts)
-                            if vt.tzinfo is None:
-                                vt = vt.replace(tzinfo=timezone.utc)
-                            if datetime.now(timezone.utc) - vt < timedelta(hours=skip_hours):
-                                skipped_n += 1
-                                processed += 1
-                                if processed % 25 == 0:
-                                    _update_job_progress(conn, job_id, processed, counts, suppressed_n, skipped_n)
+                # Skip yakın zamanda doğrulanmışlar (DB bağlantısı tutmadan)
+                if skip_hours > 0 and verified_at and verify_status:
+                    try:
+                        from datetime import datetime, timezone, timedelta
+                        raw_ts = str(verified_at).replace("Z", "+00:00")
+                        if "T" not in raw_ts and " " in raw_ts:
+                            raw_ts = raw_ts.replace(" ", "T", 1)
+                        vt = datetime.fromisoformat(raw_ts)
+                        if vt.tzinfo is None:
+                            vt = vt.replace(tzinfo=timezone.utc)
+                        if datetime.now(timezone.utc) - vt < timedelta(hours=skip_hours):
+                            skipped_n += 1
+                            processed += 1
+                            last_contact_id = cid
+                            if processed % 50 == 0:
+                                with closing(get_db()) as conn:
+                                    _update_job_progress(
+                                        conn, job_id, processed, counts, suppressed_n, skipped_n, last_contact_id
+                                    )
                                     conn.commit()
-                                continue
-                        except Exception:
-                            pass
+                            continue
+                    except Exception:
+                        pass
 
-                    t0 = time.monotonic()
+                t0 = time.monotonic()
+                try:
                     result = verify_email(
                         email,
                         smtp_verify=settings["scrub_smtp_verify"],
                         mail_from=mail_from,
                     )
-                    now = iso(utcnow())
-                    if _apply_result(conn, cid, email, result, settings, now):
-                        suppressed_n += 1
-                    st = result["status"]
-                    if st in counts:
-                        counts[st] += 1
-                    else:
-                        counts["unknown"] += 1
+                except Exception as verify_exc:
+                    result = {"email": email, "status": "unknown", "detail": f"verify_exc:{verify_exc}"[:200]}
+
+                try:
+                    with closing(get_db()) as conn:
+                        now = iso(utcnow())
+                        if _apply_result(conn, cid, email, result, settings, now):
+                            suppressed_n += 1
+                        st = result.get("status") or "unknown"
+                        if st in counts:
+                            counts[st] += 1
+                        else:
+                            counts["unknown"] += 1
+                        processed += 1
+                        last_contact_id = cid
+                        if processed % 10 == 0 or st == "invalid":
+                            _update_job_progress(
+                                conn, job_id, processed, counts, suppressed_n, skipped_n, last_contact_id
+                            )
+                        conn.commit()
+                except Exception as row_exc:
+                    row_errors += 1
+                    with suppress(Exception):
+                        with closing(get_db()) as conn:
+                            execute(
+                                conn,
+                                "UPDATE mail_scrub_jobs SET error = ?, last_contact_id = ?, updated_at = ? WHERE id = ?",
+                                (f"row#{cid}: {row_exc}"[:500], cid, iso(utcnow()), job_id),
+                            )
+                            conn.commit()
+                    # Şema eksikse bir kez daha dene, sonra devam
+                    if row_errors <= 2:
+                        with suppress(Exception):
+                            with closing(get_db()) as conn:
+                                ensure_mail_scrub_schema(conn)
+                                conn.commit()
+                    if row_errors >= 25:
+                        raise RuntimeError(f"Çok fazla satır hatası ({row_errors}). Son: {row_exc}") from row_exc
                     processed += 1
-                    if processed % 10 == 0:
-                        _update_job_progress(conn, job_id, processed, counts, suppressed_n, skipped_n)
-                    conn.commit()
+                    last_contact_id = cid
+                    continue
 
                 if settings["scrub_smtp_verify"]:
                     elapsed = time.monotonic() - t0
                     sleep_for = interval - elapsed
+                    if sleep_for > 0:
+                        time.sleep(sleep_for)
+                else:
+                    # MX-only: hafif throttle
+                    elapsed = time.monotonic() - t0
+                    sleep_for = min(interval, 0.05) - elapsed
                     if sleep_for > 0:
                         time.sleep(sleep_for)
 
@@ -557,24 +669,28 @@ def _process_scrub_job(job_id: int):
                 "UPDATE mail_scrub_jobs SET total = ? WHERE id = ?",
                 (total, job_id),
             )
-            _update_job_progress(conn, job_id, processed, counts, suppressed_n, skipped_n)
+            _update_job_progress(conn, job_id, processed, counts, suppressed_n, skipped_n, last_contact_id)
             execute(
                 conn,
-                "UPDATE mail_scrub_jobs SET status = 'done', updated_at = ? WHERE id = ?",
-                (iso(utcnow()), job_id),
+                "UPDATE mail_scrub_jobs SET status = 'done', error = ?, updated_at = ? WHERE id = ?",
+                ((f"row_errors={row_errors}" if row_errors else ""), iso(utcnow()), job_id),
             )
             conn.commit()
     except Exception as exc:
         with closing(get_db()) as conn:
             execute(
                 conn,
-                "UPDATE mail_scrub_jobs SET status = 'error', error = ?, updated_at = ? WHERE id = ?",
-                (str(exc)[:500], iso(utcnow()), job_id),
+                """
+                UPDATE mail_scrub_jobs SET
+                    status = 'error', error = ?, processed = ?, last_contact_id = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (str(exc)[:500], processed, last_contact_id, iso(utcnow()), job_id),
             )
             conn.commit()
 
 
-def _update_job_progress(conn, job_id, processed, counts, suppressed_n, skipped_n):
+def _update_job_progress(conn, job_id, processed, counts, suppressed_n, skipped_n, last_contact_id=0):
     execute(
         conn,
         """
@@ -588,6 +704,7 @@ def _update_job_progress(conn, job_id, processed, counts, suppressed_n, skipped_
             role_count = ?,
             suppressed_count = ?,
             skipped_count = ?,
+            last_contact_id = ?,
             updated_at = ?
         WHERE id = ?
         """,
@@ -601,6 +718,7 @@ def _update_job_progress(conn, job_id, processed, counts, suppressed_n, skipped_
             counts.get("role", 0),
             suppressed_n,
             skipped_n,
+            int(last_contact_id or 0),
             iso(utcnow()),
             job_id,
         ),
@@ -627,14 +745,21 @@ def start_scrub_job(*, tag_filter="", contact_ids=None, scope="filter") -> int:
             (status, scope, tag_filter, contact_ids_json, total, processed,
              valid_count, invalid_count, unknown_count, catch_all_count,
              disposable_count, role_count, suppressed_count, skipped_count,
-             error, created_at, updated_at)
-            VALUES ('pending', ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', ?, ?)
+             error, last_contact_id, created_at, updated_at)
+            VALUES ('pending', ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, ?, ?)
             """,
             (scope or "filter", (tag_filter or "").strip(), ids_json, now, now),
         )
         conn.commit()
-    t = threading.Thread(target=_run_scrub_job, args=(job_id,), daemon=True, name=f"mail-scrub-{job_id}")
-    t.start()
+    # External worker varsa web thread'ine güvenme — worker reclaim eder.
+    # Yoksa (veya local) burada başlat.
+    if not _external_worker_mode():
+        t = threading.Thread(target=_run_scrub_job, args=(job_id,), daemon=True, name=f"mail-scrub-{job_id}")
+        t.start()
+    else:
+        # Yine de web'de dene (worker gecikirse); worker çift çalışmayı _SCRUB_RUNNING ile engelleyemez
+        # (ayrı process) — bu yüzden external'da SADECE worker çalıştırır.
+        pass
     return job_id
 
 

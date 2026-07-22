@@ -1630,7 +1630,10 @@
       "suppressed " + (j.suppressed_count || 0)
     ];
     if (j.skipped_count) parts.push("skip " + j.skipped_count);
-    return (j.status || "") + " · " + parts.join(" · ");
+    var line = (j.status || "") + " · " + parts.join(" · ");
+    if (j.status === "pending") line += " · worker alıyor…";
+    if (j.error) line += " · " + String(j.error).slice(0, 180);
+    return line;
   }
 
   function mailPollScrubJob(jobId) {

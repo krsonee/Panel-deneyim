@@ -66,7 +66,7 @@ def main():
         conn.commit()
 
     from mail_campaign_worker import ensure_campaign_scheduler, start_campaign_send
-    from mail_scrub import ensure_mail_scrub_schema
+    from mail_scrub import ensure_mail_scrub_schema, reclaim_scrub_jobs
 
     ensure_campaign_scheduler()
     print("✉️  campaign scheduler on")
@@ -91,6 +91,9 @@ def main():
                         print(f"⚠️  resume campaign {r['id']}: {exc}")
                 _tick_warm_domains(conn)
                 conn.commit()
+            n_scrub = reclaim_scrub_jobs(limit=2)
+            if n_scrub:
+                print(f"✉️  scrub reclaim started={n_scrub}")
         except Exception as exc:
             print(f"⚠️  worker loop: {exc}")
         time.sleep(25)

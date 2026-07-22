@@ -7,7 +7,7 @@ import hmac
 import html as html_lib
 import json
 import secrets
-from contextlib import closing
+from contextlib import closing, suppress
 
 from database import (
     execute,
@@ -179,15 +179,33 @@ def suppress_email(conn, email, reason="unsubscribed", source="system"):
         return
     now = iso(utcnow())
     if uses_postgres():
-        execute(
-            conn,
-            """
-            INSERT INTO mail_suppressions (email, reason, source, created_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT (email) DO UPDATE SET reason = EXCLUDED.reason, source = EXCLUDED.source
-            """,
-            (email, reason, source, now),
-        )
+        try:
+            execute(
+                conn,
+                """
+                INSERT INTO mail_suppressions (email, reason, source, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (email) DO UPDATE SET reason = EXCLUDED.reason, source = EXCLUDED.source
+                """,
+                (email, reason, source, now),
+            )
+        except Exception:
+            # UNIQUE(email) yoksa / conflict hedefi tutmazsa fallback
+            with suppress(Exception):
+                conn.rollback()
+            existing = fetchone(conn, "SELECT email FROM mail_suppressions WHERE email = ?", (email,))
+            if existing:
+                execute(
+                    conn,
+                    "UPDATE mail_suppressions SET reason = ?, source = ? WHERE email = ?",
+                    (reason, source, email),
+                )
+            else:
+                execute(
+                    conn,
+                    "INSERT INTO mail_suppressions (email, reason, source, created_at) VALUES (?, ?, ?, ?)",
+                    (email, reason, source, now),
+                )
     else:
         execute(
             conn,

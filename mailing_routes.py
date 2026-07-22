@@ -2040,10 +2040,12 @@ def create_mailing_blueprint(permission_required):
         _cancel_all_active_imports()
     except Exception as exc:
         print(f"⚠️  startup import cancel: {exc}")
-    try:
-        cancel_active_scrub_jobs()
-    except Exception as exc:
-        print(f"⚠️  startup scrub cancel: {exc}")
+    # External worker modunda scrub/campaign worker'da yürür — web restart iptal etmesin
+    if not external_worker:
+        try:
+            cancel_active_scrub_jobs()
+        except Exception as exc:
+            print(f"⚠️  startup scrub cancel: {exc}")
     # Standalone Mikromail'de kontak purge kapalı (satış verisi)
     if not external_worker and (os.environ.get("SERVICE_MODE") or "").strip().lower() != "mailing":
         try:
