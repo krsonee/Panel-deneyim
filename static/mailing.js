@@ -29,6 +29,67 @@
   var MAIL_UPLOAD_STALL_MS = 120 * 1000;
   var MAIL_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
+  function mailExtractEmail(raw) {
+    var s = String(raw == null ? "" : raw)
+      .replace(/^\uFEFF/, "")
+      .replace(/[\u200B-\u200D\uFEFF]/g, "")
+      .trim();
+    if (!s) return "";
+    s = s.replace(/^mailto:\s*/i, "");
+    var angle = s.match(/<\s*([^<>\s]+@[^<>\s]+)\s*>/);
+    if (angle) s = angle[1];
+    s = s.replace(/^["'\[]+|["'\]]+$/g, "").trim();
+    // Satırda isim + e-posta / tab / CSV hücresi varsa @ içeren parçayı al
+    if (/\s/.test(s) || s.indexOf(",") >= 0 || s.indexOf(";") >= 0 || s.indexOf("\t") >= 0) {
+      var m = s.match(/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i);
+      if (m) s = m[0];
+    }
+    s = s.toLowerCase().replace(/[<>]/g, "").replace(/[.,;:]+$/g, "").trim();
+    return s;
+  }
+
+  function mailAnalyzeEmails(text) {
+    var raw = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    var valid = [];
+    var invalid = [];
+    var seen = {};
+    function consider(piece) {
+      var original = String(piece || "").trim();
+      if (!original) return;
+      var e = mailExtractEmail(original);
+      if (e && MAIL_EMAIL_RE.test(e)) {
+        if (!seen[e]) { seen[e] = 1; valid.push(e); }
+        return;
+      }
+      // Sadece e-posta gibi görünenleri "hatalı" say (saf isim satırlarını şişirme)
+      if (original.indexOf("@") >= 0) {
+        invalid.push(original.length > 48 ? original.slice(0, 45) + "…" : original);
+      }
+    }
+    var lines = raw.split("\n");
+    if (lines.length > 1) {
+      lines.forEach(function (line) {
+        line = line.trim();
+        if (!line) return;
+        if (line.indexOf("@") >= 0) {
+          consider(line);
+        } else {
+          // e-postasız satır — sessizce atla (başlık / isim kolonu)
+        }
+      });
+    } else {
+      // Tek satır / boşluksuz liste
+      raw.split(/[\s,;]+/).filter(Boolean).forEach(consider);
+    }
+    // Hiç satır yoksa ama virgüllü tek blok varsa yukarıdaki else yeter;
+    // çok satırda hiç @ yoksa tüm metinde global ara
+    if (!valid.length && !invalid.length && raw.indexOf("@") >= 0) {
+      var global = raw.match(/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/gi) || [];
+      global.forEach(consider);
+    }
+    return { valid: valid, invalid: invalid, tokens: valid.concat(invalid) };
+  }
+
   function mmIcon(name) {
     var p = {
       edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
@@ -68,23 +129,6 @@
     return '<span class="mm-msgid"><code title="' + esc(raw) + '">' + esc(raw) + "</code>" +
       mmIconBtn("mm-copy-msgid btn-secondary", "Kopyala", "copy", 'data-copy="' + esc(raw) + '"') +
       "</span>";
-  }
-
-  function mailAnalyzeEmails(text) {
-    var tokens = String(text || "").split(/[\s,;]+/).filter(Boolean);
-    var valid = [];
-    var invalid = [];
-    var seen = {};
-    tokens.forEach(function (t) {
-      var e = t.trim().toLowerCase();
-      if (!e) return;
-      if (MAIL_EMAIL_RE.test(e)) {
-        if (!seen[e]) { seen[e] = 1; valid.push(e); }
-      } else {
-        invalid.push(t.trim());
-      }
-    });
-    return { valid: valid, invalid: invalid, tokens: tokens };
   }
 
   var MAIL_IMPORT_BADGE = {
@@ -314,16 +358,18 @@
   // Yapıştırılan ham e-posta metnini (10 milyona kadar) DOM'a hiç yazdırmadan
   // CSV'ye çevirip mevcut çoklu dosya kuyruğuna sahte bir File olarak ekler.
   function mailQueueTextAsFile(rawText, tag, labelPrefix) {
-    var tokens = String(rawText || "").split(/[\s,;]+/).filter(Boolean);
-    if (!tokens.length) return { count: 0, error: null };
+    // Ham metin veya önceden ayıklanmış e-posta listesi (newline)
+    var info = mailAnalyzeEmails(rawText);
+    var tokens = info.valid;
+    if (!tokens.length) return { count: 0, error: null, invalid: info.invalid.length };
     var csv = "email\n" + tokens.join("\n");
     var blob = new Blob([csv], { type: "text/csv" });
     var fname = (labelPrefix || "yapistirilan-liste") + "-" + Date.now() + ".csv";
     var file = new File([blob], fname, { type: "text/csv" });
     var err = mailValidateImportFile(file);
-    if (err) return { count: tokens.length, error: err };
+    if (err) return { count: tokens.length, error: err, invalid: info.invalid.length };
     mailEnqueueImport(file, tag);
-    return { count: tokens.length, error: null };
+    return { count: tokens.length, error: null, invalid: info.invalid.length };
   }
 
   function mailReadDismissedImportJobs() {
@@ -2763,7 +2809,13 @@
       var tag = (document.getElementById("mail-paste-tag") || {}).value || "";
       tag = tag.trim();
       if (!info.valid.length) {
-        if (pasteStatusEl) pasteStatusEl.textContent = "Geçerli e-posta bulunamadı.";
+        if (pasteStatusEl) {
+          pasteStatusEl.textContent = info.invalid.length
+            ? ("Geçerli e-posta yok. " + fmtNum(info.invalid.length) +
+              " satırda @ var ama format bozuk (örn: " + (info.invalid[0] || "") +
+              "). Sadece e-posta yapıştır veya Excel’den e-posta kolonunu kopyala.")
+            : "Geçerli e-posta bulunamadı. Satır başına bir e-posta yapıştır (isim/telefon karışmasın).";
+        }
         return;
       }
       var result = mailQueueTextAsFile(info.valid.join("\n"), tag, "yapistirilan-liste");
