@@ -1,12 +1,41 @@
-/* MakroPanel UI modernization — only applies when body.panel-brand-makro */
+/* MakroPanel UI polish — only body.panel-brand-makro */
 
-/* —— 1. Sidebar & navigation —— */
+/* —— 1. Full-width layout (kill right black gap) —— */
+body.panel-brand-makro .app {
+  width: 100%;
+  max-width: none;
+}
+body.panel-brand-makro .main {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  margin-left: var(--sidebar-w);
+}
+body.panel-brand-makro .main-inner {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  padding: 1rem 1.5rem 1.5rem;
+  box-sizing: border-box;
+}
+body.panel-brand-makro .module-panel {
+  width: 100%;
+  max-width: none;
+}
+
+/* —— Sidebar —— */
 body.panel-brand-makro .nav-item {
   font-size: 0.95rem;
   font-weight: 500;
+  color: #94a3b8;
   border-radius: 10px;
   border-left: 3px solid transparent;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+body.panel-brand-makro .nav-item:hover {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.04);
 }
 body.panel-brand-makro .nav-item.active {
   background: rgba(99, 102, 241, 0.15);
@@ -16,23 +45,19 @@ body.panel-brand-makro .nav-item.active {
   color: #ffffff;
   box-shadow: inset 0 0 24px rgba(99, 102, 241, 0.08);
 }
-body.panel-brand-makro .sidebar-actions {
-  padding: 1.25rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  gap: 0.5rem;
-}
+body.panel-brand-makro .sidebar-actions,
 body.panel-brand-makro .sidebar-foot {
   padding: 1.25rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* —— 2. Inputs / selects —— */
+/* —— 2. Inputs —— */
 body.panel-brand-makro input,
 body.panel-brand-makro select,
 body.panel-brand-makro textarea {
-  background-color: #131927;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: var(--text, #e8edf5);
+  background-color: #182232;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
 }
 body.panel-brand-makro input::placeholder,
 body.panel-brand-makro textarea::placeholder {
@@ -44,12 +69,13 @@ body.panel-brand-makro select:focus,
 body.panel-brand-makro textarea:focus {
   outline: none;
   border-color: #6366f1;
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 1px #6366f1;
 }
 
-/* —— 3. Cards & KPI —— */
+/* —— 3. Cards / KPI —— */
 body.panel-brand-makro .card,
-body.panel-brand-makro .kpi {
+body.panel-brand-makro .kpi,
+body.panel-brand-makro .chart-card {
   border-radius: 0.75rem;
   background: rgba(23, 28, 40, 0.7);
   backdrop-filter: blur(10px);
@@ -70,6 +96,10 @@ body.panel-brand-makro .kpi .val {
   font-size: clamp(1.35rem, 1.2rem + 0.55vw, 1.75rem);
   font-weight: 700;
   line-height: 1.15;
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
 }
 body.panel-brand-makro .kpi .sub,
 body.panel-brand-makro .kpi .lbl,
@@ -77,10 +107,66 @@ body.panel-brand-makro .acc-money-sub,
 body.panel-brand-makro .acc-exp-money-sub {
   color: #94a3b8;
 }
-body.panel-brand-makro .acc-dash-kpi-grid .kpi,
+
+/* Category summary cards — fluid multi-col, no ellipsis truncation */
+body.panel-brand-makro .acc-kpi-cat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+@media (min-width: 640px) {
+  body.panel-brand-makro .acc-kpi-cat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 900px) {
+  body.panel-brand-makro .acc-kpi-cat-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) {
+  body.panel-brand-makro .acc-kpi-cat-grid {
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+  }
+}
 body.panel-brand-makro .acc-kpi-cat-grid .kpi {
-  padding: 1.15rem 1.25rem;
-  background: rgba(23, 28, 40, 0.7);
+  padding: 1rem 0.85rem;
+  min-width: 0;
+  overflow: visible;
+}
+body.panel-brand-makro .acc-kpi-cat-grid .kpi .lbl {
+  display: block;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: unset;
+  overflow: visible;
+  white-space: normal;
+  min-height: 0;
+  line-height: 1.3;
+  word-break: break-word;
+}
+body.panel-brand-makro .acc-kpi-cat-grid .kpi .val {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  font-size: clamp(0.82rem, 0.7rem + 0.4vw, 1.05rem);
+  font-weight: 700;
+  word-break: break-word;
+  max-width: none;
+}
+
+/* Financial status colors */
+body.panel-brand-makro .acc-net-profit,
+body.panel-brand-makro .kpi.green .val,
+body.panel-brand-makro .time {
+  color: #10b981;
+  font-weight: 700;
+}
+body.panel-brand-makro .acc-net-profit.negative,
+body.panel-brand-makro .kpi.rose .val,
+body.panel-brand-makro .acc-ic-neg,
+body.panel-brand-makro .acc-debt-table tr.acc-debt-payment td {
+  color: #ef4444;
+  font-weight: 700;
 }
 
 /* —— 4. Tables —— */
@@ -94,22 +180,21 @@ body.panel-brand-makro table th {
   padding-bottom: 0.75rem;
 }
 body.panel-brand-makro table td {
-  padding-top: 0.85rem;
-  padding-bottom: 0.85rem;
+  color: #cbd5e1;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
 }
 body.panel-brand-makro table tbody tr:hover {
   background-color: rgba(255, 255, 255, 0.03);
 }
+body.panel-brand-makro .mono {
+  color: #94a3b8;
+}
 body.panel-brand-makro td[data-col="domain"],
 body.panel-brand-makro td[data-col="redirect"],
-body.panel-brand-makro td[data-col="label"] .mono,
-body.panel-brand-makro .mono.domain-cell,
 body.panel-brand-makro .bl-page-addr,
 body.panel-brand-makro .makrolink-url,
-body.panel-brand-makro td.domain-cell,
-body.panel-brand-makro .ellipsis-cell,
-body.panel-brand-makro #domains-table td:nth-child(1),
-body.panel-brand-makro #domains-table td:nth-child(2) {
+body.panel-brand-makro .ellipsis-cell {
   max-width: 240px;
   white-space: nowrap;
   overflow: hidden;
@@ -120,6 +205,50 @@ body.panel-brand-makro .tag {
   font-size: 0.75rem;
   border-radius: 9999px;
   font-weight: 600;
+}
+
+/* Table action buttons — Düzenle / Sil */
+body.panel-brand-makro table .makrolink-edit,
+body.panel-brand-makro table .btn-sm:not(.btn-danger):not(.btn-primary):not(.btn-success),
+body.panel-brand-makro .acc-exp-row-actions .btn-sm:not(.btn-danger),
+body.panel-brand-makro .acc-exp-actions .btn-sm:not(.btn-danger) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  border-color: transparent;
+}
+body.panel-brand-makro table .makrolink-edit:hover,
+body.panel-brand-makro table .btn-sm:not(.btn-danger):not(.btn-primary):not(.btn-success):hover,
+body.panel-brand-makro .acc-exp-row-actions .btn-sm:not(.btn-danger):hover,
+body.panel-brand-makro .acc-exp-actions .btn-sm:not(.btn-danger):hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+body.panel-brand-makro table .makrolink-del,
+body.panel-brand-makro table .btn-danger.btn-sm,
+body.panel-brand-makro .acc-exp-row-actions .btn-danger,
+body.panel-brand-makro .acc-exp-actions .btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: transparent;
+}
+body.panel-brand-makro table .makrolink-del:hover,
+body.panel-brand-makro table .btn-danger.btn-sm:hover,
+body.panel-brand-makro .acc-exp-row-actions .btn-danger:hover,
+body.panel-brand-makro .acc-exp-actions .btn-danger:hover {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+/* —— Charts —— */
+body.panel-brand-makro .chart-wrap {
+  position: relative;
+  height: auto;
+  min-height: 280px;
+  height: 280px;
+}
+body.panel-brand-makro .chart-card h3 {
+  color: #e2e8f0;
+}
+body.panel-brand-makro .chart-card p.sub {
+  color: #94a3b8;
 }
 
 /* —— 5. Modals & permission chips —— */
@@ -136,9 +265,7 @@ body.panel-brand-makro .modal-body {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
-body.panel-brand-makro .modal-body::-webkit-scrollbar {
-  width: 6px;
-}
+body.panel-brand-makro .modal-body::-webkit-scrollbar { width: 6px; }
 body.panel-brand-makro .modal-body::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
   border-radius: 4px;
@@ -158,25 +285,50 @@ body.panel-brand-makro .perm-chip:has(input:checked) .chip-dot {
   box-shadow: none;
 }
 
-/* —— 6. Bio studio layout & theme cards —— */
+/* —— 6. Bio studio —— */
 body.panel-brand-makro .biolink-editor-grid {
   grid-template-columns: minmax(0, 7fr) minmax(280px, 5fr);
   gap: 1.5rem;
+  align-items: start;
+}
+body.panel-brand-makro .biolink-editor-preview {
+  position: sticky;
+  top: 1.5rem;
+  align-self: start;
+  z-index: 1;
+}
+body.panel-brand-makro .biolink-preview-frame-wrap {
+  position: sticky;
+  top: 1.5rem;
+  align-self: start;
+}
+body.panel-brand-makro .bl-theme-card {
+  transition: all 0.2s ease;
 }
 body.panel-brand-makro .bl-theme-card.active {
-  outline: 2px solid #6366f1;
-  outline-offset: 2px;
+  outline: none;
   border-color: transparent;
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.35);
+  box-shadow:
+    0 0 0 2px #6366f1,
+    0 0 0 4px #0f172a;
 }
 
 @media (max-width: 1100px) {
   body.panel-brand-makro .biolink-editor-grid {
     grid-template-columns: 1fr;
   }
+  body.panel-brand-makro .biolink-editor-preview,
+  body.panel-brand-makro .biolink-preview-frame-wrap {
+    position: relative;
+    top: auto;
+  }
+  body.panel-brand-makro .acc-kpi-cat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-/* Light theme: keep readable overrides without fighting Bizzo */
+/* Light theme */
+[data-theme="light"] body.panel-brand-makro .nav-item { color: #64748b; }
 [data-theme="light"] body.panel-brand-makro .nav-item.active {
   color: #312e81;
   background: rgba(99, 102, 241, 0.12);
@@ -190,11 +342,13 @@ body.panel-brand-makro .bl-theme-card.active {
   color: #0f172a;
 }
 [data-theme="light"] body.panel-brand-makro .card,
-[data-theme="light"] body.panel-brand-makro .kpi {
-  background: rgba(255, 255, 255, 0.92);
+[data-theme="light"] body.panel-brand-makro .kpi,
+[data-theme="light"] body.panel-brand-makro .chart-card {
+  background: rgba(255, 255, 255, 0.95);
   border-color: #e2e8f0;
   backdrop-filter: none;
 }
+[data-theme="light"] body.panel-brand-makro table td { color: #334155; }
 [data-theme="light"] body.panel-brand-makro .modal {
   background: #ffffff;
   border-color: #e2e8f0;
@@ -206,4 +360,9 @@ body.panel-brand-makro .bl-theme-card.active {
 [data-theme="light"] body.panel-brand-makro .sidebar-actions,
 [data-theme="light"] body.panel-brand-makro .sidebar-foot {
   border-top-color: rgba(15, 23, 42, 0.08);
+}
+[data-theme="light"] body.panel-brand-makro .bl-theme-card.active {
+  box-shadow:
+    0 0 0 2px #6366f1,
+    0 0 0 4px #f8fafc;
 }

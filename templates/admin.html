@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/biolink-admin.css?v=20260721a">
   <link rel="stylesheet" href="/static/biolink-skins.css?v=20260716b">
   {% if panel.brand == "makro" %}
-  <link rel="stylesheet" href="/static/makropanel_ui.css?v=20260722a">
+  <link rel="stylesheet" href="/static/makropanel_ui.css?v=20260722b">
   {% endif %}
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -4230,9 +4230,24 @@
         var affLabels = channels.map(function(c){ return c.channel+" ("+Math.round(c.members/total*100)+"%)"; });
         var affData = channels.map(function(c){ return c.members; });
 
+        var affLegendOpts = {
+          position: "bottom",
+          align: "start",
+          labels: {
+            color: "#cbd5e1",
+            font: { size: 11 },
+            boxWidth: 10,
+            padding: 14,
+            usePointStyle: true,
+            pointStyle: "circle"
+          }
+        };
         if (charts.affiliate) {
           charts.affiliate.data.labels = affLabels;
           charts.affiliate.data.datasets[0].data = affData;
+          if (charts.affiliate.options && charts.affiliate.options.plugins) {
+            charts.affiliate.options.plugins.legend = affLegendOpts;
+          }
           charts.affiliate.update("none");
         } else {
           charts.affiliate = new Chart(document.getElementById("chart-affiliate"), {
@@ -4242,12 +4257,16 @@
               datasets: [{ data: affData, backgroundColor: COLORS, borderWidth: 2, borderColor: "#0f1623" }]
             },
             options: Object.assign({}, chartBaseOpts, {
-              plugins: { legend: { position: "bottom", labels: { font: { size: 10 }, boxWidth: 10 } } }
+              layout: { padding: { top: 4, bottom: 8 } },
+              plugins: { legend: affLegendOpts }
             })
           });
         }
 
-        var gameLabels = games.map(function(g){ return g.game; });
+        var gameLabels = games.map(function(g){
+          var name = String(g.game || "");
+          return name.length > 28 ? name.slice(0, 26) + "…" : name;
+        });
         var gameData = games.map(function(g){ return g.clicks; });
 
         if (charts.games) {
@@ -4263,8 +4282,24 @@
             },
             options: Object.assign({}, chartBaseOpts, {
               indexAxis: "y",
+              layout: { padding: { right: 8 } },
               plugins: { legend: { display: false } },
-              scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
+              scales: {
+                x: {
+                  beginAtZero: true,
+                  ticks: { stepSize: 1, color: "#94a3b8", font: { size: 11 } },
+                  grid: { color: "rgba(148,163,184,0.12)" }
+                },
+                y: {
+                  ticks: {
+                    color: "#cbd5e1",
+                    font: { size: 11 },
+                    autoSkip: false,
+                    crossAlign: "far"
+                  },
+                  grid: { display: false }
+                }
+              }
             })
           });
         }
