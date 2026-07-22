@@ -9,6 +9,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="/static/biolink-admin.css?v=20260721a">
   <link rel="stylesheet" href="/static/biolink-skins.css?v=20260716b">
+  {% if panel.brand == "makro" %}
+  <link rel="stylesheet" href="/static/makropanel_ui.css?v=20260722a">
+  {% endif %}
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -2070,8 +2073,6 @@
         <button type="button" class="nav-item" data-module="accounting" data-perm="module.accounting"><span class="icon">💰</span> Muhasebe</button>
         {% if panel.features.mailing %}
         <button type="button" class="nav-item" data-module="mailing" data-perm="module.mailing"><span class="icon">✉️</span> Mailing</button>
-        {% elif panel.brand == "makro" %}
-        <a class="nav-item" href="{{ panel.mikromail_url or panel.makromail_url or 'https://mikromail.onrender.com' }}" target="_blank" rel="noopener"><span class="icon">✉️</span> Mikromail ↗</a>
         {% endif %}
         {% if panel.features.marketing %}
         <button type="button" class="nav-item" data-module="marketing" data-perm="module.marketing"><span class="icon">📣</span> Marketing</button>

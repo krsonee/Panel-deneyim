@@ -1,0 +1,209 @@
+/* MakroPanel UI modernization — only applies when body.panel-brand-makro */
+
+/* —— 1. Sidebar & navigation —— */
+body.panel-brand-makro .nav-item {
+  font-size: 0.95rem;
+  font-weight: 500;
+  border-radius: 10px;
+  border-left: 3px solid transparent;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+body.panel-brand-makro .nav-item.active {
+  background: rgba(99, 102, 241, 0.15);
+  border-left: 3px solid #6366f1;
+  border-color: transparent;
+  border-left-color: #6366f1;
+  color: #ffffff;
+  box-shadow: inset 0 0 24px rgba(99, 102, 241, 0.08);
+}
+body.panel-brand-makro .sidebar-actions {
+  padding: 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 0.5rem;
+}
+body.panel-brand-makro .sidebar-foot {
+  padding: 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* —— 2. Inputs / selects —— */
+body.panel-brand-makro input,
+body.panel-brand-makro select,
+body.panel-brand-makro textarea {
+  background-color: #131927;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text, #e8edf5);
+}
+body.panel-brand-makro input::placeholder,
+body.panel-brand-makro textarea::placeholder {
+  color: #a0aec0;
+  opacity: 1;
+}
+body.panel-brand-makro input:focus,
+body.panel-brand-makro select:focus,
+body.panel-brand-makro textarea:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+/* —— 3. Cards & KPI —— */
+body.panel-brand-makro .card,
+body.panel-brand-makro .kpi {
+  border-radius: 0.75rem;
+  background: rgba(23, 28, 40, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+body.panel-brand-makro .kpi {
+  padding: 1.5rem;
+}
+body.panel-brand-makro .card .card-body,
+body.panel-brand-makro .card > form {
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+body.panel-brand-makro .card .card-head {
+  padding: 1rem 1.5rem;
+}
+body.panel-brand-makro .kpi .val {
+  font-size: clamp(1.35rem, 1.2rem + 0.55vw, 1.75rem);
+  font-weight: 700;
+  line-height: 1.15;
+}
+body.panel-brand-makro .kpi .sub,
+body.panel-brand-makro .kpi .lbl,
+body.panel-brand-makro .acc-money-sub,
+body.panel-brand-makro .acc-exp-money-sub {
+  color: #94a3b8;
+}
+body.panel-brand-makro .acc-dash-kpi-grid .kpi,
+body.panel-brand-makro .acc-kpi-cat-grid .kpi {
+  padding: 1.15rem 1.25rem;
+  background: rgba(23, 28, 40, 0.7);
+}
+
+/* —— 4. Tables —— */
+body.panel-brand-makro table th {
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+body.panel-brand-makro table td {
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+body.panel-brand-makro table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+body.panel-brand-makro td[data-col="domain"],
+body.panel-brand-makro td[data-col="redirect"],
+body.panel-brand-makro td[data-col="label"] .mono,
+body.panel-brand-makro .mono.domain-cell,
+body.panel-brand-makro .bl-page-addr,
+body.panel-brand-makro .makrolink-url,
+body.panel-brand-makro td.domain-cell,
+body.panel-brand-makro .ellipsis-cell,
+body.panel-brand-makro #domains-table td:nth-child(1),
+body.panel-brand-makro #domains-table td:nth-child(2) {
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.panel-brand-makro .tag {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+  border-radius: 9999px;
+  font-weight: 600;
+}
+
+/* —— 5. Modals & permission chips —— */
+body.panel-brand-makro .modal-overlay {
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+body.panel-brand-makro .modal {
+  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+body.panel-brand-makro .modal-body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+body.panel-brand-makro .modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+body.panel-brand-makro .modal-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+body.panel-brand-makro .perm-chip {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #6b7280;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+body.panel-brand-makro .perm-chip:has(input:checked) {
+  background-color: #4f46e5;
+  color: #ffffff;
+  border-color: #4f46e5;
+}
+body.panel-brand-makro .perm-chip:has(input:checked) .chip-dot {
+  background: #fff;
+  box-shadow: none;
+}
+
+/* —— 6. Bio studio layout & theme cards —— */
+body.panel-brand-makro .biolink-editor-grid {
+  grid-template-columns: minmax(0, 7fr) minmax(280px, 5fr);
+  gap: 1.5rem;
+}
+body.panel-brand-makro .bl-theme-card.active {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+  border-color: transparent;
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.35);
+}
+
+@media (max-width: 1100px) {
+  body.panel-brand-makro .biolink-editor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Light theme: keep readable overrides without fighting Bizzo */
+[data-theme="light"] body.panel-brand-makro .nav-item.active {
+  color: #312e81;
+  background: rgba(99, 102, 241, 0.12);
+  border-left-color: #6366f1;
+}
+[data-theme="light"] body.panel-brand-makro input,
+[data-theme="light"] body.panel-brand-makro select,
+[data-theme="light"] body.panel-brand-makro textarea {
+  background-color: #ffffff;
+  border-color: #e2e8f0;
+  color: #0f172a;
+}
+[data-theme="light"] body.panel-brand-makro .card,
+[data-theme="light"] body.panel-brand-makro .kpi {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: #e2e8f0;
+  backdrop-filter: none;
+}
+[data-theme="light"] body.panel-brand-makro .modal {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+[data-theme="light"] body.panel-brand-makro .perm-chip:has(input:checked) {
+  background-color: #4f46e5;
+  color: #ffffff;
+}
+[data-theme="light"] body.panel-brand-makro .sidebar-actions,
+[data-theme="light"] body.panel-brand-makro .sidebar-foot {
+  border-top-color: rgba(15, 23, 42, 0.08);
+}
