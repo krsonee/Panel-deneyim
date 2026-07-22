@@ -17,7 +17,7 @@ from database import (
     utcnow,
 )
 
-SEED_FLAG = "seeded_bizzo_templates_v1"
+SEED_FLAG = "seeded_bizzo_templates_v2"
 
 SITE_URL = "https://www.bizzocasino168.com"
 CTA = "{{link:sc:https://www.bizzocasino168.com}}"
@@ -79,7 +79,7 @@ def _bizzo_html():
           <tr>
             <td align="center" style="padding:28px 24px 12px;background:linear-gradient(180deg,#3a1a4a 0%,{_CARD} 100%);">
               <a href="{CTA}" style="text-decoration:none;">
-                <img src="{_LOGO}" alt="Bizzo Casino" width="200" style="display:block;width:200px;max-width:70%;height:auto;border:0;">
+                <img src="{_LOGO}" alt="Bizzo Casino" width="220" height="92" style="display:block;width:220px;max-width:72%;height:auto;border:0;margin:0 auto;">
               </a>
             </td>
           </tr>
