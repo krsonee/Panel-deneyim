@@ -1,386 +1,348 @@
-"""Makrobet 2026 mailing şablonları (5 adet) — panel seed."""
+"""Makrobet 2026 mailing şablonları — site paleti + promo görselleri.
+
+Logo: __MAIL_LOGO__ → /static/mailing/makrobet-logo-black.png
+Görseller: __MB_IMG_*__ → /static/mailing/promos/*.jpg (siteden)
+CTA: {{link:sc:https://makrovip.com/Vipmail}}
+"""
+
 from __future__ import annotations
 
 from database import (
     execute,
     fetchone,
-    get_mail_setting,
     insert_returning_id,
     iso,
     upsert_mail_setting,
     utcnow,
 )
 
-SEED_FLAG = "seeded_makrobet_templates_v2026"
+SEED_FLAG = "seeded_makrobet_templates_v2026b"
+
+AFF = "https://makrovip.com/Vipmail"
+CTA = "{{link:sc:https://makrovip.com/Vipmail}}"
+
+BG = "#061c3d"
+CARD = "#0a2448"
+ROW = "#0f2d55"
+TEXT = "#e6f0fe"
+MUTED = "#9db3d4"
+GOLD = "#ffd400"
+BORDER = "#2a4a7a"
+INK = "#040e1f"
+DARK = "#0f1328"
+
+LOGO = "__MAIL_LOGO__"
+IMG_KASA = "__MB_IMG_KASA__"
+IMG_KAYIP = "__MB_IMG_KAYIP__"
+IMG_ARKADAS = "__MB_IMG_ARKADAS__"
+IMG_RACE = "__MB_IMG_RACE__"
+
+
+def _spam():
+    return f"""
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#1a0a00;border-bottom:2px solid {GOLD};">
+    <tr>
+      <td align="center" style="padding:12px 18px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.45;color:#ffffff;">
+        <strong style="color:{GOLD};">⚠ ÖNEMLİ:</strong>
+        Bu mail Spam klasöründeyse <strong style="color:{GOLD};">butonlar çalışmaz</strong>.
+        Önce <strong style="color:{GOLD};">Spam değil</strong> / <strong style="color:{GOLD};">Gelen kutusuna taşı</strong> deyin,
+        sonra butonlara tıklayın.
+      </td>
+    </tr>
+  </table>"""
+
+
+def _logo():
+    return (
+        f'<a href="{CTA}" style="text-decoration:none;">'
+        f'<img src="{LOGO}" alt="Makrobet" width="180" '
+        f'style="display:block;margin:0 auto;border:0;max-width:180px;height:auto;"></a>'
+    )
+
+
+def _btn(label, pad="14px 28px"):
+    return (
+        f'<a href="{CTA}" style="display:inline-block;background:{GOLD};color:{DARK};'
+        f"font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:800;"
+        f"text-decoration:none;padding:{pad};border-radius:10px;letter-spacing:0.02em;\">"
+        f"{label}</a>"
+    )
+
+
+def _btn_row(label):
+    return f"""
+          <tr>
+            <td align="center" style="padding:6px 24px 14px;">
+              {_btn(label)}
+            </td>
+          </tr>"""
+
+
+def _hero_img(src, alt):
+    return f"""
+          <tr>
+            <td align="center" style="padding:4px 20px 12px;">
+              <a href="{CTA}" style="text-decoration:none;">
+                <img src="{src}" alt="{alt}" width="520"
+                  style="display:block;width:100%;max-width:520px;height:auto;border:0;border-radius:14px;border:1px solid {BORDER};">
+              </a>
+            </td>
+          </tr>"""
+
+
+def _promo_visual(src, title, desc):
+    return f"""
+          <tr>
+            <td style="padding:0 20px 12px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                style="background:{ROW};border:1px solid {BORDER};border-radius:14px;overflow:hidden;">
+                <tr>
+                  <td width="128" valign="top" style="padding:0;">
+                    <a href="{CTA}" style="text-decoration:none;">
+                      <img src="{src}" alt="{title}" width="128"
+                        style="display:block;width:128px;max-width:128px;height:auto;border:0;">
+                    </a>
+                  </td>
+                  <td valign="middle" style="padding:14px 16px;">
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:800;color:{GOLD};line-height:1.25;">{title}</div>
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:{MUTED};line-height:1.45;margin-top:5px;">{desc}</div>
+                    <div style="margin-top:10px;">{_btn("İncele →", "9px 16px")}</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>"""
+
+
+def _promo_text(num, title, desc):
+    return f"""
+          <tr>
+            <td style="padding:0 20px 8px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                style="background:{CARD};border:1px solid {BORDER};border-left:3px solid {GOLD};border-radius:10px;">
+                <tr>
+                  <td width="36" valign="top" style="padding:12px 0 12px 12px;">
+                    <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,212,0,0.14);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:24px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:{GOLD};">{num}</div>
+                  </td>
+                  <td style="padding:12px 14px 12px 6px;">
+                    <a href="{CTA}" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:{GOLD};text-decoration:none;">{title}</a>
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:{MUTED};line-height:1.45;margin-top:3px;">{desc}</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>"""
+
+
+def _chip_row(labels):
+    chips = "".join(
+        f'<td style="padding:3px;"><span style="display:inline-block;padding:7px 11px;border-radius:999px;'
+        f"border:1px solid {BORDER};background:{ROW};color:{TEXT};font-family:Arial,Helvetica,sans-serif;"
+        f'font-size:11px;font-weight:700;white-space:nowrap;">{lab}</span></td>'
+        for lab in labels
+    )
+    return f"""
+          <tr>
+            <td align="center" style="padding:4px 16px 14px;">
+              <table role="presentation" cellpadding="0" cellspacing="0"><tr>{chips}</tr></table>
+            </td>
+          </tr>"""
+
+
+def _shell(eyebrow, headline, lead_html, body_rows, cta1, cta2, hero_src="", hero_alt=""):
+    hero = _hero_img(hero_src, hero_alt) if hero_src else ""
+    return f"""<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{headline}</title>
+</head>
+<body style="margin:0;padding:0;background:{INK};">
+{_spam()}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{INK};">
+    <tr>
+      <td align="center" style="padding:22px 10px 36px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+          style="width:100%;max-width:600px;background:{BG};border:1px solid {BORDER};border-radius:18px;overflow:hidden;">
+          <tr><td style="height:4px;background:{GOLD};font-size:0;line-height:0;">&nbsp;</td></tr>
+          <tr><td align="center" style="padding:22px 24px 8px;">{_logo()}</td></tr>
+          <tr>
+            <td align="center" style="padding:0 24px 6px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:{GOLD};">
+              {eyebrow}
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:0 22px 10px;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.2;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">
+              {headline}
+            </td>
+          </tr>
+{hero}
+{_btn_row(cta1)}
+          <tr>
+            <td style="padding:4px 24px 12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:{TEXT};">
+              {lead_html}
+            </td>
+          </tr>
+{body_rows}
+{_chip_row(["Bilet Etkinliği", "Makro Kasa", "Makro Manager", "Prim Bonusu", "Çevrim Bonusu"])}
+{_btn_row(cta2)}
+          <tr>
+            <td align="center" style="padding:0 24px 8px;">
+              <a href="{CTA}" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;color:{GOLD};text-decoration:underline;">
+                {AFF}
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:10px 24px 20px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:{MUTED};text-align:center;">
+              Spam klasöründeyken butonlar kilitlidir — Spam değil deyip tekrar deneyin.<br>
+              18+ · Sorumlu oyun · Şartlar geçerlidir · Makrobet
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
 
 TEMPLATES = [
     {
-        "name": '2026 · Davet Mailingi',
+        "name": "2026 · Davet Mailingi",
         "subject": "{{name}}, Makrobet'te seni 3.000 TL deneme kasası bekliyor!",
-        "html_body": """<!DOCTYPE html>
-<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Makrobet’te yerin hazır</title></head>
-<body style="margin:0;padding:0;background:#040e1f;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#050505;"><tr>
-<td align="center" style="padding:10px 16px;font-family:Georgia,'Times New Roman',serif;font-size:12px;line-height:1.45;color:#fff;">
-<span style="color:#ffd400;">⚠</span>&nbsp;Butonlar için <strong style="color:#ffd400;">Spam olmadığını bildir</strong> seçeneğine tıklayın.
-</td></tr></table>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#040e1f;"><tr><td align="center" style="padding:28px 12px;">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#061c3d;border:1px solid #2a4a7a;border-radius:18px;overflow:hidden;">
-<tr><td style="height:3px;background:#ffd400;font-size:0;line-height:0;">&nbsp;</td></tr>
-<tr><td align="center" style="padding:26px 28px 10px;"><img src="__MAIL_LOGO__" alt="Makrobet" width="176" style="display:block;margin:0 auto;border:0;max-width:176px;height:auto;"></td></tr>
-<tr><td align="center" style="padding:0 28px 8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#ffd400;">Özel davet · 2026</td></tr>
-<tr><td align="center" style="padding:0 28px 12px;font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;font-weight:700;color:#fff;letter-spacing:-0.02em;">Makrobet’te yerin hazır</td></tr>
-<tr><td align="center" style="padding:0 28px 18px;">
-<table role="presentation" cellpadding="0" cellspacing="0" style="background:linear-gradient(180deg,#122a52 0%,#0a1f3d 100%);border:1px solid #ffd400;border-radius:14px;min-width:260px;">
-<tr><td align="center" style="padding:18px 28px 6px;font-family:Georgia,'Times New Roman',serif;font-size:34px;line-height:1;font-weight:700;color:#ffd400;letter-spacing:-0.02em;">3.000 TL</td></tr>
-<tr><td align="center" style="padding:0 22px 16px;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#e6f0fe;">DENEME KASASI</td></tr>
-</table></td></tr>
-<tr><td style="padding:0 28px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#e6f0fe;">Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>Seni Makrobet’e özel davet ediyoruz. Kayıt ol, <strong style='color:#ffd400;'>3.000 TL deneme kasası</strong> ile başla; sonra sitedeki canlı kampanyalarla devam et.</td></tr>
-<tr><td style="padding:0 24px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">1</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">3.000 TL Deneme Kasası</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Yeni üyelere özel başlangıç kasası — kayıt sonrası hemen keşfet.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">2</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Arkadaşını Getir</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Arkadaşının aldığı yatırım bonusunu sana da ekleyelim.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">3</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">%100 Kayıp Bonusu</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Sıfır riskle yatırım senden, güvence Makrobet’ten.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">4</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Amusnet Yarışı</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">500.000₺ ödüllü yarışta adını duyur.</div>
-</td>
-</tr></table></td></tr></table></td></tr>
-<tr><td align="center" style="padding:4px 24px 18px;"><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Happy Hours</span><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Makro Görev</span><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Kripto Ultra Kasa</span><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">VIP Club</span></td></tr>
-<tr><td align="center" style="padding:8px 28px 10px;">
-<a href="{{link:sc:https://makrovip.com/Vipmail}}" style="display:inline-block;background:#ffd400;color:#061c3d;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;text-decoration:none;padding:14px 28px;border-radius:10px;letter-spacing:0.02em;">Hemen Kayıt Ol</a>
-</td></tr>
-<tr><td align="center" style="padding:0 28px 10px;">
-<a href="{{link:sc:https://makrovip.com/Vipmail}}" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;color:#ffd400;text-decoration:none;">Promosyonları incele →</a>
-</td></tr>
-<tr><td style="padding:14px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#9db3d4;text-align:center;">
-18+ · Sorumlu oyun · Şartlar ve çevrim koşulları geçerlidir · Makrobet 2026
-</td></tr>
-</table></td></tr></table>
-</body></html>""",
-        "text_body": "Merhaba {{name}},\n\nMakrobet'e özel davetlisin. 3.000 TL deneme kasası + canlı promosyonlar.\n\nKayıt: https://makrovip.com/Vipmail\n\n18+ Makrobet",
+        "html_body": _shell(
+            "Özel davet · deneme kasası",
+            "3.000 TL deneme kasası seni bekliyor",
+            "Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>"
+            "Makrobet’e özel davetlisin. Kayıt ol, <strong style='color:#ffd400;'>3.000 TL deneme kasanı</strong> aç "
+            "ve aşağıdaki canlı kampanyalarla devam et.",
+            _promo_visual(IMG_KASA, "3.000 TL Deneme Kasası", "Yeni üyelere özel başlangıç kasası — görseldeki kasa seni bekliyor.")
+            + _promo_visual(IMG_ARKADAS, "Arkadaşını Getir", "Arkadaşının aldığı yatırım bonusunu sana da ekleyelim.")
+            + _promo_visual(IMG_KAYIP, "%100 Kayıp Bonusu", "Sıfır riskle yatırım senden, güvence Makrobet’ten.")
+            + _promo_visual(IMG_RACE, "Amusnet Race", "Ödül havuzlu yarışta zirveye oyna.")
+            + _promo_text("5", "Bilet Etkinliği", "Etkinlik biletlerini topla, özel çekiliş / ödül turlarına gir.")
+            + _promo_text("6", "Makro Manager · Prim · Çevrim", "Manager rolling, prim ve çevrim bonuslarıyla bakiyeni büyüt."),
+            "Hemen Kayıt Ol",
+            "Kuponu / Kasayı Aç",
+            IMG_KASA,
+            "Makrobet Deneme Kasası",
+        ),
+        "text_body": (
+            "Merhaba {{name}},\n\n"
+            "3.000 TL deneme kasası + Arkadaşını Getir, %100 Kayıp, Race, Bilet, Makro Manager, Prim, Çevrim.\n\n"
+            f"Spam değil deyip tıkla: {AFF}\n\n18+ Makrobet"
+        ),
     },
     {
-        "name": '2026 · Pasif Üye Geri Getirme',
-        "subject": '{{name}}, hesabın seni bekliyor — özel dönüş fırsatları',
-        "html_body": """<!DOCTYPE html>
-<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hesabın seni bekliyor</title></head>
-<body style="margin:0;padding:0;background:#040e1f;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#050505;"><tr>
-<td align="center" style="padding:10px 16px;font-family:Georgia,'Times New Roman',serif;font-size:12px;line-height:1.45;color:#fff;">
-<span style="color:#ffd400;">⚠</span>&nbsp;Butonlar için <strong style="color:#ffd400;">Spam olmadığını bildir</strong> seçeneğine tıklayın.
-</td></tr></table>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#040e1f;"><tr><td align="center" style="padding:28px 12px;">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#061c3d;border:1px solid #2a4a7a;border-radius:18px;overflow:hidden;">
-<tr><td style="height:3px;background:#ffd400;font-size:0;line-height:0;">&nbsp;</td></tr>
-<tr><td align="center" style="padding:26px 28px 10px;"><img src="__MAIL_LOGO__" alt="Makrobet" width="176" style="display:block;margin:0 auto;border:0;max-width:176px;height:auto;"></td></tr>
-<tr><td align="center" style="padding:0 28px 8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#ffd400;">Seni özledik · geri dönüş</td></tr>
-<tr><td align="center" style="padding:0 28px 12px;font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;font-weight:700;color:#fff;letter-spacing:-0.02em;">Hesabın seni bekliyor</td></tr>
-
-<tr><td style="padding:0 28px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#e6f0fe;">Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>Bir süredir görüşemedik. Dönüşünü kolaylaştırmak için <strong style='color:#ffd400;'>promosyonlar sayfasından</strong> seçtiğimiz en güçlü geri dönüş fırsatlarını derledik.</td></tr>
-<tr><td style="padding:0 24px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">1</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">%100 Kayıp Bonusu</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Sıfır riskli güvence — yatırıma güvenle dön.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">2</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Happy Hours / Mutlu Saatler</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Seçili saatlerde her yatırıma ekstra sürpriz.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">3</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Makro Görev</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Günlük görevleri tamamla, Görev Kasa ödülünü kap.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">4</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Prim & Çevrim Bonusları</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Aktif dönem kampanyalarıyla bakiyeni güçlendir.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">5</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">VIP Club</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Sadakat avantajları ve özel destek hattı.</div>
-</td>
-</tr></table></td></tr></table></td></tr>
-<tr><td align="center" style="padding:4px 24px 18px;"><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Makro Kasa</span><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Bilet Etkinliği</span><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Görev Bonusu</span></td></tr>
-<tr><td align="center" style="padding:8px 28px 10px;">
-<a href="{{link:sc:https://makrovip.com/Vipmail}}" style="display:inline-block;background:#ffd400;color:#061c3d;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;text-decoration:none;padding:14px 28px;border-radius:10px;letter-spacing:0.02em;">Hesabıma Dön</a>
-</td></tr>
-<tr><td align="center" style="padding:0 28px 10px;">
-<a href="{{link:sc:https://makrovip.com/Vipmail}}" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;color:#ffd400;text-decoration:none;">Promosyonları incele →</a>
-</td></tr>
-<tr><td style="padding:14px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#9db3d4;text-align:center;">
-18+ · Sorumlu oyun · Şartlar ve çevrim koşulları geçerlidir · Makrobet 2026
-</td></tr>
-</table></td></tr></table>
-</body></html>""",
-        "text_body": 'Merhaba {{name}},\n\nSeni özledik. %100 Kayıp, Happy Hours, Makro Görev ve VIP ile geri dön.\n\nhttps://makrovip.com/Vipmail\n\n18+ Makrobet',
+        "name": "2026 · Pasif Üye Geri Getirme",
+        "subject": "{{name}}, hesabın seni bekliyor — kasa ve bonuslar hazır",
+        "html_body": _shell(
+            "Geri dönüş · özel seçki",
+            "Seni özledik — dönüş paketini aç",
+            "Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>"
+            "Bir süredir yoktun. Promosyonlar sayfasından seçtiğimiz "
+            "<strong style='color:#ffd400;'>kasa, kayıp ve etkinlik</strong> fırsatlarıyla geri dön.",
+            _promo_visual(IMG_KAYIP, "%100 Kayıp Bonusu", "Sıfır riskli güvence — yatırıma güvenle dön.")
+            + _promo_visual(IMG_KASA, "Makro Kasa", "Yatırımına ek kasa / ekstra ödül penceresi.")
+            + _promo_visual(IMG_RACE, "Amusnet Race", "Ödüllü yarışta yerini geri al.")
+            + _promo_text("4", "Bilet Etkinliği", "Bilet topla, etkinlik ödüllerine katıl.")
+            + _promo_text("5", "Makro Manager", "Manager rolling ile toplu etkinlik avantajı.")
+            + _promo_text("6", "Prim & Çevrim Bonusu", "Aktif dönem prim / çevrim kampanyaları."),
+            "Hesabıma Dön",
+            "Bonusları Gör",
+            IMG_KAYIP,
+            "Kayıp Bonusu",
+        ),
+        "text_body": (
+            "Merhaba {{name}},\n\n"
+            "Geri dönüş: %100 Kayıp, Makro Kasa, Race, Bilet, Manager, Prim, Çevrim.\n\n"
+            f"{AFF}\n\n18+ Makrobet"
+        ),
     },
     {
-        "name": '2026 · Memnuniyet Bonusu',
-        "subject": '{{name}}, senin için memnuniyet jesti hazırladık',
-        "html_body": """<!DOCTYPE html>
-<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Senin için ekstra bir jest yaptık</title></head>
-<body style="margin:0;padding:0;background:#040e1f;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#050505;"><tr>
-<td align="center" style="padding:10px 16px;font-family:Georgia,'Times New Roman',serif;font-size:12px;line-height:1.45;color:#fff;">
-<span style="color:#ffd400;">⚠</span>&nbsp;Butonlar için <strong style="color:#ffd400;">Spam olmadığını bildir</strong> seçeneğine tıklayın.
-</td></tr></table>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#040e1f;"><tr><td align="center" style="padding:28px 12px;">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#061c3d;border:1px solid #2a4a7a;border-radius:18px;overflow:hidden;">
-<tr><td style="height:3px;background:#ffd400;font-size:0;line-height:0;">&nbsp;</td></tr>
-<tr><td align="center" style="padding:26px 28px 10px;"><img src="__MAIL_LOGO__" alt="Makrobet" width="176" style="display:block;margin:0 auto;border:0;max-width:176px;height:auto;"></td></tr>
-<tr><td align="center" style="padding:0 28px 8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#ffd400;">Özel ilgi · memnuniyet</td></tr>
-<tr><td align="center" style="padding:0 28px 12px;font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;font-weight:700;color:#fff;letter-spacing:-0.02em;">Senin için ekstra bir jest yaptık</td></tr>
-<tr><td align="center" style="padding:0 28px 18px;">
-<table role="presentation" cellpadding="0" cellspacing="0" style="background:linear-gradient(180deg,#122a52 0%,#0a1f3d 100%);border:1px solid #ffd400;border-radius:14px;min-width:260px;">
-<tr><td align="center" style="padding:18px 28px 6px;font-family:Georgia,'Times New Roman',serif;font-size:34px;line-height:1;font-weight:700;color:#ffd400;letter-spacing:-0.02em;">MEMNUNİYET</td></tr>
-<tr><td align="center" style="padding:0 22px 16px;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#e6f0fe;">ÖZEL JEST</td></tr>
-</table></td></tr>
-<tr><td style="padding:0 28px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#e6f0fe;">Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>Yakın zamanda yatırımın oldu ancak çekim tarafında aksaklık yaşadıysan üzülme — <strong style='color:#ffd400;'>memnuniyet bonusun</strong> hesabına tanımlanıyor. Yanına da şu an sitede öne çıkan fırsatları ekledik.</td></tr>
-<tr><td style="padding:0 24px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">1</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Memnuniyet Bonusu</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Çekim/deneyim aksamalarına özel jest — destekten talep et / hesabını kontrol et.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">2</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">%100 Kayıp Bonusu</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Riski Makrobet üstlensin, sen oyuna odaklan.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">3</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Happy Hours</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Yatırımına ek kasa / ekstra fırsat pencereleri.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">4</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Canlı Destek 7/24</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">vipmakro.com üzerinden hızlı çözüm.</div>
-</td>
-</tr></table></td></tr></table></td></tr>
-<tr><td align="center" style="padding:4px 24px 18px;"><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Prim Bonusu</span><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Çevrim Bonusu</span><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">VIP Club</span></td></tr>
-<tr><td align="center" style="padding:8px 28px 10px;">
-<a href="{{link:sc:https://makrovip.com/Vipmail}}" style="display:inline-block;background:#ffd400;color:#061c3d;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;text-decoration:none;padding:14px 28px;border-radius:10px;letter-spacing:0.02em;">Bonusu Kontrol Et</a>
-</td></tr>
-<tr><td align="center" style="padding:0 28px 10px;">
-<a href="{{link:sc:https://makrovip.com/Vipmail}}" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;color:#ffd400;text-decoration:none;">Promosyonları incele →</a>
-</td></tr>
-<tr><td style="padding:14px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#9db3d4;text-align:center;">
-18+ · Sorumlu oyun · Şartlar ve çevrim koşulları geçerlidir · Makrobet 2026
-</td></tr>
-</table></td></tr></table>
-</body></html>""",
-        "text_body": 'Merhaba {{name}},\n\nYakın yatırım/çekim deneyimin için memnuniyet bonusun tanımlı. Ayrıca %100 Kayıp ve Happy Hours aktif.\n\nhttps://makrovip.com/Vipmail\n\n18+ Makrobet',
+        "name": "2026 · Memnuniyet Bonusu",
+        "subject": "{{name}}, senin için memnuniyet jesti + kasa fırsatları",
+        "html_body": _shell(
+            "Memnuniyet · özel jest",
+            "Senin için ekstra bir jest yaptık",
+            "Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>"
+            "Yakın zamanda yatırımın oldu ama çekim tarafında aksaklık yaşadıysan — "
+            "<strong style='color:#ffd400;'>memnuniyet bonusun</strong> tanımlı. "
+            "Yanına da sitedeki güçlü kampanyaları ekledik.",
+            _promo_text("1", "Memnuniyet Bonusu", "Çekim/deneyim aksamalarına özel jest — hesabını kontrol et / destekten talep et.")
+            + _promo_visual(IMG_KAYIP, "%100 Kayıp Bonusu", "Riski Makrobet üstlensin.")
+            + _promo_visual(IMG_KASA, "Makro Kasa", "Ek kasa ile moralini yükselt.")
+            + _promo_text("4", "Prim · Çevrim · Manager", "Prim, çevrim ve Makro Manager fırsatları aktif.")
+            + _promo_text("5", "Bilet Etkinliği", "Etkinlik biletleriyle ekstra ödül şansı."),
+            "Bonusu Kontrol Et",
+            "Siteye Git",
+            IMG_KASA,
+            "Makro Kasa",
+        ),
+        "text_body": (
+            "Merhaba {{name}},\n\n"
+            "Memnuniyet jesti + %100 Kayıp, Makro Kasa, Prim, Çevrim, Manager, Bilet.\n\n"
+            f"{AFF}\n\n18+ Makrobet"
+        ),
     },
     {
-        "name": '2026 · Yeni Üye İlk Yatırım',
-        "subject": '{{name}}, ilk yatırımın için özel başlangıç paketleri',
-        "html_body": """<!DOCTYPE html>
-<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Deneme bitti — asıl oyun şimdi başlıyor</title></head>
-<body style="margin:0;padding:0;background:#040e1f;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#050505;"><tr>
-<td align="center" style="padding:10px 16px;font-family:Georgia,'Times New Roman',serif;font-size:12px;line-height:1.45;color:#fff;">
-<span style="color:#ffd400;">⚠</span>&nbsp;Butonlar için <strong style="color:#ffd400;">Spam olmadığını bildir</strong> seçeneğine tıklayın.
-</td></tr></table>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#040e1f;"><tr><td align="center" style="padding:28px 12px;">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#061c3d;border:1px solid #2a4a7a;border-radius:18px;overflow:hidden;">
-<tr><td style="height:3px;background:#ffd400;font-size:0;line-height:0;">&nbsp;</td></tr>
-<tr><td align="center" style="padding:26px 28px 10px;"><img src="__MAIL_LOGO__" alt="Makrobet" width="176" style="display:block;margin:0 auto;border:0;max-width:176px;height:auto;"></td></tr>
-<tr><td align="center" style="padding:0 28px 8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#ffd400;">İlk adım · yatırım</td></tr>
-<tr><td align="center" style="padding:0 28px 12px;font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;font-weight:700;color:#fff;letter-spacing:-0.02em;">Deneme bitti — asıl oyun şimdi başlıyor</td></tr>
-
-<tr><td style="padding:0 28px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#e6f0fe;">Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>Üyeliğin hazır. İlk yatırımını yapıp <strong style='color:#ffd400;'>promosyonlar sayfasındaki</strong> başlangıç paketlerini açmana tek adım kaldı.</td></tr>
-<tr><td style="padding:0 24px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">1</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">İlk Yatırım Fırsatları</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Hoş geldin / yatırım bonuslarıyla güçlü başlangıç.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">2</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Happy Hours</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Mutlu saatlerde yatırımlara ekstra katkı.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">3</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Kripto Ultra Kasa</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Kripto yatır, havale çek — Ultra Kasa ödülü.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">4</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Makro Görev</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">İlk görevlerini tamamla, kasa ödüllerini biriktir.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">5</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">%100 Kayıp Güvencesi</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">İlk adımını daha rahat at.</div>
-</td>
-</tr></table></td></tr></table></td></tr>
-<tr><td align="center" style="padding:4px 24px 18px;"><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Prim Bonusu</span><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Çevrim Bonusu</span><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Makro Kasa</span></td></tr>
-<tr><td align="center" style="padding:8px 28px 10px;">
-<a href="{{link:sc:https://makrovip.com/Vipmail}}" style="display:inline-block;background:#ffd400;color:#061c3d;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;text-decoration:none;padding:14px 28px;border-radius:10px;letter-spacing:0.02em;">İlk Yatırımı Yap</a>
-</td></tr>
-<tr><td align="center" style="padding:0 28px 10px;">
-<a href="{{link:sc:https://makrovip.com/Vipmail}}" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;color:#ffd400;text-decoration:none;">Promosyonları incele →</a>
-</td></tr>
-<tr><td style="padding:14px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#9db3d4;text-align:center;">
-18+ · Sorumlu oyun · Şartlar ve çevrim koşulları geçerlidir · Makrobet 2026
-</td></tr>
-</table></td></tr></table>
-</body></html>""",
-        "text_body": 'Merhaba {{name}},\n\nÜyeliğin hazır. İlk yatırım + Happy Hours, Kripto Ultra Kasa, Makro Görev.\n\nhttps://makrovip.com/Vipmail\n\n18+ Makrobet',
+        "name": "2026 · Yeni Üye İlk Yatırım",
+        "subject": "{{name}}, ilk yatırımın için kasa ve bonus paketleri",
+        "html_body": _shell(
+            "İlk adım · yatırım",
+            "Deneme bitti — kasanı büyütme zamanı",
+            "Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>"
+            "Üyeliğin hazır. İlk yatırımını yapıp "
+            "<strong style='color:#ffd400;'>Makro Kasa, Race ve prim/çevrim</strong> paketlerini açmana tek adım kaldı.",
+            _promo_visual(IMG_KASA, "Makro Kasa / Yatırım Ekstra", "İlk yatırımlara ek kasa fırsatı.")
+            + _promo_visual(IMG_KAYIP, "%100 Kayıp Güvencesi", "İlk adımını daha rahat at.")
+            + _promo_visual(IMG_RACE, "Amusnet Race", "Ödül yarışına erken katıl.")
+            + _promo_text("4", "Prim Bonusu", "Yatırımına prim katmanı.")
+            + _promo_text("5", "Çevrim Bonusu", "Çevrim kampanyalarıyla avantaj yakala.")
+            + _promo_text("6", "Bilet · Makro Manager", "Bilet etkinliği ve manager rolling."),
+            "İlk Yatırımı Yap",
+            "Kampanyaları Aç",
+            IMG_KASA,
+            "Yatırım Kasası",
+        ),
+        "text_body": (
+            "Merhaba {{name}},\n\n"
+            "İlk yatırım: Makro Kasa, Kayıp, Race, Prim, Çevrim, Bilet, Manager.\n\n"
+            f"{AFF}\n\n18+ Makrobet"
+        ),
     },
     {
-        "name": '2026 · Turnuva & Bilet Etkinlikleri',
-        "subject": '{{name}}, Bilet · Amusnet · Manager Rolling seni bekliyor',
-        "html_body": """<!DOCTYPE html>
-<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bu haftanın sahnesi senin</title></head>
-<body style="margin:0;padding:0;background:#040e1f;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#050505;"><tr>
-<td align="center" style="padding:10px 16px;font-family:Georgia,'Times New Roman',serif;font-size:12px;line-height:1.45;color:#fff;">
-<span style="color:#ffd400;">⚠</span>&nbsp;Butonlar için <strong style="color:#ffd400;">Spam olmadığını bildir</strong> seçeneğine tıklayın.
-</td></tr></table>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#040e1f;"><tr><td align="center" style="padding:28px 12px;">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#061c3d;border:1px solid #2a4a7a;border-radius:18px;overflow:hidden;">
-<tr><td style="height:3px;background:#ffd400;font-size:0;line-height:0;">&nbsp;</td></tr>
-<tr><td align="center" style="padding:26px 28px 10px;"><img src="__MAIL_LOGO__" alt="Makrobet" width="176" style="display:block;margin:0 auto;border:0;max-width:176px;height:auto;"></td></tr>
-<tr><td align="center" style="padding:0 28px 8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#ffd400;">Etkinlik arenası · 2026</td></tr>
-<tr><td align="center" style="padding:0 28px 12px;font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;font-weight:700;color:#fff;letter-spacing:-0.02em;">Bu haftanın sahnesi senin</td></tr>
-
-<tr><td style="padding:0 28px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#e6f0fe;">Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>Sadece klasik bonus değil — <strong style='color:#ffd400;'>turnuva, bilet ve toplu etkinlikler</strong> ile ödül havuzlarına katıl. Takvimdeki öne çıkanlar:</td></tr>
-<tr><td style="padding:0 24px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">1</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Bilet Etkinliği</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Etkinlik biletlerini topla, özel çekiliş / ödül turlarına gir.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">2</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Amusnet Yarışı</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">500.000₺ ödüllü yarış — liderlik için erken gir.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">3</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Manager Rolling</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Toplu rolling / manager etkinlikleriyle çarpanlı kazanç penceresi.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">4</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Makro Görev</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Günlük görevlerle etkinlik puanı ve kasa biriktir.</div>
-</td>
-</tr></table></td></tr><tr><td style="padding:0 0 8px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2d55;border:1px solid #2a4a7a;border-left:3px solid #ffd400;border-radius:10px;">
-<tr>
-<td width="40" valign="top" style="padding:14px 0 14px 14px;"><div style="width:26px;height:26px;border-radius:50%;background:rgba(255,212,0,0.12);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:#ffd400;">5</div></td>
-<td style="padding:13px 16px 13px 8px;">
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:#ffd400;line-height:1.25;">Happy Hours</div>
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9db3d4;line-height:1.45;margin-top:4px;">Etkinlik saatlerinde ekstra ivme.</div>
-</td>
-</tr></table></td></tr></table></td></tr>
-<tr><td align="center" style="padding:4px 24px 18px;"><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Turnuva</span><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Makro Kasa</span><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">VIP Club</span><span style="display:inline-block;margin:3px 4px;padding:7px 11px;border-radius:999px;border:1px solid #2a4a7a;background:#0f2d55;color:#e6f0fe;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;">Görev Bonusu</span></td></tr>
-<tr><td align="center" style="padding:8px 28px 10px;">
-<a href="{{link:sc:https://makrovip.com/Vipmail}}" style="display:inline-block;background:#ffd400;color:#061c3d;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;text-decoration:none;padding:14px 28px;border-radius:10px;letter-spacing:0.02em;">Etkinliklere Katıl</a>
-</td></tr>
-<tr><td align="center" style="padding:0 28px 10px;">
-<a href="{{link:sc:https://makrovip.com/Vipmail}}" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;color:#ffd400;text-decoration:none;">Promosyonları incele →</a>
-</td></tr>
-<tr><td style="padding:14px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#9db3d4;text-align:center;">
-18+ · Sorumlu oyun · Şartlar ve çevrim koşulları geçerlidir · Makrobet 2026
-</td></tr>
-</table></td></tr></table>
-</body></html>""",
-        "text_body": 'Merhaba {{name}},\n\nBilet Etkinliği, Amusnet Yarışı, Manager Rolling ve Makro Görev bu hafta sahnede.\n\nhttps://makrovip.com/Vipmail\n\n18+ Makrobet',
+        "name": "2026 · Turnuva & Bilet Etkinlikleri",
+        "subject": "{{name}}, Race · Bilet · Makro Manager seni bekliyor",
+        "html_body": _shell(
+            "Etkinlik arenası",
+            "Bu haftanın sahnesi: Race, Bilet, Manager",
+            "Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>"
+            "Klasik bonusun ötesinde — <strong style='color:#ffd400;'>turnuva, bilet ve Makro Manager</strong> "
+            "etkinlikleriyle ödül havuzlarına katıl.",
+            _promo_visual(IMG_RACE, "Amusnet Race", "Ödül havuzlu yarış — liderlik için erken gir.")
+            + _promo_text("2", "Bilet Etkinliği", "Biletleri topla, özel çekiliş / ödül turlarına gir.")
+            + _promo_text("3", "Makro Manager", "Manager rolling / toplu etkinlik çarpanı.")
+            + _promo_visual(IMG_KASA, "Makro Kasa", "Etkinlik döneminde ek kasa fırsatları.")
+            + _promo_text("5", "Prim & Çevrim Bonusu", "Etkinlik saatlerinde prim / çevrim avantajı.")
+            + _promo_visual(IMG_ARKADAS, "Arkadaşını Getir", "Ekibini büyüt, ekstra ödül kap."),
+            "Etkinliklere Katıl",
+            "Hemen Oyna",
+            IMG_RACE,
+            "Amusnet Race",
+        ),
+        "text_body": (
+            "Merhaba {{name}},\n\n"
+            "Race, Bilet Etkinliği, Makro Manager, Makro Kasa, Prim, Çevrim, Arkadaşını Getir.\n\n"
+            f"{AFF}\n\n18+ Makrobet"
+        ),
     },
 ]
 
 
 def seed_makrobet_2026_templates(conn, overwrite=True):
-    """Eksik 2026 şablonlarını ekler; overwrite ile HTML günceller."""
     now = iso(utcnow())
     added = 0
     updated = 0

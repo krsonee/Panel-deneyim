@@ -2004,19 +2004,21 @@
   }
 
   function mailSpamTipBannerHtml() {
-    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#050505;">' +
-      '<tr><td align="center" style="padding:11px 18px;font-family:Urbanist,Arial,Helvetica,sans-serif;' +
-      'font-size:12px;line-height:1.45;color:#ffffff;">' +
-      '<span style="color:#ffd400;font-size:13px;vertical-align:middle;">⚠</span>' +
-      "&nbsp;Butonların tıklanabilir olması için " +
-      '<strong style="color:#ffd400;">Spam olmadığını bildir</strong> ' +
-      "seçeneğine tıklayın." +
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#1a0a00;border-bottom:2px solid #ffd400;">' +
+      '<tr><td align="center" style="padding:12px 18px;font-family:Arial,Helvetica,sans-serif;' +
+      'font-size:13px;line-height:1.45;color:#ffffff;">' +
+      '<strong style="color:#ffd400;">⚠ ÖNEMLİ:</strong> ' +
+      "Bu mail Spam klasöründeyse " +
+      '<strong style="color:#ffd400;">butonlar çalışmaz</strong>. ' +
+      'Önce <strong style="color:#ffd400;">Spam değil</strong> / ' +
+      '<strong style="color:#ffd400;">Gelen kutusuna taşı</strong> deyin, ' +
+      "sonra butonlara tıklayın." +
       "</td></tr></table>";
   }
 
   function ensureMailSpamTip(html) {
     var s = html || "";
-    if (s.indexOf("Spam olmadığını bildir") >= 0) return s;
+    if (s.indexOf("Spam değil") >= 0 || s.indexOf("Spam olmadığını bildir") >= 0) return s;
     var banner = mailSpamTipBannerHtml();
     var m = s.match(/<body[^>]*>/i);
     if (m) {
@@ -2031,9 +2033,15 @@
     function linkUrl(raw) {
       return String(raw || "").trim().replace(/^sc\s*:\s*/i, "");
     }
-    // Panelde barındırılan logolar
+    // Panelde barındırılan logolar / promo görselleri
+    var origin = "";
+    try { origin = window.location.origin || ""; } catch (e0) { origin = ""; }
     s = s.replace(/__MAIL_LOGO__/g, mailLogoPreviewUrl());
     s = s.replace(/__BIZZO_LOGO__/g, bizzoLogoPreviewUrl());
+    s = s.replace(/__MB_IMG_KASA__/g, origin + "/static/mailing/promos/kasa.jpg");
+    s = s.replace(/__MB_IMG_KAYIP__/g, origin + "/static/mailing/promos/kayip.jpg");
+    s = s.replace(/__MB_IMG_ARKADAS__/g, origin + "/static/mailing/promos/arkadas.jpg");
+    s = s.replace(/__MB_IMG_RACE__/g, origin + "/static/mailing/promos/race.jpg");
     s = ensureMailSpamTip(s);
     // href="{{link:...}}" → sadece URL; aksi halde butonlar patlıyor
     s = s.replace(/href\s*=\s*(["'])\s*\{\{\s*link\s*:\s*([^}]+)\s*\}\}\s*\1/gi, function (_m, q, raw) {

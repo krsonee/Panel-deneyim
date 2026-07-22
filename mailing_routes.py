@@ -355,13 +355,16 @@ def _spam_tip_banner_html():
     """Spam tip şeridi — seed şablonları + elle HTML’ler için ortak."""
     gold = "#ffd400"
     return (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#050505;">'
-        '<tr><td align="center" style="padding:11px 18px;font-family:Urbanist,Arial,Helvetica,sans-serif;'
-        'font-size:12px;line-height:1.45;color:#ffffff;">'
-        f'<span style="color:{gold};font-size:13px;vertical-align:middle;">⚠</span>'
-        "&nbsp;Butonların tıklanabilir olması için "
-        f'<strong style="color:{gold};">Spam olmadığını bildir</strong> '
-        "seçeneğine tıklayın."
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        'style="background:#1a0a00;border-bottom:2px solid #ffd400;">'
+        '<tr><td align="center" style="padding:12px 18px;font-family:Arial,Helvetica,sans-serif;'
+        'font-size:13px;line-height:1.45;color:#ffffff;">'
+        f'<strong style="color:{gold};">⚠ ÖNEMLİ:</strong> '
+        "Bu mail Spam klasöründeyse "
+        f'<strong style="color:{gold};">butonlar çalışmaz</strong>. '
+        f'Önce <strong style="color:{gold};">Spam değil</strong> / '
+        f'<strong style="color:{gold};">Gelen kutusuna taşı</strong> deyin, '
+        "sonra butonlara tıklayın."
         "</td></tr></table>"
     )
 
@@ -369,8 +372,7 @@ def _spam_tip_banner_html():
 def _ensure_spam_tip(html):
     """HTML gövdede spam şeridi yoksa <body> hemen ardına ekler (yeni şablonlar dahil)."""
     html = html or ""
-    marker = "Spam olmadığını bildir"
-    if marker in html:
+    if "Spam değil" in html or "Spam olmadığını bildir" in html:
         return html
     banner = _spam_tip_banner_html()
     low = html.lower()
@@ -382,12 +384,27 @@ def _ensure_spam_tip(html):
     return banner + html
 
 
+def _mail_promo_img_url(name):
+    base = _public_base()
+    path = f"/static/mailing/promos/{name}"
+    return (base + path) if base else path
+
+
 def _apply_mail_assets(text):
     text = text or ""
     if "__MAIL_LOGO__" in text:
         text = text.replace("__MAIL_LOGO__", _mail_logo_url())
     if "__BIZZO_LOGO__" in text:
         text = text.replace("__BIZZO_LOGO__", _bizzo_logo_url())
+    promo_map = {
+        "__MB_IMG_KASA__": "kasa.jpg",
+        "__MB_IMG_KAYIP__": "kayip.jpg",
+        "__MB_IMG_ARKADAS__": "arkadas.jpg",
+        "__MB_IMG_RACE__": "race.jpg",
+    }
+    for token, fname in promo_map.items():
+        if token in text:
+            text = text.replace(token, _mail_promo_img_url(fname))
     # HTML e-postaysa spam tip şeridini garanti et
     if "<" in text and ("<html" in text.lower() or "<body" in text.lower() or "<table" in text.lower()):
         text = _ensure_spam_tip(text)
