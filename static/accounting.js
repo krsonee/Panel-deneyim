@@ -1106,29 +1106,110 @@
   }
 
   function accPmStatusBadge(active, txCount, manualActive, id) {
-    var manualHint = manualActive != null ? " · Manuel olarak ayarlandı" : "";
+    var manualHint = manualActive != null ? " · Manuel override" : "";
     var manualTag = manualActive != null
-      ? '<span class="tag" style="font-size:0.62rem;margin-left:0.25rem;" title="Manuel olarak ayarlandı, tıklayarak değiştirebilirsiniz">Manuel</span>'
+      ? '<span class="tag acc-pm-manual-tag" title="Manuel olarak ayarlandı">Manuel</span>'
       : "";
     if (active) {
       var hint = txCount ? " (" + txCount + " işlem)" : "";
-      return '<span class="tag online acc-pm-status-toggle" data-toggle-pm-status="' + id + '" data-current-active="1" title="Tıklayarak pasif yapın' + hint + manualHint + '">Aktif</span>' + manualTag;
+      return '<button type="button" class="acc-pm-status-btn is-active" data-toggle-pm-status="' + id +
+        '" data-current-active="1" title="Pasif yap' + hint + manualHint + '">Aktif</button>' + manualTag;
     }
-    return '<span class="tag offline acc-pm-status-toggle" data-toggle-pm-status="' + id + '" data-current-active="0" title="Tıklayarak aktif yapın · Seçili dönemde işlem yok' + manualHint + '">Pasif</span>' + manualTag;
+    return '<button type="button" class="acc-pm-status-btn is-passive" data-toggle-pm-status="' + id +
+      '" data-current-active="0" title="Aktif yap' + manualHint + '">Pasif</button>' + manualTag;
+  }
+
+  function accTogglePaymentMethodStatus(methodId, currentlyActive) {
+    var month = accSelectedMonthPeriod();
+    var body = { active: !currentlyActive };
+    if (month) body.period = month;
+    return accApi("/api/accounting/payment-methods/" + methodId + "/status", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (r && r.ok) {
+        accToast(!currentlyActive ? "Aktif yapıldı" : "Pasif yapıldı");
+        accLoadPaymentMethods();
+      } else if (r) alert((r.data && r.data.error) || "Hata");
+      return r;
+    });
+  }
+
+  function accBindPmStatusToggles(root) {
+    if (!root) return;
+    root.querySelectorAll("[data-toggle-pm-status]").forEach(function (badge) {
+      badge.onclick = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var isActive = badge.getAttribute("data-current-active") === "1";
+        accTogglePaymentMethodStatus(badge.getAttribute("data-toggle-pm-status"), isActive);
+      };
+    });
+  }
+
+  function accRefreshPaymentMethodViews() {
+    accUpdateHidePassivePmUi();
+    accBindPaymentMethodTable("acc-pm-table-deposit", accPaymentMethods, "deposit");
+    accBindPaymentMethodTable("acc-pm-table-withdrawal", accPaymentMethods, "withdrawal");
+    accBindTxPaymentStatusTable("acc-tx-pm-status-deposit", accPaymentMethods, "deposit");
+    accBindTxPaymentStatusTable("acc-tx-pm-status-withdrawal", accPaymentMethods, "withdrawal");
+  }
+
+  function accSetHidePassivePm(hide) {
+    accHidePassivePm = !!hide;
+    localStorage.setItem("acc_hide_passive_pm", accHidePassivePm ? "1" : "0");
+    accRefreshPaymentMethodViews();
   }
 
   function accUpdateHidePassivePmUi() {
-    var btn = document.getElementById("acc-pm-hide-passive");
-    var hint = document.getElementById("acc-pm-hide-passive-hint");
-    if (btn) {
+    document.querySelectorAll("[data-acc-pm-hide-toggle]").forEach(function (btn) {
       btn.classList.toggle("btn-primary", accHidePassivePm);
       btn.textContent = accHidePassivePm ? "Pasif yöntemleri göster" : "Pasif yöntemleri gizle";
+      btn.setAttribute("aria-pressed", accHidePassivePm ? "true" : "false");
+      btn.title = accHidePassivePm
+        ? "Pasif yöntemleri tekrar listeye ekle"
+        : "Listede yalnızca aktif yöntemleri göster";
+    });
+    document.querySelectorAll("[data-acc-pm-filter]").forEach(function (btn) {
+      var mode = btn.getAttribute("data-acc-pm-filter");
+      var active = (mode === "active" && accHidePassivePm) || (mode === "all" && !accHidePassivePm);
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    var hintText = accHidePassivePm
+      ? "Sadece aktif yöntemler gösteriliyor."
+      : "Aktif ve pasif yöntemler birlikte listeleniyor.";
+    ["acc-pm-hide-passive-hint", "acc-tx-pm-hide-passive-hint"].forEach(function (id) {
+      var hint = document.getElementById(id);
+      if (hint) hint.textContent = hintText;
+    });
+  }
+
+  function accBindTxPaymentStatusTable(tbodyId, methods, txType) {
+    var tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    var filtered = (methods || []).filter(function (p) { return p.tx_type === txType; });
+    if (accHidePassivePm) {
+      filtered = filtered.filter(function (p) { return p.period_active; });
     }
-    if (hint) {
-      hint.textContent = accHidePassivePm
-        ? "Pasif yöntemler gizleniyor."
-        : "Tüm yöntemler listeleniyor.";
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">' +
+        (accHidePassivePm ? "Aktif yöntem yok" : "Henüz yöntem yok") + "</td></tr>";
+      return;
     }
+    tbody.innerHTML = filtered.map(function (p) {
+      var rowClass = p.period_active ? "" : ' class="acc-pm-row-passive"';
+      var nextLabel = p.period_active ? "Pasif yap" : "Aktif yap";
+      return "<tr" + rowClass + ">" +
+        "<td>" + accPmStatusBadge(p.period_active, p.period_tx_count, p.manual_active, p.id) + "</td>" +
+        "<td><strong>" + accEsc(p.name) + "</strong></td>" +
+        '<td class="mono">' + (p.commission_rate != null ? p.commission_rate : "—") + "%</td>" +
+        '<td><button type="button" class="btn btn-sm acc-pm-toggle-btn" data-toggle-pm-status="' + p.id +
+          '" data-current-active="' + (p.period_active ? "1" : "0") + '">' + nextLabel + "</button></td>" +
+        "</tr>";
+    }).join("");
+    accBindPmStatusToggles(tbody);
   }
 
   function accBindPaymentMethodTable(tbodyId, methods, txType) {
@@ -1142,7 +1223,7 @@
       var emptyMsg = accHidePassivePm
         ? "Gösterilecek aktif " + (txType === "deposit" ? "yatırım" : "çekim") + " yöntemi yok"
         : "Henüz " + (txType === "deposit" ? "yatırım" : "çekim") + " yöntemi yok";
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">' + emptyMsg + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">' + emptyMsg + '</td></tr>';
       return;
     }
     var month = accSelectedMonthPeriod();
@@ -1152,11 +1233,14 @@
         ? '<span class="tag online" style="font-size:0.62rem;margin-left:0.25rem;">aylık</span>'
         : "";
       var rowClass = p.period_active ? "" : ' class="acc-pm-row-passive"';
+      var nextLabel = p.period_active ? "Pasif yap" : "Aktif yap";
       return '<tr' + rowClass + '><td>' + accPmStatusBadge(p.period_active, p.period_tx_count, p.manual_active, p.id) + '</td>' +
         '<td><strong>' + accEsc(p.name) + '</strong>' + overrideHint + '</td>' +
         '<td><input type="number" class="acc-inline-rate" data-pm-id="' + p.id + '" value="' + p.commission_rate + '" step="0.01" min="0" style="width:80px;padding:0.3rem;"></td>' +
         '<td class="mono muted">' + globalRate + '%</td>' +
         '<td class="mono muted">' + accEsc((p.updated_at || p.created_at || "").slice(0, 10)) + '</td>' +
+        '<td><button type="button" class="btn btn-sm acc-pm-toggle-btn" data-toggle-pm-status="' + p.id +
+          '" data-current-active="' + (p.period_active ? "1" : "0") + '">' + nextLabel + "</button></td>" +
         '<td><button class="btn btn-sm btn-danger" data-del-pm="' + p.id + '">Sil</button></td></tr>';
     }).join("");
     tbody.querySelectorAll(".acc-inline-rate").forEach(function (inp) {
@@ -1185,23 +1269,7 @@
           });
       };
     });
-    tbody.querySelectorAll("[data-toggle-pm-status]").forEach(function (badge) {
-      badge.onclick = function () {
-        var isActive = badge.getAttribute("data-current-active") === "1";
-        var body = { active: !isActive };
-        if (month) body.period = month;
-        accApi("/api/accounting/payment-methods/" + badge.getAttribute("data-toggle-pm-status") + "/status", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
-        }).then(function (r) {
-          if (r && r.ok) {
-            accToast(!isActive ? "Aktif yapıldı" : "Pasif yapıldı");
-            accLoadPaymentMethods();
-          } else if (r) alert(r.data.error || "Hata");
-        });
-      };
-    });
+    accBindPmStatusToggles(tbody);
   }
 
   function accLoadPaymentMethods() {
@@ -1209,11 +1277,9 @@
       if (!res || !res.ok) return;
       accPaymentMethods = res.data.payment_methods || [];
       if (res.data.period_label) accUpdateCommPeriodLabel(res.data.period_label);
-      accUpdateHidePassivePmUi();
       accRefreshTxPaymentSelect();
       accRefreshTxFilterSelect();
-      accBindPaymentMethodTable("acc-pm-table-deposit", accPaymentMethods, "deposit");
-      accBindPaymentMethodTable("acc-pm-table-withdrawal", accPaymentMethods, "withdrawal");
+      accRefreshPaymentMethodViews();
     });
   }
 
@@ -4491,17 +4557,17 @@
     if (persCancel) persCancel.addEventListener("click", function () { accPersResetForm(); });
     accBindFxPreview("acc-pers-salary", "acc-pers-currency", "acc-pers-fx-preview", "acc-pers-rate-usd", "acc-pers-rate-eur");
     accInjectExportButtons();
-    var hidePassiveBtn = document.getElementById("acc-pm-hide-passive");
-    if (hidePassiveBtn) {
-      accUpdateHidePassivePmUi();
-      hidePassiveBtn.addEventListener("click", function () {
-        accHidePassivePm = !accHidePassivePm;
-        localStorage.setItem("acc_hide_passive_pm", accHidePassivePm ? "1" : "0");
-        accUpdateHidePassivePmUi();
-        accBindPaymentMethodTable("acc-pm-table-deposit", accPaymentMethods, "deposit");
-        accBindPaymentMethodTable("acc-pm-table-withdrawal", accPaymentMethods, "withdrawal");
+    accUpdateHidePassivePmUi();
+    document.querySelectorAll("[data-acc-pm-hide-toggle]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        accSetHidePassivePm(!accHidePassivePm);
       });
-    }
+    });
+    document.querySelectorAll("[data-acc-pm-filter]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        accSetHidePassivePm(btn.getAttribute("data-acc-pm-filter") === "active");
+      });
+    });
 
     var empFilterCat = document.getElementById("acc-emp-filter-cat");
     var empFilterDept = document.getElementById("acc-emp-filter-dept");

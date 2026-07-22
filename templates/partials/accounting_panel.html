@@ -186,6 +186,45 @@
       </div>
     </div>
     <div class="acc-exp-cat-cards acc-tx-pm-cards" id="acc-tx-pm-cards"></div>
+
+    <section class="card" id="acc-tx-pm-status-card">
+      <div class="card-head">
+        <span>Payment Yöntemleri — Aktif / Pasif</span>
+        <span class="muted" style="font-size:0.72rem;">Tıklayarak dönem için aktif/pasif yapın · Oran için Komisyon sekmesi</span>
+      </div>
+      <div class="card-body" style="padding-top:0.65rem;">
+        <div class="acc-pm-filter-bar" data-acc-pm-filter-bar>
+          <span class="acc-pm-filter-label">Liste:</span>
+          <div class="acc-pm-filter-toggle" role="group" aria-label="Pasif yöntem görünürlüğü">
+            <button type="button" class="acc-pm-filter-btn" data-acc-pm-filter="all">Tüm yöntemler</button>
+            <button type="button" class="acc-pm-filter-btn" data-acc-pm-filter="active">Sadece aktifler</button>
+          </div>
+          <button type="button" class="btn btn-sm" id="acc-tx-pm-hide-passive" data-acc-pm-hide-toggle>Pasif yöntemleri gizle</button>
+          <span class="muted acc-pm-filter-hint" id="acc-tx-pm-hide-passive-hint" style="font-size:0.72rem;"></span>
+        </div>
+        <div class="acc-tx-pm-status-grid">
+          <div>
+            <h4 class="acc-tx-pm-status-title">Yatırım</h4>
+            <div class="table-wrap">
+              <table class="acc-tx-pm-status-table">
+                <thead><tr><th>Durum</th><th>Yöntem</th><th>Kom. %</th><th>İşlem</th></tr></thead>
+                <tbody id="acc-tx-pm-status-deposit"><tr><td colspan="4" class="empty">Yöntem yok</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <h4 class="acc-tx-pm-status-title">Çekim</h4>
+            <div class="table-wrap">
+              <table class="acc-tx-pm-status-table">
+                <thead><tr><th>Durum</th><th>Yöntem</th><th>Kom. %</th><th>İşlem</th></tr></thead>
+                <tbody id="acc-tx-pm-status-withdrawal"><tr><td colspan="4" class="empty">Yöntem yok</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="card">
       <div class="card-head">
         <span>Site Yatırım / Çekim Kayıtları</span>
@@ -231,11 +270,16 @@
       <div class="card-body">
         <p class="muted" style="font-size:0.75rem;margin-bottom:0.75rem;">
           Komisyon oranları <strong>ay bazında</strong> tanımlanır. Seçili ay için oran girildiğinde sadece o ayın yeni işlemleri bu orandan hesaplanır; geçmiş kayıtlar değişmez.
-          <strong>Aktif</strong> = seçili ayda işlem var; <strong>Pasif</strong> = o ayda kullanılmamış.
+          Durum rozetine veya <strong>Aktif yap / Pasif yap</strong> ile yöntemi dönem için açıp kapatabilirsiniz. Boş bırakılırsa seçili ayda işlem varsa otomatik aktif sayılır.
         </p>
-        <div class="acc-pm-toolbar" style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap;">
-          <button type="button" class="btn btn-sm" id="acc-pm-hide-passive">Pasif yöntemleri gizle</button>
-          <span class="muted" id="acc-pm-hide-passive-hint" style="font-size:0.72rem;"></span>
+        <div class="acc-pm-filter-bar" data-acc-pm-filter-bar>
+          <span class="acc-pm-filter-label">Liste:</span>
+          <div class="acc-pm-filter-toggle" role="group" aria-label="Pasif yöntem görünürlüğü">
+            <button type="button" class="acc-pm-filter-btn" data-acc-pm-filter="all">Tüm yöntemler</button>
+            <button type="button" class="acc-pm-filter-btn" data-acc-pm-filter="active">Sadece aktifler</button>
+          </div>
+          <button type="button" class="btn btn-sm" id="acc-pm-hide-passive" data-acc-pm-hide-toggle>Pasif yöntemleri gizle</button>
+          <span class="muted acc-pm-filter-hint" id="acc-pm-hide-passive-hint" style="font-size:0.72rem;"></span>
         </div>
         <form id="acc-pm-form" class="form-row-4" style="grid-template-columns:1fr 140px 120px auto;">
           <div><label>Payment Adı</label><input id="acc-pm-name" placeholder="Papara, Havale, Kripto…" required></div>
@@ -255,8 +299,8 @@
       <div class="card-head"><span>Yatırım Yöntemleri</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Durum</th><th>Payment</th><th>Komisyon %</th><th>Varsayılan %</th><th>Son Güncelleme</th><th></th></tr></thead>
-          <tbody id="acc-pm-table-deposit"><tr><td colspan="6" class="empty">Henüz yatırım yöntemi yok</td></tr></tbody>
+          <thead><tr><th>Durum</th><th>Payment</th><th>Komisyon %</th><th>Varsayılan %</th><th>Son Güncelleme</th><th>Aktif/Pasif</th><th></th></tr></thead>
+          <tbody id="acc-pm-table-deposit"><tr><td colspan="7" class="empty">Henüz yatırım yöntemi yok</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -264,8 +308,8 @@
       <div class="card-head"><span>Çekim Yöntemleri</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Durum</th><th>Payment</th><th>Komisyon %</th><th>Varsayılan %</th><th>Son Güncelleme</th><th></th></tr></thead>
-          <tbody id="acc-pm-table-withdrawal"><tr><td colspan="6" class="empty">Henüz çekim yöntemi yok</td></tr></tbody>
+          <thead><tr><th>Durum</th><th>Payment</th><th>Komisyon %</th><th>Varsayılan %</th><th>Son Güncelleme</th><th>Aktif/Pasif</th><th></th></tr></thead>
+          <tbody id="acc-pm-table-withdrawal"><tr><td colspan="7" class="empty">Henüz çekim yöntemi yok</td></tr></tbody>
         </table>
       </div>
     </section>

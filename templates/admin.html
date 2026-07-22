@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/biolink-admin.css?v=20260721a">
   <link rel="stylesheet" href="/static/biolink-skins.css?v=20260716b">
   {% if panel.brand == "makro" %}
-  <link rel="stylesheet" href="/static/makropanel_ui.css?v=20260722b">
+  <link rel="stylesheet" href="/static/makropanel_ui.css?v=20260722d">
   {% endif %}
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -692,8 +692,50 @@
     }
     .acc-ic-kpi-rate-note { line-height: 1.35; }
     .acc-pm-row-passive { opacity: 0.55; }
-    .acc-pm-status-toggle { cursor: pointer; user-select: none; transition: filter 0.15s; }
-    .acc-pm-status-toggle:hover { filter: brightness(1.35); }
+    .acc-pm-status-toggle,
+    .acc-pm-status-btn { cursor: pointer; user-select: none; transition: filter 0.15s; }
+    .acc-pm-status-toggle:hover,
+    .acc-pm-status-btn:hover { filter: brightness(1.35); }
+    .acc-tx-pm-status-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+    }
+    @media (max-width: 900px) {
+      .acc-tx-pm-status-grid { grid-template-columns: 1fr; }
+    }
+    .acc-tx-pm-status-title {
+      font-size: 0.78rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 0.55rem;
+    }
+    .acc-pm-filter-bar {
+      display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;
+      margin-bottom: 0.85rem; padding: 0.55rem 0.7rem; border-radius: 12px;
+      background: rgba(125,141,166,0.08); border: 1px solid var(--border);
+    }
+    .acc-pm-filter-label {
+      font-size: 0.72rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .acc-pm-filter-toggle {
+      display: inline-flex; border-radius: 9999px; overflow: hidden;
+      border: 1px solid var(--border); background: var(--bg);
+    }
+    .acc-pm-filter-btn {
+      border: none; background: transparent; color: var(--muted);
+      font: inherit; font-size: 0.74rem; font-weight: 650;
+      padding: 0.35rem 0.75rem; cursor: pointer;
+    }
+    .acc-pm-filter-btn.is-active {
+      background: var(--accent-soft, rgba(56,189,248,0.16));
+      color: var(--accent, #38bdf8);
+    }
+    .acc-pm-status-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      border: none; border-radius: 9999px; padding: 0.28rem 0.7rem;
+      font-size: 0.72rem; font-weight: 700; cursor: pointer; font-family: inherit;
+    }
+    .acc-pm-status-btn.is-active { background: var(--green-soft); color: var(--green); }
+    .acc-pm-status-btn.is-passive { background: rgba(125,141,166,0.15); color: var(--muted); }
+    .acc-pm-manual-tag { margin-left: 0.3rem; font-size: 0.62rem; }
     .mkt-badge { display: inline-block; font-size: 0.68rem; padding: 0.15rem 0.45rem; border-radius: 4px; font-weight: 600; }
     .mkt-badge-paid { background: rgba(34,197,94,0.18); color: #4ade80; }
     .mkt-badge-pending { background: rgba(251,191,36,0.18); color: #fbbf24; }
@@ -3064,7 +3106,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script src="/static/accounting.js?v=20260717b"></script>
+  <script src="/static/accounting.js?v=20260722b"></script>
   {% if panel.features.mailing %}
   <script src="/static/mailing.js?v=20260720o"></script>
   {% endif %}

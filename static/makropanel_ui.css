@@ -327,6 +327,104 @@ body.panel-brand-makro .bl-theme-card.active {
   }
 }
 
+/* Payment method aktif/pasif toggles + filter */
+body.panel-brand-makro .acc-pm-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+body.panel-brand-makro .acc-pm-filter-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+body.panel-brand-makro .acc-pm-filter-toggle {
+  display: inline-flex;
+  border-radius: 9999px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.35);
+}
+body.panel-brand-makro .acc-pm-filter-btn {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 650;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+body.panel-brand-makro .acc-pm-filter-btn.is-active {
+  background: rgba(56, 189, 248, 0.16);
+  color: #7dd3fc;
+}
+body.panel-brand-makro .acc-pm-filter-btn:hover {
+  color: #e2e8f0;
+}
+body.panel-brand-makro .acc-tx-pm-status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 900px) {
+  body.panel-brand-makro .acc-tx-pm-status-grid { grid-template-columns: 1fr; }
+}
+body.panel-brand-makro .acc-tx-pm-status-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 0.55rem;
+}
+body.panel-brand-makro .acc-pm-status-btn,
+body.panel-brand-makro .acc-pm-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 9999px;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, filter 0.15s ease;
+}
+body.panel-brand-makro .acc-pm-status-btn.is-active {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+}
+body.panel-brand-makro .acc-pm-status-btn.is-passive {
+  background: rgba(148, 163, 184, 0.16);
+  color: #94a3b8;
+}
+body.panel-brand-makro .acc-pm-status-btn:hover,
+body.panel-brand-makro .acc-pm-toggle-btn:hover {
+  filter: brightness(1.2);
+}
+body.panel-brand-makro .acc-pm-toggle-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+body.panel-brand-makro .acc-pm-manual-tag {
+  margin-left: 0.3rem;
+  font-size: 0.62rem;
+}
+body.panel-brand-makro .acc-pm-row-passive {
+  opacity: 0.65;
+}
+
 /* Light theme */
 [data-theme="light"] body.panel-brand-makro .nav-item { color: #64748b; }
 [data-theme="light"] body.panel-brand-makro .nav-item.active {
