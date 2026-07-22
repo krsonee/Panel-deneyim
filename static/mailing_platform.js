@@ -28,9 +28,104 @@
       warm: '<path d="M12 2v6"/><path d="M12 18v4"/><path d="m4.9 4.9 4.2 4.2"/><path d="m14.9 14.9 4.2 4.2"/><path d="M2 12h6"/><path d="M16 12h6"/>',
       alloc: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11h-6"/><path d="M19 8v6"/>',
       pause: '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>',
-      play: '<path d="M8 5v14l11-7z"/>'
+      play: '<path d="M8 5v14l11-7z"/>',
+      eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>'
     };
     return '<svg class="mm-ico" viewBox="0 0 24 24" aria-hidden="true">' + (p[name] || "") + "</svg>";
+  }
+
+  function syncOperatorBadge(tid) {
+    var badge = document.getElementById("mm-operator-badge");
+    if (!badge) return;
+    var id = tid != null ? Number(tid) : (window.MAIL_TENANT_ID ? Number(window.MAIL_TENANT_ID) : 0);
+    if (id) {
+      badge.hidden = false;
+      var t = (window._mmTenantsCache || []).find(function (x) { return Number(x.id) === id; });
+      badge.textContent = t
+        ? ("Operatör · " + (t.slug || t.name || ("#" + id)))
+        : ("Operatör · #" + id);
+    } else {
+      badge.hidden = true;
+      badge.textContent = "Operatör";
+    }
+  }
+
+  function syncPanelLoginFields() {
+    var chk = document.getElementById("mm-t-panel-login");
+    var wrap = document.getElementById("mm-t-login-fields");
+    var user = document.getElementById("mm-t-user");
+    var pass = document.getElementById("mm-t-pass");
+    var on = !chk || chk.checked;
+    if (wrap) wrap.style.display = on ? "" : "none";
+    if (user) {
+      user.required = on && !_editTenantId;
+      if (!on) user.value = user.value || "admin";
+    }
+    if (pass) {
+      pass.required = on && !_editTenantId;
+      if (!on) pass.value = "";
+    }
+  }
+
+  function hideTenantActivity() {
+    var card = document.getElementById("mm-tenant-activity-card");
+    if (card) card.hidden = true;
+  }
+
+  function showTenantActivity(tenantId) {
+    var card = document.getElementById("mm-tenant-activity-card");
+    if (!card) return;
+    card.hidden = false;
+    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    var title = document.getElementById("mm-tenant-activity-title");
+    if (title) title.textContent = "Firma aktivitesi · yükleniyor…";
+    api("/api/platform/tenants/" + tenantId + "/activity").then(function (res) {
+      if (!res.ok) {
+        if (title) title.textContent = "Firma aktivitesi · hata";
+        return;
+      }
+      var t = res.data.tenant || {};
+      var s = res.data.summary || {};
+      if (title) title.textContent = "Firma aktivitesi · " + (t.name || t.slug || ("#" + tenantId));
+      var set = function (id, v) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = v == null ? "—" : String(v);
+      };
+      set("mm-act-kpi-camp", s.campaigns);
+      set("mm-act-kpi-tpl", s.templates);
+      set("mm-act-kpi-ok", s.sends_ok);
+      set("mm-act-kpi-fail", s.sends_fail);
+      var usersEl = document.getElementById("mm-act-users");
+      var users = res.data.users || [];
+      if (usersEl) {
+        if (!users.length) {
+          usersEl.textContent = "Panel kullanıcısı yok — sadece sen (süper admin) operatör olarak yönetiyorsun. Üstten bu firmayı seçip şablon/kampanya ekleyebilirsin.";
+        } else {
+          usersEl.textContent = "Panel kullanıcıları (" + users.length + "): " +
+            users.map(function (u) {
+              return (u.username || "?") + " (" + (u.role || "user") + ")";
+            }).join(", ") +
+            " · Kontak: " + (s.contacts || 0);
+        }
+      }
+      var tbody = document.getElementById("mm-act-camps");
+      var camps = res.data.campaigns || [];
+      if (tbody) {
+        if (!camps.length) {
+          tbody.innerHTML = '<tr><td colspan="4" class="empty">Henüz kampanya yok</td></tr>';
+        } else {
+          tbody.innerHTML = camps.map(function (c) {
+            var prog = (c.sent_count || 0) + "/" + (c.total_count || 0);
+            if (c.failed_count) prog += " · fail " + c.failed_count;
+            return "<tr>" +
+              "<td>" + esc(c.name) + "</td>" +
+              "<td>" + mmStatusBadge(c.status) + "</td>" +
+              "<td>" + esc(prog) + "</td>" +
+              "<td>" + esc(c.updated_at || c.created_at || "—") + "</td></tr>";
+          }).join("");
+        }
+      }
+    });
   }
 
   function mmIconBtn(cls, title, icon, extra) {
@@ -100,8 +195,11 @@
         api("/api/mail-auth/select-tenant", { method: "POST", body: { tenant_id: Number(makro.id) } })
           .then(function () {
             window.MAIL_TENANT_ID = Number(makro.id);
+            syncOperatorBadge(makro.id);
           });
       }
+    } else {
+      syncOperatorBadge(sel.value || window.MAIL_TENANT_ID);
     }
   }
 
@@ -126,11 +224,15 @@
     var user = document.getElementById("mm-t-user");
     var pass = document.getElementById("mm-t-pass");
     var hint = document.getElementById("mm-tenant-create-hint");
+    var panelChk = document.getElementById("mm-t-panel-login");
+    var loginWrap = document.getElementById("mm-t-login-fields");
     if (!form) return;
     if (editId && t) {
       document.getElementById("mm-t-name").value = t.name || "";
       if (slug) { slug.value = t.slug || ""; slug.readOnly = true; }
       document.getElementById("mm-t-cap").value = t.max_sends_day != null ? t.max_sends_day : 50000;
+      if (panelChk) panelChk.checked = true;
+      if (loginWrap) loginWrap.style.display = "none";
       if (user) { user.value = ""; user.required = false; user.placeholder = "değiştirme"; }
       if (pass) { pass.value = ""; pass.required = false; pass.placeholder = "değiştirme"; }
       if (btn) btn.textContent = "Firmayı kaydet";
@@ -140,12 +242,14 @@
     } else {
       form.reset();
       if (slug) slug.readOnly = false;
-      if (user) { user.required = true; user.value = "admin"; user.placeholder = ""; }
-      if (pass) { pass.required = true; pass.placeholder = ""; }
+      if (panelChk) panelChk.checked = true;
+      if (user) { user.value = "admin"; user.placeholder = ""; }
+      if (pass) { pass.placeholder = ""; }
       if (btn) btn.textContent = "Oluştur";
       if (cancel) cancel.hidden = true;
       if (hint) hint.textContent = "";
       _editTenantId = null;
+      syncPanelLoginFields();
     }
   }
 
@@ -168,14 +272,18 @@
       }
       tbody.innerHTML = visible.map(function (t) {
         var suspend = t.status === "active";
+        var panelTag = Number(t.user_count || 0) > 0
+          ? ' <span class="mm-badge mm-badge-ok">panel</span>'
+          : ' <span class="mm-badge mm-badge-info">operatör</span>';
         return "<tr>" +
           "<td>" + esc(t.id) + "</td>" +
           "<td>" + esc(t.slug) + "</td>" +
-          "<td>" + esc(t.name) + "</td>" +
+          "<td>" + esc(t.name) + panelTag + "</td>" +
           "<td>" + mmStatusBadge(t.status) + "</td>" +
           "<td>" + esc(t.max_sends_day) + "</td>" +
           "<td>" + esc(t.domain_count) + "</td>" +
           '<td class="mm-actions-cell">' +
+          mmIconBtn("mm-activity-tenant", "Aktivite / ne yaptılar", "eye", 'data-id="' + esc(t.id) + '"') +
           mmIconBtn("mm-edit-tenant", "Firmayı düzenle", "edit", 'data-id="' + esc(t.id) + '"') +
           mmIconBtn(
             "mm-suspend" + (suspend ? "" : " btn-primary"),
@@ -186,6 +294,7 @@
           mmIconBtn("mm-del-tenant btn-danger", "Firmayı sil", "trash", 'data-id="' + esc(t.id) + '" data-name="' + esc(t.name || t.slug || "") + '"') +
           "</td></tr>";
       }).join("");
+      syncOperatorBadge(window.MAIL_TENANT_ID);
     });
   }
 
@@ -395,12 +504,18 @@
           var tid = sel.value ? Number(sel.value) : null;
           api("/api/mail-auth/select-tenant", { method: "POST", body: { tenant_id: tid } }).then(function () {
             window.MAIL_TENANT_ID = tid;
+            syncOperatorBadge(tid);
             if (window.MakroMailing && window.MakroMailing.refreshImports) {
               window.MakroMailing.refreshImports();
+            } else if (window.MakroMailing && typeof window.MakroMailing.onShow === "function") {
+              window.MakroMailing.onShow();
             }
           });
         });
       }
+      document.getElementById("mm-t-panel-login")?.addEventListener("change", syncPanelLoginFields);
+      syncPanelLoginFields();
+      document.getElementById("mm-tenant-activity-close")?.addEventListener("click", hideTenantActivity);
       document.getElementById("mm-tenants-refresh")?.addEventListener("click", refreshTenants);
       document.getElementById("mm-domains-refresh")?.addEventListener("click", function () {
         resetDomainForm();
@@ -430,23 +545,28 @@
           });
           return;
         }
+        var wantPanel = !!(document.getElementById("mm-t-panel-login") || { checked: true }).checked;
         api("/api/platform/tenants", {
           method: "POST",
           body: {
             name: document.getElementById("mm-t-name").value.trim(),
             slug: document.getElementById("mm-t-slug").value.trim(),
-            owner_username: document.getElementById("mm-t-user").value.trim(),
-            owner_password: document.getElementById("mm-t-pass").value,
+            owner_username: document.getElementById("mm-t-user").value.trim() || "admin",
+            owner_password: wantPanel ? document.getElementById("mm-t-pass").value : "",
+            create_panel_login: wantPanel,
             max_sends_day: Number(document.getElementById("mm-t-cap").value) || 50000
           }
         }).then(function (res) {
           if (!res.ok) {
-            if (hint) hint.textContent = res.data.error || "Hata";
+            if (hint) hint.textContent = (res.data && res.data.error) || "Hata";
             return;
           }
-          if (hint) hint.textContent = "OK — giriş: " + (res.data.login_hint || "");
-          e.target.reset();
-          document.getElementById("mm-t-user").value = "admin";
+          if (hint) {
+            hint.textContent = res.data.operator_only
+              ? "OK — firma açıldı (panel yok). Üstten seçip sen yönet."
+              : ("OK — panel girişi: " + (res.data.login_hint || ""));
+          }
+          setTenantFormMode(null);
           refreshTenants();
         });
       });
@@ -501,6 +621,11 @@
           var id = Number(sus.getAttribute("data-id"));
           var st = sus.getAttribute("data-status");
           api("/api/platform/tenants/" + id, { method: "PATCH", body: { status: st } }).then(refreshTenants);
+          return;
+        }
+        var actTenant = e.target.closest(".mm-activity-tenant");
+        if (actTenant) {
+          showTenantActivity(Number(actTenant.getAttribute("data-id")));
           return;
         }
         var editTenant = e.target.closest(".mm-edit-tenant");

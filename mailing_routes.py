@@ -1921,12 +1921,27 @@ def create_mailing_blueprint(permission_required):
             opened = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE opened_at IS NOT NULL") or 0)
             clicked = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE clicked_at IS NOT NULL") or 0)
             ivr_events = scalar(conn, "SELECT COUNT(*) FROM mail_ivr_events") or 0
-            domains = _rows(fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC"))
+            try:
+                from mail_tenant import enrich_domain_public, heal_ready_domains
+
+                heal_ready_domains(conn)
+            except Exception:
+                pass
+            raw_domains = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC") or []
+            try:
+                from mail_tenant import enrich_domain_public
+
+                domains = [enrich_domain_public(r) for r in raw_domains]
+            except Exception:
+                domains = _rows(raw_domains)
             provider = get_mail_setting(conn, "provider_mode", "stub")
             try:
                 suppressed = int(scalar(conn, "SELECT COUNT(*) FROM mail_suppressions") or 0)
             except Exception:
                 suppressed = 0
+            from mail_ops import smartico_dashboard_summary
+
+            sc = smartico_dashboard_summary(conn)
         return jsonify({
             "kpi": {
                 "contacts": contacts,
@@ -1942,11 +1957,19 @@ def create_mailing_blueprint(permission_required):
                 "clicked": clicked,
                 "ivr_events": ivr_events,
                 "suppressed": suppressed,
+                "sc_register": sc.get("register"),
+                "sc_deposit_total": sc.get("deposit_total"),
+                "sc_ftd_count": sc.get("ftd_count"),
+                "sc_ftd_total": sc.get("ftd_total"),
+                "sc_withdraw_total": sc.get("withdraw_total"),
+                "sc_bonus_total": sc.get("bonus_total"),
+                "sc_currency": sc.get("currency") or "",
             },
+            "smartico": sc,
             "domains": domains,
             "provider_mode": provider,
             "note": (
-                "SMTP (DirectMail) aktif."
+                "SMTP (DirectMail) aktif — domainler gönderime hazır."
                 if (provider or "").strip().lower() == "smtp"
                 else "Stub modunda — Ayarlar'dan SMTP'ye geçince gerçek mail gider."
             ),
@@ -3910,22 +3933,31 @@ def create_mailing_blueprint(permission_required):
 
     # ── Domains / Settings ─────────────────────────────────────
     def _domain_public(row):
-        d = _row(row) if row else None
-        if not d:
-            return None
-        pw = (d.get("smtp_password_enc") or d.get("smtp_password") or "").strip()
-        d["smtp_password_set"] = bool(pw)
-        d["smtp_password"] = ""
-        d.pop("smtp_password_enc", None)
-        return d
+        try:
+            from mail_tenant import enrich_domain_public
+
+            return enrich_domain_public(row)
+        except Exception:
+            d = _row(row) if row else None
+            if not d:
+                return None
+            pw = (d.get("smtp_password_enc") or d.get("smtp_password") or "").strip()
+            d["smtp_password_set"] = bool(pw)
+            d["smtp_password"] = ""
+            d.pop("smtp_password_enc", None)
+            return d
 
     @bp.route("/domains", methods=["GET"])
     @mail_perm(*MAIL_SET)
     def list_domains():
         from flask import session as _sess
-        from mail_tenant import current_tenant_id, list_allocated_domains
+        from mail_tenant import current_tenant_id, heal_ready_domains, list_allocated_domains
 
         with closing(get_db()) as conn:
+            try:
+                heal_ready_domains(conn)
+            except Exception:
+                pass
             tid = current_tenant_id()
             if _sess.get("mail_is_superadmin") and not tid:
                 rows = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC")
@@ -4121,6 +4153,13 @@ def create_mailing_blueprint(permission_required):
                 if result.get("user"):
                     upsert_mail_setting(conn, "smtp_user", result["user"])
                 conn.commit()
+            if result.get("ok"):
+                try:
+                    from mail_tenant import heal_ready_domains
+
+                    heal_ready_domains(conn)
+                except Exception:
+                    pass
         status = 200 if result.get("ok") else 400
         return jsonify(result), status
 

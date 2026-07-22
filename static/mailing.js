@@ -1060,6 +1060,24 @@
       setText("mail-kpi-sent", fmtNum(k.sends_delivered));
       setText("mail-kpi-sent-sub", "kuyruk " + fmtNum(k.sends_queued || 0) + " · fail " + fmtNum(k.sends_failed || 0));
       setText("mail-kpi-ivr", fmtNum(k.ivr_events));
+      var cur = k.sc_currency || "";
+      setText("mail-kpi-sc-reg", fmtNum(k.sc_register));
+      setText("mail-kpi-sc-dep", mailFmtMoney(k.sc_deposit_total, cur));
+      setText("mail-kpi-sc-ftd", fmtNum(k.sc_ftd_count));
+      setText("mail-kpi-sc-ftd-sub", mailFmtMoney(k.sc_ftd_total, cur));
+      setText("mail-kpi-sc-wit", mailFmtMoney(k.sc_withdraw_total, cur));
+      setText("mail-kpi-sc-bon-sub", "Bonus: " + mailFmtMoney(k.sc_bonus_total, cur));
+      var scNote = document.getElementById("mail-dash-sc-note");
+      var sc = res.data.smartico || {};
+      if (scNote) {
+        if (sc.error === "not_configured" || sc.error === "affiliate_id_missing") {
+          scNote.textContent = "Smartico kartları için Ayarlar → Affiliate ID + API anahtarı gerekli.";
+        } else if (sc.error) {
+          scNote.textContent = "Smartico: " + sc.error;
+        } else {
+          scNote.textContent = "Smartico özeti (30 gün) · mail linkinden gelen kayıt/yatırım.";
+        }
+      }
       setText("mail-dash-note", res.data.note || "");
       mailDomains = res.data.domains || [];
       renderDomainChips(mailDomains);
@@ -1088,8 +1106,16 @@
     if (!el) return;
     if (!domains.length) { el.innerHTML = '<span class="muted">Domain yok</span>'; return; }
     el.innerHTML = domains.map(function (d) {
+      var ready = d.ready || d.smtp_password_set || (d.display_status === "ready") || (d.dns_status === "ready");
+      var label = ready ? "ready" : (d.display_status || d.dns_status || d.status || "—");
+      var badge = ready
+        ? '<span class="mm-badge mm-badge-ok">ready</span>'
+        : '<span class="mm-badge mm-badge-warn">' + esc(label) + "</span>";
+      var smtp = d.smtp_password_set
+        ? ' <span class="mm-badge mm-badge-ok">SMTP</span>'
+        : ' <span class="mm-badge mm-badge-danger">SMTP yok</span>';
       return '<span class="acc-chip"><span class="acc-chip-text">' + esc(d.domain) +
-        '</span> <span class="muted">' + esc(d.dns_status || d.status) + "</span></span>";
+        "</span> " + badge + smtp + "</span>";
     }).join("");
   }
 
@@ -2344,7 +2370,7 @@
       if (atbody) {
         var camps = (analyticsRes && analyticsRes.ok && analyticsRes.data.campaigns) || [];
         if (!camps.length) {
-          atbody.innerHTML = '<tr><td colspan="8" class="empty">Kampanya yok</td></tr>';
+          atbody.innerHTML = '<tr><td colspan="14" class="empty">Kampanya yok</td></tr>';
         } else {
           atbody.innerHTML = camps.map(function (c) {
             return "<tr>" +
@@ -2353,6 +2379,12 @@
               "<td>" + fmtNum(c.delivered) + "</td>" +
               "<td>" + esc(String(c.open_rate)) + "%</td>" +
               "<td>" + esc(String(c.click_rate)) + "%</td>" +
+              "<td>" + fmtNum(c.sc_register) + "</td>" +
+              "<td>" + mailFmtMoney(c.sc_deposit_total) + "</td>" +
+              "<td>" + fmtNum(c.sc_ftd_count) + "</td>" +
+              "<td>" + mailFmtMoney(c.sc_ftd_total) + "</td>" +
+              "<td>" + mailFmtMoney(c.sc_withdraw_total) + "</td>" +
+              "<td>" + mailFmtMoney(c.sc_bonus_total) + "</td>" +
               "<td>" + fmtNum(c.failed_count) + "</td>" +
               "<td>" + fmtNum(c.skipped_count) + "</td>" +
               '<td>' + mmIconBtn("mail-camp-detail-btn", "Detay", "eye",
@@ -2434,14 +2466,20 @@
     }
     tbody.innerHTML = domains.map(function (d) {
       var from = (d.from_local || "noreply") + "@" + d.domain;
-      var smtpOk = d.smtp_password_set ? "SMTP ✓" : "SMTP yok";
+      var ready = d.ready || d.smtp_password_set || d.dns_status === "ready";
+      var st = ready ? mmStatusBadge("active") : mmStatusBadge(d.status || "pending");
+      var dns = ready
+        ? ('<span class="mm-badge mm-badge-ok">ready</span> · <span class="mm-badge mm-badge-ok">SMTP</span>')
+        : (esc(d.dns_status || "unconfigured") + " · " + (d.smtp_password_set ? "SMTP ✓" : "SMTP yok"));
       return "<tr>" +
         "<td>" + esc(d.domain) + "</td>" +
         "<td>" + esc(d.from_name) + " &lt;" + esc(from) + "&gt;</td>" +
-        "<td>" + esc(d.status) + "</td>" +
-        "<td>" + esc(d.dns_status) + " · " + smtpOk + "</td>" +
-        "<td>" + esc(d.notes) + "</td>" +
-        '<td><button type="button" class="btn btn-sm mail-edit-domain" data-id="' + d.id + '">Düzenle</button></td></tr>';
+        "<td>" + st + "</td>" +
+        "<td>" + dns + "</td>" +
+        "<td>" + esc(d.notes || (ready ? "Gönderime hazır" : "")) + "</td>" +
+        '<td class="mm-actions-cell">' +
+          mmIconBtn("mail-edit-domain", "Domain düzenle", "edit", 'data-id="' + d.id + '"') +
+        "</td></tr>";
     }).join("");
   }
 

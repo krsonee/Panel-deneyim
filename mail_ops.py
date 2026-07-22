@@ -317,8 +317,46 @@ def list_unsubscribe_headers(unsub_http_url):
     }
 
 
+def _empty_sc_metrics():
+    return {
+        "sc_register": 0,
+        "sc_deposit_total": 0.0,
+        "sc_ftd_count": 0,
+        "sc_ftd_total": 0.0,
+        "sc_withdraw_total": 0.0,
+        "sc_bonus_total": 0.0,
+    }
+
+
+def _smartico_by_contact(conn):
+    """contact_id (afp1/subid) → smartico player metrics. Hata olursa {}."""
+    try:
+        import smartico_api
+        from database import get_mail_setting
+
+        affiliate_id = (get_mail_setting(conn, "smartico_affiliate_id", "") or "").strip()
+        subid_param = (get_mail_setting(conn, "smartico_subid_param", "afp1") or "afp1").strip() or "afp1"
+        if not affiliate_id or not smartico_api.is_configured(conn):
+            return {}
+        result = smartico_api.fetch_mailing_players(
+            conn, affiliate_id, subid_param, period="6months", force=False,
+        )
+        out = {}
+        for row in result.get("rows") or []:
+            sid = str(row.get("subid") or "").strip()
+            if not sid:
+                continue
+            try:
+                out[int(sid)] = row
+            except (TypeError, ValueError):
+                continue
+        return out
+    except Exception:
+        return {}
+
+
 def campaign_analytics(conn, campaign_id=None):
-    """Kampanya bazlı open/click/fail oranları."""
+    """Kampanya bazlı open/click/fail + Smartico (register/yatırım/FTD/çekim/bonus)."""
     params = []
     where = ""
     if campaign_id:
@@ -349,11 +387,89 @@ def campaign_analytics(conn, campaign_id=None):
         """,
         tuple(params),
     )
+    sc_map = _smartico_by_contact(conn)
     out = []
     for r in rows or []:
         d = dict(r)
         delivered = int(d.get("delivered") or 0) or 1
         d["open_rate"] = round(100.0 * int(d.get("opened") or 0) / delivered, 2)
         d["click_rate"] = round(100.0 * int(d.get("clicked") or 0) / delivered, 2)
+        sc = _empty_sc_metrics()
+        try:
+            cid_rows = fetchall(
+                conn,
+                """
+                SELECT DISTINCT contact_id FROM mail_click_links
+                WHERE campaign_id = ? AND is_smartico = 1 AND contact_id IS NOT NULL
+                """,
+                (d["id"],),
+            ) or []
+        except Exception:
+            cid_rows = []
+        seen = set()
+        for cr in cid_rows:
+            try:
+                cid = int(cr["contact_id"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if cid in seen:
+                continue
+            seen.add(cid)
+            p = sc_map.get(cid)
+            if not p:
+                continue
+            sc["sc_register"] += max(int(p.get("registration_count") or 0), 1)
+            sc["sc_deposit_total"] += float(p.get("deposit_total") or 0)
+            sc["sc_ftd_count"] += int(p.get("ftd_count") or 0)
+            sc["sc_ftd_total"] += float(p.get("ftd_total") or 0)
+            sc["sc_withdraw_total"] += float(p.get("withdrawal_total") or 0)
+            sc["sc_bonus_total"] += float(p.get("bonus_total") or 0)
+        for k in ("sc_deposit_total", "sc_ftd_total", "sc_withdraw_total", "sc_bonus_total"):
+            sc[k] = round(sc[k], 2)
+        d.update(sc)
         out.append(d)
     return out
+
+
+def smartico_dashboard_summary(conn):
+    """Dashboard kartları için Smartico özet (30 gün)."""
+    empty = {
+        "register": 0,
+        "deposit_total": 0.0,
+        "ftd_count": 0,
+        "ftd_total": 0.0,
+        "withdraw_total": 0.0,
+        "bonus_total": 0.0,
+        "currency": "",
+        "error": None,
+    }
+    try:
+        import smartico_api
+        from database import get_mail_setting
+
+        affiliate_id = (get_mail_setting(conn, "smartico_affiliate_id", "") or "").strip()
+        subid_param = (get_mail_setting(conn, "smartico_subid_param", "afp1") or "afp1").strip() or "afp1"
+        if not affiliate_id or not smartico_api.is_configured(conn):
+            empty["error"] = "not_configured"
+            return empty
+        result = smartico_api.fetch_mailing_players(
+            conn, affiliate_id, subid_param, period="30days", force=False,
+        )
+        if result.get("error") and not result.get("rows"):
+            empty["error"] = result.get("error")
+            return empty
+        s = result.get("summary") or {}
+        return {
+            "register": int(s.get("registration_count") or 0),
+            "deposit_total": float(s.get("deposit_total") or 0),
+            "ftd_count": int(s.get("ftd_count") or 0),
+            "ftd_total": float(s.get("ftd_total") or 0),
+            "withdraw_total": float(s.get("withdrawal_total") or 0),
+            "bonus_total": float(s.get("bonus_total") or 0),
+            "currency": result.get("currency") or "",
+            "error": None,
+            "source": result.get("source"),
+        }
+    except Exception as exc:
+        empty["error"] = str(exc)
+        return empty

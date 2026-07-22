@@ -322,6 +322,10 @@ def ensure_tenant_schema(conn) -> None:
             )
         except Exception:
             pass
+        try:
+            heal_ready_domains(conn)
+        except Exception as exc:
+            print(f"⚠️  heal_ready_domains: {exc}")
 
     # Bootstrap superadmin from env if empty
     if not scalar(conn, "SELECT COUNT(*) FROM mail_superadmins"):
@@ -338,6 +342,87 @@ def ensure_tenant_schema(conn) -> None:
             (user.lower(), generate_password_hash(pw, method="pbkdf2:sha256"), user, now),
         )
         print(f"✉️  Mikromail superadmin bootstrap: {user}")
+
+
+_STALE_DOMAIN_NOTES = (
+    "NS henüz yönlendirilmedi",
+    "ns henüz yönlendirilmedi",
+)
+
+
+def domain_has_smtp(row) -> bool:
+    if not row:
+        return False
+    d = dict(row) if not isinstance(row, dict) else row
+    plain = str(d.get("smtp_password") or "").strip()
+    enc = str(d.get("smtp_password_enc") or "").strip()
+    if plain and not plain.startswith("enc:v1:"):
+        return True
+    return bool(enc)
+
+
+def heal_ready_domains(conn) -> int:
+    """SMTP şifresi kayıtlı domainleri pending/unconfigured seed durumundan çıkar.
+
+    Test mail giden domainler hâlâ 'NS henüz yönlendirilmedi' diye görünmesin.
+    """
+    rows = fetchall(
+        conn,
+        "SELECT id, status, dns_status, notes, smtp_password, smtp_password_enc FROM mail_domains",
+    ) or []
+    fixed = 0
+    for r in rows:
+        d = dict(r)
+        if not domain_has_smtp(d):
+            continue
+        status = (d.get("status") or "").strip().lower()
+        dns = (d.get("dns_status") or "").strip().lower()
+        notes = (d.get("notes") or "").strip()
+        notes_l = notes.lower()
+        stale_note = (not notes) or any(s in notes_l for s in _STALE_DOMAIN_NOTES)
+        need = status in ("pending", "draft", "") or dns in ("unconfigured", "pending", "") or stale_note
+        if not need:
+            continue
+        new_notes = "" if stale_note else notes
+        execute(
+            conn,
+            """
+            UPDATE mail_domains
+            SET status = 'active', dns_status = 'ready', notes = ?
+            WHERE id = ?
+            """,
+            (new_notes, d["id"]),
+        )
+        fixed += 1
+    if fixed:
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    return fixed
+
+
+def enrich_domain_public(row) -> dict:
+    """UI için smtp_password_set + okunabilir durum alanları."""
+    d = dict(row) if row else {}
+    ready = domain_has_smtp(d)
+    d["smtp_password_set"] = ready
+    d.pop("smtp_password", None)
+    d.pop("smtp_password_enc", None)
+    if ready:
+        if (d.get("dns_status") or "").lower() in ("unconfigured", "pending", ""):
+            d["dns_status"] = "ready"
+        if (d.get("status") or "").lower() in ("pending", "draft", ""):
+            d["status"] = "active"
+        note = (d.get("notes") or "").strip()
+        if any(s in note.lower() for s in _STALE_DOMAIN_NOTES):
+            d["notes"] = ""
+        d["ready"] = True
+        d["display_status"] = "ready"
+    else:
+        d["ready"] = False
+        d["display_status"] = (d.get("dns_status") or d.get("status") or "unconfigured")
+    return d
 
 
 def current_tenant_id():

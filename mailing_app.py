@@ -239,10 +239,15 @@ def platform_create_tenant():
     slug = normalize_slug(data.get("slug") or name)
     owner_user = (data.get("owner_username") or "admin").strip().lower()
     owner_pass = data.get("owner_password") or ""
+    # create_panel_login=false → sadece operatör yönetimi (firma paneli yok)
+    create_login = data.get("create_panel_login")
+    if create_login is None:
+        create_login = bool(owner_pass)
+    create_login = bool(create_login)
     if not name or not slug:
         return jsonify({"error": "name/slug gerekli."}), 400
-    if not owner_pass or len(owner_pass) < 8:
-        return jsonify({"error": "Owner şifresi en az 8 karakter."}), 400
+    if create_login and (not owner_pass or len(owner_pass) < 8):
+        return jsonify({"error": "Panel girişi için owner şifresi en az 8 karakter."}), 400
     try:
         with closing(get_db()) as conn:
             tid = create_tenant(
@@ -255,13 +260,76 @@ def platform_create_tenant():
                 max_domains=int(data.get("max_domains") or 3),
                 notes=(data.get("notes") or "").strip(),
             )
-            create_tenant_user(conn, tid, owner_user, owner_pass, role="owner", display_name=name)
+            login_hint = None
+            if create_login:
+                create_tenant_user(conn, tid, owner_user, owner_pass, role="owner", display_name=name)
+                login_hint = f"{slug}/{owner_user}"
             conn.commit()
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": f"Oluşturulamadı: {exc}"}), 400
-    return jsonify({"ok": True, "tenant_id": tid, "login_hint": f"{slug}/{owner_user}"}), 201
+    return jsonify({
+        "ok": True,
+        "tenant_id": tid,
+        "login_hint": login_hint,
+        "operator_only": not create_login,
+    }), 201
+
+
+@app.get("/api/platform/tenants/<int:tenant_id>/activity")
+@require_superadmin
+def platform_tenant_activity(tenant_id):
+    """Firma paneli / operatör işleri — son kampanya ve gönderim özeti."""
+    with closing(get_db()) as conn:
+        t = fetchone(conn, "SELECT * FROM mail_tenants WHERE id = ?", (tenant_id,))
+        if not t:
+            return jsonify({"error": "Yok."}), 404
+        camps = fetchall(
+            conn,
+            """
+            SELECT id, name, status, sent_count, failed_count, total_count,
+                   created_at, updated_at, scheduled_at
+            FROM mail_campaigns
+            WHERE tenant_id = ?
+            ORDER BY id DESC LIMIT 30
+            """,
+            (tenant_id,),
+        ) or []
+        templates = int(scalar(
+            conn, "SELECT COUNT(*) FROM mail_templates WHERE tenant_id = ?", (tenant_id,)
+        ) or 0)
+        contacts = int(scalar(
+            conn, "SELECT COUNT(*) FROM mail_contacts WHERE tenant_id = ?", (tenant_id,)
+        ) or 0)
+        sends_ok = int(scalar(
+            conn,
+            "SELECT COUNT(*) FROM mail_sends WHERE tenant_id = ? AND status IN ('sent','simulated')",
+            (tenant_id,),
+        ) or 0)
+        sends_fail = int(scalar(
+            conn,
+            "SELECT COUNT(*) FROM mail_sends WHERE tenant_id = ? AND status = 'failed'",
+            (tenant_id,),
+        ) or 0)
+        users = fetchall(
+            conn,
+            "SELECT id, username, role, display_name FROM mail_tenant_users WHERE tenant_id = ? ORDER BY id",
+            (tenant_id,),
+        ) or []
+    return jsonify({
+        "tenant": dict(t),
+        "summary": {
+            "templates": templates,
+            "contacts": contacts,
+            "sends_ok": sends_ok,
+            "sends_fail": sends_fail,
+            "campaigns": len(camps),
+            "panel_users": len(users),
+        },
+        "campaigns": [dict(c) for c in camps],
+        "users": [dict(u) for u in users],
+    })
 
 
 @app.patch("/api/platform/tenants/<int:tenant_id>")
@@ -323,15 +391,17 @@ def platform_delete_tenant(tenant_id):
 @app.get("/api/platform/domains")
 @require_superadmin
 def platform_list_domains():
+    from mail_tenant import enrich_domain_public, heal_ready_domains
+
     with closing(get_db()) as conn:
+        try:
+            heal_ready_domains(conn)
+        except Exception:
+            pass
         rows = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC") or []
         out = []
         for r in rows:
-            d = dict(r)
-            pw = d.get("smtp_password_enc") or d.get("smtp_password") or ""
-            d["smtp_password_set"] = bool(pw)
-            d.pop("smtp_password", None)
-            d.pop("smtp_password_enc", None)
+            d = enrich_domain_public(r)
             allocs = fetchall(
                 conn,
                 """
@@ -362,6 +432,9 @@ def platform_create_domain():
         enc = encrypt_secret(smtp_pw) if smtp_pw else ""
         from database import insert_returning_id
 
+        has_smtp = bool(smtp_pw)
+        init_status = (data.get("status") or ("active" if has_smtp else "pending")).strip()
+        init_dns = (data.get("dns_status") or ("ready" if has_smtp else "unconfigured")).strip()
         did = insert_returning_id(
             conn,
             """
@@ -372,10 +445,10 @@ def platform_create_domain():
             """,
             (
                 domain,
-                (data.get("status") or "pending").strip(),
+                init_status,
                 (data.get("from_name") or "VIP").strip(),
                 (data.get("from_local") or "noreply").strip(),
-                (data.get("dns_status") or "unconfigured").strip(),
+                init_dns,
                 (data.get("notes") or "").strip(),
                 now,
                 (data.get("warm_status") or "cold").strip(),
@@ -394,12 +467,9 @@ def platform_create_domain():
 
 
 def _platform_domain_public(row):
-    d = dict(row) if row else {}
-    pw = d.get("smtp_password_enc") or d.get("smtp_password") or ""
-    d["smtp_password_set"] = bool(str(pw).strip())
-    d.pop("smtp_password", None)
-    d.pop("smtp_password_enc", None)
-    return d
+    from mail_tenant import enrich_domain_public
+
+    return enrich_domain_public(row)
 
 
 @app.patch("/api/platform/domains/<int:domain_id>")

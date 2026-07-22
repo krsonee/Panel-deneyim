@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Mikromail</title>
   <meta name="theme-color" content="#090D16">
-  <link rel="stylesheet" href="/static/mailing_shell.css?v=20260722mm4">
-  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260722mm4">
+  <link rel="stylesheet" href="/static/mailing_shell.css?v=20260722mm5">
+  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260722mm5">
   <style>
     :root { --accent: #38bdf8; --accent-soft: rgba(56,189,248,0.14); --accent-ink: #041018; }
     #module-mailing-panel { display:block !important; }
@@ -116,6 +116,7 @@
             <select id="mm-tenant-select" title="Impersonate tenant"><option value="">— seç —</option></select>
           </div>
           {% endif %}
+          <span class="mm-badge mm-badge-info" id="mm-operator-badge" hidden>Operatör</span>
           <div class="live-pill" id="mail-provider-pill" style="background:var(--amber);border-color:rgba(245,158,11,0.35);color:var(--amber);">Stub mod</div>
         </div>
       </header>
@@ -140,13 +141,24 @@
                     <div class="mm-label-row"><label>Slug</label><span class="mm-tip" tabindex="0" data-tip="URL/kimlik için kısa kod (örn. acme)">?</span></div>
                     <input id="mm-t-slug" required placeholder="acme">
                   </div>
-                  <div>
-                    <div class="mm-label-row"><label>Owner kullanıcı</label><span class="mm-tip" tabindex="0" data-tip="Tenant admin giriş adı">?</span></div>
-                    <input id="mm-t-user" value="admin" required>
+                  <div style="grid-column:1/-1;">
+                    <label class="mm-switch">
+                      <input type="checkbox" id="mm-t-panel-login" checked>
+                      <span class="mm-switch-track"></span>
+                      <span>Firma paneli girişi oluştur (kapalıysa sadece sen operatör olarak yönetirsin)</span>
+                    </label>
                   </div>
-                  <div>
-                    <div class="mm-label-row"><label>Owner şifre</label><span class="mm-tip" tabindex="0" data-tip="En az 8 karakter">?</span></div>
-                    <input id="mm-t-pass" type="password" required minlength="8">
+                  <div id="mm-t-login-fields">
+                    <div class="form-row-4" style="margin:0;">
+                      <div>
+                        <div class="mm-label-row"><label>Owner kullanıcı</label><span class="mm-tip" tabindex="0" data-tip="Firma paneli giriş adı">?</span></div>
+                        <input id="mm-t-user" value="admin">
+                      </div>
+                      <div>
+                        <div class="mm-label-row"><label>Owner şifre</label><span class="mm-tip" tabindex="0" data-tip="Panel açılacaksa en az 8 karakter">?</span></div>
+                        <input id="mm-t-pass" type="password" minlength="8">
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <div class="mm-label-row"><label>Günlük send kotası</label><span class="mm-tip" tabindex="0" data-tip="Tenant günlük gönderim üst limiti">?</span></div>
@@ -159,6 +171,31 @@
                   </div>
                 </form>
                 <p class="hint" id="mm-tenant-create-hint"></p>
+                <p class="hint" style="margin-top:0.5rem;">
+                  Operatör: üstten firmayı seç → şablon/kampanya/domain o firmaya yazılır.
+                  Firma paneli verdiysen aktivitelerini satırdaki “Aktivite” ikonundan veya üst tenant seçip Raporlar’dan görürsün.
+                </p>
+              </div>
+            </section>
+            <section class="card" id="mm-tenant-activity-card" hidden style="margin-bottom:1rem;">
+              <div class="card-head">
+                <span id="mm-tenant-activity-title">Firma aktivitesi</span>
+                <button type="button" class="btn btn-sm btn-secondary" id="mm-tenant-activity-close">Kapat</button>
+              </div>
+              <div class="card-body">
+                <div class="kpi-grid acc-kpi-grid" style="margin-bottom:0.75rem;">
+                  <div class="kpi cyan"><div class="val" id="mm-act-kpi-camp">—</div><div class="lbl">Kampanya</div></div>
+                  <div class="kpi"><div class="val" id="mm-act-kpi-tpl">—</div><div class="lbl">Şablon</div></div>
+                  <div class="kpi green"><div class="val" id="mm-act-kpi-ok">—</div><div class="lbl">İletilen</div></div>
+                  <div class="kpi rose"><div class="val" id="mm-act-kpi-fail">—</div><div class="lbl">Fail</div></div>
+                </div>
+                <p class="hint" id="mm-act-users" style="margin:0 0 0.65rem;">—</p>
+                <div class="table-wrap"><div class="table-scroll">
+                  <table>
+                    <thead><tr><th>Kampanya</th><th>Durum</th><th>İlerleme</th><th>Zaman</th></tr></thead>
+                    <tbody id="mm-act-camps"><tr><td colspan="4" class="empty">—</td></tr></tbody>
+                  </table>
+                </div></div>
               </div>
             </section>
             <section class="card">
@@ -269,8 +306,8 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260722mm4"></script>
-  <script src="/static/mailing_platform.js?v=20260722mm4"></script>
+  <script src="/static/mailing.js?v=20260722mm5"></script>
+  <script src="/static/mailing_platform.js?v=20260722mm5"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

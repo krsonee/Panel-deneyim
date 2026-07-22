@@ -32,11 +32,24 @@
       <div class="kpi green"><div class="val" id="mail-kpi-sent">—</div><div class="lbl">İletilen / Simüle</div><div class="sub muted" id="mail-kpi-sent-sub"></div></div>
       <div class="kpi amber"><div class="val" id="mail-kpi-ivr">—</div><div class="lbl">IVR Olayı</div></div>
     </section>
+    <section class="kpi-grid acc-kpi-grid" style="margin-top:0;">
+      <div class="kpi cyan"><div class="val" id="mail-kpi-sc-reg">—</div><div class="lbl">Kayıt (Smartico)</div><div class="sub muted">30 gün · mail link</div></div>
+      <div class="kpi green"><div class="val" id="mail-kpi-sc-dep">—</div><div class="lbl">Toplam yatırım</div><div class="sub muted" id="mail-kpi-sc-dep-sub"></div></div>
+      <div class="kpi amber"><div class="val" id="mail-kpi-sc-ftd">—</div><div class="lbl">FTD adet / tutar</div><div class="sub muted" id="mail-kpi-sc-ftd-sub"></div></div>
+      <div class="kpi rose"><div class="val" id="mail-kpi-sc-wit">—</div><div class="lbl">Çekim</div><div class="sub muted" id="mail-kpi-sc-bon-sub">Bonus: —</div></div>
+    </section>
     <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head"><span>Domain durumu</span><span class="muted" style="font-size:0.72rem;">DNS / DirectMail doğrulama sonra</span></div>
+      <div class="card-head">
+        <span class="mm-label-row" style="margin:0;">
+          Domain durumu
+          <span class="mm-tip" tabindex="0" data-tip="SMTP şifresi kayıtlıysa ready/active. Eski pending/unconfigured seed notları otomatik temizlenir.">?</span>
+        </span>
+        <span class="muted" style="font-size:0.72rem;">Gönderim hazırlığı</span>
+      </div>
       <div class="card-body">
         <div class="acc-chip-list" id="mail-domain-chips"><span class="muted">Yükleniyor…</span></div>
         <p class="hint" style="margin-top:0.75rem;" id="mail-dash-note"></p>
+        <div id="mail-dash-sc-note" class="hint" style="margin-top:0.35rem;"></div>
       </div>
     </section>
   </div>
@@ -726,8 +739,14 @@
       <div class="table-wrap">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Kampanya</th><th>Durum</th><th>İletilen</th><th>Açılma %</th><th>Tıklama %</th><th>Fail</th><th>Skip</th><th></th></tr></thead>
-            <tbody id="mail-rep-analytics"><tr><td colspan="8" class="empty">Veri yok</td></tr></tbody>
+            <thead>
+              <tr>
+                <th>Kampanya</th><th>Durum</th><th>İletilen</th><th>Açılma %</th><th>Tıklama %</th>
+                <th>Kayıt</th><th>Yatırım</th><th>FTD</th><th>FTD ₺</th><th>Çekim</th><th>Bonus</th>
+                <th>Fail</th><th>Skip</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="mail-rep-analytics"><tr><td colspan="14" class="empty">Veri yok</td></tr></tbody>
           </table>
         </div>
       </div>
