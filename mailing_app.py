@@ -421,9 +421,12 @@ def platform_list_domains():
 @require_superadmin
 def platform_create_domain():
     data = request.get_json(silent=True) or {}
-    domain = (data.get("domain") or "").strip().lower()
+    from mail_delivery import normalize_from_local, normalize_mail_domain
+
+    domain = normalize_mail_domain(data.get("domain") or "")
+    from_local = normalize_from_local(data.get("from_local") or "info")
     if not domain or "." not in domain:
-        return jsonify({"error": "Geçerli domain gerekli."}), 400
+        return jsonify({"error": "Geçerli domain gerekli (örn. vipileti.com — info@ yazma)."}), 400
     now = iso(utcnow())
     with closing(get_db()) as conn:
         if fetchone(conn, "SELECT id FROM mail_domains WHERE domain = ?", (domain,)):
@@ -447,7 +450,7 @@ def platform_create_domain():
                 domain,
                 init_status,
                 (data.get("from_name") or "VIP").strip(),
-                (data.get("from_local") or "noreply").strip(),
+                from_local,
                 init_dns,
                 (data.get("notes") or "").strip(),
                 now,
@@ -483,10 +486,18 @@ def platform_patch_domain(domain_id):
             return jsonify({"error": "Domain bulunamadı."}), 404
         row = dict(row)
 
+        from mail_delivery import normalize_from_local, normalize_mail_domain
+
         from_name = (data["from_name"] if "from_name" in data else row.get("from_name") or "")
         from_name = (str(from_name) if from_name is not None else "").strip() or "VIP"
-        from_local = (data["from_local"] if "from_local" in data else row.get("from_local") or "info")
-        from_local = (str(from_local) if from_local is not None else "").strip() or "info"
+        from_local = normalize_from_local(
+            data["from_local"] if "from_local" in data else row.get("from_local") or "info"
+        )
+        if "domain" in data and data.get("domain"):
+            fixed_domain = normalize_mail_domain(data.get("domain"))
+            if fixed_domain and fixed_domain != (row.get("domain") or ""):
+                execute(conn, "UPDATE mail_domains SET domain = ? WHERE id = ?", (fixed_domain, domain_id))
+                row["domain"] = fixed_domain
         warm_status = (data["warm_status"] if "warm_status" in data else row.get("warm_status") or "cold")
         warm_status = (str(warm_status) if warm_status is not None else "").strip() or "cold"
         try:

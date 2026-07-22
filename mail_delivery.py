@@ -9,6 +9,22 @@ from email.utils import formataddr, make_msgid
 from database import execute, fetchone, get_mail_setting, insert_returning_id, iso, utcnow
 
 
+def normalize_from_local(local: str, default: str = "info") -> str:
+    """Sadece local part — info@vipileti.com yazılırsa info olur (çift @ önlemi)."""
+    loc = (local or "").strip().lower() or default
+    if "@" in loc:
+        loc = loc.split("@", 1)[0].strip()
+    return loc or default
+
+
+def normalize_mail_domain(domain: str) -> str:
+    """Sadece host — info@vipileti.com yazılırsa vipileti.com olur."""
+    d = (domain or "").strip().lower()
+    if "@" in d:
+        d = d.split("@")[-1].strip()
+    return d.strip(".")
+
+
 def _domain_from(conn, domain_id):
     if not domain_id:
         return "noreply@localhost", "Mail"
@@ -16,8 +32,8 @@ def _domain_from(conn, domain_id):
     if not row:
         return "noreply@localhost", "Mail"
     row = dict(row)
-    local = (row.get("from_local") or "noreply").strip() or "noreply"
-    domain = (row.get("domain") or "localhost").strip()
+    local = normalize_from_local(row.get("from_local") or "noreply", default="noreply")
+    domain = normalize_mail_domain(row.get("domain") or "localhost") or "localhost"
     name = (row.get("from_name") or domain or "Mail").strip() or "Mail"
     return f"{local}@{domain}", name
 

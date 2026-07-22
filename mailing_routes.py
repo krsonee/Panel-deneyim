@@ -3981,11 +3981,22 @@ def create_mailing_blueprint(permission_required):
             if not row:
                 return jsonify({"error": "Domain bulunamadı."}), 404
             row = dict(row)
+            from mail_delivery import normalize_from_local, normalize_mail_domain
+
             from_name = (data.get("from_name") if "from_name" in data else row.get("from_name") or "").strip()
-            from_local = (data.get("from_local") if "from_local" in data else row.get("from_local") or "noreply").strip()
+            from_local = normalize_from_local(
+                data.get("from_local") if "from_local" in data else row.get("from_local") or "noreply",
+                default="noreply",
+            )
             status = (data.get("status") if "status" in data else row.get("status") or "pending").strip()
             dns_status = (data.get("dns_status") if "dns_status" in data else row.get("dns_status") or "unconfigured").strip()
             notes = (data.get("notes") if "notes" in data else row.get("notes") or "").strip()
+            if "@" in (row.get("domain") or ""):
+                execute(
+                    conn,
+                    "UPDATE mail_domains SET domain = ? WHERE id = ?",
+                    (normalize_mail_domain(row.get("domain")), domain_id),
+                )
             smtp_plain = row.get("smtp_password") or ""
             if smtp_plain and str(smtp_plain).startswith("enc:v1:"):
                 smtp_plain = ""

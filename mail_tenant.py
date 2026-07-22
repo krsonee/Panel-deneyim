@@ -364,15 +364,37 @@ def domain_has_smtp(row) -> bool:
 def heal_ready_domains(conn) -> int:
     """SMTP şifresi kayıtlı domainleri pending/unconfigured seed durumundan çıkar.
 
-    Test mail giden domainler hâlâ 'NS henüz yönlendirilmedi' diye görünmesin.
+    Ayrıca info@vipileti.com gibi yanlış yazılmış domain/from_local kayıtlarını düzelt
+    (gönderimde info@info@vipileti.com 535 üretmesin).
     """
+    from mail_delivery import normalize_from_local, normalize_mail_domain
+
     rows = fetchall(
         conn,
-        "SELECT id, status, dns_status, notes, smtp_password, smtp_password_enc FROM mail_domains",
+        """
+        SELECT id, domain, from_local, status, dns_status, notes,
+               smtp_password, smtp_password_enc
+        FROM mail_domains
+        """,
     ) or []
     fixed = 0
     for r in rows:
         d = dict(r)
+        # Çift @ / info@domain yazımı — SMTP olsun olmasın düzelt
+        raw_domain = (d.get("domain") or "").strip()
+        raw_local = (d.get("from_local") or "").strip()
+        clean_domain = normalize_mail_domain(raw_domain)
+        clean_local = normalize_from_local(raw_local or "info")
+        if clean_domain and (clean_domain != raw_domain.lower() or "@" in raw_local or raw_local != clean_local):
+            execute(
+                conn,
+                "UPDATE mail_domains SET domain = ?, from_local = ? WHERE id = ?",
+                (clean_domain, clean_local, d["id"]),
+            )
+            fixed += 1
+            d["domain"] = clean_domain
+            d["from_local"] = clean_local
+
         if not domain_has_smtp(d):
             continue
         status = (d.get("status") or "").strip().lower()
