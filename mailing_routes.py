@@ -107,26 +107,22 @@ def _extract_email_from_row(row):
     if not row:
         return ""
     for key in EMAIL_COLUMN_KEYS:
-        val = row.get(key)
-        if val:
-            email = str(val).strip().lower()
-            if EMAIL_RE.match(email):
-                return email
+        email = _normalize_email_candidate(row.get(key))
+        if email:
+            return email
     for key, val in row.items():
-        if _normalize_header_key(key) in EMAIL_HEADER_ALIASES and val:
-            email = str(val).strip().lower()
-            if EMAIL_RE.match(email):
+        if _normalize_header_key(key) in EMAIL_HEADER_ALIASES:
+            email = _normalize_email_candidate(val)
+            if email:
                 return email
     if len(row) == 1:
-        val = next(iter(row.values()), "")
-        email = str(val).strip().lower()
-        if EMAIL_RE.match(email):
+        email = _normalize_email_candidate(next(iter(row.values()), ""))
+        if email:
             return email
     for val in row.values():
-        if val:
-            email = str(val).strip().lower()
-            if EMAIL_RE.match(email):
-                return email
+        email = _normalize_email_candidate(val)
+        if email:
+            return email
     return ""
 
 
@@ -215,7 +211,26 @@ MAIL_IVR = ("mailing.ivr",)
 MAIL_REP = ("mailing.reports",)
 MAIL_SET = ("mailing.settings",)
 
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", re.I)
+_EMAIL_FIND_RE = re.compile(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", re.I)
+
+
+def _normalize_email_candidate(raw) -> str:
+    """Hücre/satırdan e-posta ayıkla — isim <mail>, mailto:, tırnak, trailing nokta."""
+    s = str(raw or "").replace("\ufeff", "").strip()
+    if not s:
+        return ""
+    s = re.sub(r"^mailto:\s*", "", s, flags=re.I)
+    angle = re.search(r"<\s*([^<>\s]+@[^<>\s]+)\s*>", s)
+    if angle:
+        s = angle.group(1)
+    s = s.strip().strip("\"'[]")
+    if re.search(r"[\s,;\t]", s) or ("@" in s and not EMAIL_RE.match(s.lower())):
+        m = _EMAIL_FIND_RE.search(s)
+        if m:
+            s = m.group(0)
+    s = s.lower().strip("<>").rstrip(".,;:")
+    return s if EMAIL_RE.match(s) else ""
 LINK_TOKEN_RE = re.compile(r"\{\{\s*link\s*:\s*([^}]+)\s*\}\}", re.I)
 HREF_LINK_TOKEN_RE = re.compile(
     r"href\s*=\s*([\"'])\s*\{\{\s*link\s*:\s*([^}]+)\s*\}\}\s*\1",
@@ -983,11 +998,13 @@ def _attach_campaign_recipients(
     return _insert_campaign_recipient_ids(conn, campaign_id, ids, now)
 
 
-def _bulk_upsert_contacts(conn, batch, tag, now):
+def _bulk_upsert_contacts(conn, batch, tag, now, tenant_id=None):
     """batch: [(email, name), ...]. Tek SQL ifadesiyle toplu insert/upsert.
     Döner: (upserted, inserted, updated)"""
     if not batch:
         return 0, 0, 0
+    from database import _table_columns
+
     tag = (tag or "").strip()
     tag_json_single = json.dumps([tag], ensure_ascii=False) if tag else "[]"
     tag_like_pattern = f'%"{tag}"%'
@@ -1001,24 +1018,49 @@ def _bulk_upsert_contacts(conn, batch, tag, now):
     existing_set = {str(r["email"]).lower() for r in existing_rows}
     inserted = sum(1 for email, _ in batch if email.lower() not in existing_set)
     updated = len(batch) - inserted
+    cols = _table_columns(conn, "mail_contacts") or set()
+    has_tenant = "tenant_id" in cols
+    tid = int(tenant_id) if tenant_id else None
+    if has_tenant and not tid:
+        tid = 1
     values_sql = []
     params = []
-    for email, name in batch:
-        values_sql.append("(?, ?, ?, ?, 0, '', ?, ?)")
-        params += [email, name, tag_json_single, "csv", now, now]
-    sql = f"""
-        INSERT INTO mail_contacts (email, name, tags, source, unsubscribed, notes, created_at, updated_at)
-        VALUES {",".join(values_sql)}
-        ON CONFLICT (email) DO UPDATE SET
-            name = CASE WHEN mail_contacts.name = '' THEN EXCLUDED.name ELSE mail_contacts.name END,
-            tags = CASE
-                WHEN ? = '' THEN mail_contacts.tags
-                WHEN mail_contacts.tags LIKE ? THEN mail_contacts.tags
-                WHEN mail_contacts.tags = '[]' THEN ?
-                ELSE substr(mail_contacts.tags, 1, length(mail_contacts.tags) - 1) || ',"' || ? || '"]'
-            END,
-            updated_at = EXCLUDED.updated_at
-    """
+    if has_tenant:
+        for email, name in batch:
+            values_sql.append("(?, ?, ?, ?, 0, '', ?, ?, ?)")
+            params += [email, name, tag_json_single, "csv", now, now, tid]
+        sql = f"""
+            INSERT INTO mail_contacts
+            (email, name, tags, source, unsubscribed, notes, created_at, updated_at, tenant_id)
+            VALUES {",".join(values_sql)}
+            ON CONFLICT (email) DO UPDATE SET
+                name = CASE WHEN mail_contacts.name = '' THEN EXCLUDED.name ELSE mail_contacts.name END,
+                tags = CASE
+                    WHEN ? = '' THEN mail_contacts.tags
+                    WHEN mail_contacts.tags LIKE ? THEN mail_contacts.tags
+                    WHEN mail_contacts.tags = '[]' THEN ?
+                    ELSE substr(mail_contacts.tags, 1, length(mail_contacts.tags) - 1) || ',"' || ? || '"]'
+                END,
+                tenant_id = COALESCE(mail_contacts.tenant_id, EXCLUDED.tenant_id),
+                updated_at = EXCLUDED.updated_at
+        """
+    else:
+        for email, name in batch:
+            values_sql.append("(?, ?, ?, ?, 0, '', ?, ?)")
+            params += [email, name, tag_json_single, "csv", now, now]
+        sql = f"""
+            INSERT INTO mail_contacts (email, name, tags, source, unsubscribed, notes, created_at, updated_at)
+            VALUES {",".join(values_sql)}
+            ON CONFLICT (email) DO UPDATE SET
+                name = CASE WHEN mail_contacts.name = '' THEN EXCLUDED.name ELSE mail_contacts.name END,
+                tags = CASE
+                    WHEN ? = '' THEN mail_contacts.tags
+                    WHEN mail_contacts.tags LIKE ? THEN mail_contacts.tags
+                    WHEN mail_contacts.tags = '[]' THEN ?
+                    ELSE substr(mail_contacts.tags, 1, length(mail_contacts.tags) - 1) || ',"' || ? || '"]'
+                END,
+                updated_at = EXCLUDED.updated_at
+        """
     params += [tag, tag_like_pattern, tag_json_single, tag]
     cur = execute(conn, sql, tuple(params))
     upserted = cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(batch)
@@ -1143,13 +1185,17 @@ def _iter_xlsx_rows(path):
         wb.close()
 
 
-def _run_import_job(job_id, path, tag):
+def _run_import_job(job_id, path, tag, tenant_id=None):
     """Arka plan thread: dosyayı satır satır okuyup IMPORT_CHUNK_SIZE'lık
     gruplar halinde bulk upsert eder — HTTP isteğinden bağımsız çalışır,
-    timeout'a düşmez. CSV ve XLSX (.xlsx) destekler."""
+    timeout'a düşmez. CSV ve XLSX (.xlsx) destekler.
+
+    tenant_id request context'ten thread'e taşınmalı (session thread'de yok).
+    """
     now = iso(utcnow())
     is_xlsx = os.path.splitext(path)[1].lower() in (".xlsx", ".xlsm")
     iter_fn = _iter_xlsx_rows if is_xlsx else _iter_csv_rows
+    last_batch_err = ""
     try:
         with closing(get_db()) as conn:
             existing = fetchone(conn, "SELECT status FROM mail_import_jobs WHERE id = ?", (job_id,))
@@ -1197,14 +1243,18 @@ def _run_import_job(job_id, path, tag):
                     continue
                 if len(batch) >= IMPORT_CHUNK_SIZE:
                     try:
-                        batch_upserted, batch_inserted, batch_updated = _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
+                        batch_upserted, batch_inserted, batch_updated = _bulk_upsert_contacts(
+                            conn, batch, tag, iso(utcnow()), tenant_id=tenant_id
+                        )
                         upserted += batch_upserted
                         inserted += batch_inserted
                         updated += batch_updated
                         conn.commit()
-                    except Exception:
+                    except Exception as batch_exc:
                         conn.rollback()
                         skipped += len(batch)
+                        last_batch_err = str(batch_exc)[:300]
+                        print(f"⚠️  mail import batch fail job={job_id}: {batch_exc}")
                     batch = []
                     execute(
                         conn,
@@ -1235,14 +1285,18 @@ def _run_import_job(job_id, path, tag):
                     conn.commit()
             if batch and not cancelled:
                 try:
-                    batch_upserted, batch_inserted, batch_updated = _bulk_upsert_contacts(conn, batch, tag, iso(utcnow()))
+                    batch_upserted, batch_inserted, batch_updated = _bulk_upsert_contacts(
+                        conn, batch, tag, iso(utcnow()), tenant_id=tenant_id
+                    )
                     upserted += batch_upserted
                     inserted += batch_inserted
                     updated += batch_updated
                     conn.commit()
-                except Exception:
+                except Exception as batch_exc:
                     conn.rollback()
                     skipped += len(batch)
+                    last_batch_err = str(batch_exc)[:300]
+                    print(f"⚠️  mail import batch fail job={job_id}: {batch_exc}")
 
             final_now = iso(utcnow())
             if cancelled:
@@ -1260,15 +1314,23 @@ def _run_import_job(job_id, path, tag):
                 return
             if tag:
                 _ensure_tag(conn, tag, final_now)
+            done_err = ""
+            if upserted == 0 and skipped > 0 and last_batch_err:
+                done_err = f"Kayıt yazılamadı: {last_batch_err}"
+            elif upserted == 0 and skipped > 0 and processed > 0:
+                done_err = (
+                    "Hiç geçerli e-posta yazılamadı. Dosyada e-posta sütunu / satır formatını kontrol et "
+                    "(başlık: email). Aktif tenant ile aynı firmaya yazılır."
+                )
             execute(
                 conn,
                 """
                 UPDATE mail_import_jobs
                 SET status = 'done', total_rows = ?, processed_rows = ?, upserted_count = ?,
-                    inserted_count = ?, updated_count = ?, skipped_count = ?, updated_at = ?
+                    inserted_count = ?, updated_count = ?, skipped_count = ?, error = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (processed, processed, upserted, inserted, updated, skipped, final_now, job_id),
+                (processed, processed, upserted, inserted, updated, skipped, done_err, final_now, job_id),
             )
             conn.commit()
             _invalidate_mail_stats_cache()
@@ -2401,8 +2463,89 @@ def create_mailing_blueprint(permission_required):
             except Exception:
                 pass
             return jsonify({"error": err}), 500
-        threading.Thread(target=_run_import_job, args=(job_id, path, tag), daemon=True).start()
-        return jsonify({"job_id": job_id, "status": "pending"}), 202
+        try:
+            from mail_tenant import current_tenant_id
+
+            _tid = current_tenant_id()
+        except Exception:
+            _tid = None
+        threading.Thread(
+            target=_run_import_job,
+            args=(job_id, path, tag, _tid),
+            daemon=True,
+        ).start()
+        return jsonify({"job_id": job_id, "status": "pending", "tenant_id": _tid}), 202
+
+    @bp.route("/contacts/import/emails", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def import_emails_paste():
+        """Yapıştırılan e-posta listesi — File/CSV olmadan doğrudan upsert (küçük-orta listeler)."""
+        data = request.get_json(silent=True) or {}
+        raw_list = data.get("emails")
+        if isinstance(raw_list, str):
+            raw_list = re.split(r"[\s,;]+", raw_list)
+        if not isinstance(raw_list, list):
+            return jsonify({"error": "emails listesi gerekli."}), 400
+        tag = (data.get("tag") or "").strip()
+        cleaned = []
+        seen = set()
+        invalid = 0
+        for raw in raw_list:
+            em = _normalize_email_candidate(raw)
+            if not em:
+                if str(raw or "").strip():
+                    invalid += 1
+                continue
+            if em in seen:
+                continue
+            seen.add(em)
+            cleaned.append(em)
+        if not cleaned:
+            return jsonify({
+                "error": "Geçerli e-posta bulunamadı.",
+                "created": 0,
+                "updated": 0,
+                "skipped": invalid,
+            }), 400
+        # Çok büyük yapıştırmada async job'a düş (dosyasız — temp csv)
+        if len(cleaned) > 20000:
+            return jsonify({
+                "error": "20.000 üzeri için CSV dosyası yükle (daha stabil).",
+                "count": len(cleaned),
+            }), 400
+        now = iso(utcnow())
+        try:
+            from mail_tenant import current_tenant_id
+
+            tid = current_tenant_id()
+        except Exception:
+            tid = None
+        batch = [(em, "") for em in cleaned]
+        with closing(get_db()) as conn:
+            try:
+                upserted, inserted, updated = _bulk_upsert_contacts(
+                    conn, batch, tag, now, tenant_id=tid
+                )
+                if tag:
+                    _ensure_tag(conn, tag, now)
+                conn.commit()
+                _invalidate_mail_stats_cache()
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                return jsonify({"error": f"Kayıt hatası: {str(exc)[:300]}"}), 500
+        return jsonify({
+            "ok": True,
+            "created": inserted,
+            "updated": updated,
+            "upserted": upserted,
+            "skipped": invalid,
+            "tenant_id": tid,
+            "message": f"{inserted} yeni · {updated} güncellendi"
+            + (f" · {invalid} atlandı" if invalid else ""),
+        })
 
     @bp.route("/contacts/import/status/<int:job_id>", methods=["GET"])
     @mail_perm(*MAIL_CRM)

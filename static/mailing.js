@@ -365,11 +365,32 @@
     var csv = "email\n" + tokens.join("\n");
     var blob = new Blob([csv], { type: "text/csv" });
     var fname = (labelPrefix || "yapistirilan-liste") + "-" + Date.now() + ".csv";
-    var file = new File([blob], fname, { type: "text/csv" });
+    var file = null;
+    try {
+      if (typeof File !== "undefined") {
+        file = new File([blob], fname, { type: "text/csv" });
+      }
+    } catch (e1) { file = null; }
+    if (!file) {
+      try {
+        blob.name = fname;
+        file = blob;
+      } catch (e2) {
+        return { count: tokens.length, error: "Tarayıcı dosya oluşturamadı — Kuyruğa ekle ile dene", invalid: info.invalid.length };
+      }
+    }
     var err = mailValidateImportFile(file);
     if (err) return { count: tokens.length, error: err, invalid: info.invalid.length };
     mailEnqueueImport(file, tag);
     return { count: tokens.length, error: null, invalid: info.invalid.length };
+  }
+
+  function mailPasteEmailsDirect(emails, tag) {
+    return mailApi("/api/mailing/contacts/import/emails", {
+      method: "POST",
+      body: { emails: emails, tag: tag || "" },
+      timeoutMs: 120000
+    });
   }
 
   function mailReadDismissedImportJobs() {
@@ -1752,13 +1773,19 @@
           var doneStats = (j.inserted_count != null && j.updated_count != null)
             ? (fmtNum(j.inserted_count) + " yeni + " + fmtNum(j.updated_count) + " güncellendi")
             : (fmtNum(j.upserted_count) + " kontak işlendi");
-          mailToast(prefix + "içe aktarma tamam · " + doneStats + " · " + j.skipped_count + " geçersiz e-posta atlandı");
+          var jobErr = (j.error || "").trim();
+          mailToast(prefix + "içe aktarma tamam · " + doneStats + " · " + j.skipped_count + " geçersiz/atlanan" +
+            (jobErr ? (" — " + jobErr) : ""));
           mailSetImportDashboard({
-            phase: "done",
-            title: (fileLabel || j.filename || "Dosya") + " tamamlandı",
-            sub: doneStats + " · " + fmtNum(j.skipped_count) + " geçersiz satır atlandı",
+            phase: (Number(j.upserted_count || 0) === 0 && Number(j.skipped_count || 0) > 0) ? "error" : "done",
+            title: (fileLabel || j.filename || "Dosya") +
+              ((Number(j.upserted_count || 0) === 0 && Number(j.skipped_count || 0) > 0) ? " — kayıt yok" : " tamamlandı"),
+            sub: doneStats + " · " + fmtNum(j.skipped_count) + " atlanan" +
+              (jobErr ? (" · " + jobErr) : ""),
             showProgress: true,
-            showDismiss: true
+            showDismiss: true,
+            showError: !!(jobErr && Number(j.upserted_count || 0) === 0),
+            errorText: jobErr || ""
           });
           if (progBar) { progBar.style.width = "100%"; mailBulkResetBar(); }
           mailClearImportSession();
@@ -2818,14 +2845,27 @@
         }
         return;
       }
-      var result = mailQueueTextAsFile(info.valid.join("\n"), tag, "yapistirilan-liste");
-      if (!pasteStatusEl) return;
-      if (result.error) {
-        pasteStatusEl.textContent = "Hata: " + result.error + " (algılanan " + fmtNum(result.count) + " e-posta işlenmedi)";
-      } else {
-        pasteStatusEl.textContent = fmtNum(result.count) + " geçerli e-posta kuyruğa eklendi" +
-          (info.invalid.length ? (" · " + fmtNum(info.invalid.length) + " hatalı atlandı") : "");
+      if (pasteStatusEl) {
+        pasteStatusEl.textContent = fmtNum(info.valid.length) + " e-posta kaydediliyor… (aktif tenant’a)";
       }
+      // Doğrudan API — File/CSV kuyruğuna bağımlı değil (daha güvenilir)
+      mailPasteEmailsDirect(info.valid, tag).then(function (res) {
+        if (!res || !res.ok) {
+          var err = (res && res.data && res.data.error) || "Kayıt başarısız";
+          if (pasteStatusEl) pasteStatusEl.textContent = "Hata: " + err;
+          mailToast(err);
+          return;
+        }
+        var msg = (res.data && res.data.message) ||
+          (fmtNum(res.data.created) + " yeni · " + fmtNum(res.data.updated) + " güncellendi");
+        if (info.invalid.length) msg += " · " + fmtNum(info.invalid.length) + " hatalı atlandı";
+        if (pasteStatusEl) pasteStatusEl.textContent = msg;
+        mailToast(msg);
+        if (typeof mailLoadContacts === "function") mailLoadContacts();
+        else if (typeof mailLoadCrm === "function") mailLoadCrm();
+      }).catch(function () {
+        if (pasteStatusEl) pasteStatusEl.textContent = "Bağlantı hatası — tekrar dene";
+      });
     }
     if (pasteBox) {
       pasteBox.addEventListener("input", function () { mailUpdatePasteMeta(pasteBox.value); });
