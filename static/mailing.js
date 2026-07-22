@@ -718,11 +718,39 @@
     });
   }
 
+  function mailTabToNav(tab) {
+    if (tab === "crm" || tab === "smartico" || tab === "relations") return "contacts";
+    return tab || "dashboard";
+  }
+
+  function mailSyncSideNav(tab) {
+    var nav = mailTabToNav(tab);
+    document.querySelectorAll("#mm-side-nav [data-mm-nav]").forEach(function (btn) {
+      var key = btn.getAttribute("data-mm-nav");
+      // Platform items (plat-*) sadece mmNavigate ile yönetilir
+      if (key && key.indexOf("plat-") === 0) {
+        btn.classList.remove("active");
+        return;
+      }
+      btn.classList.toggle("active", key === nav);
+    });
+    var el = document.querySelector('#mm-side-nav [data-mm-nav="' + nav + '"]');
+    if (el) {
+      var t = document.getElementById("mm-page-title");
+      var s = document.getElementById("mm-page-sub");
+      if (t) t.textContent = el.getAttribute("data-title") || "";
+      if (s) s.textContent = el.getAttribute("data-sub") || "";
+    }
+  }
+
   function mailSyncContactsSubnav(tab) {
     var sub = document.getElementById("mail-contacts-subnav");
     var contactsTabs = { crm: 1, smartico: 1, relations: 1 };
     var show = !!contactsTabs[tab];
-    if (sub) sub.hidden = !show;
+    if (sub) {
+      if (show) sub.removeAttribute("hidden");
+      else sub.setAttribute("hidden", "");
+    }
     if (show) {
       mailContactsHubTab = tab;
       document.querySelectorAll("#mail-contacts-subnav [data-contacts-tab]").forEach(function (btn) {
@@ -739,13 +767,21 @@
     document.querySelectorAll("#mail-tabs .acc-tab").forEach(function (btn) {
       btn.classList.toggle("active", btn.getAttribute("data-mail-tab") === mailActiveTab);
     });
-    document.querySelectorAll("#module-mailing-panel [data-mail-pane]").forEach(function (pane) {
+    document.querySelectorAll("#module-mailing-panel .acc-pane[data-mail-pane]").forEach(function (pane) {
       var on = pane.getAttribute("data-mail-pane") === mailActiveTab;
       pane.classList.toggle("active", on);
-      pane.hidden = !on;
+      if (on) pane.removeAttribute("hidden");
+      else pane.setAttribute("hidden", "");
     });
     mailSyncContactsSubnav(mailActiveTab);
+    mailSyncSideNav(mailActiveTab);
+    try {
+      var mainInner = document.querySelector(".main-inner");
+      if (mainInner) mainInner.scrollTop = 0;
+      window.scrollTo(0, 0);
+    } catch (e) { /* ignore */ }
     mailLoadTab(mailActiveTab);
+    return mailActiveTab;
   }
 
   function mailNavigate(nav) {
@@ -759,11 +795,14 @@
       settings: "settings"
     };
     var tab = map[nav] || nav;
-    if (nav === "contacts") {
-      var sub = document.getElementById("mail-contacts-subnav");
-      if (sub) sub.hidden = false;
+    if (nav === "contacts" && !mailHas(MAIL_TAB_PERMS[tab])) {
+      // hub içinde izinli ilk alt sekme
+      var hubOrder = ["crm", "smartico", "relations"];
+      for (var i = 0; i < hubOrder.length; i++) {
+        if (mailHas(MAIL_TAB_PERMS[hubOrder[i]])) { tab = hubOrder[i]; break; }
+      }
     }
-    switchMailTab(tab);
+    return switchMailTab(tab);
   }
 
   function mailLoadTab(tab) {
@@ -2709,7 +2748,13 @@
       contactsSub.addEventListener("click", function (e) {
         var btn = e.target.closest("[data-contacts-tab]");
         if (!btn) return;
+        e.preventDefault();
         mailContactsHubTab = btn.getAttribute("data-contacts-tab") || "crm";
+        // mailing view açık kalsın; sidebar Kontak'ta kalsın
+        var mailingView = document.getElementById("mm-view-mailing");
+        var platView = document.getElementById("mm-view-platform");
+        if (mailingView) mailingView.hidden = false;
+        if (platView) platView.hidden = true;
         switchMailTab(mailContactsHubTab);
       });
     }
@@ -3849,8 +3894,19 @@
     ensureTenant: mailEnsureTenant,
     navigate: mailNavigate,
     switchTab: switchMailTab,
+    _bootImports: function () {
+      mailRefreshImportStatus({ force: true });
+    },
+    refreshImports: function () {
+      mailRefreshImportStatus({ force: true });
+    },
     onShow: function () {
       if (!mailLoaded) this.init();
+      // Standalone Mikromail: sekme geçişini sidebar (mmNavigate) yönetir — burada restore etme
+      if (window.MAIL_STANDALONE) {
+        mailRefreshImportStatus({ force: true });
+        return;
+      }
       var tab = "dashboard";
       try { tab = localStorage.getItem(MAIL_TAB_STORAGE_KEY) || "dashboard"; } catch (e) { /* ignore */ }
       switchMailTab(tab);

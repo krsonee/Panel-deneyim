@@ -54,12 +54,16 @@ body.mm-nav-collapsed .main { margin-left: var(--sidebar-w-collapsed); }
 
 .nav-item {
   width: 100%; border: none; background: none; cursor: pointer; font: inherit; text-align: left;
+  position: relative; z-index: 1;
 }
 .nav-item.active {
   background: var(--accent-soft); color: #7dd3fc; border-color: rgba(56, 189, 248, 0.35);
 }
-.nav-item .icon { width: 1.35rem; display: inline-flex; justify-content: center; }
-.nav-item svg.mm-nav-ico { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.75; }
+.nav-item .icon { width: 1.35rem; display: inline-flex; justify-content: center; pointer-events: none; }
+.nav-item .nav-item-text { pointer-events: none; }
+.nav-item svg.mm-nav-ico {
+  width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.75; pointer-events: none;
+}
 
 /* —— Header —— */
 .mm-header {
@@ -93,9 +97,21 @@ body.mm-nav-collapsed .main { margin-left: var(--sidebar-w-collapsed); }
 #module-mailing-panel > .topbar { display: none !important; }
 .mm-tenant-bar { display: none !important; }
 
+/* Pane visibility — [hidden] / .active çakışmasını kesin çöz */
+#module-mailing-panel .acc-pane,
+#module-mailing-panel [data-mail-pane] {
+  display: none !important;
+}
+#module-mailing-panel .acc-pane.active,
+#module-mailing-panel [data-mail-pane].active {
+  display: block !important;
+}
+
 /* —— Platform panes —— */
-.mm-plat-pane { display: none; }
-.mm-plat-pane.active { display: block; }
+.mm-plat-pane { display: none !important; }
+.mm-plat-pane.active { display: block !important; }
+#mm-view-mailing[hidden],
+#mm-view-platform[hidden] { display: none !important; }
 
 /* —— Contacts hub subnav —— */
 .mm-subnav {
@@ -103,6 +119,7 @@ body.mm-nav-collapsed .main { margin-left: var(--sidebar-w-collapsed); }
   margin-bottom: 1rem; padding: 0.35rem;
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
 }
+.mm-subnav[hidden] { display: none !important; }
 .mm-subnav-btn {
   padding: 0.45rem 0.85rem; border-radius: 8px; border: 1px solid transparent;
   background: transparent; color: var(--muted); font-size: 0.75rem; font-weight: 600; cursor: pointer;
@@ -130,30 +147,41 @@ input:focus, select:focus, textarea:focus {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
   border-radius: 8px; font-weight: 600; border: 1px solid transparent;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
 }
 .btn-primary, .btn.btn-primary {
-  background: #0ea5e9; border-color: #0284c7; color: #fff;
+  background: #0ea5e9 !important; border-color: #0284c7 !important; color: #fff !important;
 }
-.btn-primary:hover { background: #38bdf8; }
-.btn-secondary, .btn:not(.btn-primary):not(.btn-danger):not(.btn-icon) {
-  background: var(--btn-secondary); border-color: #334155; color: var(--text);
+.btn-primary:hover, .btn.btn-primary:hover { background: #38bdf8 !important; }
+.btn-secondary, .btn.btn-secondary {
+  background: var(--btn-secondary) !important; border-color: #334155 !important; color: var(--text) !important;
 }
-.btn-secondary:hover, .btn:not(.btn-primary):not(.btn-danger):hover {
-  background: #334155;
-}
+.btn-secondary:hover, .btn.btn-secondary:hover { background: #334155 !important; }
 .btn-danger, .btn.btn-danger {
-  background: rgba(244, 63, 94, 0.15); border-color: rgba(244, 63, 94, 0.35); color: #fb7185;
+  background: rgba(244, 63, 94, 0.15) !important; border-color: rgba(244, 63, 94, 0.35) !important; color: #fb7185 !important;
 }
-.btn-danger:hover { background: rgba(244, 63, 94, 0.28); }
+.btn-danger:hover, .btn.btn-danger:hover { background: rgba(244, 63, 94, 0.28) !important; }
 .btn-icon {
   width: 32px; height: 32px; padding: 0; border-radius: 8px;
   background: var(--btn-secondary); border: 1px solid #334155; color: var(--muted);
 }
 .btn-icon:hover { color: var(--text); border-color: #475569; }
-.btn-icon.btn-danger { color: #fb7185; border-color: rgba(244, 63, 94, 0.35); background: rgba(244, 63, 94, 0.12); }
+.btn-icon.btn-primary {
+  background: #0ea5e9 !important; border-color: #0284c7 !important; color: #fff !important;
+}
+.btn-icon.btn-danger {
+  color: #fb7185 !important; border-color: rgba(244, 63, 94, 0.35) !important;
+  background: rgba(244, 63, 94, 0.12) !important;
+}
 .btn-icon svg, .mm-ico {
   width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8;
-  stroke-linecap: round; stroke-linejoin: round;
+  stroke-linecap: round; stroke-linejoin: round; pointer-events: none;
+}
+/* Varsayılan (sınıfsız) btn = secondary */
+.btn:not(.btn-primary):not(.btn-danger):not(.btn-secondary):not(.btn-icon) {
+  background: var(--btn-secondary); border-color: #334155; color: var(--text);
 }
 
 /* —— Status pills —— */

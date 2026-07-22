@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Mikromail</title>
   <meta name="theme-color" content="#090D16">
-  <link rel="stylesheet" href="/static/mailing_shell.css?v=20260722mm1">
-  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260722mm1">
+  <link rel="stylesheet" href="/static/mailing_shell.css?v=20260722mm2">
+  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260722mm2">
   <style>
     :root { --accent: #38bdf8; --accent-soft: rgba(56,189,248,0.14); --accent-ink: #041018; }
     #module-mailing-panel { display:block !important; }
@@ -239,8 +239,8 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260722mm1"></script>
-  <script src="/static/mailing_platform.js?v=20260722mm1"></script>
+  <script src="/static/mailing.js?v=20260722mm2"></script>
+  <script src="/static/mailing_platform.js?v=20260722mm2"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");
@@ -292,28 +292,34 @@
 
       window.mmNavigate = function (nav, btn) {
         nav = nav || "dashboard";
-        setNavActive(nav);
-        if (btn) setHeader(btn.getAttribute("data-title"), btn.getAttribute("data-sub"));
-        else {
-          var el = document.querySelector('#mm-side-nav [data-mm-nav="' + nav + '"]');
-          if (el) setHeader(el.getAttribute("data-title"), el.getAttribute("data-sub"));
-        }
 
         if (nav.indexOf("plat-") === 0) {
+          setNavActive(nav);
+          if (btn) setHeader(btn.getAttribute("data-title"), btn.getAttribute("data-sub"));
+          else {
+            var pel = document.querySelector('#mm-side-nav [data-mm-nav="' + nav + '"]');
+            if (pel) setHeader(pel.getAttribute("data-title"), pel.getAttribute("data-sub"));
+          }
           showPlatform(nav.replace("plat-", ""));
           return;
         }
+
         showMailing();
         if (window.MakroMailing && window.MakroMailing.navigate) {
           window.MakroMailing.navigate(nav);
         } else if (window.MakroMailing && window.MakroMailing.switchTab) {
           var map = { contacts: "crm", dashboard: "dashboard", templates: "templates", campaigns: "campaigns", ivr: "ivr", reports: "reports", settings: "settings" };
           window.MakroMailing.switchTab(map[nav] || nav);
+        } else {
+          setNavActive(nav);
+          if (btn) setHeader(btn.getAttribute("data-title"), btn.getAttribute("data-sub"));
         }
       };
 
       document.querySelectorAll("#mm-side-nav [data-mm-nav]").forEach(function (btn) {
-        btn.addEventListener("click", function () {
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
           window.mmNavigate(btn.getAttribute("data-mm-nav"), btn);
         });
       });
@@ -329,7 +335,15 @@
             ? window.MakroMailing.ensureTenant()
             : Promise.resolve());
           ready.finally(function () {
-            window.MakroMailing.onShow && window.MakroMailing.onShow();
+            // Import durumunu yükle; sekmeyi tek yerden (mmNavigate) aç — çift geçiş olmasın
+            if (window.MakroMailing.refreshImports) {
+              window.MakroMailing.refreshImports();
+            } else if (window.MakroMailing.onShow) {
+              /* onShow eski sekme restore eder — standalone'da sadece import poll */
+            }
+            try {
+              if (window.MakroMailing._bootImports) window.MakroMailing._bootImports();
+            } catch (e2) { /* ignore */ }
             window.mmNavigate("dashboard");
           });
         } catch (e) { console.error(e); }
