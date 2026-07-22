@@ -1989,9 +1989,9 @@
 
   function mailLogoPreviewUrl() {
     try {
-      return (window.location.origin || "") + "/static/mailing/makrobet-logo.png";
+      return (window.location.origin || "") + "/static/mailing/makrobet-logo-black.png";
     } catch (e) {
-      return "/static/mailing/makrobet-logo.png";
+      return "/static/mailing/makrobet-logo-black.png";
     }
   }
 

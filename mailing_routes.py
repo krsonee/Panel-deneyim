@@ -339,9 +339,9 @@ DEFAULT_GREETING_NAME = "Değerli üye"
 
 
 def _mail_logo_url():
-    """Şablonlardaki __MAIL_LOGO__ için absolute URL (makrobet.com CDN kopyası, panel static)."""
+    """Şablonlardaki __MAIL_LOGO__ için absolute URL (panel static — kompakt logo)."""
     base = _public_base()
-    path = "/static/mailing/makrobet-logo.png"
+    path = "/static/mailing/makrobet-logo-black.png"
     return (base + path) if base else path
 
 
@@ -2028,6 +2028,15 @@ def create_mailing_blueprint(permission_required):
                     print(f"✉️  wiped mail templates: deleted={wiped.get('deleted')}")
             except Exception as wipe_exc:
                 print(f"⚠️  mail template wipe: {wipe_exc}")
+            try:
+                from mail_template_seeds_v2026 import seed_makrobet_2026_templates
+                _v26 = seed_makrobet_2026_templates(conn, overwrite=True)
+                print(
+                    f"✉️  seeded Makrobet 2026 templates: "
+                    f"added={_v26.get('added')} updated={_v26.get('updated')}"
+                )
+            except Exception as seed_exc:
+                print(f"⚠️  mail template seed v2026: {seed_exc}")
             try:
                 from mail_template_seeds import seed_makrobet_mail_templates
                 from mail_template_seeds_bizzo import seed_bizzo_mail_templates
