@@ -2635,6 +2635,11 @@ def seed_mailing_defaults(conn):
         seed_makrobet_mail_templates(conn)
     except Exception as exc:
         print(f"⚠️  makrobet mail template seed: {exc}")
+    try:
+        from mail_template_seeds_bizzo import seed_bizzo_mail_templates
+        seed_bizzo_mail_templates(conn)
+    except Exception as exc:
+        print(f"⚠️  bizzo mail template seed: {exc}")
     # Default IVR rule if none
     rule_count = scalar(conn, "SELECT COUNT(*) FROM mail_ivr_rules") or 0
     if not rule_count:

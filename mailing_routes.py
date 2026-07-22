@@ -330,6 +330,12 @@ def _mail_logo_url():
     return (base + path) if base else path
 
 
+def _bizzo_logo_url():
+    base = _public_base()
+    path = "/static/mailing/bizzo-logo.png"
+    return (base + path) if base else path
+
+
 def _spam_tip_banner_html():
     """Spam tip şeridi — seed şablonları + elle HTML’ler için ortak."""
     gold = "#ffd400"
@@ -365,6 +371,8 @@ def _apply_mail_assets(text):
     text = text or ""
     if "__MAIL_LOGO__" in text:
         text = text.replace("__MAIL_LOGO__", _mail_logo_url())
+    if "__BIZZO_LOGO__" in text:
+        text = text.replace("__BIZZO_LOGO__", _bizzo_logo_url())
     # HTML e-postaysa spam tip şeridini garanti et
     if "<" in text and ("<html" in text.lower() or "<body" in text.lower() or "<table" in text.lower()):
         text = _ensure_spam_tip(text)
@@ -1840,10 +1848,15 @@ def create_mailing_blueprint(permission_required):
                 print(f"⚠️  mail tenant schema: {ten_exc}")
             try:
                 from mail_template_seeds import seed_makrobet_mail_templates
+                from mail_template_seeds_bizzo import seed_bizzo_mail_templates
                 _seed_res = seed_makrobet_mail_templates(conn)
+                _bizzo_res = seed_bizzo_mail_templates(conn)
                 n = (_seed_res.get("added", 0) + _seed_res.get("updated", 0)) if isinstance(_seed_res, dict) else int(_seed_res or 0)
+                nb = (_bizzo_res.get("added", 0) + _bizzo_res.get("updated", 0)) if isinstance(_bizzo_res, dict) else int(_bizzo_res or 0)
                 if n:
                     print(f"✉️  seeded {n} Makrobet mail templates")
+                if nb:
+                    print(f"✉️  seeded {nb} Bizzo mail templates")
             except Exception as seed_exc:
                 print(f"⚠️  mail template seed: {seed_exc}")
     except Exception as exc:
@@ -2925,20 +2938,24 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/templates/reseed", methods=["POST"])
     @mail_perm(*MAIL_TPL)
     def reseed_templates():
-        """Makrobet HTML şablonlarını site (promosyonlar) stiline günceller / eksikleri ekler."""
+        """Makrobet + Bizzo HTML şablonlarını günceller / eksikleri ekler."""
         from mail_template_seeds import seed_makrobet_mail_templates
+        from mail_template_seeds_bizzo import seed_bizzo_mail_templates
 
         with closing(get_db()) as conn:
             result = seed_makrobet_mail_templates(conn, force_missing=True, overwrite=True)
+            bizzo = seed_bizzo_mail_templates(conn, force_missing=True, overwrite=True)
         if not isinstance(result, dict):
             result = {"added": int(result or 0), "updated": 0}
-        added = int(result.get("added") or 0)
-        updated = int(result.get("updated") or 0)
+        if not isinstance(bizzo, dict):
+            bizzo = {"added": int(bizzo or 0), "updated": 0}
+        added = int(result.get("added") or 0) + int(bizzo.get("added") or 0)
+        updated = int(result.get("updated") or 0) + int(bizzo.get("updated") or 0)
         if added or updated:
-            msg = f"{updated} HTML güncellendi · {added} yeni eklendi (Makrobet promosyon stili)"
+            msg = f"{updated} HTML güncellendi · {added} yeni (Makrobet + Bizzo)"
         else:
             msg = "Değişiklik yok"
-        return jsonify({"ok": True, "added": added, "updated": updated, "message": msg})
+        return jsonify({"ok": True, "added": added, "updated": updated, "bizzo": bizzo, "message": msg})
 
     @bp.route("/templates", methods=["POST"])
     @mail_perm(*MAIL_TPL)

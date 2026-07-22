@@ -1835,6 +1835,14 @@
     }
   }
 
+  function bizzoLogoPreviewUrl() {
+    try {
+      return (window.location.origin || "") + "/static/mailing/bizzo-logo.png";
+    } catch (e) {
+      return "/static/mailing/bizzo-logo.png";
+    }
+  }
+
   function mailSpamTipBannerHtml() {
     return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#050505;">' +
       '<tr><td align="center" style="padding:11px 18px;font-family:Urbanist,Arial,Helvetica,sans-serif;' +
@@ -1863,8 +1871,9 @@
     function linkUrl(raw) {
       return String(raw || "").trim().replace(/^sc\s*:\s*/i, "");
     }
-    // Panelde barındırılan Makrobet logosu (CDN hotlink / iframe’de kırılıyordu)
+    // Panelde barındırılan logolar
     s = s.replace(/__MAIL_LOGO__/g, mailLogoPreviewUrl());
+    s = s.replace(/__BIZZO_LOGO__/g, bizzoLogoPreviewUrl());
     s = ensureMailSpamTip(s);
     // href="{{link:...}}" → sadece URL; aksi halde butonlar patlıyor
     s = s.replace(/href\s*=\s*(["'])\s*\{\{\s*link\s*:\s*([^}]+)\s*\}\}\s*\1/gi, function (_m, q, raw) {
