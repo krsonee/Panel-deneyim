@@ -34,8 +34,9 @@
   }
 
   function mmIconBtn(cls, title, icon, extra) {
-    return '<button type="button" class="btn btn-icon ' + cls + '" title="' + esc(title) + '" aria-label="' +
-      esc(title) + '" ' + (extra || "") + ">" + mmIcon(icon) + "</button>";
+    return '<button type="button" class="btn btn-icon mm-tip-btn ' + cls + '" data-tip="' + esc(title) +
+      '" title="' + esc(title) + '" aria-label="' + esc(title) + '" ' + (extra || "") + ">" +
+      mmIcon(icon) + "</button>";
   }
 
   function mmStatusBadge(status) {
@@ -44,7 +45,7 @@
     if (s === "warm" || s === "active" || s === "ok" || s === "done") cls = "mm-badge-ok";
     else if (s === "cold") cls = "mm-badge-info";
     else if (s === "warming" || s === "pending" || s === "queued") cls = "mm-badge-warn";
-    else if (s === "burned" || s === "suspended" || s === "error" || s === "failed" || s === "unconfigured") cls = "mm-badge-danger";
+    else if (s === "burned" || s === "suspended" || s === "error" || s === "failed" || s === "unconfigured" || s === "deleted") cls = "mm-badge-danger";
     else if (s === "paused") cls = "mm-badge-muted";
     return '<span class="mm-badge ' + cls + '">' + esc(status || "—") + "</span>";
   }
@@ -67,27 +68,84 @@
       "<span>" + esc(n) + "</span></span>";
   }
 
+  function openModal(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add("open");
+    el.setAttribute("aria-hidden", "false");
+  }
+
+  function closeModal(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove("open");
+    el.setAttribute("aria-hidden", "true");
+  }
+
   function loadTenantSelect(tenants) {
     var sel = document.getElementById("mm-tenant-select");
     if (!sel) return;
     var cur = sel.value || (window.MAIL_TENANT_ID ? String(window.MAIL_TENANT_ID) : "");
+    var active = (tenants || []).filter(function (t) { return t.status !== "deleted"; });
     sel.innerHTML = '<option value="">— seç / impersonate —</option>' +
-      (tenants || []).map(function (t) {
+      active.map(function (t) {
         return '<option value="' + esc(String(t.id)) + '">' +
           esc(t.slug) + " — " + esc(t.name) + " (" + esc(t.status) + ")</option>";
       }).join("");
     if (cur) sel.value = cur;
-    if (!sel.value && tenants && tenants.length) {
-      var makro = tenants.find(function (t) { return t.slug === "makro"; }) || tenants[0];
+    if (!sel.value && active.length) {
+      var makro = active.find(function (t) { return t.slug === "makro"; }) || active[0];
       if (makro) {
         sel.value = String(makro.id);
         api("/api/mail-auth/select-tenant", { method: "POST", body: { tenant_id: Number(makro.id) } })
           .then(function () {
             window.MAIL_TENANT_ID = Number(makro.id);
-            var hint = document.getElementById("mm-tenant-hint");
-            if (hint) hint.textContent = "Tenant #" + makro.id + " (" + makro.slug + ") otomatik seçildi";
           });
       }
+    }
+  }
+
+  function fillAllocTenantSelect(tenants) {
+    var sel = document.getElementById("mm-alloc-tenant");
+    if (!sel) return;
+    var active = (tenants || []).filter(function (t) { return t.status === "active" || t.status === "suspended"; });
+    sel.innerHTML = active.map(function (t) {
+      return '<option value="' + esc(String(t.id)) + '">#' + esc(t.id) + " · " +
+        esc(t.slug) + " — " + esc(t.name) + "</option>";
+    }).join("") || '<option value="">Tenant yok</option>';
+  }
+
+  var _editTenantId = null;
+
+  function setTenantFormMode(editId, t) {
+    _editTenantId = editId || null;
+    var form = document.getElementById("mm-tenant-form");
+    var btn = document.getElementById("mm-t-submit");
+    var cancel = document.getElementById("mm-t-cancel-edit");
+    var slug = document.getElementById("mm-t-slug");
+    var user = document.getElementById("mm-t-user");
+    var pass = document.getElementById("mm-t-pass");
+    var hint = document.getElementById("mm-tenant-create-hint");
+    if (!form) return;
+    if (editId && t) {
+      document.getElementById("mm-t-name").value = t.name || "";
+      if (slug) { slug.value = t.slug || ""; slug.readOnly = true; }
+      document.getElementById("mm-t-cap").value = t.max_sends_day != null ? t.max_sends_day : 50000;
+      if (user) { user.value = ""; user.required = false; user.placeholder = "değiştirme"; }
+      if (pass) { pass.value = ""; pass.required = false; pass.placeholder = "değiştirme"; }
+      if (btn) btn.textContent = "Firmayı kaydet";
+      if (cancel) cancel.hidden = false;
+      if (hint) hint.textContent = "Düzenleniyor: #" + t.id + " " + (t.slug || "");
+      form.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      form.reset();
+      if (slug) slug.readOnly = false;
+      if (user) { user.required = true; user.value = "admin"; user.placeholder = ""; }
+      if (pass) { pass.required = true; pass.placeholder = ""; }
+      if (btn) btn.textContent = "Oluştur";
+      if (cancel) cancel.hidden = true;
+      if (hint) hint.textContent = "";
+      _editTenantId = null;
     }
   }
 
@@ -99,13 +157,16 @@
         return;
       }
       var rows = res.data.tenants || [];
+      window._mmTenantsCache = rows;
       loadTenantSelect(rows);
+      fillAllocTenantSelect(rows);
       if (!tbody) return;
-      if (!rows.length) {
+      var visible = rows.filter(function (t) { return t.status !== "deleted"; });
+      if (!visible.length) {
         tbody.innerHTML = '<tr><td colspan="7" class="empty">Tenant yok</td></tr>';
         return;
       }
-      tbody.innerHTML = rows.map(function (t) {
+      tbody.innerHTML = visible.map(function (t) {
         var suspend = t.status === "active";
         return "<tr>" +
           "<td>" + esc(t.id) + "</td>" +
@@ -114,12 +175,16 @@
           "<td>" + mmStatusBadge(t.status) + "</td>" +
           "<td>" + esc(t.max_sends_day) + "</td>" +
           "<td>" + esc(t.domain_count) + "</td>" +
-          "<td>" + mmIconBtn(
-            "mm-suspend" + (suspend ? " btn-danger" : " btn-primary"),
-            suspend ? "Askıya al" : "Aktifleştir",
+          '<td style="white-space:nowrap;display:flex;gap:0.3rem;">' +
+          mmIconBtn("mm-edit-tenant", "Firmayı Düzenle", "edit", 'data-id="' + esc(t.id) + '"') +
+          mmIconBtn(
+            "mm-suspend" + (suspend ? "" : " btn-primary"),
+            suspend ? "Askıya Al" : "Aktif Et",
             suspend ? "pause" : "play",
             'data-id="' + esc(t.id) + '" data-status="' + (suspend ? "suspended" : "active") + '"'
-          ) + "</td></tr>";
+          ) +
+          mmIconBtn("mm-del-tenant btn-danger", "Firmayı Sil", "trash", 'data-id="' + esc(t.id) + '" data-name="' + esc(t.name || t.slug || "") + '"') +
+          "</td></tr>";
       }).join("");
     });
   }
@@ -167,7 +232,7 @@
     var hint = document.getElementById("mm-domain-edit-hint");
     if (!hint) return;
     hint.textContent = msg || "";
-    hint.style.color = isError ? "#c0392b" : "";
+    hint.style.color = isError ? "#fb7185" : "";
   }
 
   function refreshDomains() {
@@ -186,9 +251,9 @@
       }
       function domainActions(d) {
         return '<td style="white-space:nowrap;display:flex;gap:0.3rem;">' +
-          mmIconBtn("mm-edit-domain", "Düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
-          mmIconBtn("mm-alloc", "Tahsis", "alloc", 'data-id="' + esc(d.id) + '"') +
-          mmIconBtn("mm-warm", "Warming başlat", "warm", 'data-id="' + esc(d.id) + '"') +
+          mmIconBtn("mm-edit-domain", "Domain / Ayarları Düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
+          mmIconBtn("mm-alloc", "Tenant'a / Firmaya Tahsis Et", "alloc", 'data-id="' + esc(d.id) + '"') +
+          mmIconBtn("mm-warm", "Warm-up / Isınma Moduna Al", "warm", 'data-id="' + esc(d.id) + '"') +
           "</td>";
       }
       tbody.innerHTML = rows.map(function (d) {
@@ -220,8 +285,9 @@
             "<td>" + mmHealthGauge(d.health_score) + "</td>" +
             "<td>" + esc(d.daily_cap) + "/gün</td>" +
             '<td style="display:flex;gap:0.3rem;">' +
-            mmIconBtn("mm-warm", "Warming başlat", "warm", 'data-id="' + esc(d.id) + '"') +
-            mmIconBtn("mm-edit-domain", "Düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
+            mmIconBtn("mm-edit-domain", "Domain / Ayarları Düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
+            mmIconBtn("mm-alloc", "Tenant'a / Firmaya Tahsis Et", "alloc", 'data-id="' + esc(d.id) + '"') +
+            mmIconBtn("mm-warm", "Warm-up / Isınma Moduna Al", "warm", 'data-id="' + esc(d.id) + '"') +
             "</td></tr>";
         }).join("");
       }
@@ -304,6 +370,22 @@
       });
   }
 
+  function openAllocModal(domainId) {
+    var d = (window._mmDomainsCache || []).find(function (x) { return Number(x.id) === Number(domainId); });
+    document.getElementById("mm-alloc-domain-id").value = String(domainId);
+    var label = document.getElementById("mm-alloc-domain-label");
+    if (label) label.textContent = d ? ("Domain: " + (d.domain || ("#" + domainId))) : ("Domain #" + domainId);
+    fillAllocTenantSelect(window._mmTenantsCache || []);
+    openModal("mm-alloc-modal");
+  }
+
+  function openTenantDeleteModal(id, name) {
+    document.getElementById("mm-tenant-del-id").value = String(id);
+    var text = document.getElementById("mm-tenant-del-text");
+    if (text) text.textContent = "“" + (name || ("#" + id)) + "” firmasını silmek istediğine emin misin? (soft-delete)";
+    openModal("mm-tenant-del-modal");
+  }
+
   var Platform = {
     init: function () {
       if (!window.MAIL_IS_SUPERADMIN) return;
@@ -312,10 +394,10 @@
         sel.addEventListener("change", function () {
           var tid = sel.value ? Number(sel.value) : null;
           api("/api/mail-auth/select-tenant", { method: "POST", body: { tenant_id: tid } }).then(function () {
-            var hint = document.getElementById("mm-tenant-hint");
-            if (hint) hint.textContent = tid ? ("Tenant #" + tid + " seçili") : "Tenant seçilmedi";
             window.MAIL_TENANT_ID = tid;
-            if (window.MakroMailing && window.MakroMailing.onShow) window.MakroMailing.onShow();
+            if (window.MakroMailing && window.MakroMailing.refreshImports) {
+              window.MakroMailing.refreshImports();
+            }
           });
         });
       }
@@ -324,8 +406,30 @@
         resetDomainForm();
         refreshDomains();
       });
+      document.getElementById("mm-t-cancel-edit")?.addEventListener("click", function () {
+        setTenantFormMode(null);
+      });
       document.getElementById("mm-tenant-form")?.addEventListener("submit", function (e) {
         e.preventDefault();
+        var hint = document.getElementById("mm-tenant-create-hint");
+        if (_editTenantId) {
+          api("/api/platform/tenants/" + _editTenantId, {
+            method: "PATCH",
+            body: {
+              name: document.getElementById("mm-t-name").value.trim(),
+              max_sends_day: Number(document.getElementById("mm-t-cap").value) || 50000
+            }
+          }).then(function (res) {
+            if (!res.ok) {
+              if (hint) hint.textContent = (res.data && res.data.error) || "Kaydedilemedi";
+              return;
+            }
+            if (hint) hint.textContent = "Firma güncellendi";
+            setTenantFormMode(null);
+            refreshTenants();
+          });
+          return;
+        }
         api("/api/platform/tenants", {
           method: "POST",
           body: {
@@ -336,17 +440,61 @@
             max_sends_day: Number(document.getElementById("mm-t-cap").value) || 50000
           }
         }).then(function (res) {
-          var hint = document.getElementById("mm-tenant-create-hint");
           if (!res.ok) {
             if (hint) hint.textContent = res.data.error || "Hata";
             return;
           }
           if (hint) hint.textContent = "OK — giriş: " + (res.data.login_hint || "");
           e.target.reset();
+          document.getElementById("mm-t-user").value = "admin";
           refreshTenants();
         });
       });
       document.getElementById("mm-domain-form")?.addEventListener("submit", saveDomainForm);
+
+      document.getElementById("mm-alloc-cancel")?.addEventListener("click", function () {
+        closeModal("mm-alloc-modal");
+      });
+      document.getElementById("mm-alloc-confirm")?.addEventListener("click", function () {
+        var domainId = Number(document.getElementById("mm-alloc-domain-id").value);
+        var tid = Number(document.getElementById("mm-alloc-tenant").value);
+        if (!domainId || !tid) return;
+        api("/api/platform/domains/" + domainId + "/allocate", {
+          method: "POST",
+          body: { tenant_id: tid }
+        }).then(function (res) {
+          if (!res.ok) {
+            alert((res.data && res.data.error) || "Tahsis başarısız");
+            return;
+          }
+          closeModal("mm-alloc-modal");
+          refreshDomains();
+          refreshTenants();
+        });
+      });
+      document.getElementById("mm-tenant-del-cancel")?.addEventListener("click", function () {
+        closeModal("mm-tenant-del-modal");
+      });
+      document.getElementById("mm-tenant-del-confirm")?.addEventListener("click", function () {
+        var id = Number(document.getElementById("mm-tenant-del-id").value);
+        if (!id) return;
+        api("/api/platform/tenants/" + id, { method: "DELETE" }).then(function (res) {
+          if (!res.ok) {
+            alert((res.data && res.data.error) || "Silinemedi");
+            return;
+          }
+          closeModal("mm-tenant-del-modal");
+          if (_editTenantId === id) setTenantFormMode(null);
+          refreshTenants();
+        });
+      });
+      document.getElementById("mm-alloc-modal")?.addEventListener("click", function (e) {
+        if (e.target.id === "mm-alloc-modal") closeModal("mm-alloc-modal");
+      });
+      document.getElementById("mm-tenant-del-modal")?.addEventListener("click", function (e) {
+        if (e.target.id === "mm-tenant-del-modal") closeModal("mm-tenant-del-modal");
+      });
+
       document.addEventListener("click", function (e) {
         var sus = e.target.closest(".mm-suspend");
         if (sus) {
@@ -355,12 +503,29 @@
           api("/api/platform/tenants/" + id, { method: "PATCH", body: { status: st } }).then(refreshTenants);
           return;
         }
+        var editTenant = e.target.closest(".mm-edit-tenant");
+        if (editTenant) {
+          var tidEdit = Number(editTenant.getAttribute("data-id"));
+          var foundT = (window._mmTenantsCache || []).find(function (x) { return Number(x.id) === tidEdit; });
+          if (foundT) setTenantFormMode(tidEdit, foundT);
+          return;
+        }
+        var delTenant = e.target.closest(".mm-del-tenant");
+        if (delTenant) {
+          openTenantDeleteModal(
+            Number(delTenant.getAttribute("data-id")),
+            delTenant.getAttribute("data-name") || ""
+          );
+          return;
+        }
         var editBtn = e.target.closest(".mm-edit-domain");
         if (editBtn) {
           var eid = Number(editBtn.getAttribute("data-id"));
           var found = (window._mmDomainsCache || []).find(function (x) { return Number(x.id) === eid; });
-          if (found) setDomainFormMode(eid, found);
-          else setDomainHint("Domain listesi güncel değil — Yenile'ye bas", true);
+          if (found) {
+            if (window.mmNavigate) window.mmNavigate("plat-domains");
+            setDomainFormMode(eid, found);
+          } else setDomainHint("Domain listesi güncel değil — Yenile'ye bas", true);
           return;
         }
         var warm = e.target.closest(".mm-warm");
@@ -372,17 +537,7 @@
         }
         var alloc = e.target.closest(".mm-alloc");
         if (alloc) {
-          var domainId = Number(alloc.getAttribute("data-id"));
-          var tid = prompt("Tahsis edilecek tenant id? (Makro = 1)");
-          if (!tid) return;
-          api("/api/platform/domains/" + domainId + "/allocate", {
-            method: "POST",
-            body: { tenant_id: Number(tid) }
-          }).then(function (res) {
-            if (!res.ok) alert(res.data.error || "Hata");
-            refreshDomains();
-            refreshTenants();
-          });
+          openAllocModal(Number(alloc.getAttribute("data-id")));
         }
       });
       this.refresh();

@@ -46,8 +46,9 @@
   }
 
   function mmIconBtn(cls, title, icon, extra) {
-    return '<button type="button" class="btn btn-icon ' + cls + '" title="' + esc(title) + '" aria-label="' +
-      esc(title) + '" ' + (extra || "") + ">" + mmIcon(icon) + "</button>";
+    return '<button type="button" class="btn btn-icon mm-tip-btn ' + cls + '" data-tip="' + esc(title) +
+      '" title="' + esc(title) + '" aria-label="' + esc(title) + '" ' + (extra || "") + ">" +
+      mmIcon(icon) + "</button>";
   }
 
   function mmStatusBadge(status) {

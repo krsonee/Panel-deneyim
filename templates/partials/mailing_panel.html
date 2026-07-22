@@ -493,7 +493,10 @@
   <div class="acc-pane" id="mail-pane-templates" data-mail-pane="templates" hidden>
     <section class="card mail-tpl-editor-card" style="margin-bottom:1rem;">
       <div class="card-head">
-        <span id="mail-tpl-form-title">Yeni şablon</span>
+        <span class="mm-label-row" style="margin:0;">
+          <span id="mail-tpl-form-title">Yeni şablon</span>
+          <span class="mm-tip" tabindex="0" data-tip="Değişkenler: name / email / phone · Takip linki ve Smartico kutusu · Kaydedince HTML üretilir · Gönderim Kampanyalar’dan.">?</span>
+        </span>
         <div class="mail-tpl-mode-tabs" role="tablist">
           <button type="button" class="acc-tab active" id="mail-tpl-mode-simple" data-tpl-mode="simple">Basit yazı</button>
           <button type="button" class="acc-tab" id="mail-tpl-mode-html" data-tpl-mode="html">HTML</button>
@@ -507,28 +510,21 @@
             <div><label>Konu satırı</label><input type="text" id="mail-tpl-subject" placeholder="Merhaba {{ '{{name}}' }}, özel fırsatın hazır"></div>
           </div>
 
-          <p class="hint mail-tpl-hint">
-            Değişkenler: <code>{{ '{{name}}' }}</code> <code>{{ '{{email}}' }}</code> <code>{{ '{{phone}}' }}</code>
-            (isim kayıtlı değilse otomatik olarak “değerli üye” yazılır, “Merhaba ,” gibi bozuk çıkmaz)
-            · Takip linki: <code>{{ '{{link:https://site.com}}' }}</code> (tıklayan kişi Mail Rehber’e <code>mail_tiklayan</code> etiketiyle düşer)
-            · Smartico linki: aşağıdaki "Smartico linki" kutusunu işaretle — tıklayan kişi Smartico'ya kendi
-            contact ID'siyle yönlenir, Mail Rehber &gt; "Smartico segmentlerini güncelle" ile kayıt/FTD durumu otomatik etiketlenir.
-          </p>
-
           <div class="mail-tpl-toolbar">
             <button type="button" class="btn btn-sm" id="mail-tpl-insert-name">{{ '{{name}}' }}</button>
             <button type="button" class="btn btn-sm" id="mail-tpl-insert-email">{{ '{{email}}' }}</button>
             <button type="button" class="btn btn-sm" id="mail-tpl-insert-link">Takip linki ekle</button>
             <input type="url" id="mail-tpl-link-url" value="https://makrovip.com/Vipmail" placeholder="https://makrovip.com/Vipmail" class="mail-tpl-link-input">
-            <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.78rem;cursor:pointer;white-space:nowrap;">
-              <input type="checkbox" id="mail-tpl-link-smartico" checked> Smartico / Aff linki
+            <label class="mm-switch" style="white-space:nowrap;font-size:0.78rem;">
+              <input type="checkbox" id="mail-tpl-link-smartico" checked>
+              <span class="mm-switch-track"></span>
+              <span>Smartico / Aff linki</span>
             </label>
           </div>
 
           <div id="mail-tpl-pane-simple" class="mail-tpl-editor-pane">
             <label>Mail metni</label>
             <textarea id="mail-tpl-text" class="mail-tpl-textarea" rows="14" placeholder="Merhaba {{ '{{name}}' }},&#10;&#10;Sana özel bir fırsatımız var.&#10;&#10;Hemen bak: {{ '{{link:https://ornek.com}}' }}"></textarea>
-            <p class="hint">Kaydedince HTML otomatik üretilir. Satır sonları paragrafa çevrilir.</p>
           </div>
 
           <div id="mail-tpl-pane-html" class="mail-tpl-editor-pane" hidden>
@@ -546,11 +542,11 @@
 
           <div class="mail-tpl-actions">
             <button type="submit" class="btn btn-primary">Şablonu kaydet</button>
-            <button type="button" class="btn" id="mail-tpl-reset">Yeni / Temizle</button>
+            <button type="button" class="btn btn-secondary" id="mail-tpl-reset">Yeni / Temizle</button>
             <button type="button" class="btn btn-success" id="mail-tpl-test-send">Test mail gönder</button>
             <input type="email" id="mail-tpl-test-email" class="mail-tpl-test-email" placeholder="test@mail.com">
           </div>
-          <p class="hint" id="mail-tpl-send-hint">Gönderim: şablonu kaydet → Kampanyalar’dan etiket/limit/saat seç → “Şimdi gönder” veya zamanla. Ayarlar’da SMTP (DirectMail) doluysa gerçek mail gider; stub modunda simülasyon kaydı oluşur.</p>
+          <p class="hint" id="mail-tpl-send-hint" hidden></p>
         </form>
       </div>
     </section>
@@ -581,7 +577,12 @@
   <!-- Kampanyalar -->
   <div class="acc-pane" id="mail-pane-campaigns" data-mail-pane="campaigns" hidden>
     <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head"><span>Yeni toplu kampanya</span></div>
+      <div class="card-head">
+        <span class="mm-label-row" style="margin:0;">
+          Yeni toplu kampanya
+          <span class="mm-tip" tabindex="0" data-tip="Hemen gönder = oluştur + kuyruk. Zamanla = seçilen saatte gider. Mod smtp ise gerçek mail; stub ise simülasyon.">?</span>
+        </span>
+      </div>
       <div class="card-body">
         <form id="mail-camp-form" class="form-row-4">
           <div><label>Kampanya adı</label><input type="text" id="mail-camp-name" required placeholder="Mart VIP / Davet batch 1"></div>
@@ -590,15 +591,9 @@
           <div style="grid-column:1/-1;">
             <label>Alıcı kaynağı</label>
             <div style="display:flex;flex-wrap:wrap;gap:0.85rem;margin-top:0.35rem;">
-              <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;font-weight:500;">
-                <input type="radio" name="mail-camp-recipient-mode" value="tag" checked> Etiket
-              </label>
-              <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;font-weight:500;">
-                <input type="radio" name="mail-camp-recipient-mode" value="selected"> Seçili kontaklar
-              </label>
-              <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;font-weight:500;">
-                <input type="radio" name="mail-camp-recipient-mode" value="manual"> Elle e-posta
-              </label>
+              <label class="mm-radio"><input type="radio" name="mail-camp-recipient-mode" value="tag" checked> Etiket</label>
+              <label class="mm-radio"><input type="radio" name="mail-camp-recipient-mode" value="selected"> Seçili kontaklar</label>
+              <label class="mm-radio"><input type="radio" name="mail-camp-recipient-mode" value="manual"> Elle e-posta</label>
             </div>
           </div>
           <div id="mail-camp-mode-tag" style="grid-column:1/-1;">
@@ -624,37 +619,33 @@
           <div style="grid-column:1/-1;">
             <label>Gönderim</label>
             <div style="display:flex;flex-wrap:wrap;gap:0.85rem;margin-top:0.35rem;">
-              <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;font-weight:500;">
-                <input type="radio" name="mail-camp-when" value="now" checked> Hemen gönder
-              </label>
-              <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;font-weight:500;">
-                <input type="radio" name="mail-camp-when" value="schedule"> Zamanla
-              </label>
+              <label class="mm-radio"><input type="radio" name="mail-camp-when" value="now" checked> Hemen gönder</label>
+              <label class="mm-radio"><input type="radio" name="mail-camp-when" value="schedule"> Zamanla</label>
             </div>
             <div id="mail-camp-schedule-wrap" hidden style="margin-top:0.55rem;max-width:280px;">
               <label>Gönderim zamanı</label>
               <input type="datetime-local" id="mail-camp-schedule">
             </div>
           </div>
-          <div style="display:flex;align-items:flex-end;flex-wrap:wrap;gap:0.65rem;">
-            <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
-              <input type="checkbox" id="mail-camp-exclude-sent" checked> Önceden mail atılmışları hariç tut
+          <div style="display:flex;align-items:flex-end;flex-wrap:wrap;gap:0.85rem;">
+            <label class="mm-switch">
+              <input type="checkbox" id="mail-camp-exclude-sent" checked>
+              <span class="mm-switch-track"></span>
+              <span>Önceden mail atılmışları hariç tut</span>
             </label>
-            <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
-              <input type="checkbox" id="mail-camp-only-verified"> Sadece doğrulanmış
+            <label class="mm-switch">
+              <input type="checkbox" id="mail-camp-only-verified">
+              <span class="mm-switch-track"></span>
+              <span>Sadece doğrulanmış</span>
             </label>
           </div>
           <div style="display:flex;align-items:flex-end;gap:0.5rem;flex-wrap:wrap;">
-            <button type="button" class="btn btn-sm" id="mail-camp-preview">Kaç kişi?</button>
+            <button type="button" class="btn btn-sm btn-secondary" id="mail-camp-preview">Kaç kişi?</button>
             <button type="submit" class="btn btn-primary" id="mail-camp-submit">Oluştur ve gönder</button>
           </div>
           <div style="grid-column:1/-1;"><label>Not</label><input type="text" id="mail-camp-notes" placeholder="opsiyonel — örn. Davet datasi batch #2"></div>
         </form>
         <p class="hint" id="mail-camp-preview-hint" style="margin-top:0.65rem;"></p>
-        <p class="hint" style="margin-top:0.35rem;">
-          <strong>Hemen gönder</strong> = oluştur + kuyruğa al · <strong>Zamanla</strong> = seçilen saatte gider.
-          Ayarlar’da mod <code>smtp</code> ise gerçek mail; <code>stub</code> ise simülasyon.
-        </p>
       </div>
     </section>
     <section class="card">
@@ -777,11 +768,16 @@
   <!-- Ayarlar -->
   <div class="acc-pane" id="mail-pane-settings" data-mail-pane="settings" hidden>
     <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head"><span>Gönderim sağlayıcı (Alibaba DirectMail)</span></div>
+      <div class="card-head">
+        <span class="mm-label-row" style="margin:0;">
+          Gönderim sağlayıcı (Alibaba DirectMail)
+          <span class="mm-tip" tabindex="0" data-tip="Stub = simülasyon. SMTP = gerçek DirectMail (465). 535 = yanlış SMTP şifresi. Bounce: /api/mailing/webhooks/bounce + X-Mailing-Webhook-Secret.">?</span>
+        </span>
+      </div>
       <div class="card-body">
         <form id="mail-settings-form" class="form-row-4">
           <div>
-            <label>Mod</label>
+            <div class="mm-label-row"><label>Mod</label><span class="mm-tip" tabindex="0" data-tip="stub: test · smtp: canlı gönderim">?</span></div>
             <select id="mail-set-mode">
               <option value="stub">Stub (simülasyon)</option>
               <option value="smtp">SMTP (DirectMail)</option>
@@ -794,76 +790,77 @@
           <div><label>Varsayılan domain ID</label><input type="text" id="mail-set-default-domain" placeholder="1"></div>
           <div style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
             <button type="submit" class="btn btn-primary">Ayarları kaydet</button>
-            <button type="button" class="btn" id="mail-set-test-smtp">SMTP test (login)</button>
+            <button type="button" class="btn btn-secondary" id="mail-set-test-smtp">SMTP test (login)</button>
             <span class="muted" id="mail-set-pass-hint" style="font-size:0.72rem;"></span>
           </div>
         </form>
         <p class="hint" id="mail-set-test-hint" style="margin-top:0.55rem;"></p>
-        <p class="hint" style="margin-top:0.75rem;">
-          <strong>Stub:</strong> gerçek mail gitmez, Raporlar’da <code>simulated</code> kayıt oluşur (test için).
-          <strong>SMTP:</strong> Alibaba DirectMail bilgilerini gir → Kampanyalar’dan gönderim gerçek mail atar (465 SSL önerilir).
-          535 hatası = yanlış SMTP şifresi (hesap şifresi değil). Önce <strong>SMTP test</strong> yeşil olsun, sonra kampanya at.
-        </p>
-        <p class="hint" style="margin-top:0.5rem;">
-          Bounce webhook: <code>/api/mailing/webhooks/bounce</code> — header <code>X-Mailing-Webhook-Secret</code> (IVR secret ile aynı).
-          Her mailde otomatik unsubscribe + açık takibi eklenir.
-        </p>
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head"><span>Liste temizleme ayarları</span></div>
+      <div class="card-head">
+        <span class="mm-label-row" style="margin:0;">
+          Liste temizleme ayarları
+          <span class="mm-tip" tabindex="0" data-tip="SMTP ping kapalıysa syntax+MX. Açıkken RCPT TO. Port 25 kapalıysa SMTP ping’i kapat.">?</span>
+        </span>
+      </div>
       <div class="card-body">
         <form id="mail-scrub-settings-form" class="form-row-4">
           <div>
-            <label style="display:flex;align-items:center;gap:0.4rem;margin-top:1.4rem;">
-              <input type="checkbox" id="mail-scrub-smtp" checked> SMTP ping (RCPT)
+            <label class="mm-switch" style="margin-top:1.4rem;">
+              <input type="checkbox" id="mail-scrub-smtp" checked>
+              <span class="mm-switch-track"></span>
+              <span>SMTP ping (RCPT)</span>
             </label>
           </div>
           <div><label>Hız (kontrol/dk)</label><input type="number" id="mail-scrub-rate" min="1" max="600" value="30"></div>
           <div><label>Tekrar atlama (saat)</label><input type="number" id="mail-scrub-skip" min="0" max="2160" value="168" title="Son N saatte doğrulanmışsa tekrar kontrol etme"></div>
           <div><label>Probe From (opsiyonel)</label><input type="text" id="mail-scrub-from" placeholder="noreply@vipozelileti.com"></div>
           <div>
-            <label style="display:flex;align-items:center;gap:0.4rem;margin-top:1.4rem;">
-              <input type="checkbox" id="mail-scrub-suppress-invalid" checked> Invalid → suppression
+            <label class="mm-switch" style="margin-top:1.4rem;">
+              <input type="checkbox" id="mail-scrub-suppress-invalid" checked>
+              <span class="mm-switch-track"></span>
+              <span>Invalid → suppression</span>
             </label>
           </div>
           <div>
-            <label style="display:flex;align-items:center;gap:0.4rem;margin-top:1.4rem;">
-              <input type="checkbox" id="mail-scrub-suppress-disposable" checked> Disposable → suppression
+            <label class="mm-switch" style="margin-top:1.4rem;">
+              <input type="checkbox" id="mail-scrub-suppress-disposable" checked>
+              <span class="mm-switch-track"></span>
+              <span>Disposable → suppression</span>
             </label>
           </div>
           <div>
-            <label style="display:flex;align-items:center;gap:0.4rem;margin-top:1.4rem;">
-              <input type="checkbox" id="mail-scrub-suppress-role"> Role (info@…) → suppression
+            <label class="mm-switch" style="margin-top:1.4rem;">
+              <input type="checkbox" id="mail-scrub-suppress-role">
+              <span class="mm-switch-track"></span>
+              <span>Role (info@…) → suppression</span>
             </label>
           </div>
           <div>
-            <label style="display:flex;align-items:center;gap:0.4rem;margin-top:1.4rem;">
-              <input type="checkbox" id="mail-scrub-camp-only"> Kampanyada varsayılan: sadece doğrulanmış
+            <label class="mm-switch" style="margin-top:1.4rem;">
+              <input type="checkbox" id="mail-scrub-camp-only">
+              <span class="mm-switch-track"></span>
+              <span>Kampanyada varsayılan: sadece doğrulanmış</span>
             </label>
           </div>
           <div style="grid-column:1/-1;"><button type="submit" class="btn btn-primary">Temizleme ayarlarını kaydet</button></div>
         </form>
-        <p class="hint" style="margin-top:0.65rem;">
-          SMTP ping kapalıysa sadece syntax + disposable + MX kontrolü yapılır (hızlı, “mx_ok”).
-          Açıkken alıcı MX’ine RCPT TO ile bakar — Gmail vb. çoğu zaman <code>unknown</code> döner; catch-all domainler ayrı etiketlenir.
-          Render’da outbound port 25 kapalıysa SMTP ping çalışmaz; o zaman SMTP’yi kapatıp MX modunu kullan.
-        </p>
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head"><span>Smartico CRM eşleştirme</span></div>
+      <div class="card-head">
+        <span class="mm-label-row" style="margin:0;">
+          Smartico CRM eşleştirme
+          <span class="mm-tip" tabindex="0" data-tip="Affiliate ID + sub-id (afp1). Şablonda Smartico linki bu ID ile takip edilir.">?</span>
+        </span>
+      </div>
       <div class="card-body">
         <form id="mail-smartico-form" class="form-row-4">
           <div><label>Smartico Affiliate ID (mailing hesabı)</label><input type="text" id="mail-set-sc-affid" placeholder="örn. 1042"></div>
           <div><label>Sub-ID parametresi</label><input type="text" id="mail-set-sc-subid" placeholder="afp1"></div>
           <div style="grid-column:1/-1;"><button type="submit" class="btn btn-primary">Kaydet</button></div>
         </form>
-        <p class="hint" style="margin-top:0.5rem;">
-          Smartico affiliate panelinden mailing için oluşturduğun linkin affiliate ID'sini gir. Şablonlarda
-          <code>{{ '{{link:sc:URL}}' }}</code> ile işaretlenen linkler bu ID üzerinden takip edilir — Smartico'daki
-          API anahtarı Link Takip &gt; Smartico ayarlarından tanımlı olmalı.
-        </p>
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
@@ -882,9 +879,6 @@
             <tbody id="mail-domains-table"><tr><td colspan="6" class="empty">Veri yok</td></tr></tbody>
           </table>
         </div>
-      </div>
-      <div class="card-body">
-        <p class="hint">vipozelileti.com · vippozelileti.com · vipppozelileti.com — NS henüz yönlendirilmedi. Alibaba onayı + DNS sonrası SPF/DKIM eklenecek.</p>
       </div>
     </section>
   </div>

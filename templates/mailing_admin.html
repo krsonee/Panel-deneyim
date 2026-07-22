@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Mikromail</title>
   <meta name="theme-color" content="#090D16">
-  <link rel="stylesheet" href="/static/mailing_shell.css?v=20260722mm2">
-  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260722mm2">
+  <link rel="stylesheet" href="/static/mailing_shell.css?v=20260722mm3">
+  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260722mm3">
   <style>
     :root { --accent: #38bdf8; --accent-soft: rgba(56,189,248,0.14); --accent-ink: #041018; }
     #module-mailing-panel { display:block !important; }
@@ -152,7 +152,11 @@
                     <div class="mm-label-row"><label>Günlük send kotası</label><span class="mm-tip" tabindex="0" data-tip="Tenant günlük gönderim üst limiti">?</span></div>
                     <input id="mm-t-cap" type="number" value="50000">
                   </div>
-                  <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" type="submit">Oluştur</button></div>
+                  <input type="hidden" id="mm-t-edit-id" value="">
+                  <div style="display:flex;align-items:flex-end;gap:0.4rem;flex-wrap:wrap;">
+                    <button class="btn btn-primary" type="submit" id="mm-t-submit">Oluştur</button>
+                    <button class="btn btn-secondary" type="button" id="mm-t-cancel-edit" hidden>İptal</button>
+                  </div>
                 </form>
                 <p class="hint" id="mm-tenant-create-hint"></p>
               </div>
@@ -213,11 +217,11 @@
           <div class="mm-plat-pane" id="mm-plat-warmup" data-mm-plat="warmup">
             <section class="card">
               <div class="card-head">
-                <span>Warm-up panosu</span>
+                <span class="mm-label-row" style="margin:0;">
+                  Warm-up panosu
+                  <span class="mm-tip" tabindex="0" data-tip="Domain başına ısınma günü, günlük cap ve health. Isıt ikonu warming moduna alır.">?</span>
+                </span>
                 <button type="button" class="btn btn-sm btn-secondary" id="mm-warmup-refresh">Yenile</button>
-              </div>
-              <div class="card-body">
-                <p class="hint" style="margin:0 0 0.85rem;">Domain başına ısınma günü, günlük cap ve health skoru. Warming’e almak için satırdaki ısıt ikonunu kullan.</p>
               </div>
               <div class="table-wrap"><div class="table-scroll">
                 <table>
@@ -226,6 +230,32 @@
                 </table>
               </div></div>
             </section>
+          </div>
+        </div>
+
+        <!-- Platform modals -->
+        <div class="mm-modal-overlay" id="mm-alloc-modal" aria-hidden="true">
+          <div class="mm-modal" role="dialog" aria-labelledby="mm-alloc-title">
+            <h3 id="mm-alloc-title">Tenant’a tahsis et</h3>
+            <p id="mm-alloc-domain-label">Domain seçilmedi</p>
+            <div class="mm-label-row"><label for="mm-alloc-tenant">Firma (tenant)</label></div>
+            <select id="mm-alloc-tenant" style="width:100%;"></select>
+            <input type="hidden" id="mm-alloc-domain-id" value="">
+            <div class="mm-modal-actions">
+              <button type="button" class="btn btn-secondary" id="mm-alloc-cancel">İptal</button>
+              <button type="button" class="btn btn-primary" id="mm-alloc-confirm">Tahsis Et</button>
+            </div>
+          </div>
+        </div>
+        <div class="mm-modal-overlay" id="mm-tenant-del-modal" aria-hidden="true">
+          <div class="mm-modal" role="dialog" aria-labelledby="mm-tenant-del-title">
+            <h3 id="mm-tenant-del-title">Firmayı sil</h3>
+            <p id="mm-tenant-del-text">Bu firmayı silmek istediğine emin misin?</p>
+            <input type="hidden" id="mm-tenant-del-id" value="">
+            <div class="mm-modal-actions">
+              <button type="button" class="btn btn-secondary" id="mm-tenant-del-cancel">İptal</button>
+              <button type="button" class="btn btn-danger" id="mm-tenant-del-confirm">Sil</button>
+            </div>
           </div>
         </div>
         {% endif %}
@@ -239,8 +269,8 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260722mm2"></script>
-  <script src="/static/mailing_platform.js?v=20260722mm2"></script>
+  <script src="/static/mailing.js?v=20260722mm3"></script>
+  <script src="/static/mailing_platform.js?v=20260722mm3"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

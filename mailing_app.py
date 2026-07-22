@@ -299,6 +299,27 @@ def platform_patch_tenant(tenant_id):
     return jsonify({"tenant": dict(row)})
 
 
+@app.delete("/api/platform/tenants/<int:tenant_id>")
+@require_superadmin
+def platform_delete_tenant(tenant_id):
+    """Soft-delete: status=deleted. Makro/slug koruması yok — süper admin bilerek siler."""
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT * FROM mail_tenants WHERE id = ?", (tenant_id,))
+        if not row:
+            return jsonify({"error": "Yok."}), 404
+        slug = (row["slug"] or "").strip().lower()
+        if slug in ("makro", "mikromail", "system"):
+            return jsonify({"error": "Sistem tenant’ı silinemez."}), 400
+        now = iso(utcnow())
+        execute(
+            conn,
+            "UPDATE mail_tenants SET status = ?, updated_at = ? WHERE id = ?",
+            ("deleted", now, tenant_id),
+        )
+        conn.commit()
+    return jsonify({"ok": True, "tenant_id": tenant_id, "status": "deleted"})
+
+
 @app.get("/api/platform/domains")
 @require_superadmin
 def platform_list_domains():

@@ -138,8 +138,8 @@ input, select, textarea {
   border-radius: 8px;
 }
 input:focus, select:focus, textarea:focus {
-  outline: none; border-color: #3B82F6;
-  box-shadow: 0 0 0 3px var(--accent-ring);
+  outline: none; border-color: rgba(34, 211, 238, 0.55);
+  box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.5);
 }
 
 /* —— Buttons —— */
@@ -230,6 +230,94 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 8px 24px rgba(0,0,0,0.35);
 }
 .mm-tip:hover::after, .mm-tip:focus::after { opacity: 1; }
+
+/* Icon-button hover tooltips */
+.mm-tip-btn {
+  position: relative;
+}
+.mm-tip-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute; right: 0; bottom: calc(100% + 8px);
+  width: max-content; max-width: 220px;
+  padding: 0.35rem 0.55rem; border-radius: 6px;
+  background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
+  font-size: 0.68rem; font-weight: 500; line-height: 1.35; white-space: nowrap;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  transform: translateY(3px);
+  z-index: 90;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+}
+.mm-tip-btn:hover::after, .mm-tip-btn:focus::after {
+  opacity: 1; transform: translateY(0);
+}
+
+/* —— Modal —— */
+.mm-modal-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(2, 6, 23, 0.72); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem; opacity: 0; pointer-events: none; transition: opacity 0.18s ease;
+}
+.mm-modal-overlay.open { opacity: 1; pointer-events: auto; }
+.mm-modal {
+  width: min(420px, 100%);
+  background: #111827; border: 1px solid #1F2937; border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+  padding: 1.15rem 1.25rem;
+  transform: translateY(8px); transition: transform 0.18s ease;
+}
+.mm-modal-overlay.open .mm-modal { transform: translateY(0); }
+.mm-modal h3 { margin: 0 0 0.35rem; font-size: 1rem; font-weight: 700; color: #F9FAFB; }
+.mm-modal p { margin: 0 0 0.85rem; font-size: 0.78rem; color: #9CA3AF; line-height: 1.45; }
+.mm-modal-actions {
+  display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;
+}
+
+/* —— iOS-style switch / styled radio —— */
+.mm-switch {
+  position: relative; display: inline-flex; align-items: center; gap: 0.55rem;
+  cursor: pointer; user-select: none; font-size: 0.85rem; font-weight: 500; color: var(--text);
+}
+.mm-switch input {
+  position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;
+}
+.mm-switch-track {
+  width: 40px; height: 22px; border-radius: 999px; flex-shrink: 0;
+  background: #1F2937; border: 1px solid #334155; position: relative;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.mm-switch-track::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #9CA3AF; transition: transform 0.18s ease, background 0.18s ease;
+}
+.mm-switch input:checked + .mm-switch-track {
+  background: rgba(14, 165, 233, 0.35); border-color: rgba(56, 189, 248, 0.55);
+}
+.mm-switch input:checked + .mm-switch-track::after {
+  transform: translateX(18px); background: #38bdf8;
+}
+.mm-radio {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  cursor: pointer; font-size: 0.85rem; font-weight: 500; color: var(--text);
+}
+.mm-radio input {
+  appearance: none; -webkit-appearance: none;
+  width: 16px !important; height: 16px; margin: 0; padding: 0;
+  border: 1.5px solid #475569; border-radius: 50%;
+  background: #0B1220; display: grid; place-content: center;
+  flex-shrink: 0; cursor: pointer;
+}
+.mm-radio input::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  transform: scale(0); transition: transform 0.12s ease;
+  background: #38bdf8;
+}
+.mm-radio input:checked {
+  border-color: #38bdf8; box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.45);
+}
+.mm-radio input:checked::before { transform: scale(1); }
 
 /* —— Dropzone —— */
 .mm-dropzone {
