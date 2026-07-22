@@ -412,6 +412,240 @@
     });
   }
 
+  var _wuSelected = {};
+
+  function applyWarmupBanner(program) {
+    var banner = document.getElementById("mm-warmup-banner");
+    var text = document.getElementById("mm-warmup-banner-text");
+    if (!banner) return;
+    var show = program && program.banner && program.banner.show;
+    banner.hidden = !show;
+    if (text) text.textContent = (program && program.banner && program.banner.text) || "Isıtma görevleri bekliyor";
+  }
+
+  function renderWarmupProgram(program) {
+    window._mmWarmupProgram = program || null;
+    applyWarmupBanner(program);
+    var statusEl = document.getElementById("mm-wu-status");
+    var setup = document.getElementById("mm-wu-setup");
+    var todayBox = document.getElementById("mm-wu-today");
+    var startBtn = document.getElementById("mm-wu-start");
+    var pauseBtn = document.getElementById("mm-wu-pause");
+    var resumeBtn = document.getElementById("mm-wu-resume");
+    if (!program) {
+      if (statusEl) statusEl.textContent = "Program yüklenemedi";
+      return;
+    }
+    if (statusEl) {
+      if (!program.active) {
+        statusEl.textContent = program.started_on
+          ? ("Program duraklatıldı · başlangıç " + program.started_on + " · devam için domainleri koru ve Devam’a bas")
+          : "Program henüz başlamadı. Aşağıdan ısıtılacak domainleri seç (öneri 5) ve Programı başlat.";
+      } else if (program.all_done_today) {
+        statusEl.textContent = "Bugünün görevleri tamam · yarın 00:00 (Türkiye) sonrası yeni gün açılır.";
+      } else {
+        statusEl.textContent =
+          "Aktif · Gün " + program.day + "/" + program.total_days +
+          " · domain başı ~" + (program.plan && program.plan.per_domain_target) + " mail";
+      }
+    }
+    if (setup) setup.hidden = !!program.active;
+    if (todayBox) todayBox.hidden = !program.active && !(program.domains && program.domains.length);
+    if (startBtn) {
+      startBtn.hidden = !!program.active;
+      startBtn.textContent = program.started_on && !program.active ? "Yeniden başlat" : "Programı başlat";
+    }
+    if (pauseBtn) pauseBtn.hidden = !program.active;
+    if (resumeBtn) resumeBtn.hidden = !(!program.active && program.started_on);
+
+    var pick = document.getElementById("mm-wu-domain-pick");
+    if (pick && !program.active) {
+      var pool = (window._mmDomainsCache || []).slice();
+      if (!pool.length && program.suggested_domains) {
+        pool = program.suggested_domains;
+      }
+      if (!Object.keys(_wuSelected).length) {
+        (program.domains && program.domains.length ? program.domains : (program.suggested_domains || []))
+          .forEach(function (d) { _wuSelected[String(d.id)] = true; });
+      }
+      if (!pool.length) {
+        pick.innerHTML = '<span class="muted">Önce Domainler sekmesinden domain ekle.</span>';
+      } else {
+        pick.innerHTML = pool.map(function (d) {
+          var id = String(d.id);
+          var checked = _wuSelected[id] ? " checked" : "";
+          return '<label class="mm-wu-pick">' +
+            '<input type="checkbox" data-wu-id="' + esc(id) + '"' + checked + ">" +
+            "<span>" + esc(d.domain) + "</span></label>";
+        }).join("");
+      }
+    }
+
+    if (!program.active && !(program.domains && program.domains.length)) {
+      if (todayBox) todayBox.hidden = true;
+      return;
+    }
+    if (todayBox) todayBox.hidden = false;
+
+    var plan = program.plan || {};
+    var dayEl = document.getElementById("mm-wu-day");
+    var titleEl = document.getElementById("mm-wu-title");
+    var targetsEl = document.getElementById("mm-wu-targets");
+    var progEl = document.getElementById("mm-wu-progress-label");
+    var domainsEl = document.getElementById("mm-wu-domains");
+    var tasksEl = document.getElementById("mm-wu-tasks");
+    var rulesEl = document.getElementById("mm-wu-rules");
+    var tasks = plan.tasks || [];
+    var doneCount = tasks.filter(function (t) { return t.done; }).length;
+    if (dayEl) dayEl.textContent = "Gün " + (program.day || "—") + " / " + (program.total_days || 30);
+    if (titleEl) titleEl.textContent = plan.title || "—";
+    if (targetsEl) {
+      targetsEl.textContent =
+        "Domain başı ~" + (plan.per_domain_target || "—") +
+        " · 5 domain toplam ~" + (plan.total_target_5 || "—") +
+        " · önerilen daily_cap " + (plan.daily_cap_suggest || "—");
+    }
+    if (progEl) progEl.textContent = doneCount + "/" + tasks.length;
+    if (domainsEl) {
+      var ds = program.domains || [];
+      domainsEl.innerHTML = ds.length
+        ? ds.map(function (d) {
+            return '<span class="mm-wu-chip">' + esc(d.domain) +
+              ' · cap ' + esc(d.daily_cap) +
+              ' · ' + esc(d.warm_status || "—") + "</span>";
+          }).join("")
+        : '<span class="muted">Domain seçilmedi</span>';
+    }
+    if (tasksEl) {
+      if (!program.active) {
+        tasksEl.innerHTML = '<p class="hint">Program duraklatıldı — görev işaretlemek için Devam’a bas.</p>';
+      } else {
+        tasksEl.innerHTML = tasks.map(function (t) {
+          return '<label class="mm-wu-task' + (t.done ? " is-done" : "") + '">' +
+            '<input type="checkbox" data-wu-task="' + esc(t.key) + '"' + (t.done ? " checked" : "") + ">" +
+            '<span class="mm-wu-task-body"><strong>' + esc(t.title) + "</strong>" +
+            '<small>' + esc(t.hint) + "</small></span></label>";
+        }).join("");
+      }
+    }
+    if (rulesEl) {
+      rulesEl.innerHTML = (plan.rules || []).map(function (r) {
+        return "<li>" + esc(r) + "</li>";
+      }).join("");
+    }
+  }
+
+  function refreshWarmupProgram() {
+    return api("/api/platform/warmup-program").then(function (res) {
+      if (!res.ok) {
+        applyWarmupBanner(null);
+        var statusEl = document.getElementById("mm-wu-status");
+        if (statusEl) statusEl.textContent = (res.data && res.data.error) || "Program yüklenemedi";
+        return;
+      }
+      renderWarmupProgram(res.data.program);
+    });
+  }
+
+  function selectedWarmupDomainIds() {
+    var pick = document.getElementById("mm-wu-domain-pick");
+    var ids = [];
+    if (pick) {
+      pick.querySelectorAll('input[type="checkbox"][data-wu-id]:checked').forEach(function (el) {
+        ids.push(Number(el.getAttribute("data-wu-id")));
+      });
+    }
+    if (!ids.length) {
+      Object.keys(_wuSelected).forEach(function (k) {
+        if (_wuSelected[k]) ids.push(Number(k));
+      });
+    }
+    return ids.filter(function (n) { return n > 0; }).slice(0, 8);
+  }
+
+  function bindWarmupProgramUi() {
+    var refreshBtn = document.getElementById("mm-wu-refresh");
+    if (refreshBtn) refreshBtn.addEventListener("click", refreshWarmupProgram);
+    var startBtn = document.getElementById("mm-wu-start");
+    if (startBtn) {
+      startBtn.addEventListener("click", function () {
+        var ids = selectedWarmupDomainIds();
+        if (!ids.length) {
+          alert("En az 1 domain seç.");
+          return;
+        }
+        if (!confirm(ids.length + " domain ile 30 günlük ısıtma programını başlat?")) return;
+        api("/api/platform/warmup-program/start", {
+          method: "POST",
+          body: { domain_ids: ids }
+        }).then(function (res) {
+          if (!res.ok) {
+            alert((res.data && res.data.error) || "Başlatılamadı");
+            return;
+          }
+          _wuSelected = {};
+          renderWarmupProgram(res.data.program);
+          refreshDomains();
+        });
+      });
+    }
+    var pauseBtn = document.getElementById("mm-wu-pause");
+    if (pauseBtn) {
+      pauseBtn.addEventListener("click", function () {
+        api("/api/platform/warmup-program", { method: "PATCH", body: { pause: true } })
+          .then(function (res) {
+            if (res.ok) renderWarmupProgram(res.data.program);
+            else alert((res.data && res.data.error) || "Duraklatılamadı");
+          });
+      });
+    }
+    var resumeBtn = document.getElementById("mm-wu-resume");
+    if (resumeBtn) {
+      resumeBtn.addEventListener("click", function () {
+        api("/api/platform/warmup-program", { method: "PATCH", body: { resume: true } })
+          .then(function (res) {
+            if (res.ok) renderWarmupProgram(res.data.program);
+            else alert((res.data && res.data.error) || "Devam edilemedi");
+          });
+      });
+    }
+    var bannerGo = document.getElementById("mm-warmup-banner-go");
+    if (bannerGo) {
+      bannerGo.addEventListener("click", function () {
+        if (window.mmNavigate) window.mmNavigate("plat-warmup");
+      });
+    }
+    var pick = document.getElementById("mm-wu-domain-pick");
+    if (pick) {
+      pick.addEventListener("change", function (e) {
+        var el = e.target;
+        if (!el || !el.getAttribute || !el.getAttribute("data-wu-id")) return;
+        _wuSelected[el.getAttribute("data-wu-id")] = !!el.checked;
+      });
+    }
+    var tasksEl = document.getElementById("mm-wu-tasks");
+    if (tasksEl) {
+      tasksEl.addEventListener("change", function (e) {
+        var el = e.target;
+        if (!el || !el.getAttribute) return;
+        var key = el.getAttribute("data-wu-task");
+        if (!key) return;
+        api("/api/platform/warmup-program", {
+          method: "PATCH",
+          body: { task_key: key, done: !!el.checked }
+        }).then(function (res) {
+          if (!res.ok) {
+            el.checked = !el.checked;
+            alert((res.data && res.data.error) || "Kaydedilemedi");
+            return;
+          }
+          renderWarmupProgram(res.data.program);
+          if (res.data.program && res.data.program.all_done_today) refreshDomains();
+        });
+      });
+    }
+  }
+
   function resetDomainForm() {
     var form = document.getElementById("mm-domain-form");
     if (form) form.reset();
@@ -739,10 +973,11 @@
           );
         }
       });
+      bindWarmupProgramUi();
       this.refresh();
     },
     refresh: function () {
-      return Promise.all([refreshTenants(), refreshDomains()]);
+      return Promise.all([refreshTenants(), refreshDomains(), refreshWarmupProgram()]);
     }
   };
 

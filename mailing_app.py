@@ -613,6 +613,58 @@ def platform_deallocate(domain_id):
     return jsonify({"ok": True})
 
 
+@app.get("/api/platform/warmup-program")
+@require_superadmin
+def platform_warmup_program_get():
+    from mail_warmup_program import program_snapshot
+
+    with closing(get_db()) as conn:
+        snap = program_snapshot(conn)
+    return jsonify({"program": snap})
+
+
+@app.post("/api/platform/warmup-program/start")
+@require_superadmin
+def platform_warmup_program_start():
+    from mail_warmup_program import start_program
+
+    data = request.get_json(silent=True) or {}
+    try:
+        with closing(get_db()) as conn:
+            snap = start_program(conn, data.get("domain_ids") or [], notes=data.get("notes") or "")
+            conn.commit()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Başlatılamadı: {exc}"}), 500
+    return jsonify({"ok": True, "program": snap})
+
+
+@app.patch("/api/platform/warmup-program")
+@require_superadmin
+def platform_warmup_program_patch():
+    from mail_warmup_program import patch_program, set_task
+
+    data = request.get_json(silent=True) or {}
+    with closing(get_db()) as conn:
+        try:
+            if "task_key" in data:
+                snap = set_task(
+                    conn,
+                    str(data.get("task_key") or ""),
+                    bool(data.get("done")),
+                    day_date=data.get("date"),
+                )
+            else:
+                snap = patch_program(conn, data)
+            conn.commit()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "program": snap})
+
+
 @app.get("/app")
 @require_mail_login
 def mail_app():

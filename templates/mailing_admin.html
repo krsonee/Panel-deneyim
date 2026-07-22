@@ -6,7 +6,7 @@
   <title>Mikromail</title>
   <meta name="theme-color" content="#090D16">
   <link rel="stylesheet" href="/static/mailing_shell.css?v=20260722mm11">
-  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260722mm11">
+  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260722mm12">
   <style>
     :root { --accent: #38bdf8; --accent-soft: rgba(56,189,248,0.14); --accent-ink: #041018; }
     #module-mailing-panel { display:block !important; }
@@ -88,7 +88,7 @@
           <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20"/><path d="M12 2a15 15 0 0 0 0 20"/></svg></span>
           <span class="nav-item-text">Domain / IP Havuzu</span>
         </button>
-        <button type="button" class="nav-item" data-mm-nav="plat-warmup" data-title="Warm-up Yönetimi" data-sub="Isınma ve health">
+        <button type="button" class="nav-item" data-mm-nav="plat-warmup" data-title="Isıtma Programı" data-sub="Günlük görevler · warm-up">
           <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><path d="M12 2v6"/><path d="M12 18v4"/><path d="m4.9 4.9 4.2 4.2"/><path d="m14.9 14.9 4.2 4.2"/><path d="M2 12h6"/><path d="M16 12h6"/><path d="m4.9 19.1 4.2-4.2"/><path d="m14.9 9.1 4.2-4.2"/></svg></span>
           <span class="nav-item-text">Warm-up Yönetimi</span>
         </button>
@@ -120,6 +120,10 @@
           <div class="live-pill" id="mail-provider-pill" style="background:var(--amber);border-color:rgba(245,158,11,0.35);color:var(--amber);">Stub mod</div>
         </div>
       </header>
+      <div id="mm-warmup-banner" class="mm-warmup-banner" hidden>
+        <span id="mm-warmup-banner-text">Isıtma görevleri bekliyor</span>
+        <button type="button" class="btn btn-sm btn-primary" id="mm-warmup-banner-go">Programa git</button>
+      </div>
 
       <div class="main-inner">
         <div id="mm-view-mailing">
@@ -252,6 +256,44 @@
           </div>
 
           <div class="mm-plat-pane" id="mm-plat-warmup" data-mm-plat="warmup">
+            <section class="card" style="margin-bottom:1rem;">
+              <div class="card-head">
+                <span class="mm-label-row" style="margin:0;">
+                  Isıtma programı (30 gün)
+                  <span class="mm-tip" tabindex="0" data-tip="00:00 sonrası yeni gün açılır. Görevleri işaretle; bitince domain cap otomatik güncellenir.">?</span>
+                </span>
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                  <button type="button" class="btn btn-sm btn-secondary" id="mm-wu-refresh">Yenile</button>
+                  <button type="button" class="btn btn-sm btn-primary" id="mm-wu-start">Programı başlat</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <p class="hint" id="mm-wu-status" style="margin:0 0 0.75rem;">—</p>
+                <div id="mm-wu-setup" style="margin-bottom:1rem;">
+                  <p class="hint" style="margin:0 0 0.45rem;">Isıtılacak domainleri seç (öneri: 5 adet):</p>
+                  <div id="mm-wu-domain-pick" class="mm-wu-domain-pick"></div>
+                </div>
+                <div id="mm-wu-today" hidden>
+                  <div class="mm-wu-hero">
+                    <div>
+                      <div class="mm-wu-day" id="mm-wu-day">Gün —</div>
+                      <div class="mm-wu-title" id="mm-wu-title">—</div>
+                      <div class="hint" id="mm-wu-targets" style="margin:0.35rem 0 0;">—</div>
+                    </div>
+                    <div class="mm-wu-progress-ring">
+                      <span id="mm-wu-progress-label">0/0</span>
+                    </div>
+                  </div>
+                  <div id="mm-wu-domains" class="mm-wu-chips" style="margin:0.75rem 0;"></div>
+                  <div id="mm-wu-tasks" class="mm-wu-tasks"></div>
+                  <ul id="mm-wu-rules" class="mm-wu-rules"></ul>
+                  <div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.85rem;">
+                    <button type="button" class="btn btn-sm btn-secondary" id="mm-wu-pause">Programı duraklat</button>
+                    <button type="button" class="btn btn-sm btn-secondary" id="mm-wu-resume" hidden>Devam</button>
+                  </div>
+                </div>
+              </div>
+            </section>
             <section class="card">
               <div class="card-head">
                 <span class="mm-label-row" style="margin:0;">
@@ -319,7 +361,7 @@
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
   <script src="/static/mailing.js?v=20260722mm11"></script>
-  <script src="/static/mailing_platform.js?v=20260722mm11"></script>
+  <script src="/static/mailing_platform.js?v=20260722mm12"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

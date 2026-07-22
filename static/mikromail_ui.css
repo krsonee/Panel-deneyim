@@ -438,6 +438,64 @@ input:focus, select:focus, textarea:focus {
 }
 .mm-chart-wrap canvas { width: 100% !important; height: 100% !important; }
 
+/* —— Warmup program —— */
+.mm-warmup-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  padding: 0.55rem 1.1rem; margin: 0;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.18), rgba(56, 189, 248, 0.12));
+  border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fcd34d; font-size: 0.85rem; font-weight: 600;
+}
+.mm-warmup-banner[hidden] { display: none !important; }
+.mm-wu-domain-pick {
+  display: flex; flex-wrap: wrap; gap: 0.45rem;
+}
+.mm-wu-pick {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.35rem 0.55rem; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface);
+  font-size: 0.8rem; cursor: pointer;
+}
+.mm-wu-pick input { accent-color: #38bdf8; }
+.mm-wu-hero {
+  display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start;
+  padding: 0.85rem 1rem; border-radius: 12px;
+  border: 1px solid var(--border); background: rgba(15, 23, 42, 0.4);
+}
+.mm-wu-day {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+}
+.mm-wu-title { font-size: 1.05rem; font-weight: 700; margin-top: 0.2rem; }
+.mm-wu-progress-ring {
+  min-width: 64px; height: 64px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: radial-gradient(circle at 30% 30%, rgba(56,189,248,0.25), transparent 60%),
+    conic-gradient(#38bdf8 0deg, rgba(148,163,184,0.2) 0deg);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.mm-wu-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.mm-wu-chip {
+  font-size: 0.75rem; padding: 0.28rem 0.5rem; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+}
+.mm-wu-tasks { display: grid; gap: 0.45rem; margin-top: 0.35rem; }
+.mm-wu-task {
+  display: flex; gap: 0.65rem; align-items: flex-start;
+  padding: 0.65rem 0.75rem; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+}
+.mm-wu-task.is-done { opacity: 0.72; border-color: rgba(52, 211, 153, 0.35); }
+.mm-wu-task input { margin-top: 0.2rem; accent-color: #34d399; }
+.mm-wu-task-body { display: flex; flex-direction: column; gap: 0.2rem; }
+.mm-wu-task-body strong { font-size: 0.9rem; }
+.mm-wu-task-body small { color: var(--muted); font-size: 0.78rem; line-height: 1.35; }
+.mm-wu-rules {
+  margin: 0.85rem 0 0; padding-left: 1.1rem; color: var(--muted);
+  font-size: 0.78rem; line-height: 1.45;
+}
+.mm-wu-rules li { margin-bottom: 0.25rem; }
+
 /* Hide long static form hints that were moved into tooltips */
 .mm-hide-hint { display: none !important; }
 

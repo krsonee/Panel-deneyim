@@ -8,13 +8,28 @@ from __future__ import annotations
 import os
 import time
 from contextlib import closing
+from datetime import datetime, timezone
 
-from database import execute, fetchall, fetchone, get_db, init_mailing_schema, iso, utcnow
+from database import (
+    execute,
+    fetchall,
+    fetchone,
+    get_db,
+    get_mail_setting,
+    init_mailing_schema,
+    iso,
+    upsert_mail_setting,
+    utcnow,
+)
 from mail_tenant import ensure_tenant_schema
 
 
 def _tick_warm_domains(conn):
-    """Advance warm_day slowly for domains in warming state (cap ramp helper)."""
+    """Takvim günü başına 1 kez warm_day / cap ilerlet (eski: her 25 sn — yanlıştı)."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    last = (get_mail_setting(conn, "warm_tick_date", "") or "").strip()
+    if last == today:
+        return
     rows = fetchall(
         conn,
         """
@@ -25,7 +40,6 @@ def _tick_warm_domains(conn):
     ) or []
     for r in rows:
         day = int(r["warm_day"] or 0) + 1
-        # Simple ramp: daily_cap grows toward 5000 over ~30 days
         base = 50
         target = max(int(r["daily_cap"] or 500), base)
         new_cap = min(5000, base + day * max(20, target // 30))
@@ -40,6 +54,7 @@ def _tick_warm_domains(conn):
                 "UPDATE mail_domains SET warm_status = 'warm' WHERE id = ?",
                 (r["id"],),
             )
+    upsert_mail_setting(conn, "warm_tick_date", today)
 
 
 def main():
