@@ -2251,14 +2251,14 @@
     if (!modal || !tbody) return;
     if (title) title.textContent = "Alıcılar — " + (campaignName || ("#" + campaignId));
     if (meta) meta.textContent = "Yükleniyor…";
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">Yükleniyor…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">Yükleniyor…</td></tr>';
     modal.classList.add("open");
     mailApi("/api/mailing/campaigns/" + campaignId + "/recipients?limit=1000", { timeoutMs: 60000 })
       .then(function (res) {
         if (!res || !res.ok) {
           var err = (res && res.data && res.data.error) || "Alıcılar alınamadı";
           if (meta) meta.textContent = err;
-          tbody.innerHTML = '<tr><td colspan="5" class="empty">' + esc(err) + "</td></tr>";
+          tbody.innerHTML = '<tr><td colspan="6" class="empty">' + esc(err) + "</td></tr>";
           return;
         }
         var camp = res.data.campaign || {};
@@ -2271,7 +2271,7 @@
             (tagFilter ? (" · kampanya etiket filtresi: " + tagFilter) : " · etiket filtresi yok");
         }
         if (!rows.length) {
-          tbody.innerHTML = '<tr><td colspan="5" class="empty">Alıcı yok</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" class="empty">Alıcı yok</td></tr>';
           return;
         }
         tbody.innerHTML = rows.map(function (r) {
@@ -2279,6 +2279,7 @@
             return '<span class="tag">' + esc(t) + "</span>";
           }).join(" ") || '<span class="muted">—</span>';
           var st = r.send_status || r.recipient_status || "—";
+          var sendErr = (r.send_error || "").trim();
           var eng = [];
           if (r.opened_at) eng.push("açıldı");
           if (r.clicked_at) eng.push("tıkladı");
@@ -2286,7 +2287,9 @@
             "<td>" + esc(r.email || "") + "</td>" +
             "<td>" + esc(r.name || "") + "</td>" +
             "<td>" + tags + "</td>" +
-            "<td>" + esc(st) + "</td>" +
+            "<td>" + mmStatusBadge(st) + "</td>" +
+            "<td style=\"max-width:320px;font-size:0.78rem;color:#fca5a5;word-break:break-word;\">" +
+              (sendErr ? esc(sendErr) : '<span class="muted">—</span>') + "</td>" +
             "<td>" + (eng.length ? esc(eng.join(" · ")) : '<span class="muted">—</span>') + "</td>" +
             "</tr>";
         }).join("");

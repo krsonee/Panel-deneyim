@@ -3769,13 +3769,18 @@ def create_mailing_blueprint(permission_required):
                     c.email,
                     c.name,
                     c.tags,
-                    s.status AS send_status,
-                    s.opened_at,
-                    s.clicked_at,
-                    s.error AS send_error
+                    COALESCE(s.status, s2.status) AS send_status,
+                    COALESCE(s.opened_at, s2.opened_at) AS opened_at,
+                    COALESCE(s.clicked_at, s2.clicked_at) AS clicked_at,
+                    COALESCE(NULLIF(TRIM(s.error), ''), NULLIF(TRIM(s2.error), '')) AS send_error
                 FROM mail_campaign_recipients r
                 JOIN mail_contacts c ON c.id = r.contact_id
                 LEFT JOIN mail_sends s ON s.id = r.send_id
+                LEFT JOIN mail_sends s2 ON s2.id = (
+                    SELECT s3.id FROM mail_sends s3
+                    WHERE s3.campaign_id = r.campaign_id AND s3.contact_id = r.contact_id
+                    ORDER BY s3.id DESC LIMIT 1
+                )
                 WHERE {where_sql}
                 ORDER BY r.id ASC
                 LIMIT ?
