@@ -998,12 +998,114 @@ def _attach_campaign_recipients(
     return _insert_campaign_recipient_ids(conn, campaign_id, ids, now)
 
 
-def _bulk_upsert_contacts(conn, batch, tag, now, tenant_id=None):
-    """batch: [(email, name), ...]. Tek SQL ifadesiyle toplu insert/upsert.
-    Döner: (upserted, inserted, updated)"""
+def _merge_contact_tag_sql(existing_tags_json, tag):
+    """Mevcut tags JSON'a etiket ekle (yoksa)."""
+    tag = (tag or "").strip()
+    if not tag:
+        return existing_tags_json or "[]"
+    try:
+        parsed = json.loads(existing_tags_json or "[]")
+        if not isinstance(parsed, list):
+            parsed = []
+    except Exception:
+        parsed = []
+    if tag not in parsed:
+        parsed.append(tag)
+    return json.dumps(parsed, ensure_ascii=False)
+
+
+def _bulk_upsert_contacts_fallback(conn, batch, tag, now, tenant_id=None):
+    """ON CONFLICT yoksa: yeni insert + mevcut update (tenant dahil)."""
+    from database import _table_columns
+
     if not batch:
         return 0, 0, 0
-    from database import _table_columns
+    tag = (tag or "").strip()
+    cols = _table_columns(conn, "mail_contacts") or set()
+    has_tenant = "tenant_id" in cols
+    tid = int(tenant_id) if tenant_id else (1 if has_tenant else None)
+
+    emails = [email for email, _ in batch]
+    placeholders = ",".join(["?"] * len(emails))
+    existing_rows = fetchall(
+        conn,
+        f"SELECT id, email, name, tags FROM mail_contacts WHERE LOWER(email) IN ({placeholders})",
+        tuple(e.lower() for e in emails),
+    ) or []
+    by_email = {str(r["email"]).lower(): dict(r) for r in existing_rows}
+
+    inserted = 0
+    updated = 0
+    for email, name in batch:
+        key = email.lower()
+        row = by_email.get(key)
+        if row:
+            new_tags = _merge_contact_tag_sql(row.get("tags"), tag)
+            new_name = (row.get("name") or "").strip() or (name or "")
+            if has_tenant:
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_contacts
+                    SET name = ?, tags = ?, updated_at = ?,
+                        tenant_id = COALESCE(tenant_id, ?)
+                    WHERE id = ?
+                    """,
+                    (new_name, new_tags, now, tid, row["id"]),
+                )
+            else:
+                execute(
+                    conn,
+                    "UPDATE mail_contacts SET name = ?, tags = ?, updated_at = ? WHERE id = ?",
+                    (new_name, new_tags, now, row["id"]),
+                )
+            updated += 1
+        else:
+            tag_json = json.dumps([tag], ensure_ascii=False) if tag else "[]"
+            if has_tenant:
+                cid = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_contacts
+                    (email, phone, name, tags, source, unsubscribed, notes, created_at, updated_at, tenant_id)
+                    VALUES (?, '', ?, ?, 'csv', 0, '', ?, ?, ?)
+                    """,
+                    (email, name or "", tag_json, now, now, tid),
+                )
+            else:
+                cid = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_contacts
+                    (email, phone, name, tags, source, unsubscribed, notes, created_at, updated_at)
+                    VALUES (?, '', ?, ?, 'csv', 0, '', ?, ?)
+                    """,
+                    (email, name or "", tag_json, now, now),
+                )
+            inserted += 1
+            by_email[key] = {
+                "id": cid,
+                "email": email,
+                "name": name or "",
+                "tags": tag_json,
+            }
+    return inserted + updated, inserted, updated
+
+
+def _bulk_upsert_contacts(conn, batch, tag, now, tenant_id=None):
+    """batch: [(email, name), ...]. Tek SQL ifadesiyle toplu insert/upsert.
+    Döner: (upserted, inserted, updated)
+
+    Postgres'te UNIQUE(email) yoksa ON CONFLICT patlar → fallback'e düşer.
+    """
+    if not batch:
+        return 0, 0, 0
+    from database import _table_columns, ensure_mail_contacts_unique_email
+
+    try:
+        ensure_mail_contacts_unique_email(conn)
+    except Exception:
+        pass
 
     tag = (tag or "").strip()
     tag_json_single = json.dumps([tag], ensure_ascii=False) if tag else "[]"
@@ -1012,10 +1114,10 @@ def _bulk_upsert_contacts(conn, batch, tag, now, tenant_id=None):
     placeholders = ",".join(["?"] * len(emails))
     existing_rows = fetchall(
         conn,
-        f"SELECT email FROM mail_contacts WHERE email IN ({placeholders})",
-        tuple(emails),
+        f"SELECT email FROM mail_contacts WHERE LOWER(email) IN ({placeholders})",
+        tuple(e.lower() for e in emails),
     )
-    existing_set = {str(r["email"]).lower() for r in existing_rows}
+    existing_set = {str(r["email"]).lower() for r in (existing_rows or [])}
     inserted = sum(1 for email, _ in batch if email.lower() not in existing_set)
     updated = len(batch) - inserted
     cols = _table_columns(conn, "mail_contacts") or set()
@@ -1062,9 +1164,20 @@ def _bulk_upsert_contacts(conn, batch, tag, now, tenant_id=None):
                 updated_at = EXCLUDED.updated_at
         """
     params += [tag, tag_like_pattern, tag_json_single, tag]
-    cur = execute(conn, sql, tuple(params))
-    upserted = cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(batch)
-    return upserted, inserted, updated
+    try:
+        cur = execute(conn, sql, tuple(params))
+        upserted = cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(batch)
+        return upserted, inserted, updated
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "on conflict" not in msg and "unique or exclusion" not in msg:
+            raise
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  bulk upsert ON CONFLICT yok — fallback: {exc}")
+        return _bulk_upsert_contacts_fallback(conn, batch, tag, now, tenant_id=tenant_id)
 
 
 def _detect_csv_delimiter(path):
