@@ -4027,11 +4027,63 @@
     return mailRefreshImportStatus({ force: true });
   }
 
+  function mailBindFloatingTips() {
+    if (window.__mmFloatTipBound) return;
+    window.__mmFloatTipBound = true;
+    var tipEl = document.getElementById("mm-float-tip");
+    if (!tipEl) {
+      tipEl = document.createElement("div");
+      tipEl.id = "mm-float-tip";
+      tipEl.className = "mm-float-tip";
+      tipEl.setAttribute("role", "tooltip");
+      document.body.appendChild(tipEl);
+    }
+    var hideTimer = null;
+    function hide() {
+      tipEl.classList.remove("open");
+    }
+    function showFor(el) {
+      var text = (el.getAttribute("data-tip") || el.getAttribute("title") || "").trim();
+      if (!text) return;
+      if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+      tipEl.textContent = text;
+      var r = el.getBoundingClientRect();
+      var left = r.left + r.width / 2;
+      var top = r.top;
+      // Üstte yer yoksa alta aç
+      var placeBelow = r.top < 48;
+      tipEl.style.left = Math.max(12, Math.min(window.innerWidth - 12, left)) + "px";
+      if (placeBelow) {
+        tipEl.style.top = (r.bottom + 8) + "px";
+        tipEl.style.transform = "translate(-50%, 0)";
+      } else {
+        tipEl.style.top = top + "px";
+        tipEl.style.transform = "translate(-50%, calc(-100% - 8px))";
+      }
+      tipEl.classList.add("open");
+    }
+    document.addEventListener("mouseover", function (e) {
+      var el = e.target.closest(".mm-tip-btn[data-tip], .mm-tip[data-tip], .btn-icon[data-tip]");
+      if (!el) return;
+      showFor(el);
+    }, true);
+    document.addEventListener("mouseout", function (e) {
+      var el = e.target.closest(".mm-tip-btn[data-tip], .mm-tip[data-tip], .btn-icon[data-tip]");
+      if (!el) return;
+      var related = e.relatedTarget;
+      if (related && el.contains(related)) return;
+      hideTimer = setTimeout(hide, 40);
+    }, true);
+    document.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+  }
+
   window.MakroMailing = {
     init: function () {
       if (mailLoaded) return;
       mailLoaded = true;
       bindEvents();
+      mailBindFloatingTips();
       setTplMode("simple");
     },
     ensureTenant: mailEnsureTenant,

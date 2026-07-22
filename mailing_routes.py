@@ -335,7 +335,7 @@ def _contact_out(row):
     return d
 
 
-DEFAULT_GREETING_NAME = "değerli üye"
+DEFAULT_GREETING_NAME = "Değerli üye"
 
 
 def _mail_logo_url():
@@ -396,7 +396,7 @@ def _apply_mail_assets(text):
 
 def _render_template(text, contact):
     """{{name}} boşsa 'Merhaba ,' gibi bozuk bir selamlama çıkmasın —
-    isim yoksa nazik bir varsayılan ('değerli üye') kullanılır."""
+    isim yoksa nazik bir varsayılan ('Değerli üye') kullanılır."""
     text = _apply_mail_assets(text or "")
     name = ((contact or {}).get("name") or "").strip()
     mapping = {
