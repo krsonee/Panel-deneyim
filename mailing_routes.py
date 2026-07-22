@@ -3661,6 +3661,56 @@ def create_mailing_blueprint(permission_required):
             rows = campaign_analytics(conn, int(cid) if cid else None)
         return jsonify({"campaigns": rows})
 
+    @bp.route("/reports/engagement-timeline", methods=["GET"])
+    @mail_perm(*MAIL_REP)
+    def report_engagement_timeline():
+        """Son N gün için günlük açılma / tıklama sayıları (grafik)."""
+        try:
+            days = min(max(int(request.args.get("days") or 14), 1), 90)
+        except (TypeError, ValueError):
+            days = 14
+        from datetime import datetime, timedelta, timezone
+
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        with closing(get_db()) as conn:
+            opens = fetchall(
+                conn,
+                """
+                SELECT substr(CAST(opened_at AS TEXT), 1, 10) AS d, COUNT(*) AS n
+                FROM mail_sends
+                WHERE opened_at IS NOT NULL AND CAST(opened_at AS TEXT) >= ?
+                GROUP BY 1 ORDER BY 1
+                """,
+                (since,),
+            )
+            clicks = fetchall(
+                conn,
+                """
+                SELECT substr(CAST(clicked_at AS TEXT), 1, 10) AS d, COUNT(*) AS n
+                FROM mail_sends
+                WHERE clicked_at IS NOT NULL AND CAST(clicked_at AS TEXT) >= ?
+                GROUP BY 1 ORDER BY 1
+                """,
+                (since,),
+            )
+        open_map = {str(r["d"]): int(r["n"] or 0) for r in (opens or [])}
+        click_map = {str(r["d"]): int(r["n"] or 0) for r in (clicks or [])}
+        end = datetime.now(timezone.utc).date()
+        labels = []
+        open_series = []
+        click_series = []
+        for i in range(days - 1, -1, -1):
+            d = (end - timedelta(days=i)).isoformat()
+            labels.append(d)
+            open_series.append(open_map.get(d, 0))
+            click_series.append(click_map.get(d, 0))
+        return jsonify({
+            "days": days,
+            "labels": labels,
+            "opens": open_series,
+            "clicks": click_series,
+        })
+
     @bp.route("/campaigns/<int:campaign_id>/recipients", methods=["GET"])
     @mail_perm(*MAIL_REP, *MAIL_CAMP)
     def campaign_recipients_detail(campaign_id):

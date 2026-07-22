@@ -22,9 +22,69 @@
   var mailImportRefreshTimer = null;
   var mailImportHandledJobs = {};
   var mailImportActiveXhr = null;
+  var mailEngagementChart = null;
+  var mailContactsHubTab = "crm";
   var MAIL_AUTO_SPLIT_BYTES = 20 * 1024 * 1024;
   var MAIL_CHUNK_TARGET_BYTES = 10 * 1024 * 1024;
   var MAIL_UPLOAD_STALL_MS = 120 * 1000;
+  var MAIL_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+
+  function mmIcon(name) {
+    var p = {
+      edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+      trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>',
+      retry: '<path d="M1 4v6h6"/><path d="M3.5 15a9 9 0 1 0 .7-8.1L1 10"/>',
+      send: '<path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>',
+      pause: '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>',
+      play: '<path d="M8 5v14l11-7z"/>',
+      copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+      warm: '<path d="M12 2v6"/><path d="M12 18v4"/><path d="m4.9 4.9 4.2 4.2"/><path d="m14.9 14.9 4.2 4.2"/><path d="M2 12h6"/><path d="M16 12h6"/>',
+      alloc: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11h-6"/><path d="M19 8v6"/>',
+      eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>'
+    };
+    return '<svg class="mm-ico" viewBox="0 0 24 24" aria-hidden="true">' + (p[name] || "") + "</svg>";
+  }
+
+  function mmIconBtn(cls, title, icon, extra) {
+    return '<button type="button" class="btn btn-icon ' + cls + '" title="' + esc(title) + '" aria-label="' +
+      esc(title) + '" ' + (extra || "") + ">" + mmIcon(icon) + "</button>";
+  }
+
+  function mmStatusBadge(status) {
+    var s = String(status || "").toLowerCase();
+    var cls = "mm-badge-muted";
+    if (s === "active" || s === "warm" || s === "done" || s === "sent" || s === "simulated" || s === "ok" || s === "valid" || s === "tamam") cls = "mm-badge-ok";
+    else if (s === "cold") cls = "mm-badge-info";
+    else if (s === "pending" || s === "queued" || s === "scheduled" || s === "draft" || s === "warming" || s === "sending") cls = "mm-badge-warn";
+    else if (s === "error" || s === "failed" || s === "burned" || s === "suspended" || s === "invalid" || s === "unconfigured" || s === "cancelled") cls = "mm-badge-danger";
+    else if (s === "paused") cls = "mm-badge-muted";
+    return '<span class="mm-badge ' + cls + '">' + esc(status || "—") + "</span>";
+  }
+
+  function mmMsgIdCell(id) {
+    var raw = String(id || "").trim();
+    if (!raw) return '<span class="muted">—</span>';
+    return '<span class="mm-msgid"><code title="' + esc(raw) + '">' + esc(raw) + "</code>" +
+      mmIconBtn("mm-copy-msgid btn-secondary", "Kopyala", "copy", 'data-copy="' + esc(raw) + '"') +
+      "</span>";
+  }
+
+  function mailAnalyzeEmails(text) {
+    var tokens = String(text || "").split(/[\s,;]+/).filter(Boolean);
+    var valid = [];
+    var invalid = [];
+    var seen = {};
+    tokens.forEach(function (t) {
+      var e = t.trim().toLowerCase();
+      if (!e) return;
+      if (MAIL_EMAIL_RE.test(e)) {
+        if (!seen[e]) { seen[e] = 1; valid.push(e); }
+      } else {
+        invalid.push(t.trim());
+      }
+    });
+    return { valid: valid, invalid: invalid, tokens: tokens };
+  }
 
   var MAIL_IMPORT_BADGE = {
     uploading: { bg: "rgba(59,130,246,0.18)", color: "#93c5fd", border: "rgba(59,130,246,0.35)", label: "Yükleniyor" },
@@ -658,6 +718,19 @@
     });
   }
 
+  function mailSyncContactsSubnav(tab) {
+    var sub = document.getElementById("mail-contacts-subnav");
+    var contactsTabs = { crm: 1, smartico: 1, relations: 1 };
+    var show = !!contactsTabs[tab];
+    if (sub) sub.hidden = !show;
+    if (show) {
+      mailContactsHubTab = tab;
+      document.querySelectorAll("#mail-contacts-subnav [data-contacts-tab]").forEach(function (btn) {
+        btn.classList.toggle("active", btn.getAttribute("data-contacts-tab") === tab);
+      });
+    }
+  }
+
   function switchMailTab(name) {
     name = name || "dashboard";
     if (!mailHas(MAIL_TAB_PERMS[name])) name = mailFirstAllowedTab();
@@ -671,7 +744,26 @@
       pane.classList.toggle("active", on);
       pane.hidden = !on;
     });
+    mailSyncContactsSubnav(mailActiveTab);
     mailLoadTab(mailActiveTab);
+  }
+
+  function mailNavigate(nav) {
+    var map = {
+      dashboard: "dashboard",
+      contacts: mailContactsHubTab || "crm",
+      templates: "templates",
+      campaigns: "campaigns",
+      ivr: "ivr",
+      reports: "reports",
+      settings: "settings"
+    };
+    var tab = map[nav] || nav;
+    if (nav === "contacts") {
+      var sub = document.getElementById("mail-contacts-subnav");
+      if (sub) sub.hidden = false;
+    }
+    switchMailTab(tab);
   }
 
   function mailLoadTab(tab) {
@@ -1303,9 +1395,9 @@
           "<td>" + vLabel + "</td>" +
           "<td>" + (tags || "—") + "</td>" +
           "<td>" + esc(c.source) + "</td>" +
-          '<td style="white-space:nowrap;">' +
-            '<button type="button" class="btn btn-sm mail-edit-contact" data-id="' + c.id + '">Düzenle</button> ' +
-            '<button type="button" class="btn btn-sm mail-del-contact" data-id="' + c.id + '">Sil</button>' +
+          '<td style="white-space:nowrap;display:flex;gap:0.3rem;">' +
+            mmIconBtn("mail-edit-contact", "Düzenle", "edit", 'data-id="' + c.id + '"') + " " +
+            mmIconBtn("mail-del-contact btn-danger", "Sil", "trash", 'data-id="' + c.id + '"') +
           "</td></tr>";
       }).join("");
       mailUpdateContactSelectionCount();
@@ -1626,9 +1718,9 @@
         "<td>" + esc(t.subject) + "</td>" +
         "<td>" + esc(fmtTime(t.updated_at)) + "</td>" +
         '<td style="white-space:nowrap;">' +
-        '<button type="button" class="btn btn-sm mail-view-tpl" data-id="' + t.id + '">Görüntüle</button> ' +
-        '<button type="button" class="btn btn-sm mail-edit-tpl" data-id="' + t.id + '">Düzenle</button> ' +
-        '<button type="button" class="btn btn-sm mail-del-tpl" data-id="' + t.id + '">Sil</button>' +
+        mmIconBtn("mail-view-tpl", "Görüntüle", "eye", 'data-id="' + t.id + '"') + " " +
+        mmIconBtn("mail-edit-tpl", "Düzenle", "edit", 'data-id="' + t.id + '"') + " " +
+        mmIconBtn("mail-del-tpl btn-danger", "Sil", "trash", 'data-id="' + t.id + '"') +
         "</td></tr>";
     }).join("");
   }
@@ -2001,26 +2093,26 @@
       tbody.innerHTML = rows.map(function (c) {
         var actions = "";
         if (c.status === "draft" || c.status === "scheduled") {
-          actions += '<button type="button" class="btn btn-sm btn-primary mail-queue-camp" data-id="' + c.id + '" data-now="1">Şimdi gönder</button> ';
+          actions += mmIconBtn("btn-primary mail-queue-camp", "Şimdi gönder", "send", 'data-id="' + c.id + '" data-now="1"') + " ";
         }
         if (c.status === "draft" && c.scheduled_at) {
-          actions += '<button type="button" class="btn btn-sm mail-queue-camp" data-id="' + c.id + '">Zamanla</button> ';
+          actions += mmIconBtn("mail-queue-camp", "Zamanla", "play", 'data-id="' + c.id + '"') + " ";
         }
         if (c.status === "scheduled" || c.status === "queued" || c.status === "sending") {
-          actions += '<button type="button" class="btn btn-sm mail-pause-camp" data-id="' + c.id + '">Duraklat</button> ';
-          actions += '<button type="button" class="btn btn-sm mail-cancel-camp" data-id="' + c.id + '">İptal</button> ';
+          actions += mmIconBtn("mail-pause-camp", "Duraklat", "pause", 'data-id="' + c.id + '"') + " ";
+          actions += mmIconBtn("mail-cancel-camp btn-danger", "İptal", "trash", 'data-id="' + c.id + '"') + " ";
         }
         if (c.status === "paused") {
-          actions += '<button type="button" class="btn btn-sm btn-primary mail-resume-camp" data-id="' + c.id + '">Devam</button> ';
-          actions += '<button type="button" class="btn btn-sm mail-cancel-camp" data-id="' + c.id + '">İptal</button> ';
+          actions += mmIconBtn("btn-primary mail-resume-camp", "Devam", "play", 'data-id="' + c.id + '"') + " ";
+          actions += mmIconBtn("mail-cancel-camp btn-danger", "İptal", "trash", 'data-id="' + c.id + '"') + " ";
         }
         if (c.status === "done" || c.status === "error" || c.status === "cancelled" || c.status === "paused") {
           if (Number(c.failed_count || 0) > 0) {
-            actions += '<button type="button" class="btn btn-sm mail-retry-camp" data-id="' + c.id + '">Fail retry</button> ';
+            actions += mmIconBtn("mail-retry-camp", "Fail retry", "retry", 'data-id="' + c.id + '"') + " ";
           }
         }
         if (c.status === "draft" || c.status === "scheduled" || c.status === "done" || c.status === "cancelled" || c.status === "error") {
-          actions += '<button type="button" class="btn btn-sm mail-del-camp" data-id="' + c.id + '">Sil</button>';
+          actions += mmIconBtn("mail-del-camp btn-danger", "Sil", "trash", 'data-id="' + c.id + '"');
         }
         var tagLine = esc(c.tag_filter || "tümü");
         var rate = c.rate_per_minute != null ? (fmtNum(c.rate_per_minute) + "/dk") : "—";
@@ -2031,7 +2123,7 @@
           "<td><strong>" + esc(c.name) + "</strong>" +
             (c.error ? ('<div class="muted" style="font-size:0.68rem;color:var(--rose);">' + esc(c.error) + "</div>") : "") +
           "</td>" +
-          '<td><span class="mail-camp-status ' + esc(c.status) + '">' + esc(mailCampStatusLabel(c.status)) + "</span></td>" +
+          "<td>" + mmStatusBadge(mailCampStatusLabel(c.status)) + "</td>" +
           "<td>" + mailCampProgressHtml(c) + "</td>" +
           "<td>" + tagLine + '<div class="muted" style="font-size:0.68rem;">' + esc(rate) + "</div></td>" +
           "<td>" + when + "</td>" +
@@ -2135,6 +2227,55 @@
       });
   }
 
+  function mailRenderEngagementChart(payload) {
+    var canvas = document.getElementById("mail-rep-engagement-chart");
+    if (!canvas || typeof Chart === "undefined") return;
+    var labels = (payload && payload.labels) || [];
+    var opens = (payload && payload.opens) || [];
+    var clicks = (payload && payload.clicks) || [];
+    if (mailEngagementChart) {
+      try { mailEngagementChart.destroy(); } catch (e) { /* ignore */ }
+      mailEngagementChart = null;
+    }
+    mailEngagementChart = new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: {
+        labels: labels.map(function (d) { return String(d).slice(5); }),
+        datasets: [
+          {
+            label: "Açılma",
+            data: opens,
+            borderColor: "#38bdf8",
+            backgroundColor: "rgba(56,189,248,0.15)",
+            tension: 0.35,
+            fill: true,
+            pointRadius: 2
+          },
+          {
+            label: "Tıklama",
+            data: clicks,
+            borderColor: "#34d399",
+            backgroundColor: "rgba(52,211,153,0.12)",
+            tension: 0.35,
+            fill: true,
+            pointRadius: 2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: "#9CA3AF", boxWidth: 12 } }
+        },
+        scales: {
+          x: { ticks: { color: "#9CA3AF", maxRotation: 0 }, grid: { color: "rgba(31,41,55,0.8)" } },
+          y: { beginAtZero: true, ticks: { color: "#9CA3AF", precision: 0 }, grid: { color: "rgba(31,41,55,0.8)" } }
+        }
+      }
+    });
+  }
+
   function mailLoadReports() {
     var channel = (document.getElementById("mail-rep-channel") || {}).value || "";
     var status = (document.getElementById("mail-rep-status") || {}).value || "";
@@ -2144,11 +2285,13 @@
     return Promise.all([
       mailApi("/api/mailing/dashboard"),
       mailApi(url),
-      mailApi("/api/mailing/reports/campaigns")
+      mailApi("/api/mailing/reports/campaigns"),
+      mailApi("/api/mailing/reports/engagement-timeline?days=14")
     ]).then(function (results) {
       var dash = results[0];
       var sendsRes = results[1];
       var analyticsRes = results[2];
+      var timelineRes = results[3];
       if (dash && dash.ok) {
         var k = dash.data.kpi || {};
         setText("mail-rep-delivered", k.sends_delivered);
@@ -2156,6 +2299,7 @@
         setText("mail-rep-failed", k.sends_failed);
         setText("mail-rep-opened", k.opened);
       }
+      if (timelineRes && timelineRes.ok) mailRenderEngagementChart(timelineRes.data);
       var atbody = document.getElementById("mail-rep-analytics");
       if (atbody) {
         var camps = (analyticsRes && analyticsRes.ok && analyticsRes.data.campaigns) || [];
@@ -2165,14 +2309,14 @@
           atbody.innerHTML = camps.map(function (c) {
             return "<tr>" +
               "<td>" + esc(c.name) + "</td>" +
-              "<td>" + esc(mailCampStatusLabel(c.status)) + "</td>" +
+              "<td>" + mmStatusBadge(mailCampStatusLabel(c.status)) + "</td>" +
               "<td>" + fmtNum(c.delivered) + "</td>" +
               "<td>" + esc(String(c.open_rate)) + "%</td>" +
               "<td>" + esc(String(c.click_rate)) + "%</td>" +
               "<td>" + fmtNum(c.failed_count) + "</td>" +
               "<td>" + fmtNum(c.skipped_count) + "</td>" +
-              '<td><button type="button" class="btn btn-sm mail-camp-detail-btn" data-id="' +
-              esc(String(c.id)) + '" data-name="' + esc(c.name || "") + '">Detay</button></td></tr>';
+              '<td>' + mmIconBtn("mail-camp-detail-btn", "Detay", "eye",
+                'data-id="' + esc(String(c.id)) + '" data-name="' + esc(c.name || "") + '"') + "</td></tr>";
           }).join("");
         }
       }
@@ -2190,10 +2334,10 @@
           "<td>" + esc(s.channel) + "</td>" +
           "<td>" + esc(s.to_email) + "</td>" +
           "<td>" + esc(s.subject) + "</td>" +
-          "<td>" + esc(s.status) + "</td>" +
+          "<td>" + mmStatusBadge(s.status) + "</td>" +
           "<td style=\"max-width:280px;font-size:0.78rem;color:#fca5a5;\">" +
             (err ? esc(err) : '<span class="muted">—</span>') + "</td>" +
-          "<td>" + esc(s.provider_msg_id || "") + "</td></tr>";
+          "<td>" + mmMsgIdCell(s.provider_msg_id) + "</td></tr>";
       }).join("");
     });
   }
@@ -2432,13 +2576,63 @@
       });
     });
     var bulkForm = document.getElementById("mail-bulk-import-form");
+    var dropzone = document.getElementById("mail-bulk-dropzone");
+    var fileInput = document.getElementById("mail-bulk-file");
+    var fileList = document.getElementById("mail-bulk-file-list");
+    var mailBulkPickedFiles = [];
+    function mailRenderDropFiles() {
+      if (!fileList) return;
+      var files = mailBulkPickedFiles.length
+        ? mailBulkPickedFiles
+        : (fileInput && fileInput.files ? Array.prototype.slice.call(fileInput.files) : []);
+      mailBulkPickedFiles = files;
+      if (!files.length) {
+        fileList.innerHTML = "";
+        return;
+      }
+      fileList.innerHTML = files.map(function (f) {
+        return '<div class="mm-dropzone-file"><span>' + esc(f.name) + "</span><span class=\"muted\">" +
+          esc(fmtBytes(f.size)) + "</span></div>";
+      }).join("");
+    }
+    if (dropzone && fileInput) {
+      dropzone.addEventListener("click", function (e) {
+        if (e.target === fileInput) return;
+        fileInput.click();
+      });
+      ["dragenter", "dragover"].forEach(function (ev) {
+        dropzone.addEventListener(ev, function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dropzone.classList.add("dragover");
+        });
+      });
+      ["dragleave", "drop"].forEach(function (ev) {
+        dropzone.addEventListener(ev, function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dropzone.classList.remove("dragover");
+        });
+      });
+      dropzone.addEventListener("drop", function (e) {
+        var dt = e.dataTransfer;
+        if (!dt || !dt.files || !dt.files.length) return;
+        mailBulkPickedFiles = Array.prototype.slice.call(dt.files);
+        mailRenderDropFiles();
+      });
+      fileInput.addEventListener("change", function () {
+        mailBulkPickedFiles = fileInput.files ? Array.prototype.slice.call(fileInput.files) : [];
+        mailRenderDropFiles();
+      });
+    }
     if (bulkForm) {
       mailUpdateBulkFormState();
       bulkForm.addEventListener("submit", function (e) {
         e.preventDefault();
-        var fileInput = document.getElementById("mail-bulk-file");
         var tagInput = document.getElementById("mail-bulk-tag");
-        var files = fileInput && fileInput.files ? Array.prototype.slice.call(fileInput.files) : [];
+        var files = mailBulkPickedFiles.length
+          ? mailBulkPickedFiles
+          : (fileInput && fileInput.files ? Array.prototype.slice.call(fileInput.files) : []);
         if (!files.length) { mailToast("Önce bir CSV veya XLSX dosyası seç"); return; }
         var tag = (tagInput.value || "").trim();
         var accepted = [];
@@ -2449,31 +2643,58 @@
         });
         if (!accepted.length) return;
         accepted.forEach(function (file) { mailEnqueueImport(file, tag); });
-        fileInput.value = "";
+        if (fileInput) fileInput.value = "";
+        mailBulkPickedFiles = [];
         tagInput.value = "";
+        mailRenderDropFiles();
       });
     }
     var pasteBox = document.getElementById("mail-paste-box");
     var pasteStatusEl = document.getElementById("mail-paste-status");
+    function mailUpdatePasteMeta(text) {
+      var info = mailAnalyzeEmails(text);
+      var countEl = document.getElementById("mail-paste-count");
+      var invEl = document.getElementById("mail-paste-invalid");
+      var sampleEl = document.getElementById("mail-paste-invalid-sample");
+      if (countEl) countEl.textContent = fmtNum(info.valid.length) + " geçerli";
+      if (invEl) {
+        invEl.hidden = !info.invalid.length;
+        invEl.textContent = fmtNum(info.invalid.length) + " hatalı";
+      }
+      if (sampleEl) {
+        sampleEl.textContent = info.invalid.length
+          ? ("örn: " + info.invalid.slice(0, 3).join(", "))
+          : "";
+      }
+      return info;
+    }
     function mailHandlePastedText(text) {
+      var info = mailUpdatePasteMeta(text);
       var tag = (document.getElementById("mail-paste-tag") || {}).value || "";
       tag = tag.trim();
-      var result = mailQueueTextAsFile(text, tag, "yapistirilan-liste");
+      if (!info.valid.length) {
+        if (pasteStatusEl) pasteStatusEl.textContent = "Geçerli e-posta bulunamadı.";
+        return;
+      }
+      var result = mailQueueTextAsFile(info.valid.join("\n"), tag, "yapistirilan-liste");
       if (!pasteStatusEl) return;
       if (result.error) {
         pasteStatusEl.textContent = "Hata: " + result.error + " (algılanan " + fmtNum(result.count) + " e-posta işlenmedi)";
-      } else if (!result.count) {
-        pasteStatusEl.textContent = "Yapıştırılan içerikte e-posta bulunamadı.";
       } else {
-        pasteStatusEl.textContent = fmtNum(result.count) + " e-posta algılandı, yükleme kuyruğuna eklendi.";
+        pasteStatusEl.textContent = fmtNum(result.count) + " geçerli e-posta kuyruğa eklendi" +
+          (info.invalid.length ? (" · " + fmtNum(info.invalid.length) + " hatalı atlandı") : "");
       }
     }
     if (pasteBox) {
+      pasteBox.addEventListener("input", function () { mailUpdatePasteMeta(pasteBox.value); });
       pasteBox.addEventListener("paste", function (e) {
         e.preventDefault();
         var text = (e.clipboardData || window.clipboardData).getData("text");
-        pasteBox.value = "";
+        pasteBox.value = text;
+        mailUpdatePasteMeta(text);
         mailHandlePastedText(text);
+        pasteBox.value = "";
+        mailUpdatePasteMeta("");
       });
     }
     bindClick("mail-paste-submit", function () {
@@ -2481,6 +2702,27 @@
       if (!text || !text.trim()) { mailToast("Önce bir şey yapıştır veya yaz"); return; }
       mailHandlePastedText(text);
       if (pasteBox) pasteBox.value = "";
+      mailUpdatePasteMeta("");
+    });
+    var contactsSub = document.getElementById("mail-contacts-subnav");
+    if (contactsSub) {
+      contactsSub.addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-contacts-tab]");
+        if (!btn) return;
+        mailContactsHubTab = btn.getAttribute("data-contacts-tab") || "crm";
+        switchMailTab(mailContactsHubTab);
+      });
+    }
+    document.addEventListener("click", function (e) {
+      var copyBtn = e.target.closest(".mm-copy-msgid");
+      if (!copyBtn) return;
+      var val = copyBtn.getAttribute("data-copy") || "";
+      if (!val) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(val).then(function () { mailToast("Msg ID kopyalandı"); });
+      } else {
+        mailToast(val);
+      }
     });
     bindClick("mail-bulk-cancel", function () {
       if (mailImportActiveXhr) {
@@ -3605,6 +3847,8 @@
       setTplMode("simple");
     },
     ensureTenant: mailEnsureTenant,
+    navigate: mailNavigate,
+    switchTab: switchMailTab,
     onShow: function () {
       if (!mailLoaded) this.init();
       var tab = "dashboard";

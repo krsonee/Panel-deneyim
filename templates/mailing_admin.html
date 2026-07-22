@@ -4,46 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Mikromail</title>
-  <meta name="theme-color" content="#060a10">
-  <link rel="stylesheet" href="/static/mailing_shell.css?v=20260720mm1">
+  <meta name="theme-color" content="#090D16">
+  <link rel="stylesheet" href="/static/mailing_shell.css?v=20260722mm1">
+  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260722mm1">
   <style>
     :root { --accent: #38bdf8; --accent-soft: rgba(56,189,248,0.14); --accent-ink: #041018; }
-    .nav-item.active { color: #7dd3fc; border-color: rgba(56,189,248,0.35); }
-    .mm-top-actions { display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; }
-    .mm-tenant-bar {
-      display:flex; gap:0.65rem; align-items:center; flex-wrap:wrap;
-      margin-bottom:1rem; padding:0.75rem 1rem; background:var(--surface);
-      border:1px solid var(--border); border-radius:12px;
-    }
-    .mm-tenant-bar select { min-width:200px; width:auto; }
     #module-mailing-panel { display:block !important; }
     #module-mailing-panel[hidden] { display:block !important; }
-    /* radio/checkbox: global input{width:100%} bozuyordu */
     #module-mailing-panel input[type="checkbox"],
     #module-mailing-panel input[type="radio"],
     #mm-view-platform input[type="checkbox"],
     #mm-view-platform input[type="radio"] {
-      width: auto !important;
-      min-width: 0 !important;
-      max-width: none !important;
-      padding: 0 !important;
-      margin: 0;
-      flex-shrink: 0;
-      accent-color: var(--accent);
+      width: auto !important; min-width: 0 !important; max-width: none !important;
+      padding: 0 !important; margin: 0; flex-shrink: 0; accent-color: var(--accent);
     }
     #module-mailing-panel label:has(> input[type="checkbox"]),
     #module-mailing-panel label:has(> input[type="radio"]) {
-      display: inline-flex !important;
-      align-items: center;
-      gap: 0.4rem;
-      text-transform: none;
-      letter-spacing: normal;
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: var(--text);
-      margin-bottom: 0;
-      cursor: pointer;
-      width: auto;
+      display: inline-flex !important; align-items: center; gap: 0.4rem;
+      text-transform: none; letter-spacing: normal; font-size: 0.85rem; font-weight: 500;
+      color: var(--text); margin-bottom: 0; cursor: pointer; width: auto;
     }
     .toast {
       position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%);
@@ -53,94 +32,201 @@
     }
     .toast.show { opacity: 1; }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
   <div id="toast" class="toast" aria-live="polite"></div>
   <div class="app">
-    <aside class="sidebar">
+    <aside class="sidebar" id="mm-sidebar">
       <div class="sidebar-brand">
-        <h1>Mikro<span>mail</span></h1>
-        <p>{{ display_name }}{% if is_superadmin %} · süper admin{% endif %}</p>
+        <div>
+          <h1>Mikro<span>mail</span></h1>
+          <p>{{ display_name }}{% if is_superadmin %} · süper admin{% endif %}</p>
+        </div>
+        <button type="button" class="mm-sidebar-toggle" id="mm-sidebar-toggle" title="Menüyü daralt/genişlet" aria-label="Menü">☰</button>
       </div>
-      <nav class="nav">
-        <div class="nav-label">Panel</div>
-        <button type="button" class="nav-item active" data-mm-view="mailing"><span class="icon">✉️</span> Mailing</button>
+      <nav class="nav" id="mm-side-nav">
+        <div class="nav-label">Mailing</div>
+        <button type="button" class="nav-item active" data-mm-nav="dashboard" data-title="Dashboard" data-sub="Özet ve domain durumu">
+          <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg></span>
+          <span class="nav-item-text">Dashboard</span>
+        </button>
+        <button type="button" class="nav-item" data-mm-nav="contacts" data-title="Kontak &amp; CRM" data-sub="Rehber · Smartico · ilişki">
+          <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+          <span class="nav-item-text">Kontak &amp; CRM</span>
+        </button>
+        <button type="button" class="nav-item" data-mm-nav="templates" data-title="Şablonlar" data-sub="Mail içerikleri">
+          <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/></svg></span>
+          <span class="nav-item-text">Şablonlar</span>
+        </button>
+        <button type="button" class="nav-item" data-mm-nav="campaigns" data-title="Kampanyalar" data-sub="Gönderim ve zamanlama">
+          <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg></span>
+          <span class="nav-item-text">Kampanyalar</span>
+        </button>
+        <button type="button" class="nav-item" data-mm-nav="ivr" data-title="IVR Otomasyon" data-sub="Arama sonrası mail tetikleri">
+          <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.77.62 2.61a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.47-1.19a2 2 0 0 1 2.11-.45c.84.29 1.71.5 2.61.62A2 2 0 0 1 22 16.92z"/></svg></span>
+          <span class="nav-item-text">IVR Otomasyon</span>
+        </button>
+        <button type="button" class="nav-item" data-mm-nav="reports" data-title="Raporlar" data-sub="Analitik ve gönderim logları">
+          <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg></span>
+          <span class="nav-item-text">Raporlar</span>
+        </button>
+        {% if not is_superadmin %}
+        <button type="button" class="nav-item" data-mm-nav="settings" data-title="Sistem Ayarları" data-sub="SMTP ve operasyon">
+          <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg></span>
+          <span class="nav-item-text">Sistem Ayarları</span>
+        </button>
+        {% endif %}
+
         {% if is_superadmin %}
-        <button type="button" class="nav-item" data-mm-view="platform"><span class="icon">🏗</span> Platform</button>
+        <div class="nav-label" style="margin-top:0.85rem;">Platform</div>
+        <button type="button" class="nav-item" data-mm-nav="plat-tenants" data-title="Tenant Yönetimi" data-sub="Firmalar ve kotalar">
+          <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg></span>
+          <span class="nav-item-text">Tenant Yönetimi</span>
+        </button>
+        <button type="button" class="nav-item" data-mm-nav="plat-domains" data-title="Domain / IP Havuzu" data-sub="Gönderen domainler">
+          <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20"/><path d="M12 2a15 15 0 0 0 0 20"/></svg></span>
+          <span class="nav-item-text">Domain / IP Havuzu</span>
+        </button>
+        <button type="button" class="nav-item" data-mm-nav="plat-warmup" data-title="Warm-up Yönetimi" data-sub="Isınma ve health">
+          <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><path d="M12 2v6"/><path d="M12 18v4"/><path d="m4.9 4.9 4.2 4.2"/><path d="m14.9 14.9 4.2 4.2"/><path d="M2 12h6"/><path d="M16 12h6"/><path d="m4.9 19.1 4.2-4.2"/><path d="m14.9 9.1 4.2-4.2"/></svg></span>
+          <span class="nav-item-text">Warm-up Yönetimi</span>
+        </button>
+        <button type="button" class="nav-item" data-mm-nav="settings" data-title="Sistem Ayarları" data-sub="SMTP · scrub · webhook">
+          <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg></span>
+          <span class="nav-item-text">Sistem Ayarları</span>
+        </button>
         {% endif %}
       </nav>
       <div class="sidebar-foot">
-        <a href="#" id="mm-logout">Çıkış</a>
+        <a href="#" id="mm-logout"><span class="mm-logout-text">Çıkış</span></a>
       </div>
     </aside>
-    <main class="main">
-      <div class="main-inner">
-        {% if is_superadmin %}
-        <div class="mm-tenant-bar" id="mm-tenant-bar">
-          <strong style="font-size:0.8rem;">Aktif tenant</strong>
-          <select id="mm-tenant-select"><option value="">— seç / impersonate —</option></select>
-          <span class="hint" id="mm-tenant-hint" style="margin:0;">Kampanya API’leri için tenant seçin</span>
-        </div>
-        {% endif %}
 
+    <main class="main">
+      <header class="mm-header">
+        <div class="mm-header-left">
+          <h2 id="mm-page-title">Dashboard</h2>
+          <p id="mm-page-sub">Özet ve domain durumu</p>
+        </div>
+        <div class="mm-header-right">
+          {% if is_superadmin %}
+          <div class="mm-tenant-inline" id="mm-tenant-bar">
+            <strong>Aktif tenant</strong>
+            <select id="mm-tenant-select" title="Impersonate tenant"><option value="">— seç —</option></select>
+          </div>
+          {% endif %}
+          <div class="live-pill" id="mail-provider-pill" style="background:var(--amber);border-color:rgba(245,158,11,0.35);color:var(--amber);">Stub mod</div>
+        </div>
+      </header>
+
+      <div class="main-inner">
         <div id="mm-view-mailing">
           {% include 'partials/mailing_panel.html' %}
         </div>
 
         {% if is_superadmin %}
         <div id="mm-view-platform" hidden>
-          <div class="topbar">
-            <div>
-              <h2>Platform</h2>
-              <p>Tenant’lar · domain havuzu · tahsis · ısınma</p>
-            </div>
+          <div class="mm-plat-pane active" id="mm-plat-tenants" data-mm-plat="tenants">
+            <section class="card" style="margin-bottom:1rem;">
+              <div class="card-head"><span>Yeni firma (tenant)</span></div>
+              <div class="card-body">
+                <form id="mm-tenant-form" class="form-row-4">
+                  <div>
+                    <div class="mm-label-row"><label>Ad</label><span class="mm-tip" tabindex="0" data-tip="Firmaya görünen ad">?</span></div>
+                    <input id="mm-t-name" required placeholder="Acme VIP">
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>Slug</label><span class="mm-tip" tabindex="0" data-tip="URL/kimlik için kısa kod (örn. acme)">?</span></div>
+                    <input id="mm-t-slug" required placeholder="acme">
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>Owner kullanıcı</label><span class="mm-tip" tabindex="0" data-tip="Tenant admin giriş adı">?</span></div>
+                    <input id="mm-t-user" value="admin" required>
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>Owner şifre</label><span class="mm-tip" tabindex="0" data-tip="En az 8 karakter">?</span></div>
+                    <input id="mm-t-pass" type="password" required minlength="8">
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>Günlük send kotası</label><span class="mm-tip" tabindex="0" data-tip="Tenant günlük gönderim üst limiti">?</span></div>
+                    <input id="mm-t-cap" type="number" value="50000">
+                  </div>
+                  <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" type="submit">Oluştur</button></div>
+                </form>
+                <p class="hint" id="mm-tenant-create-hint"></p>
+              </div>
+            </section>
+            <section class="card">
+              <div class="card-head"><span>Firmalar</span><button type="button" class="btn btn-sm btn-secondary" id="mm-tenants-refresh">Yenile</button></div>
+              <div class="table-wrap"><div class="table-scroll">
+                <table>
+                  <thead><tr><th>ID</th><th>Slug</th><th>Ad</th><th>Durum</th><th>Kota/gün</th><th>Domain</th><th></th></tr></thead>
+                  <tbody id="mm-tenants-table"><tr><td colspan="7" class="empty">—</td></tr></tbody>
+                </table>
+              </div></div>
+            </section>
           </div>
-          <section class="card" style="margin-bottom:1rem;">
-            <div class="card-head"><span>Yeni firma (tenant)</span></div>
-            <div class="card-body">
-              <form id="mm-tenant-form" class="form-row-4">
-                <div><label>Ad</label><input id="mm-t-name" required placeholder="Acme VIP"></div>
-                <div><label>Slug</label><input id="mm-t-slug" required placeholder="acme"></div>
-                <div><label>Owner kullanıcı</label><input id="mm-t-user" value="admin" required></div>
-                <div><label>Owner şifre</label><input id="mm-t-pass" type="password" required minlength="8"></div>
-                <div><label>Günlük send kotası</label><input id="mm-t-cap" type="number" value="50000"></div>
-                <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" type="submit">Oluştur</button></div>
-              </form>
-              <p class="hint" id="mm-tenant-create-hint"></p>
-            </div>
-          </section>
-          <section class="card" style="margin-bottom:1rem;">
-            <div class="card-head"><span>Firmalar</span><button type="button" class="btn btn-sm" id="mm-tenants-refresh">Yenile</button></div>
-            <div class="table-wrap"><div class="table-scroll">
-              <table>
-                <thead><tr><th>ID</th><th>Slug</th><th>Ad</th><th>Durum</th><th>Kota/gün</th><th>Domain</th><th></th></tr></thead>
-                <tbody id="mm-tenants-table"><tr><td colspan="7" class="empty">—</td></tr></tbody>
-              </table>
-            </div></div>
-          </section>
-          <section class="card" style="margin-bottom:1rem;">
-            <div class="card-head"><span>Domain havuzu</span><button type="button" class="btn btn-sm" id="mm-domains-refresh">Yenile</button></div>
-            <div class="card-body">
-              <form id="mm-domain-form" class="form-row-4" style="margin-bottom:1rem;">
-                <div><label>Domain</label><input id="mm-d-domain" required placeholder="vipozelileti.com"></div>
-                <div><label>From name (görünen ad)</label><input id="mm-d-from" value="VIP"></div>
-                <div><label>From local (örn. info)</label><input id="mm-d-local" value="info" placeholder="info"></div>
-                <div><label>Warm status</label>
-                  <select id="mm-d-warm"><option value="cold">cold</option><option value="warming">warming</option><option value="warm">warm</option><option value="paused">paused</option><option value="burned">burned</option></select>
-                </div>
-                <div><label>Daily cap</label><input id="mm-d-cap" type="number" value="500"></div>
-                <div><label>SMTP password</label><input id="mm-d-smtp" type="password" placeholder="opsiyonel"></div>
-                <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" type="submit">Domain ekle</button></div>
-              </form>
-              <p class="hint" id="mm-domain-edit-hint" style="margin:0 0 0.75rem;"></p>
-            </div>
-            <div class="table-wrap"><div class="table-scroll">
-              <table>
-                <thead><tr><th>Domain</th><th>From</th><th>Warm</th><th>Cap</th><th>Health</th><th>Tahsis</th><th></th></tr></thead>
-                <tbody id="mm-domains-table"><tr><td colspan="7" class="empty">—</td></tr></tbody>
-              </table>
-            </div></div>
-          </section>
+
+          <div class="mm-plat-pane" id="mm-plat-domains" data-mm-plat="domains">
+            <section class="card">
+              <div class="card-head"><span>Domain havuzu</span><button type="button" class="btn btn-sm btn-secondary" id="mm-domains-refresh">Yenile</button></div>
+              <div class="card-body">
+                <form id="mm-domain-form" class="form-row-4" style="margin-bottom:1rem;">
+                  <div>
+                    <div class="mm-label-row"><label>Domain</label><span class="mm-tip" tabindex="0" data-tip="DirectMail’de doğrulanmış gönderen domain">?</span></div>
+                    <input id="mm-d-domain" required placeholder="vipozelileti.com">
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>From name</label><span class="mm-tip" tabindex="0" data-tip="Alıcıda görünen gönderen adı">?</span></div>
+                    <input id="mm-d-from" value="VIP">
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>From local</label><span class="mm-tip" tabindex="0" data-tip="info@domain için local kısım (info)">?</span></div>
+                    <input id="mm-d-local" value="info" placeholder="info">
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>Warm status</label><span class="mm-tip" tabindex="0" data-tip="cold → warming → warm">?</span></div>
+                    <select id="mm-d-warm"><option value="cold">cold</option><option value="warming">warming</option><option value="warm">warm</option><option value="paused">paused</option><option value="burned">burned</option></select>
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>Daily cap</label><span class="mm-tip" tabindex="0" data-tip="Bu domainin günlük gönderim tavanı">?</span></div>
+                    <input id="mm-d-cap" type="number" value="500">
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>SMTP password</label><span class="mm-tip" tabindex="0" data-tip="Alibaba’da bu adrese set edilen SMTP şifresi">?</span></div>
+                    <input id="mm-d-smtp" type="password" placeholder="opsiyonel">
+                  </div>
+                  <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" type="submit">Domain ekle</button></div>
+                </form>
+                <p class="hint" id="mm-domain-edit-hint" style="margin:0 0 0.75rem;"></p>
+              </div>
+              <div class="table-wrap"><div class="table-scroll">
+                <table>
+                  <thead><tr><th>Domain</th><th>From</th><th>Warm</th><th>Cap</th><th>Health</th><th>Tahsis</th><th></th></tr></thead>
+                  <tbody id="mm-domains-table"><tr><td colspan="7" class="empty">—</td></tr></tbody>
+                </table>
+              </div></div>
+            </section>
+          </div>
+
+          <div class="mm-plat-pane" id="mm-plat-warmup" data-mm-plat="warmup">
+            <section class="card">
+              <div class="card-head">
+                <span>Warm-up panosu</span>
+                <button type="button" class="btn btn-sm btn-secondary" id="mm-warmup-refresh">Yenile</button>
+              </div>
+              <div class="card-body">
+                <p class="hint" style="margin:0 0 0.85rem;">Domain başına ısınma günü, günlük cap ve health skoru. Warming’e almak için satırdaki ısıt ikonunu kullan.</p>
+              </div>
+              <div class="table-wrap"><div class="table-scroll">
+                <table>
+                  <thead><tr><th>Domain</th><th>Warm status</th><th>İlerleme</th><th>Health</th><th>Daily cap</th><th></th></tr></thead>
+                  <tbody id="mm-warmup-table"><tr><td colspan="6" class="empty">—</td></tr></tbody>
+                </table>
+              </div></div>
+            </section>
+          </div>
         </div>
         {% endif %}
       </div>
@@ -153,11 +239,89 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260721mm10"></script>
-  <script src="/static/mailing_platform.js?v=20260721mm10"></script>
+  <script src="/static/mailing.js?v=20260722mm1"></script>
+  <script src="/static/mailing_platform.js?v=20260722mm1"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");
+
+      var sidebar = document.getElementById("mm-sidebar");
+      var toggle = document.getElementById("mm-sidebar-toggle");
+      try {
+        if (localStorage.getItem("mm_sidebar_collapsed") === "1") {
+          sidebar?.classList.add("collapsed");
+          document.body.classList.add("mm-nav-collapsed");
+        }
+      } catch (e) {}
+      toggle?.addEventListener("click", function () {
+        var on = sidebar?.classList.toggle("collapsed");
+        document.body.classList.toggle("mm-nav-collapsed", !!on);
+        try { localStorage.setItem("mm_sidebar_collapsed", on ? "1" : "0"); } catch (e) {}
+      });
+
+      function setHeader(title, sub) {
+        var t = document.getElementById("mm-page-title");
+        var s = document.getElementById("mm-page-sub");
+        if (t) t.textContent = title || "";
+        if (s) s.textContent = sub || "";
+      }
+
+      function showPlatform(pane) {
+        document.getElementById("mm-view-mailing").hidden = true;
+        var plat = document.getElementById("mm-view-platform");
+        if (plat) plat.hidden = false;
+        document.querySelectorAll("#mm-view-platform .mm-plat-pane").forEach(function (el) {
+          var on = el.getAttribute("data-mm-plat") === pane;
+          el.classList.toggle("active", on);
+          el.hidden = !on;
+        });
+        if (window.MakroMailPlatform) window.MakroMailPlatform.refresh();
+      }
+
+      function showMailing() {
+        document.getElementById("mm-view-mailing").hidden = false;
+        var plat = document.getElementById("mm-view-platform");
+        if (plat) plat.hidden = true;
+      }
+
+      function setNavActive(nav) {
+        document.querySelectorAll("#mm-side-nav [data-mm-nav]").forEach(function (b) {
+          b.classList.toggle("active", b.getAttribute("data-mm-nav") === nav);
+        });
+      }
+
+      window.mmNavigate = function (nav, btn) {
+        nav = nav || "dashboard";
+        setNavActive(nav);
+        if (btn) setHeader(btn.getAttribute("data-title"), btn.getAttribute("data-sub"));
+        else {
+          var el = document.querySelector('#mm-side-nav [data-mm-nav="' + nav + '"]');
+          if (el) setHeader(el.getAttribute("data-title"), el.getAttribute("data-sub"));
+        }
+
+        if (nav.indexOf("plat-") === 0) {
+          showPlatform(nav.replace("plat-", ""));
+          return;
+        }
+        showMailing();
+        if (window.MakroMailing && window.MakroMailing.navigate) {
+          window.MakroMailing.navigate(nav);
+        } else if (window.MakroMailing && window.MakroMailing.switchTab) {
+          var map = { contacts: "crm", dashboard: "dashboard", templates: "templates", campaigns: "campaigns", ivr: "ivr", reports: "reports", settings: "settings" };
+          window.MakroMailing.switchTab(map[nav] || nav);
+        }
+      };
+
+      document.querySelectorAll("#mm-side-nav [data-mm-nav]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          window.mmNavigate(btn.getAttribute("data-mm-nav"), btn);
+        });
+      });
+
+      document.getElementById("mm-warmup-refresh")?.addEventListener("click", function () {
+        if (window.MakroMailPlatform) window.MakroMailPlatform.refresh();
+      });
+
       if (window.MakroMailing) {
         try {
           window.MakroMailing.init();
@@ -166,22 +330,13 @@
             : Promise.resolve());
           ready.finally(function () {
             window.MakroMailing.onShow && window.MakroMailing.onShow();
+            window.mmNavigate("dashboard");
           });
         } catch (e) { console.error(e); }
       }
       document.getElementById("mm-logout")?.addEventListener("click", function (e) {
         e.preventDefault();
         fetch("/api/mail-auth/logout", { method: "POST" }).finally(function () { location.href = "/login"; });
-      });
-      document.querySelectorAll("[data-mm-view]").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          var v = btn.getAttribute("data-mm-view");
-          document.querySelectorAll("[data-mm-view]").forEach(function (b) { b.classList.toggle("active", b === btn); });
-          document.getElementById("mm-view-mailing").hidden = v !== "mailing";
-          var plat = document.getElementById("mm-view-platform");
-          if (plat) plat.hidden = v !== "platform";
-          if (v === "platform" && window.MakroMailPlatform) window.MakroMailPlatform.refresh();
-        });
       });
       if (window.MakroMailPlatform) window.MakroMailPlatform.init();
     })();

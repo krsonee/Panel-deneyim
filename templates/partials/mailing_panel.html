@@ -4,10 +4,9 @@
       <h2>Mailing <span class="role-badge" id="mail-role-badge"></span></h2>
       <p>Mail Rehber · şablon · kampanya · IVR tetikleme · raporlar</p>
     </div>
-    <div class="live-pill" id="mail-provider-pill" style="background:var(--amber);border-color:rgba(245,158,11,0.35);color:var(--amber);">Stub mod</div>
   </div>
 
-  <div class="acc-tabs" id="mail-tabs">
+  <div class="acc-tabs" id="mail-tabs" hidden aria-hidden="true">
     <button type="button" class="acc-tab active" data-mail-tab="dashboard" data-perm="mailing.dashboard">Özet</button>
     <button type="button" class="acc-tab" data-mail-tab="relations" data-perm-any="mailing.relations,mailing.crm">CRM</button>
     <button type="button" class="acc-tab" data-mail-tab="smartico" data-perm="mailing.crm">Smartico Üyeler</button>
@@ -17,6 +16,12 @@
     <button type="button" class="acc-tab" data-mail-tab="ivr" data-perm="mailing.ivr">IVR</button>
     <button type="button" class="acc-tab" data-mail-tab="reports" data-perm="mailing.reports">Raporlar</button>
     <button type="button" class="acc-tab" data-mail-tab="settings" data-perm="mailing.settings">Ayarlar</button>
+  </div>
+
+  <div class="mm-subnav" id="mail-contacts-subnav" hidden>
+    <button type="button" class="mm-subnav-btn active" data-contacts-tab="crm">Mail Rehber</button>
+    <button type="button" class="mm-subnav-btn" data-contacts-tab="smartico">Smartico</button>
+    <button type="button" class="mm-subnav-btn" data-contacts-tab="relations">İlişki CRM</button>
   </div>
 
   <!-- Özet -->
@@ -274,14 +279,27 @@
           <div>
             <p class="hint" style="margin:0 0 0.65rem;font-weight:600;color:var(--text,#e2e8f0);">Çoklu dosya ekle</p>
             <form id="mail-bulk-import-form" class="form-row-4" style="grid-template-columns:1fr;">
-              <div><label>CSV veya XLSX — birden fazla seçebilirsin</label><input type="file" id="mail-bulk-file" multiple accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
               <div>
-                <label>Etiket (mevcutlardan seç)</label>
+                <div class="mm-label-row">
+                  <label>CSV / XLSX</label>
+                  <span class="mm-tip" tabindex="0" data-tip="CSV ~100M satıra kadar (max 5GB). 20MB üstü otomatik parçalanır. Excel ~1M satır.">?</span>
+                </div>
+                <div class="mm-dropzone" id="mail-bulk-dropzone">
+                  <div class="mm-dropzone-title">Sürükle bırak veya tıkla</div>
+                  <div class="mm-dropzone-sub">CSV, XLSX · birden fazla dosya</div>
+                  <div class="mm-dropzone-files" id="mail-bulk-file-list"></div>
+                  <input type="file" id="mail-bulk-file" multiple accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                </div>
+              </div>
+              <div>
+                <div class="mm-label-row">
+                  <label>Etiket</label>
+                  <span class="mm-tip" tabindex="0" data-tip="Yüklenen tüm satırlara uygulanacak varsayılan etiket">?</span>
+                </div>
                 <select id="mail-bulk-tag" class="mail-tag-select"><option value="">Etiket yok</option></select>
               </div>
               <div><button type="submit" class="btn btn-primary">Yüklemeyi başlat</button></div>
             </form>
-            <p class="hint" style="margin-top:0.45rem;">CSV ile tek seferde ~100 milyon e-postaya kadar yükleyebilirsin (dosya boyutu en fazla 5GB). 20MB üstü CSV otomatik ~10MB parçalara bölünür (Render timeout önlemi). Excel (.xlsx) tek sayfada en fazla ~1 milyon satır tutar — daha büyük listeler için CSV kullan.</p>
           </div>
         </div>
         <div id="mail-import-dashboard" hidden style="margin-top:1rem;padding:1rem 1.1rem;border-radius:12px;border:1px solid rgba(148,163,184,0.22);background:rgba(15,23,42,0.35);">
@@ -333,18 +351,25 @@
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head"><span>Sadece e-posta listesi yapıştır (isim/diğer alan yok)</span></div>
+      <div class="card-head">
+        <span>Sadece e-posta listesi yapıştır</span>
+        <span class="mm-tip" tabindex="0" data-tip="Virgül / noktalı virgül / satır satır. Yapıştırınca otomatik kuyruğa eklenir (max ~10M).">?</span>
+      </div>
       <div class="card-body">
-        <textarea id="mail-paste-box" rows="4" style="width:100%;font-family:inherit;" placeholder="Buraya yapıştır (Ctrl+V) — virgülle, noktalı virgülle veya satır satır ayrılmış e-postalar. Yapıştırınca otomatik kuyruğa eklenir."></textarea>
+        <textarea id="mail-paste-box" rows="4" style="width:100%;font-family:inherit;" placeholder="E-postaları yapıştır (Ctrl+V)…"></textarea>
+        <div class="mm-paste-meta">
+          <span class="mm-badge mm-badge-info" id="mail-paste-count">0 geçerli</span>
+          <span class="mm-badge mm-badge-danger" id="mail-paste-invalid" hidden>0 hatalı</span>
+          <span class="hint" id="mail-paste-invalid-sample" style="margin:0;"></span>
+        </div>
         <div style="display:flex;gap:0.6rem;align-items:flex-end;margin-top:0.5rem;flex-wrap:wrap;">
           <div style="min-width:200px;">
-            <label>Etiket (mevcutlardan seç)</label>
+            <div class="mm-label-row"><label>Etiket</label><span class="mm-tip" tabindex="0" data-tip="Yapıştırılan maillere uygulanacak etiket">?</span></div>
             <select id="mail-paste-tag" class="mail-tag-select"><option value="">Etiket yok</option></select>
           </div>
-          <button type="button" class="btn btn-sm" id="mail-paste-submit">Kuyruğa ekle</button>
+          <button type="button" class="btn btn-sm btn-secondary" id="mail-paste-submit">Kuyruğa ekle</button>
         </div>
         <p class="hint" id="mail-paste-status" style="margin-top:0.5rem;">—</p>
-        <p class="hint">10 milyona kadar e-posta yapıştırabilirsin, yapıştırdığın anda otomatik olarak yükleme kuyruğuna eklenir (yukarıdaki dosya kuyruğuyla aynı sistemi kullanır). "Kuyruğa ekle" butonu, yapıştırma yakalanamayan durumlar veya elle az sayıda giriş için yedektir.</p>
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
@@ -408,34 +433,29 @@
         <div class="mail-tag-stats-list" id="mail-crm-tag-stats-list"></div>
       </div>
       <div class="mail-tag-move" id="mail-tag-move-box">
-        <div class="mail-tag-move-title">Etiket taşı</div>
-        <p class="hint" style="margin:0 0 0.75rem;">
-          1) Kimleri etkileyeceğini seç · 2) Soldan <strong>kaynak</strong> · 3) Sağdan <strong>hedef</strong> · 4) Butona bas.
-          Açılır menü yok — etiketler her zaman listede.
-        </p>
+        <div class="mail-tag-move-title">Etiket taşı · 3 adım</div>
         <input type="hidden" id="mail-tag-move-from" value="">
         <input type="hidden" id="mail-tag-move-to" value="">
-        <div class="mail-tag-move-scope">
-          <span class="mail-tag-move-step">1. Kimler?</span>
-          <label class="mail-tag-scope-opt"><input type="radio" name="mail-tag-scope" value="selected" checked> Tabloda işaretlediklerim</label>
-          <label class="mail-tag-scope-opt"><input type="radio" name="mail-tag-scope" value="all"> Kaynak etiketteki herkes</label>
-        </div>
-        <div class="mail-tag-move-cols">
-          <div class="mail-tag-move-col">
-            <div class="mail-tag-move-col-head"><span class="mail-tag-move-step">2. Kaynak</span> <strong id="mail-tag-from-label">—</strong></div>
+        <div class="mail-tag-move-steps">
+          <div class="mail-tag-move-step-card">
+            <h5>1 · Kimler?</h5>
+            <label class="mail-tag-scope-opt"><input type="radio" name="mail-tag-scope" value="selected" checked> Tabloda seçililer</label>
+            <label class="mail-tag-scope-opt"><input type="radio" name="mail-tag-scope" value="all"> Kaynak etiketteki herkes</label>
+          </div>
+          <div class="mail-tag-move-step-card">
+            <h5>2 · Kaynak <strong id="mail-tag-from-label">—</strong></h5>
             <div class="mail-tag-pick-list" id="mail-tag-from-list"></div>
           </div>
-          <div class="mail-tag-move-arrow" aria-hidden="true">→</div>
-          <div class="mail-tag-move-col">
-            <div class="mail-tag-move-col-head"><span class="mail-tag-move-step">3. Hedef</span> <strong id="mail-tag-to-label">—</strong></div>
+          <div class="mail-tag-move-step-card">
+            <h5>3 · Hedef <strong id="mail-tag-to-label">—</strong></h5>
             <div class="mail-tag-pick-list" id="mail-tag-to-list"></div>
-            <input type="text" id="mail-tag-move-to-new" placeholder="veya yeni hedef etiket yaz…" autocomplete="off">
+            <input type="text" id="mail-tag-move-to-new" placeholder="veya yeni hedef etiket…" autocomplete="off" style="margin-top:0.5rem;">
           </div>
         </div>
         <div class="mail-tag-move-actions">
-          <button type="button" class="btn btn-primary" id="mail-tag-move-btn">Taşı (kaynaktan çıkar → hedefe koy)</button>
-          <button type="button" class="btn" id="mail-tag-add-btn">Kopyala (hedefe ekle, kaynak kalsın)</button>
-          <button type="button" class="btn" id="mail-tag-remove-btn">Kaynak etiketi kaldır</button>
+          <button type="button" class="btn btn-primary" id="mail-tag-move-btn">Taşı</button>
+          <button type="button" class="btn btn-secondary" id="mail-tag-add-btn">Kopyala</button>
+          <button type="button" class="btn btn-danger" id="mail-tag-remove-btn">Kaynak etiketi kaldır</button>
         </div>
         <p class="mail-tag-move-summary" id="mail-tag-move-summary">Hazır değil — kaynak / hedef / kimler seç.</p>
         <p class="hint" id="mail-tag-move-status" style="margin:0.35rem 0 0;">—</p>
@@ -701,7 +721,16 @@
     </section>
     <section class="card" style="margin-bottom:1rem;">
       <div class="card-head"><span>Kampanya analitiği</span>
-        <button type="button" class="btn btn-sm" id="mail-rep-analytics-refresh">Yenile</button>
+        <button type="button" class="btn btn-sm btn-secondary" id="mail-rep-analytics-refresh">Yenile</button>
+      </div>
+      <div class="card-body">
+        <div class="mm-label-row" style="margin-bottom:0.35rem;">
+          <strong style="font-size:0.85rem;">Zamana göre açılma / tıklama</strong>
+          <span class="mm-tip" tabindex="0" data-tip="Son 14 günün günlük open ve click sayıları">?</span>
+        </div>
+        <div class="mm-chart-wrap">
+          <canvas id="mail-rep-engagement-chart" aria-label="Açılma ve tıklama grafiği"></canvas>
+        </div>
       </div>
       <div class="table-wrap">
         <div class="table-scroll">
