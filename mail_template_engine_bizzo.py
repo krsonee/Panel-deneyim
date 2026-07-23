@@ -1,45 +1,52 @@
-"""Bizzo Casino HTML email template engine — yatırım odaklı preset’ler.
+"""Bizzo Casino 2026 HTML email engine — high-conversion deposit presets.
 
-Kaynak: https://www.bizzocasino168.com/promotions
-Placeholder: __BIZZO_LOGO__, {{name}}, {{link:sc:https://www.bizzocasino168.com}}
+CTA / tüm tıklanabilir alanlar: {{link:sc:https://www.girbize.com}}
+Logo: __BIZZO_LOGO__
 """
 
 from __future__ import annotations
 
 from typing import Sequence
 
-# Site / logo ile aynı palet
-BG = "#2b1234"          # logo köşe: rgb(43,18,52)
-CARD = "#1a0f24"
-ROW = "#3a1f4a"
-GREEN = "#2ecc71"
-ORANGE = "#ff9f1a"
-TEXT = "#ffffff"
-MUTED = "#c4b0d4"
-BORDER = "#5a3a6e"
-CTA_INK = "#1a0a10"
-NOTICE_BG = "#2a1a08"
+# ── 2026 design tokens ─────────────────────────────────────────────────────
+BG = "#1A0B2E"
+CARD = "#271342"
+ROW = "#2E1748"
+ORANGE = "#FF9900"
+ORANGE_DEEP = "#FF5500"
+NEON = "#00FF87"
+NEON_SOFT = "rgba(0, 255, 135, 0.08)"
+NEON_BORDER = "rgba(0, 255, 135, 0.3)"
+TEXT = "#FFFFFF"
+MUTED = "#C4B5FD"
+BORDER = "#3D2460"
+CTA_INK = "#1A0B2E"
+NOTICE_BG = "#2A1A08"
+NOTICE_GOLD = "#FFD27A"
 
 FONT = "Arial, Helvetica, sans-serif"
 MAX_W = 600
 
-SITE = "https://www.bizzocasino168.com"
-CTA = "{{link:sc:https://www.bizzocasino168.com}}"
+AFF = "https://www.girbize.com"
+CTA = "{{link:sc:https://www.girbize.com}}"
 LOGO = "__BIZZO_LOGO__"
 
 
 def notice_spam() -> str:
+    """Sleek dark-amber toast — gold text, no raw URLs."""
     return f"""
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
     <tr>
       <td align="center" style="padding:0 12px 12px;">
         <table role="presentation" width="{MAX_W}" cellpadding="0" cellspacing="0" border="0"
           bgcolor="{NOTICE_BG}"
-          style="width:100%;max-width:{MAX_W}px;background-color:{NOTICE_BG};border:1px solid #6a4a10;border-radius:12px;">
+          style="width:100%;max-width:{MAX_W}px;background-color:{NOTICE_BG};
+          border:1px solid #6A4A12;border-radius:14px;">
           <tr>
-            <td align="center" style="padding:12px 16px;font-family:{FONT};font-size:12px;line-height:1.5;color:{ORANGE};">
-              Spam klasöründeyse <strong style="color:{ORANGE};">butonlar çalışmaz</strong>.
-              Önce <strong style="color:{ORANGE};">Spam değil</strong> deyin, sonra tıklayın.
+            <td align="center" style="padding:11px 16px;font-family:{FONT};font-size:12px;
+              line-height:1.5;color:{NOTICE_GOLD};">
+              Spam klasöründeyse <strong style="color:{NOTICE_GOLD};">butonlar çalışmaz</strong>.
+              Önce <strong style="color:{NOTICE_GOLD};">Spam değil</strong> deyin, sonra tıklayın.
             </td>
           </tr>
         </table>
@@ -59,31 +66,36 @@ def logo_block(width: int = 200) -> str:
 
 def badge(label: str) -> str:
     return (
-        f'<span style="display:inline-block;background:{GREEN};color:{BG};'
-        f"font-family:{FONT};font-size:11px;font-weight:800;letter-spacing:0.08em;"
-        f'text-transform:uppercase;padding:6px 14px;border-radius:999px;">{label}</span>'
+        f'<span style="display:inline-block;background:{NEON_SOFT};color:{NEON};'
+        f"font-family:{FONT};font-size:11px;font-weight:800;letter-spacing:0.1em;"
+        f"text-transform:uppercase;padding:7px 16px;border-radius:999px;"
+        f'border:1px solid {NEON_BORDER};">{label}</span>'
     )
 
 
-def cta_button(label: str, *, color: str = ORANGE, ink: str = CTA_INK) -> str:
+def cta_button(label: str) -> str:
+    """Pill CTA — orange gradient + solid fallback for Outlook."""
     return f"""
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
   <tr>
-    <td align="center" bgcolor="{color}" style="background-color:{color};border-radius:12px;">
+    <td align="center" bgcolor="{ORANGE}"
+      style="background-color:{ORANGE};background-image:linear-gradient(90deg,{ORANGE},{ORANGE_DEEP});
+      border-radius:99px;mso-padding-alt:0;">
       <a href="{CTA}" target="_blank" rel="noopener"
-        style="display:inline-block;background-color:{color};color:{ink};
-        font-family:{FONT};font-size:15px;font-weight:800;line-height:1.2;
-        text-decoration:none;padding:14px 28px;border-radius:12px;">{label}</a>
+        style="display:inline-block;background-color:{ORANGE};
+        background-image:linear-gradient(90deg,{ORANGE},{ORANGE_DEEP});
+        color:{CTA_INK};font-family:{FONT};font-size:15px;font-weight:800;line-height:1.2;
+        text-decoration:none;padding:15px 30px;border-radius:99px;">{label}</a>
     </td>
   </tr>
 </table>"""
 
 
-def cta_row(label: str, *, color: str = ORANGE) -> str:
+def cta_row(label: str) -> str:
     return f"""
           <tr>
-            <td align="center" style="padding:8px 20px 18px;">
-              {cta_button(label, color=color)}
+            <td align="center" style="padding:6px 20px 16px;">
+              {cta_button(label)}
             </td>
           </tr>"""
 
@@ -92,14 +104,14 @@ def eyebrow(text: str) -> str:
     return f"""
           <tr>
             <td align="center" style="padding:0 20px 6px;font-family:{FONT};font-size:11px;
-              font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:{GREEN};">{text}</td>
+              font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:{NEON};">{text}</td>
           </tr>"""
 
 
 def headline(text: str) -> str:
     return f"""
           <tr>
-            <td align="center" style="padding:0 20px 10px;font-family:{FONT};font-size:22px;
+            <td align="center" style="padding:0 18px 8px;font-family:{FONT};font-size:23px;
               line-height:1.3;font-weight:800;color:{TEXT};">{text}</td>
           </tr>"""
 
@@ -107,43 +119,58 @@ def headline(text: str) -> str:
 def lead(text: str) -> str:
     return f"""
           <tr>
-            <td align="center" style="padding:0 22px 14px;font-family:{FONT};font-size:14px;
+            <td align="center" style="padding:0 22px 12px;font-family:{FONT};font-size:14px;
               line-height:1.55;color:{MUTED};">{text}</td>
           </tr>"""
 
 
-def feature_box(big: str, title: str, sub: str) -> str:
+def hero_glow(big: str, title: str, sub: str) -> str:
+    """Neon glow hero — no harsh green stroke."""
+    # Outlook-safe solid approx of rgba(0,255,135,0.08) on #1A0B2E → #152A28-ish
+    solid_glow = "#152A28"
     return f"""
           <tr>
-            <td style="padding:4px 20px 14px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                bgcolor="{CARD}" style="background-color:{CARD};border-radius:16px;border:2px solid {GREEN};">
-                <tr>
-                  <td align="center" style="padding:22px 16px;">
-                    <div style="font-family:{FONT};font-size:32px;font-weight:900;color:{GREEN};line-height:1;">{big}</div>
-                    <div style="font-family:{FONT};font-size:16px;font-weight:800;color:{TEXT};margin-top:8px;">{title}</div>
-                    <div style="font-family:{FONT};font-size:13px;line-height:1.5;color:{MUTED};margin-top:8px;">{sub}</div>
-                  </td>
-                </tr>
-              </table>
+            <td style="padding:4px 18px 12px;">
+              <a href="{CTA}" target="_blank" rel="noopener" style="text-decoration:none;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                  bgcolor="{solid_glow}"
+                  style="background-color:{NEON_SOFT};background:{NEON_SOFT};
+                  border:1px solid {NEON_BORDER};border-radius:16px;">
+                  <tr>
+                    <td align="center" style="padding:22px 16px;">
+                      <div style="font-family:{FONT};font-size:34px;font-weight:900;color:{NEON};line-height:1;">{big}</div>
+                      <div style="font-family:{FONT};font-size:16px;font-weight:800;color:{TEXT};margin-top:8px;">{title}</div>
+                      <div style="font-family:{FONT};font-size:13px;line-height:1.5;color:{MUTED};margin-top:8px;">{sub}</div>
+                    </td>
+                  </tr>
+                </table>
+              </a>
             </td>
           </tr>"""
 
 
 def promo_card(title: str, desc: str) -> str:
+    """List card — 4px orange accent bar + soft shadow."""
     return f"""
           <tr>
-            <td style="padding:0 20px 8px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                bgcolor="{ROW}"
-                style="background-color:{ROW};border:1px solid {BORDER};border-left:3px solid {ORANGE};border-radius:12px;">
-                <tr>
-                  <td style="padding:13px 14px;">
-                    <div style="font-family:{FONT};font-size:14px;font-weight:800;color:{ORANGE};line-height:1.3;">{title}</div>
-                    <div style="font-family:{FONT};font-size:12px;color:{MUTED};line-height:1.5;margin-top:5px;">{desc}</div>
-                  </td>
-                </tr>
-              </table>
+            <td style="padding:0 18px 9px;">
+              <a href="{CTA}" target="_blank" rel="noopener" style="text-decoration:none;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                  bgcolor="{ROW}"
+                  style="background-color:{ROW};border:1px solid {BORDER};border-radius:16px;
+                  box-shadow:0 8px 24px rgba(0,0,0,0.28);">
+                  <tr>
+                    <td width="4" bgcolor="{ORANGE}"
+                      style="width:4px;background-color:{ORANGE};
+                      background-image:linear-gradient(180deg,{ORANGE},{ORANGE_DEEP});
+                      border-radius:16px 0 0 16px;font-size:0;line-height:0;">&nbsp;</td>
+                    <td style="padding:14px 14px 14px 12px;">
+                      <div style="font-family:{FONT};font-size:14px;font-weight:800;color:{ORANGE};line-height:1.3;">{title}</div>
+                      <div style="font-family:{FONT};font-size:12px;color:{MUTED};line-height:1.5;margin-top:5px;">{desc}</div>
+                    </td>
+                  </tr>
+                </table>
+              </a>
             </td>
           </tr>"""
 
@@ -202,7 +229,11 @@ def shell(*, title: str, body_rows: str, preheader: str = "") -> str:
         <table role="presentation" class="bz-shell" width="{MAX_W}" cellpadding="0" cellspacing="0" border="0"
           bgcolor="{CARD}"
           style="width:100%;max-width:{MAX_W}px;background-color:{CARD};border:1px solid {BORDER};border-radius:16px;">
-          <tr><td height="3" bgcolor="{ORANGE}" style="height:3px;line-height:3px;font-size:0;background-color:{ORANGE};">&nbsp;</td></tr>
+          <tr>
+            <td height="3" bgcolor="{ORANGE}"
+              style="height:3px;line-height:3px;font-size:0;
+              background-color:{ORANGE};background-image:linear-gradient(90deg,{ORANGE},{ORANGE_DEEP});">&nbsp;</td>
+          </tr>
           <tr>
             <td align="center" bgcolor="{BG}" style="padding:22px 20px 12px;background-color:{BG};">
               {logo_block()}
@@ -218,307 +249,226 @@ def shell(*, title: str, body_rows: str, preheader: str = "") -> str:
 </html>"""
 
 
-# ── Deposit-driving presets (promotions page) ──────────────────────────────
+def _pack(
+    *,
+    name: str,
+    subject: str,
+    title: str,
+    preheader: str,
+    body: str,
+    text: str,
+) -> dict:
+    return {
+        "name": name,
+        "subject": subject,
+        "html_body": shell(title=title, preheader=preheader, body_rows=body),
+        "text_body": text,
+    }
+
+
+# ── Presets ────────────────────────────────────────────────────────────────
 def preset_ilk_yatirim() -> dict:
     items = [
-        (
-            "1000₺ Deneme Bonusu",
-            "Pragmatic Play’de risk almadan dene; sonra ilk yatırımla asıl paketi aç.",
-        ),
-        (
-            "%100 Slot Hoş Geldin",
-            "İlk çekime kadar her yatırımda %100 bonus — sadece 2x çevrim, çekim limiti yok.",
-        ),
-        (
-            "%100 Pragmatic Nakit",
-            "50.000₺’ye kadar Pragmatic Play nakit bonusunu yatırımınla aktifleştir.",
-        ),
-        (
-            "%100 Anlık İade",
-            "50.000₺’ye varan anlık iade — kaybetmek yok hissi, yeniden yatırım güveni.",
-        ),
+        ("1000₺ Deneme Bonusu", "Pragmatic’te ısın — sonra ilk yatırımla asıl paketi aç."),
+        ("%100 Slot Hoş Geldin", "İlk çekime kadar her yatırımda %100 · sadece 2x çevrim."),
+        ("%100 Pragmatic Nakit", "50.000₺’ye kadar nakit katlama — yatırımınla anında aktif."),
+        ("%100 Anlık İade", "50.000₺’ye varan iade güvencesi — riski Bizzo üstlenir."),
     ]
     body = (
-        f'<tr><td align="center" style="padding:4px 20px 10px;">{badge("İLK YATIRIM")}</td></tr>'
-        + eyebrow("Hoş geldin paketi")
-        + headline("{{name}}, ilk yatırımınla paketi ikiye katla")
-        + feature_box(
+        f'<tr><td align="center" style="padding:4px 20px 10px;">{badge("HOŞ GELDİN AŞAMASI")}</td></tr>'
+        + headline("{{name}}, İlk Yatırımında Kasanı 2'ye Katlamaya Hazır Mısın?")
+        + hero_glow(
             "%100",
-            "Çekim yapana kadar sınırsız slot hoş geldin",
+            "Çekim Yapana Kadar Sınırsız Slot Keyfi — Limitsiz Kazanç!",
             "Her yatırımda anında %100 · 2x çevrim · sıfır çekim limiti",
         )
-        + lead(
-            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — Bizzo promosyonları "
-            "yatırım yaptıkça açılır. İlk adımı at:"
-        )
+        + cta_row("Sınırsız Bonusu Kap")
+        + lead("Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — paket yatırımla açılır. Kaçırma:")
         + promo_cards(items)
-        + cta_row("İlk Yatırımı Yap")
+        + cta_row("Anında Yatırım Yap")
     )
-    return {
-        "name": "Bizzo · 2026 · İlk Yatırım Paketi",
-        "subject": "{{name}}, ilk yatırımınla %100 slot hoş geldin seni bekliyor",
-        "html_body": shell(
-            title="Bizzo İlk Yatırım",
-            preheader="İlk yatırımda %100 slot hoş geldin — 2x çevrim",
-            body_rows=body,
-        ),
-        "text_body": (
+    return _pack(
+        name="Bizzo · 2026 · İlk Yatırım Paketi",
+        subject="{{name}}, ilk yatırımında kasanı 2'ye katla — sınırsız slot hoş geldin",
+        title="Bizzo İlk Yatırım",
+        preheader="Çekim yapana kadar sınırsız slot — limitsiz kazanç",
+        body=body,
+        text=(
             "Merhaba {{name}},\n\n"
-            "İlk yatırımınla %100 slot hoş geldin + Pragmatic nakit paketi.\n"
-            f"Yatırım yap: {SITE}\n"
+            "İlk yatırımında kasanı 2'ye katla. Çekim yapana kadar sınırsız slot.\n"
+            f"Yatırım: {AFF}\n"
         ),
-    }
+    )
 
 
 def preset_slot_hosgeldin() -> dict:
     items = [
-        (
-            "Her yatırımda %100",
-            "İlk çekimini yapana kadar her yatırdığın tutara eş bonus yazılır.",
-        ),
-        (
-            "Sadece 2x çevrim",
-            "Düşük çevrimle bonusunu hızlı çevir, kazancını büyüt.",
-        ),
-        (
-            "Sıfır çekim limiti",
-            "Çekim limiti yok — kazancını sınırlamadan katla.",
-        ),
-        (
-            "1000₺ Deneme + Pragmatic",
-            "Deneme ile ısın, yatırımla Pragmatic %100 nakit bonusunu da aç.",
-        ),
+        ("Anında %100 slot", "Her yatırdığın tutara eş bonus — çekim yapana kadar."),
+        ("Sadece 2x çevrim", "Düşük çevrimle bakiye katlama hızlanır."),
+        ("Sıfır çekim limiti", "Kazancını sınırlamadan büyüt, özgürce çek."),
+        ("Deneme + Pragmatic", "Isın, yükle, Pragmatic %100 nakit paketini de aç."),
     ]
     body = (
         eyebrow("Slot hoş geldin")
-        + headline("Çekim yapana kadar %100 sınırsız bonus")
-        + feature_box(
+        + headline("Sadece 2x Çevrimle Bakiye Katlama Devri Başladı!")
+        + hero_glow(
             "2x",
-            "Çevrim şartı · çekim limiti yok",
-            "İlk çekime kadar her yatırımda anında %100 slot bonusu",
+            "Sıfır Çekim Limiti + Anında Tanımlanan %100 Slot Bonusu.",
+            "İlk çekime kadar her yatırımda %100 — kaçırma.",
         )
-        + lead(
-            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — bu paket yalnızca "
-            "yatırım yapan üyelerde aktif. Hemen yükle, bonusunu al:"
-        )
+        + cta_row("Sınırsız Bonusu Kap")
+        + lead("Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — bakiye katlama için tek adım: yatırım.")
         + promo_cards(items)
-        + cta_row("Yatırım Yap — Bonusu Al")
+        + cta_row("Anında Yatırım Yap")
     )
-    return {
-        "name": "Bizzo · 2026 · %100 Slot Hoş Geldin",
-        "subject": "{{name}}, çekim yapana kadar her yatırımda %100 bonus",
-        "html_body": shell(
-            title="Bizzo Slot Hoş Geldin",
-            preheader="Her yatırımda %100 — 2x çevrim, çekim limiti yok",
-            body_rows=body,
-        ),
-        "text_body": (
+    return _pack(
+        name="Bizzo · 2026 · %100 Slot Hoş Geldin",
+        subject="{{name}}, 2x çevrimle bakiye katlama — %100 slot şimdi",
+        title="Bizzo Slot Hoş Geldin",
+        preheader="2x çevrim · sıfır çekim limiti · anında %100",
+        body=body,
+        text=(
             "Merhaba {{name}},\n\n"
-            "Çekim yapana kadar her yatırımda %100 slot hoş geldin.\n"
-            f"Yatırım: {SITE}\n"
+            "2x çevrimle bakiye katlama: anında %100 slot, sıfır çekim limiti.\n"
+            f"Yatırım: {AFF}\n"
         ),
-    }
+    )
 
 
 def preset_kayip_iade() -> dict:
     items = [
-        (
-            "%100 Anlık İade",
-            "50.000₺’ye varan anlık iade fırsatı — kaybını telafi edip yeniden yükle.",
-        ),
-        (
-            "%25’e varan kayıp bonusu",
-            "Kayıplarına karşılık bonus; çekim sınırı yok, yeniden yatırım için güç.",
-        ),
-        (
-            "%50 Duo Kayıp",
-            "20.000₺+ yatırımlarda %25 anlık + %25 ertesi gün — toplam %50.",
-        ),
-        (
-            "Slot / Pragmatic paketleri",
-            "İade sonrası yeni yatırımınla %100 slot ve Pragmatic nakit bonuslarını da kullan.",
-        ),
+        ("%100 Instant Cash Back", "50.000₺’ye varan anlık iade — oyuna hemen dön."),
+        ("%25’e varan kayıp", "Kayıplarına karşılık bonus; çekim sınırı yok."),
+        ("%50 Duo seçeneği", "Yüksek yatırımda %25 anlık + %25 ertesi gün."),
+        ("Yeniden yükle, katla", "İade sonrası yeni yatırımla slot / Pragmatic paketlerini aç."),
     ]
     body = (
         eyebrow("Kayıp / iade")
-        + headline("Kaybetmek yok — yatır, iade al, devam et")
-        + feature_box(
+        + headline("Kaybetmek Yok — Instant Cash Back İle Anında Oyuna Dön!")
+        + hero_glow(
             "%100",
-            "Anlık iade fırsatı",
-            "50.000₺’ye varan iade · yeniden yatırım için güvenli zemin",
+            "50.000 TL'ye varan anlık iade güvencesiyle risk sıfırlandı.",
+            "İade al · yeniden yatır · momentumu bozma",
         )
-        + lead(
-            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — kayıplarını Bizzo "
-            "telafi eder. İade + yeni yatırım döngüsünü aç:"
-        )
+        + cta_row("Nakit İadeyi Al")
+        + lead("Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — risk Bizzo’da, aksiyon sende.")
         + promo_cards(items)
-        + cta_row("Yatırım Yap — İadeyi Kullan")
+        + cta_row("Anında Yatırım Yap")
     )
-    return {
-        "name": "Bizzo · 2026 · Kayıp & Anlık İade",
-        "subject": "{{name}}, %100 anlık iade + kayıp bonuslarıyla yeniden yükle",
-        "html_body": shell(
-            title="Bizzo Kayıp Bonusu",
-            preheader="%100 anlık iade · %25–%50 kayıp bonusu",
-            body_rows=body,
-        ),
-        "text_body": (
+    return _pack(
+        name="Bizzo · 2026 · Kayıp & Anlık İade",
+        subject="{{name}}, instant cash back — 50.000₺'ye varan anlık iade",
+        title="Bizzo Kayıp İade",
+        preheader="Kaybetmek yok — anında oyuna dön",
+        body=body,
+        text=(
             "Merhaba {{name}},\n\n"
-            "%100 anlık iade ve kayıp bonusları seni bekliyor.\n"
-            f"Yatırım: {SITE}\n"
+            "Instant cash back: 50.000₺'ye varan anlık iade.\n"
+            f"Yatırım: {AFF}\n"
         ),
-    }
+    )
 
 
 def preset_duo_kayip() -> dict:
     items = [
-        (
-            "%25 anlık + %25 ertesi gün",
-            "Toplam %50 duo kayıp — yüksek yatırımını koruyan paket.",
-        ),
-        (
-            "20.000₺ ve üzeri yatırımlar",
-            "Eşik üzeri yüklemelerde duo kayıp otomatik güçlenir.",
-        ),
-        (
-            "Çekim sınırı yok",
-            "Kayıp bonusunda çekim sınırı bulunmaz — özgürce devam et.",
-        ),
-        (
-            "Yanında %100 slot hoş geldin",
-            "İlk çekime kadar her yatırımda %100 slot bonusu da aktif kalabilir.",
-        ),
+        ("%25 anlık iade", "Yüksek yatırımında ilk destek anında hesabında."),
+        ("%25 ertesi gün", "Ertesi gün ikinci dilim — toplam %50 güvence."),
+        ("20.000₺+ yatırımlar", "Eşik üzeri yüklemelerde duo kayıp güçlenir."),
+        ("Çekim sınırı yok", "Kayıp paketinde özgürce devam et, bakiyeyi büyüt."),
     ]
     body = (
         f'<tr><td align="center" style="padding:4px 20px 10px;">{badge("YÜKSEK YATIRIM")}</td></tr>'
-        + eyebrow("Duo kayıp")
-        + headline("%50’ye varan duo kayıp — yatırımı büyüt")
-        + feature_box(
+        + headline("Yüksek Yatırımlara Özel %50 Duo Kayıp Güvencesi")
+        + hero_glow(
             "%50",
-            "Duo kayıp bonusu",
-            "20.000₺+ yatırımlarda %25 anlık + %25 ertesi gün",
+            "%25 Anlık İade + %25 Ertesi Gün Bakiye Desteği.",
+            "20.000₺ ve üzeri yatırımlara özel — kaçırma.",
         )
-        + lead(
-            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — bakiyeni büyüt, "
-            "duo kayıp güvencesiyle oyna:"
-        )
+        + cta_row("Anında Yatırım Yap")
+        + lead("Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — yüksek yükle, duo güvenceyi aç.")
         + promo_cards(items)
-        + cta_row("Yüksek Yatırım Yap")
+        + cta_row("Yüksek Yatırımı Yap")
     )
-    return {
-        "name": "Bizzo · 2026 · Duo Kayıp %50",
-        "subject": "{{name}}, 20.000₺+ yatırımlarda %50 duo kayıp seni bekliyor",
-        "html_body": shell(
-            title="Bizzo Duo Kayıp",
-            preheader="%50 duo kayıp — 20.000₺ ve üzeri yatırımlar",
-            body_rows=body,
-        ),
-        "text_body": (
+    return _pack(
+        name="Bizzo · 2026 · Duo Kayıp %50",
+        subject="{{name}}, yüksek yatırıma özel %50 duo kayıp güvencesi",
+        title="Bizzo Duo Kayıp",
+        preheader="%25 anlık + %25 ertesi gün — toplam %50",
+        body=body,
+        text=(
             "Merhaba {{name}},\n\n"
-            "20.000₺+ yatırımlarda %50 duo kayıp.\n"
-            f"Yatırım: {SITE}\n"
+            "%50 duo kayıp: %25 anlık + %25 ertesi gün.\n"
+            f"Yatırım: {AFF}\n"
         ),
-    }
+    )
 
 
 def preset_kripto() -> dict:
     items = [
-        (
-            "Kripto yatır",
-            "USDT / kripto ile yatırım yap — işlem hızlı, bonus hakkı doğar.",
-        ),
-        (
-            "Havale ile çek",
-            "Çekimi havale ile tamamla, %25 ekstra nakit hakkını kullan.",
-        ),
-        (
-            "%25 ekstra nakit",
-            "Kripto→havale döngüsünde çekimlerin daha değerli hale gelir.",
-        ),
-        (
-            "Üstüne slot / Pragmatic",
-            "Aynı dönemde %100 slot hoş geldin ve Pragmatic nakit paketlerini de aç.",
-        ),
+        ("USDT / kripto yükle", "Hızlı yatırım — %25 nakit hakkı doğar."),
+        ("Havale ile çek", "Kesintisiz çekim yolunu aç, ekstra nakitı kap."),
+        ("Pragmatic %100", "Aynı dönemde 50.000₺’ye kadar Pragmatic katlama."),
+        ("Slot hoş geldin", "İlk çekime kadar her yatırımda %100 slot da yanında."),
     ]
     body = (
-        eyebrow("Kripto yatırım")
-        + headline("Kripto yatır, havale çek — %25 bonus kazan")
-        + feature_box(
+        eyebrow("Kripto + nakit")
+        + headline("Kripto Yatırımlarına Özel %25 Nakit + Pragmatic Play %100 Katlama!")
+        + hero_glow(
             "%25",
-            "Kripto yatır · havale çek",
-            "Çekimini daha değerli yap — ekstra nakit hakkı",
+            "USDT ile yükle, Havale ile kesintisiz çek.",
+            "Kripto avantajı + Pragmatic %100 nakit paketi",
         )
-        + lead(
-            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — kripto ile yükle, "
-            "havale ile çek, %25 ekstra nakit kap:"
-        )
+        + cta_row("Anında Yatırım Yap")
+        + lead("Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — USDT yükle, çift avantajı kullan.")
         + promo_cards(items)
-        + cta_row("Kripto ile Yatırım Yap")
+        + cta_row("Kripto ile Yatır")
     )
-    return {
-        "name": "Bizzo · 2026 · Kripto Yatırım %25",
-        "subject": "{{name}}, kripto yatır havale çek — %25 ekstra nakit",
-        "html_body": shell(
-            title="Bizzo Kripto Yatırım",
-            preheader="Kripto yatır, havale çek, %25 bonus kazan",
-            body_rows=body,
-        ),
-        "text_body": (
+    return _pack(
+        name="Bizzo · 2026 · Kripto Yatırım %25",
+        subject="{{name}}, kripto yatırımlarına özel %25 nakit + Pragmatic %100",
+        title="Bizzo Kripto Yatırım",
+        preheader="USDT yükle · havale çek · %25 nakit",
+        body=body,
+        text=(
             "Merhaba {{name}},\n\n"
-            "Kripto yatır · havale çek · %25 ekstra nakit.\n"
-            f"Yatırım: {SITE}\n"
+            "Kripto yatırımlarına özel %25 nakit + Pragmatic %100.\n"
+            f"Yatırım: {AFF}\n"
         ),
-    }
+    )
 
 
 def preset_pragmatic_nakit() -> dict:
     items = [
-        (
-            "%100 Pragmatic Play nakit",
-            "50.000₺’ye kadar %100 nakit — yatırımınla hemen aktifleştir.",
-        ),
-        (
-            "Sadece 2x çevrim",
-            "Düşük çevrim + sıfır çekim limiti — kazancı kesintisiz çek.",
-        ),
-        (
-            "200x nakit ödül",
-            "Günün seçili oyununda 200x+ kazanca, kazancının %50’si nakit ödül (3x çevrim).",
-        ),
-        (
-            "Slot hoş geldin ile birleşir",
-            "İlk çekime kadar her yatırımda %100 slot bonusu da yanında.",
-        ),
+        ("%100 Pragmatic nakit", "50.000₺’ye kadar katlama — yatırımınla anında tanım."),
+        ("Sadece 2x çevrim", "Düşük çevrim + sıfır çekim limiti."),
+        ("200x nakit ödül", "Günün oyununda 200x+ → kazancının %50’si nakit (3x)."),
+        ("Kripto yolu", "USDT ile yükle, havale ile çek — %25 ekstra nakit hakkı."),
     ]
     body = (
         eyebrow("Pragmatic / nakit")
-        + headline("Pragmatic’e özel %100 nakit — yatırımla aç")
-        + feature_box(
+        + headline("Kripto Yatırımlarına Özel %25 Nakit + Pragmatic Play %100 Katlama!")
+        + hero_glow(
             "%100",
-            "Pragmatic Play nakit bonusu",
-            "50.000₺’ye kadar · 2x çevrim · sıfır çekim limiti",
+            "USDT ile yükle, Havale ile kesintisiz çek.",
+            "Pragmatic 50.000₺’ye kadar %100 · 2x çevrim",
         )
-        + lead(
-            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — nakit bonuslar "
-            "yatırım sonrası tanımlanır. Hemen yükle:"
-        )
+        + cta_row("Nakit Bonusu Kap")
+        + lead("Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — nakit katlama yatırımla başlar.")
         + promo_cards(items)
-        + cta_row("Yatırım Yap — Nakit Bonusu Al")
+        + cta_row("Anında Yatırım Yap")
     )
-    return {
-        "name": "Bizzo · 2026 · Pragmatic %100 Nakit",
-        "subject": "{{name}}, Pragmatic’te 50.000₺’ye kadar %100 nakit bonus",
-        "html_body": shell(
-            title="Bizzo Pragmatic Nakit",
-            preheader="%100 Pragmatic nakit · 200x nakit ödül",
-            body_rows=body,
-        ),
-        "text_body": (
+    return _pack(
+        name="Bizzo · 2026 · Pragmatic %100 Nakit",
+        subject="{{name}}, Pragmatic %100 katlama + kripto %25 nakit",
+        title="Bizzo Pragmatic Nakit",
+        preheader="Pragmatic %100 · USDT yükle · havale çek",
+        body=body,
+        text=(
             "Merhaba {{name}},\n\n"
-            "Pragmatic %100 nakit (50.000₺’ye kadar) + 200x nakit ödül.\n"
-            f"Yatırım: {SITE}\n"
+            "Pragmatic %100 katlama + kripto %25 nakit.\n"
+            f"Yatırım: {AFF}\n"
         ),
-    }
+    )
 
 
 PRESET_BUILDERS = (

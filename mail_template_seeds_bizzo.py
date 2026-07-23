@@ -17,7 +17,7 @@ from database import (
 )
 from mail_template_engine_bizzo import build_all_presets
 
-SEED_FLAG = "seeded_bizzo_templates_v2026a"
+SEED_FLAG = "seeded_bizzo_templates_v2026b"
 
 TEMPLATES = build_all_presets()
 

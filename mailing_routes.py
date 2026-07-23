@@ -347,7 +347,7 @@ def _mail_logo_url():
 
 def _bizzo_logo_url():
     base = _public_base()
-    path = "/static/mailing/bizzo-logo.png?v=20260723"
+    path = "/static/mailing/bizzo-logo.png?v=20260723d"
     return (base + path) if base else path
 
 
