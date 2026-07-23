@@ -339,9 +339,9 @@ DEFAULT_GREETING_NAME = "Değerli üye"
 
 
 def _mail_logo_url():
-    """Şablonlardaki __MAIL_LOGO__ için absolute URL (panel static — kompakt logo)."""
+    """Şablonlardaki __MAIL_LOGO__ — güncel renkli site logosu (navy zeminli jpg)."""
     base = _public_base()
-    path = "/static/mailing/makrobet-logo-black.png"
+    path = "/static/mailing/makrobet-logo-mail.jpg?v=20260723"
     return (base + path) if base else path
 
 

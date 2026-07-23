@@ -1989,9 +1989,9 @@
 
   function mailLogoPreviewUrl() {
     try {
-      return (window.location.origin || "") + "/static/mailing/makrobet-logo-black.png";
+      return (window.location.origin || "") + "/static/mailing/makrobet-logo-mail.jpg?v=20260723";
     } catch (e) {
-      return "/static/mailing/makrobet-logo-black.png";
+      return "/static/mailing/makrobet-logo-mail.jpg?v=20260723";
     }
   }
 
@@ -2045,7 +2045,7 @@
     s = ensureMailSpamTip(s);
     // href="{{link:...}}" → sadece URL; aksi halde butonlar patlıyor
     s = s.replace(/href\s*=\s*(["'])\s*\{\{\s*link\s*:\s*([^}]+)\s*\}\}\s*\1/gi, function (_m, q, raw) {
-      return "href=" + q + linkUrl(raw) + q;
+      return "href=" + q + linkUrl(raw) + q + " target=_blank rel=noopener";
     });
     s = s.replace(/\{\{name\}\}/g, "Ali")
       .replace(/\{\{email\}\}/g, "ali@ornek.com")

@@ -1,7 +1,7 @@
-"""Makrobet 2026 mailing şablonları — site paleti + promo görselleri.
+"""Makrobet 2026 mailing şablonları — hafif, güncel logo, çalışan Vipmail CTA.
 
-Logo: __MAIL_LOGO__ → /static/mailing/makrobet-logo-black.png
-Görseller: __MB_IMG_*__ → /static/mailing/promos/*.jpg (siteden)
+Logo: __MAIL_LOGO__ → makrobet-logo-mail.jpg (güncel renkli)
+Görseller: max 1–2 küçük jpg / mail
 CTA: {{link:sc:https://makrovip.com/Vipmail}}
 """
 
@@ -16,7 +16,7 @@ from database import (
     utcnow,
 )
 
-SEED_FLAG = "seeded_makrobet_templates_v2026c"
+SEED_FLAG = "seeded_makrobet_templates_v2026d"
 
 AFF = "https://makrovip.com/Vipmail"
 CTA = "{{link:sc:https://makrovip.com/Vipmail}}"
@@ -42,11 +42,10 @@ def _spam():
     return f"""
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#1a0a00;border-bottom:2px solid {GOLD};">
     <tr>
-      <td align="center" style="padding:12px 18px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.45;color:#ffffff;">
-        <strong style="color:{GOLD};">⚠ ÖNEMLİ:</strong>
-        Bu mail Spam klasöründeyse <strong style="color:{GOLD};">butonlar çalışmaz</strong>.
-        Önce <strong style="color:{GOLD};">Spam değil</strong> / <strong style="color:{GOLD};">Gelen kutusuna taşı</strong> deyin,
-        sonra butonlara tıklayın.
+      <td align="center" style="padding:11px 16px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.4;color:#fff;">
+        <strong style="color:{GOLD};">⚠</strong>
+        Spam klasöründeyse <strong style="color:{GOLD};">butonlar çalışmaz</strong>.
+        Önce <strong style="color:{GOLD};">Spam değil</strong> deyin, sonra tıklayın.
       </td>
     </tr>
   </table>"""
@@ -54,59 +53,52 @@ def _spam():
 
 def _logo():
     return (
-        f'<a href="{CTA}" style="text-decoration:none;">'
-        f'<img src="{LOGO}" alt="Makrobet" width="180" '
-        f'style="display:block;margin:0 auto;border:0;max-width:180px;height:auto;"></a>'
+        f'<a href="{CTA}" target="_blank" rel="noopener" style="text-decoration:none;">'
+        f'<img src="{LOGO}" alt="Makrobet" width="168" '
+        f'style="display:block;margin:0 auto;border:0;max-width:168px;height:auto;"></a>'
     )
 
 
-def _btn(label, pad="14px 28px"):
+def _btn(label):
     return (
-        f'<a href="{CTA}" style="display:inline-block;background:{GOLD};color:{DARK};'
-        f"font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:800;"
-        f"text-decoration:none;padding:{pad};border-radius:10px;letter-spacing:0.02em;\">"
-        f"{label}</a>"
+        f'<a href="{CTA}" target="_blank" rel="noopener" '
+        f'style="display:inline-block;background:{GOLD};color:{DARK};'
+        f"font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;"
+        f'text-decoration:none;padding:13px 26px;border-radius:10px;">{label}</a>'
     )
 
 
 def _btn_row(label):
     return f"""
-          <tr>
-            <td align="center" style="padding:6px 24px 14px;">
-              {_btn(label)}
-            </td>
-          </tr>"""
+          <tr><td align="center" style="padding:4px 20px 12px;">{_btn(label)}</td></tr>
+          <tr><td align="center" style="padding:0 20px 10px;font-family:Arial,Helvetica,sans-serif;font-size:11px;">
+            <a href="{CTA}" target="_blank" rel="noopener" style="color:{GOLD};font-weight:700;">{AFF}</a>
+          </td></tr>"""
 
 
-def _hero_img(src, alt):
+def _hero(src, alt):
     return f"""
           <tr>
-            <td align="center" style="padding:4px 20px 12px;">
-              <a href="{CTA}" style="text-decoration:none;">
-                <img src="{src}" alt="{alt}" width="520"
-                  style="display:block;width:100%;max-width:520px;height:auto;border:0;border-radius:14px;border:1px solid {BORDER};">
+            <td align="center" style="padding:2px 18px 10px;">
+              <a href="{CTA}" target="_blank" rel="noopener">
+                <img src="{src}" alt="{alt}" width="280"
+                  style="display:block;width:280px;max-width:70%;height:auto;border:0;border-radius:12px;border:1px solid {BORDER};">
               </a>
             </td>
           </tr>"""
 
 
-def _promo_visual(src, title, desc):
+def _row(title, desc):
     return f"""
           <tr>
-            <td style="padding:0 20px 12px;">
+            <td style="padding:0 18px 7px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-                style="background:{ROW};border:1px solid {BORDER};border-radius:14px;overflow:hidden;">
+                style="background:{ROW};border:1px solid {BORDER};border-left:3px solid {GOLD};border-radius:8px;">
                 <tr>
-                  <td width="128" valign="top" style="padding:0;">
-                    <a href="{CTA}" style="text-decoration:none;">
-                      <img src="{src}" alt="{title}" width="128"
-                        style="display:block;width:128px;max-width:128px;height:auto;border:0;">
-                    </a>
-                  </td>
-                  <td valign="middle" style="padding:14px 16px;">
-                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:800;color:{GOLD};line-height:1.25;">{title}</div>
-                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:{MUTED};line-height:1.45;margin-top:5px;">{desc}</div>
-                    <div style="margin-top:10px;">{_btn("İncele →", "9px 16px")}</div>
+                  <td style="padding:11px 12px;">
+                    <a href="{CTA}" target="_blank" rel="noopener"
+                      style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:800;color:{GOLD};text-decoration:none;">{title}</a>
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:{MUTED};line-height:1.4;margin-top:3px;">{desc}</div>
                   </td>
                 </tr>
               </table>
@@ -114,98 +106,45 @@ def _promo_visual(src, title, desc):
           </tr>"""
 
 
-def _promo_text(num, title, desc):
-    return f"""
-          <tr>
-            <td style="padding:0 20px 8px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-                style="background:{CARD};border:1px solid {BORDER};border-left:3px solid {GOLD};border-radius:10px;">
-                <tr>
-                  <td width="36" valign="top" style="padding:12px 0 12px 12px;">
-                    <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,212,0,0.14);border:1px solid rgba(255,212,0,0.45);text-align:center;line-height:24px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;color:{GOLD};">{num}</div>
-                  </td>
-                  <td style="padding:12px 14px 12px 6px;">
-                    <a href="{CTA}" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:800;color:{GOLD};text-decoration:none;">{title}</a>
-                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:{MUTED};line-height:1.45;margin-top:3px;">{desc}</div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>"""
-
-
-def _chip_row(labels):
-    chips = "".join(
-        f'<td style="padding:3px;"><span style="display:inline-block;padding:7px 11px;border-radius:999px;'
-        f"border:1px solid {BORDER};background:{ROW};color:{TEXT};font-family:Arial,Helvetica,sans-serif;"
-        f'font-size:11px;font-weight:700;white-space:nowrap;">{lab}</span></td>'
-        for lab in labels
+def _chips():
+    labs = ["Bilet Etkinliği", "Makro Kasa", "Makro Manager", "Prim", "Çevrim", "Race"]
+    cells = "".join(
+        f'<td style="padding:2px;"><span style="display:inline-block;padding:5px 8px;border-radius:999px;'
+        f"border:1px solid {BORDER};background:{CARD};color:{TEXT};font-family:Arial,Helvetica,sans-serif;"
+        f'font-size:10px;font-weight:700;">{x}</span></td>'
+        for x in labs
     )
     return f"""
-          <tr>
-            <td align="center" style="padding:4px 16px 14px;">
-              <table role="presentation" cellpadding="0" cellspacing="0"><tr>{chips}</tr></table>
-            </td>
-          </tr>"""
+          <tr><td align="center" style="padding:2px 12px 10px;">
+            <table role="presentation" cellpadding="0" cellspacing="0"><tr>{cells}</tr></table>
+          </td></tr>"""
 
 
-def _shell(eyebrow, headline, lead_html, body_rows, cta1, cta2, hero_src="", hero_alt=""):
-    hero = _hero_img(hero_src, hero_alt) if hero_src else ""
+def _shell(eyebrow, headline, lead, rows, cta, hero_src="", hero_alt=""):
+    hero = _hero(hero_src, hero_alt) if hero_src else ""
     return f"""<!DOCTYPE html>
-<html lang="tr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{headline}</title>
-</head>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{headline}</title></head>
 <body style="margin:0;padding:0;background:{INK};">
 {_spam()}
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{INK};">
-    <tr>
-      <td align="center" style="padding:22px 10px 36px;">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0"
-          style="width:100%;max-width:600px;background:{BG};border:1px solid {BORDER};border-radius:18px;overflow:hidden;">
-          <tr><td style="height:4px;background:{GOLD};font-size:0;line-height:0;">&nbsp;</td></tr>
-          <tr><td align="center" style="padding:22px 24px 8px;">{_logo()}</td></tr>
-          <tr>
-            <td align="center" style="padding:0 24px 6px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:{GOLD};">
-              {eyebrow}
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding:0 22px 10px;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.2;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">
-              {headline}
-            </td>
-          </tr>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{INK};"><tr>
+<td align="center" style="padding:16px 8px 28px;">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;background:{BG};border:1px solid {BORDER};border-radius:14px;overflow:hidden;">
+<tr><td style="height:3px;background:{GOLD};font-size:0;line-height:0;">&nbsp;</td></tr>
+<tr><td align="center" style="padding:18px 18px 6px;">{_logo()}</td></tr>
+<tr><td align="center" style="padding:0 16px 4px;font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:{GOLD};">{eyebrow}</td></tr>
+<tr><td align="center" style="padding:0 16px 8px;font-family:Georgia,'Times New Roman',serif;font-size:22px;line-height:1.25;font-weight:700;color:#fff;">{headline}</td></tr>
 {hero}
-{_btn_row(cta1)}
-          <tr>
-            <td style="padding:4px 24px 12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:{TEXT};">
-              {lead_html}
-            </td>
-          </tr>
-{body_rows}
-{_chip_row(["Bilet Etkinliği", "Makro Kasa", "Makro Manager", "Prim Bonusu", "Çevrim Bonusu"])}
-{_btn_row(cta2)}
-          <tr>
-            <td align="center" style="padding:0 24px 8px;">
-              <a href="{CTA}" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;color:{GOLD};text-decoration:underline;">
-                {AFF}
-              </a>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:10px 24px 20px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:{MUTED};text-align:center;">
-              Spam klasöründeyken butonlar kilitlidir — Spam değil deyip tekrar deneyin.<br>
-              18+ · Sorumlu oyun · Şartlar geçerlidir · Makrobet
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>"""
+{_btn_row(cta)}
+<tr><td style="padding:2px 18px 10px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.55;color:{TEXT};">{lead}</td></tr>
+{rows}
+{_chips()}
+{_btn_row(cta)}
+<tr><td style="padding:6px 16px 16px;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.45;color:{MUTED};text-align:center;">
+Spam’de butonlar kilitli · Spam değil deyip tekrar dene<br>18+ · Makrobet · {AFF}
+</td></tr>
+</table></td></tr></table>
+</body></html>"""
 
 
 TEMPLATES = [
@@ -213,131 +152,90 @@ TEMPLATES = [
         "name": "2026 · Davet Mailingi",
         "subject": "{{name}}, Makrobet'te seni 3.000 TL deneme kasası bekliyor!",
         "html_body": _shell(
-            "Özel davet · deneme kasası",
+            "Özel davet",
             "3.000 TL deneme kasası seni bekliyor",
-            "Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>"
-            "Makrobet’e özel davetlisin. Kayıt ol, <strong style='color:#ffd400;'>3.000 TL deneme kasanı</strong> aç "
-            "ve aşağıdaki canlı kampanyalarla devam et.",
-            _promo_visual(IMG_KASA, "3.000 TL Deneme Kasası", "Yeni üyelere özel başlangıç kasası — görseldeki kasa seni bekliyor.")
-            + _promo_visual(IMG_ARKADAS, "Arkadaşını Getir", "Arkadaşının aldığı yatırım bonusunu sana da ekleyelim.")
-            + _promo_visual(IMG_KAYIP, "%100 Kayıp Bonusu", "Sıfır riskle yatırım senden, güvence Makrobet’ten.")
-            + _promo_visual(IMG_RACE, "Amusnet Race", "Ödül havuzlu yarışta zirveye oyna.")
-            + _promo_text("5", "Bilet Etkinliği", "Etkinlik biletlerini topla, özel çekiliş / ödül turlarına gir.")
-            + _promo_text("6", "Makro Manager · Prim · Çevrim", "Manager rolling, prim ve çevrim bonuslarıyla bakiyeni büyüt."),
+            "Merhaba <strong style='color:#fff;'>{{name}}</strong> — kayıt ol, deneme kasanı aç. "
+            "Aşağıdaki kampanyalar da aktif.",
+            _row("3.000 TL Deneme Kasası", "Yeni üye başlangıç kasası")
+            + _row("Arkadaşını Getir", "Arkadaşının yatırım bonusunu sen de al")
+            + _row("%100 Kayıp Bonusu", "Sıfır risk — güvence Makrobet’ten")
+            + _row("Amusnet Race · Bilet · Manager", "Yarış, bilet etkinliği, Makro Manager")
+            + _row("Prim & Çevrim Bonusu", "Aktif prim / çevrim kampanyaları"),
             "Hemen Kayıt Ol",
-            "Kuponu / Kasayı Aç",
             IMG_KASA,
-            "Makrobet Deneme Kasası",
+            "Deneme Kasası",
         ),
-        "text_body": (
-            "Merhaba {{name}},\n\n"
-            "3.000 TL deneme kasası + Arkadaşını Getir, %100 Kayıp, Race, Bilet, Makro Manager, Prim, Çevrim.\n\n"
-            f"Spam değil deyip tıkla: {AFF}\n\n18+ Makrobet"
-        ),
+        "text_body": f"Merhaba {{{{name}}}},\n\n3.000 TL deneme kasası + promosyonlar.\nSpam değil deyip tıkla: {AFF}\n",
     },
     {
         "name": "2026 · Pasif Üye Geri Getirme",
         "subject": "{{name}}, hesabın seni bekliyor — kasa ve bonuslar hazır",
         "html_body": _shell(
-            "Geri dönüş · özel seçki",
+            "Geri dönüş",
             "Seni özledik — dönüş paketini aç",
-            "Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>"
-            "Bir süredir yoktun. Promosyonlar sayfasından seçtiğimiz "
-            "<strong style='color:#ffd400;'>kasa, kayıp ve etkinlik</strong> fırsatlarıyla geri dön.",
-            _promo_visual(IMG_KAYIP, "%100 Kayıp Bonusu", "Sıfır riskli güvence — yatırıma güvenle dön.")
-            + _promo_visual(IMG_KASA, "Makro Kasa", "Yatırımına ek kasa / ekstra ödül penceresi.")
-            + _promo_visual(IMG_RACE, "Amusnet Race", "Ödüllü yarışta yerini geri al.")
-            + _promo_text("4", "Bilet Etkinliği", "Bilet topla, etkinlik ödüllerine katıl.")
-            + _promo_text("5", "Makro Manager", "Manager rolling ile toplu etkinlik avantajı.")
-            + _promo_text("6", "Prim & Çevrim Bonusu", "Aktif dönem prim / çevrim kampanyaları."),
+            "Merhaba <strong style='color:#fff;'>{{name}}</strong> — %100 kayıp, kasa, race ve manager ile geri dön.",
+            _row("%100 Kayıp Bonusu", "Güvenli geri dönüş")
+            + _row("Makro Kasa", "Yatırıma ek kasa")
+            + _row("Amusnet Race", "Ödül havuzlu yarış")
+            + _row("Bilet · Makro Manager", "Etkinlik + rolling")
+            + _row("Prim & Çevrim", "Aktif dönem bonusları"),
             "Hesabıma Dön",
-            "Bonusları Gör",
             IMG_KAYIP,
             "Kayıp Bonusu",
         ),
-        "text_body": (
-            "Merhaba {{name}},\n\n"
-            "Geri dönüş: %100 Kayıp, Makro Kasa, Race, Bilet, Manager, Prim, Çevrim.\n\n"
-            f"{AFF}\n\n18+ Makrobet"
-        ),
+        "text_body": f"Merhaba {{{{name}}}},\n\nGeri dönüş paketleri hazır.\n{AFF}\n",
     },
     {
         "name": "2026 · Memnuniyet Bonusu",
-        "subject": "{{name}}, senin için memnuniyet jesti + kasa fırsatları",
+        "subject": "{{name}}, senin için memnuniyet jesti hazır",
         "html_body": _shell(
-            "Memnuniyet · özel jest",
-            "Senin için ekstra bir jest yaptık",
-            "Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>"
-            "Yakın zamanda yatırımın oldu ama çekim tarafında aksaklık yaşadıysan — "
-            "<strong style='color:#ffd400;'>memnuniyet bonusun</strong> tanımlı. "
-            "Yanına da sitedeki güçlü kampanyaları ekledik.",
-            _promo_text("1", "Memnuniyet Bonusu", "Çekim/deneyim aksamalarına özel jest — hesabını kontrol et / destekten talep et.")
-            + _promo_visual(IMG_KAYIP, "%100 Kayıp Bonusu", "Riski Makrobet üstlensin.")
-            + _promo_visual(IMG_KASA, "Makro Kasa", "Ek kasa ile moralini yükselt.")
-            + _promo_text("4", "Prim · Çevrim · Manager", "Prim, çevrim ve Makro Manager fırsatları aktif.")
-            + _promo_text("5", "Bilet Etkinliği", "Etkinlik biletleriyle ekstra ödül şansı."),
+            "Memnuniyet",
+            "Senin için ekstra bir jest",
+            "Merhaba <strong style='color:#fff;'>{{name}}</strong> — çekim aksamalarına özel memnuniyet jesti + sitedeki güçlü kampanyalar.",
+            _row("Memnuniyet Bonusu", "Özel jest — hesabını kontrol et")
+            + _row("%100 Kayıp Bonusu", "Risk Makrobet’te")
+            + _row("Makro Kasa", "Ek kasa fırsatı")
+            + _row("Prim · Çevrim · Manager · Bilet", "Aktif etkinlik seti"),
             "Bonusu Kontrol Et",
-            "Siteye Git",
             IMG_KASA,
             "Makro Kasa",
         ),
-        "text_body": (
-            "Merhaba {{name}},\n\n"
-            "Memnuniyet jesti + %100 Kayıp, Makro Kasa, Prim, Çevrim, Manager, Bilet.\n\n"
-            f"{AFF}\n\n18+ Makrobet"
-        ),
+        "text_body": f"Merhaba {{{{name}}}},\n\nMemnuniyet jesti + kampanyalar.\n{AFF}\n",
     },
     {
         "name": "2026 · Yeni Üye İlk Yatırım",
-        "subject": "{{name}}, ilk yatırımın için kasa ve bonus paketleri",
+        "subject": "{{name}}, ilk yatırımın için kasa paketleri",
         "html_body": _shell(
-            "İlk adım · yatırım",
-            "Deneme bitti — kasanı büyütme zamanı",
-            "Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>"
-            "Üyeliğin hazır. İlk yatırımını yapıp "
-            "<strong style='color:#ffd400;'>Makro Kasa, Race ve prim/çevrim</strong> paketlerini açmana tek adım kaldı.",
-            _promo_visual(IMG_KASA, "Makro Kasa / Yatırım Ekstra", "İlk yatırımlara ek kasa fırsatı.")
-            + _promo_visual(IMG_KAYIP, "%100 Kayıp Güvencesi", "İlk adımını daha rahat at.")
-            + _promo_visual(IMG_RACE, "Amusnet Race", "Ödül yarışına erken katıl.")
-            + _promo_text("4", "Prim Bonusu", "Yatırımına prim katmanı.")
-            + _promo_text("5", "Çevrim Bonusu", "Çevrim kampanyalarıyla avantaj yakala.")
-            + _promo_text("6", "Bilet · Makro Manager", "Bilet etkinliği ve manager rolling."),
+            "İlk yatırım",
+            "Kasanı büyütme zamanı",
+            "Merhaba <strong style='color:#fff;'>{{name}}</strong> — ilk yatırımınla Makro Kasa, Race, prim ve çevrimi aç.",
+            _row("Makro Kasa", "Yatırıma ekstra kasa")
+            + _row("%100 Kayıp Güvencesi", "Rahat ilk adım")
+            + _row("Amusnet Race", "Ödül yarışı")
+            + _row("Prim · Çevrim · Bilet · Manager", "Tam paket"),
             "İlk Yatırımı Yap",
-            "Kampanyaları Aç",
             IMG_KASA,
             "Yatırım Kasası",
         ),
-        "text_body": (
-            "Merhaba {{name}},\n\n"
-            "İlk yatırım: Makro Kasa, Kayıp, Race, Prim, Çevrim, Bilet, Manager.\n\n"
-            f"{AFF}\n\n18+ Makrobet"
-        ),
+        "text_body": f"Merhaba {{{{name}}}},\n\nİlk yatırım paketleri.\n{AFF}\n",
     },
     {
         "name": "2026 · Turnuva & Bilet Etkinlikleri",
         "subject": "{{name}}, Race · Bilet · Makro Manager seni bekliyor",
         "html_body": _shell(
-            "Etkinlik arenası",
-            "Bu haftanın sahnesi: Race, Bilet, Manager",
-            "Merhaba <strong style='color:#fff;'>{{name}}</strong>,<br><br>"
-            "Klasik bonusun ötesinde — <strong style='color:#ffd400;'>turnuva, bilet ve Makro Manager</strong> "
-            "etkinlikleriyle ödül havuzlarına katıl.",
-            _promo_visual(IMG_RACE, "Amusnet Race", "Ödül havuzlu yarış — liderlik için erken gir.")
-            + _promo_text("2", "Bilet Etkinliği", "Biletleri topla, özel çekiliş / ödül turlarına gir.")
-            + _promo_text("3", "Makro Manager", "Manager rolling / toplu etkinlik çarpanı.")
-            + _promo_visual(IMG_KASA, "Makro Kasa", "Etkinlik döneminde ek kasa fırsatları.")
-            + _promo_text("5", "Prim & Çevrim Bonusu", "Etkinlik saatlerinde prim / çevrim avantajı.")
-            + _promo_visual(IMG_ARKADAS, "Arkadaşını Getir", "Ekibini büyüt, ekstra ödül kap."),
+            "Etkinlik",
+            "Race, Bilet, Manager bu hafta sahnede",
+            "Merhaba <strong style='color:#fff;'>{{name}}</strong> — turnuva ve toplu etkinliklere katıl.",
+            _row("Amusnet Race", "Ödül havuzlu yarış")
+            + _row("Bilet Etkinliği", "Bilet topla, ödül turuna gir")
+            + _row("Makro Manager", "Manager rolling")
+            + _row("Makro Kasa · Prim · Çevrim", "Etkinlik destek paketleri")
+            + _row("Arkadaşını Getir", "Ekibini büyüt"),
             "Etkinliklere Katıl",
-            "Hemen Oyna",
             IMG_RACE,
             "Amusnet Race",
         ),
-        "text_body": (
-            "Merhaba {{name}},\n\n"
-            "Race, Bilet Etkinliği, Makro Manager, Makro Kasa, Prim, Çevrim, Arkadaşını Getir.\n\n"
-            f"{AFF}\n\n18+ Makrobet"
-        ),
+        "text_body": f"Merhaba {{{{name}}}},\n\nRace / Bilet / Manager.\n{AFF}\n",
     },
 ]
 
@@ -358,13 +256,7 @@ def seed_makrobet_2026_templates(conn, overwrite=True):
                     SET subject = ?, html_body = ?, text_body = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (
-                        item["subject"],
-                        item.get("html_body") or "",
-                        item.get("text_body") or "",
-                        now,
-                        exists["id"],
-                    ),
+                    (item["subject"], item.get("html_body") or "", item.get("text_body") or "", now, exists["id"]),
                 )
                 updated += 1
             continue
@@ -374,14 +266,7 @@ def seed_makrobet_2026_templates(conn, overwrite=True):
             INSERT INTO mail_templates (name, subject, html_body, text_body, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (
-                name,
-                item["subject"],
-                item.get("html_body") or "",
-                item.get("text_body") or "",
-                now,
-                now,
-            ),
+            (name, item["subject"], item.get("html_body") or "", item.get("text_body") or "", now, now),
         )
         added += 1
     upsert_mail_setting(conn, SEED_FLAG, "1")
