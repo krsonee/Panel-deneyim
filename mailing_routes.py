@@ -347,7 +347,7 @@ def _mail_logo_url():
 
 def _bizzo_logo_url():
     base = _public_base()
-    path = "/static/mailing/bizzo-logo.png"
+    path = "/static/mailing/bizzo-logo.png?v=20260723"
     return (base + path) if base else path
 
 
@@ -2055,6 +2055,17 @@ def create_mailing_blueprint(permission_required):
                 )
             except Exception as seed_exc:
                 print(f"⚠️  mail template seed v2026: {seed_exc}")
+            try:
+                from mail_template_seeds_bizzo import seed_bizzo_mail_templates
+                _bz = seed_bizzo_mail_templates(
+                    conn, overwrite=True, allow_when_skipped=True
+                )
+                print(
+                    f"✉️  seeded Bizzo 2026 templates: "
+                    f"added={_bz.get('added')} updated={_bz.get('updated')}"
+                )
+            except Exception as seed_exc:
+                print(f"⚠️  mail template seed bizzo 2026: {seed_exc}")
             try:
                 from mail_template_seeds import seed_makrobet_mail_templates
                 from mail_template_seeds_bizzo import seed_bizzo_mail_templates

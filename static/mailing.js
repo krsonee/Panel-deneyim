@@ -1997,9 +1997,9 @@
 
   function bizzoLogoPreviewUrl() {
     try {
-      return (window.location.origin || "") + "/static/mailing/bizzo-logo.png";
+      return (window.location.origin || "") + "/static/mailing/bizzo-logo.png?v=20260723";
     } catch (e) {
-      return "/static/mailing/bizzo-logo.png";
+      return "/static/mailing/bizzo-logo.png?v=20260723";
     }
   }
 
