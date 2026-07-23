@@ -1,6 +1,6 @@
 """Bizzo Casino 2026 HTML email engine — high-conversion deposit presets.
 
-CTA / tüm tıklanabilir alanlar: {{link:sc:https://www.girbize.com}}
+CTA / tüm tıklanabilir alanlar: {{link:sc:https://girbize.com/}}
 Logo: __BIZZO_LOGO__
 """
 
@@ -27,8 +27,8 @@ NOTICE_GOLD = "#FFD27A"
 FONT = "Arial, Helvetica, sans-serif"
 MAX_W = 600
 
-AFF = "https://www.girbize.com"
-CTA = "{{link:sc:https://www.girbize.com}}"
+AFF = "https://girbize.com/"
+CTA = "{{link:sc:https://girbize.com/}}"
 LOGO = "__BIZZO_LOGO__"
 
 
@@ -471,7 +471,58 @@ def preset_pragmatic_nakit() -> dict:
     )
 
 
+def preset_davet_deneme() -> dict:
+    """Davet teması — 1000₺ deneme + 5.000₺ çekim imkanı."""
+    items = [
+        (
+            "%100 Slot Hoş Geldin",
+            "Çekim yapana kadar her yatırımda %100 — sadece 2x çevrim, sıfır çekim limiti.",
+        ),
+        (
+            "%100 Anlık İade",
+            "50.000₺’ye varan instant cash back — kaybetmek yok hissi.",
+        ),
+        (
+            "%100 Pragmatic Nakit",
+            "50.000₺’ye kadar Pragmatic Play nakit katlama — yatırımınla aç.",
+        ),
+        (
+            "%50 Duo Kayıp",
+            "Yüksek yatırımlarda %25 anlık + %25 ertesi gün güvence.",
+        ),
+    ]
+    body = (
+        f'<tr><td align="center" style="padding:4px 20px 10px;">{badge("ÖZEL DAVET")}</td></tr>'
+        + headline("{{name}}, Seni 1.000₺ Deneme Bonusuyla Davet Ediyoruz!")
+        + hero_glow(
+            "1.000₺",
+            "Deneme Bonusu + 5.000₺ Çekim İmkanı",
+            "Kayıt ol, denemeyi kap — kazancını 5.000₺’ye kadar çek",
+        )
+        + cta_row("Daveti Kabul Et — Denemeyi Kap")
+        + lead(
+            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — özel davetlisin. "
+            "1.000₺ deneme ile başla, 5.000₺ çekim hakkını kullan; ardından paketleri aç:"
+        )
+        + promo_cards(items)
+        + cta_row("Hemen Katıl — 1.000₺ Deneme")
+    )
+    return _pack(
+        name="Bizzo · 2026 · Davet · 1000₺ Deneme",
+        subject="{{name}}, özel davet — 1.000₺ deneme + 5.000₺ çekim imkanı",
+        title="Bizzo Davet Deneme",
+        preheader="1.000₺ deneme bonusu · 5.000₺ çekim imkanı",
+        body=body,
+        text=(
+            "Merhaba {{name}},\n\n"
+            "Özel davet: 1.000₺ deneme bonusu + 5.000₺ çekim imkanı.\n"
+            f"Katıl: {AFF}\n"
+        ),
+    )
+
+
 PRESET_BUILDERS = (
+    preset_davet_deneme,
     preset_ilk_yatirim,
     preset_slot_hosgeldin,
     preset_kayip_iade,

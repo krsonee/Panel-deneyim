@@ -2031,7 +2031,7 @@
   function substituteTplPlaceholders(html) {
     var s = html || "<p class='muted'>Önizleme boş</p>";
     function linkUrl(raw) {
-      return String(raw || "").trim().replace(/^sc\s*:\s*/i, "");
+      return String(raw || "").trim().replace(/^sc\s*:\s*/i, "").trim();
     }
     // Panelde barındırılan logolar / promo görselleri
     var origin = "";
