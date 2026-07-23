@@ -12,3 +12,6 @@ uploads/biolink/*
 
 # Banner / favicon processing temp files
 work/
+
+# Local template previews (not deployed)
+previews/
