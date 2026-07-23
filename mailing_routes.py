@@ -341,7 +341,7 @@ DEFAULT_GREETING_NAME = "Değerli üye"
 def _mail_logo_url():
     """Şablonlardaki __MAIL_LOGO__ — güncel renkli site logosu (navy zeminli jpg)."""
     base = _public_base()
-    path = "/static/mailing/makrobet-logo-mail.jpg?v=20260723"
+    path = "/static/mailing/makrobet-logo-mail.jpg?v=20260723b"
     return (base + path) if base else path
 
 
@@ -352,20 +352,21 @@ def _bizzo_logo_url():
 
 
 def _spam_tip_banner_html():
-    """Spam tip şeridi — seed şablonları + elle HTML’ler için ortak."""
-    gold = "#ffd400"
+    """Spam tip şeridi — soft amber (engine ile aynı dil)."""
+    gold = "#ffcc00"
     return (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        'style="background:#1a0a00;border-bottom:2px solid #ffd400;">'
-        '<tr><td align="center" style="padding:12px 18px;font-family:Arial,Helvetica,sans-serif;'
-        'font-size:13px;line-height:1.45;color:#ffffff;">'
-        f'<strong style="color:{gold};">⚠ ÖNEMLİ:</strong> '
-        "Bu mail Spam klasöründeyse "
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+        '<tr><td align="center" style="padding:0 12px 12px;">'
+        '<table role="presentation" width="600" cellpadding="0" cellspacing="0" bgcolor="#1a1608" '
+        'style="width:100%;max-width:600px;background:rgba(245,158,11,0.1);'
+        'border:1px solid rgba(255,204,0,0.35);border-radius:12px;">'
+        '<tr><td align="center" style="padding:12px 16px;'
+        "font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;"
+        f'font-size:12px;line-height:1.5;color:{gold};background:rgba(245,158,11,0.1);">'
+        "Spam klasöründeyse "
         f'<strong style="color:{gold};">butonlar çalışmaz</strong>. '
-        f'Önce <strong style="color:{gold};">Spam değil</strong> / '
-        f'<strong style="color:{gold};">Gelen kutusuna taşı</strong> deyin, '
-        "sonra butonlara tıklayın."
-        "</td></tr></table>"
+        f'Önce <strong style="color:{gold};">Spam değil</strong> deyin, sonra tıklayın.'
+        "</td></tr></table></td></tr></table>"
     )
 
 

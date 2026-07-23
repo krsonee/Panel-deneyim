@@ -1989,9 +1989,9 @@
 
   function mailLogoPreviewUrl() {
     try {
-      return (window.location.origin || "") + "/static/mailing/makrobet-logo-mail.jpg?v=20260723";
+      return (window.location.origin || "") + "/static/mailing/makrobet-logo-mail.jpg?v=20260723b";
     } catch (e) {
-      return "/static/mailing/makrobet-logo-mail.jpg?v=20260723";
+      return "/static/mailing/makrobet-logo-mail.jpg?v=20260723b";
     }
   }
 
@@ -2004,16 +2004,16 @@
   }
 
   function mailSpamTipBannerHtml() {
-    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#1a0a00;border-bottom:2px solid #ffd400;">' +
-      '<tr><td align="center" style="padding:12px 18px;font-family:Arial,Helvetica,sans-serif;' +
-      'font-size:13px;line-height:1.45;color:#ffffff;">' +
-      '<strong style="color:#ffd400;">⚠ ÖNEMLİ:</strong> ' +
-      "Bu mail Spam klasöründeyse " +
-      '<strong style="color:#ffd400;">butonlar çalışmaz</strong>. ' +
-      'Önce <strong style="color:#ffd400;">Spam değil</strong> / ' +
-      '<strong style="color:#ffd400;">Gelen kutusuna taşı</strong> deyin, ' +
-      "sonra butonlara tıklayın." +
-      "</td></tr></table>";
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
+      '<tr><td align="center" style="padding:0 12px 12px;">' +
+      '<table role="presentation" width="600" cellpadding="0" cellspacing="0" bgcolor="#1a1608" ' +
+      'style="width:100%;max-width:600px;background:rgba(245,158,11,0.1);border:1px solid rgba(255,204,0,0.35);border-radius:12px;">' +
+      '<tr><td align="center" style="padding:12px 16px;font-family:Inter,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;' +
+      'font-size:12px;line-height:1.5;color:#ffcc00;background:rgba(245,158,11,0.1);">' +
+      "Spam klasöründeyse " +
+      '<strong style="color:#ffcc00;">butonlar çalışmaz</strong>. ' +
+      'Önce <strong style="color:#ffcc00;">Spam değil</strong> deyin, sonra tıklayın.' +
+      "</td></tr></table></td></tr></table>";
   }
 
   function ensureMailSpamTip(html) {
