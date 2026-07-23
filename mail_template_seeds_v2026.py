@@ -16,7 +16,7 @@ from database import (
     utcnow,
 )
 
-SEED_FLAG = "seeded_makrobet_templates_v2026b"
+SEED_FLAG = "seeded_makrobet_templates_v2026c"
 
 AFF = "https://makrovip.com/Vipmail"
 CTA = "{{link:sc:https://makrovip.com/Vipmail}}"
