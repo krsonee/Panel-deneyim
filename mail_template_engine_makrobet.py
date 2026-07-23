@@ -1,17 +1,13 @@
-"""Makrobet unified HTML email template engine.
+"""Makrobet unified HTML email template engine — 6 campaign presets.
 
-Modular, table-based, 600px fluid layouts for major clients
-(Apple Mail / Gmail / Outlook). Six campaign presets share one
-component kit + design tokens.
-
-Placeholders resolved at send/preview time:
+Placeholders:
   __MAIL_LOGO__, __MB_IMG_KASA__, __MB_IMG_KAYIP__, __MB_IMG_ARKADAS__, __MB_IMG_RACE__
   {{name}}, {{link:sc:https://makrovip.com/Vipmail}}
 """
 
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from typing import Sequence
 
 # ── Design tokens ──────────────────────────────────────────────────────────
 BG = "#08142c"
@@ -20,12 +16,12 @@ ROW = "#132a52"
 TEXT = "#ffffff"
 MUTED = "#94a3b8"
 GOLD = "#ffcc00"
-GOLD_SOFT = "rgba(245, 158, 11, 0.1)"
+GOLD_SOFT_BG = "#1a1608"
 BORDER = "#243b63"
 INK = "#08142c"
 CTA_INK = "#08142c"
 
-FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+FONT = "Arial, Helvetica, sans-serif"
 MAX_W = 600
 
 AFF = "https://makrovip.com/Vipmail"
@@ -37,33 +33,20 @@ IMG_KAYIP = "__MB_IMG_KAYIP__"
 IMG_ARKADAS = "__MB_IMG_ARKADAS__"
 IMG_RACE = "__MB_IMG_RACE__"
 
-TAG_PILLS = (
-    "Bilet Etkinliği",
-    "Makro Kasa",
-    "Makro Manager",
-    "Prim",
-    "Çevrim",
-    "Race",
-)
-
 
 # ── Components ─────────────────────────────────────────────────────────────
 def notice_spam() -> str:
-    """Soft amber notice — rgba for modern clients, solid fallback for Outlook."""
-    # Approx navy+#f59e0b @ 10% → #1a1608-ish; keep rgba in style as requested
-    solid_fallback = "#1a1608"
     return f"""
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
     <tr>
       <td align="center" style="padding:0 12px 12px;">
         <table role="presentation" width="{MAX_W}" cellpadding="0" cellspacing="0" border="0"
-          bgcolor="{solid_fallback}"
-          style="width:100%;max-width:{MAX_W}px;background-color:{GOLD_SOFT};background:{GOLD_SOFT};
-          border:1px solid rgba(255,204,0,0.35);border-radius:12px;">
+          bgcolor="{GOLD_SOFT_BG}"
+          style="width:100%;max-width:{MAX_W}px;background-color:{GOLD_SOFT_BG};
+          border:1px solid #5a4208;border-radius:12px;">
           <tr>
-            <td align="center" bgcolor="{solid_fallback}"
-              style="padding:12px 16px;font-family:{FONT};font-size:12px;line-height:1.5;color:{GOLD};
-              background-color:{GOLD_SOFT};">
+            <td align="center" bgcolor="{GOLD_SOFT_BG}"
+              style="padding:12px 16px;font-family:{FONT};font-size:12px;line-height:1.5;color:{GOLD};">
               Spam klasöründeyse <strong style="color:{GOLD};">butonlar çalışmaz</strong>.
               Önce <strong style="color:{GOLD};">Spam değil</strong> deyin, sonra tıklayın.
             </td>
@@ -74,12 +57,13 @@ def notice_spam() -> str:
   </table>"""
 
 
-def logo_block(width: int = 168) -> str:
+def logo_block(width: int = 180) -> str:
+    """Exact-bg JPG logo — no plate mismatch vs email navy."""
     return (
-        f'<a href="{CTA}" target="_blank" rel="noopener" style="text-decoration:none;">'
-        f'<img src="{LOGO}" alt="Makrobet" width="{width}" '
+        f'<a href="{CTA}" target="_blank" rel="noopener" style="text-decoration:none;border:0;">'
+        f'<img src="{LOGO}" alt="Makrobet" width="{width}" border="0" '
         f'style="display:block;margin:0 auto;border:0;outline:none;'
-        f'max-width:{width}px;width:{width}px;height:auto;"></a>'
+        f'background-color:{BG};max-width:{width}px;width:{width}px;height:auto;"></a>'
     )
 
 
@@ -91,46 +75,45 @@ def badge(label: str, *, solid: bool = True) -> str:
             f'text-transform:uppercase;padding:6px 14px;border-radius:999px;">{label}</span>'
         )
     return (
-        f'<span style="display:inline-block;background:{GOLD_SOFT};color:{GOLD};'
+        f'<span style="display:inline-block;background:{GOLD_SOFT_BG};color:{GOLD};'
         f"font-family:{FONT};font-size:11px;font-weight:800;letter-spacing:0.08em;"
         f"text-transform:uppercase;padding:6px 14px;border-radius:999px;"
-        f'border:1px solid rgba(255,204,0,0.4);">{label}</span>'
+        f'border:1px solid #5a4208;">{label}</span>'
     )
 
 
 def cta_button(label: str) -> str:
-    """Primary CTA only — no exposed raw affiliate URL under the button."""
-    return (
-        f'<a href="{CTA}" target="_blank" rel="noopener" '
-        f'style="display:inline-block;background:{GOLD};color:{CTA_INK};'
-        f"font-family:{FONT};font-size:15px;font-weight:800;"
-        f"text-decoration:none;padding:14px 28px;border-radius:12px;"
-        f'border:0;mso-padding-alt:0;">'
-        f"<!--[if mso]><i style=\"letter-spacing:28px;mso-font-width:-100%;mso-text-raise:21pt;\">&nbsp;</i><![endif]-->"
-        f'<span style="mso-text-raise:10pt;">{label}</span>'
-        f"<!--[if mso]><i style=\"letter-spacing:28px;mso-font-width:-100%;\">&nbsp;</i><![endif]-->"
-        f"</a>"
-    )
+    """Bulletproof table CTA — no MSO hacks that shift buttons."""
+    return f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
+  <tr>
+    <td align="center" bgcolor="{GOLD}" style="background-color:{GOLD};border-radius:12px;mso-padding-alt:14px 28px;">
+      <a href="{CTA}" target="_blank" rel="noopener"
+        style="display:inline-block;background-color:{GOLD};color:{CTA_INK};
+        font-family:{FONT};font-size:15px;font-weight:800;line-height:1.2;
+        text-decoration:none;padding:14px 28px;border-radius:12px;">{label}</a>
+    </td>
+  </tr>
+</table>"""
 
 
 def cta_row(label: str) -> str:
     return f"""
           <tr>
-            <td align="center" style="padding:6px 20px 16px;">
+            <td align="center" style="padding:8px 20px 18px;">
               {cta_button(label)}
             </td>
           </tr>"""
 
 
-def hero_image(src: str, alt: str, width: int = 320) -> str:
-    """Rounded hero — navy blend, no black plate / hard gold frame."""
+def hero_image(src: str, alt: str, width: int = 300) -> str:
     return f"""
           <tr>
-            <td align="center" style="padding:4px 20px 12px;background:{BG};">
-              <a href="{CTA}" target="_blank" rel="noopener" style="text-decoration:none;">
-                <img src="{src}" alt="{alt}" width="{width}"
-                  style="display:block;width:100%;max-width:{width}px;height:auto;border:0;outline:none;
-                  border-radius:16px;background:{BG};">
+            <td align="center" bgcolor="{BG}" style="padding:2px 24px 10px;background-color:{BG};">
+              <a href="{CTA}" target="_blank" rel="noopener" style="text-decoration:none;border:0;">
+                <img src="{src}" alt="{alt}" width="{width}" border="0"
+                  style="display:block;margin:0 auto;width:100%;max-width:{width}px;height:auto;
+                  border:0;outline:none;background-color:{BG};">
               </a>
             </td>
           </tr>"""
@@ -147,16 +130,24 @@ def eyebrow(text: str) -> str:
 def headline(text: str) -> str:
     return f"""
           <tr>
-            <td align="center" style="padding:0 20px 10px;font-family:{FONT};font-size:24px;
-              line-height:1.25;font-weight:800;color:{TEXT};">{text}</td>
+            <td align="center" style="padding:0 20px 10px;font-family:{FONT};font-size:22px;
+              line-height:1.3;font-weight:800;color:{TEXT};">{text}</td>
           </tr>"""
 
 
 def lead(text: str) -> str:
     return f"""
           <tr>
-            <td style="padding:2px 22px 12px;font-family:{FONT};font-size:14px;
-              line-height:1.6;color:{MUTED};text-align:center;">{text}</td>
+            <td align="center" style="padding:0 22px 14px;font-family:{FONT};font-size:14px;
+              line-height:1.55;color:{MUTED};">{text}</td>
+          </tr>"""
+
+
+def section_label(text: str) -> str:
+    return f"""
+          <tr>
+            <td style="padding:2px 22px 10px;font-family:{FONT};font-size:11px;font-weight:800;
+              letter-spacing:0.1em;text-transform:uppercase;color:{GOLD};">{text}</td>
           </tr>"""
 
 
@@ -165,7 +156,7 @@ def feature_box_3000() -> str:
           <tr>
             <td style="padding:4px 20px 14px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                style="background:{CARD};border-radius:16px;border:2px solid {GOLD};">
+                bgcolor="{CARD}" style="background-color:{CARD};border-radius:16px;border:2px solid {GOLD};">
                 <tr>
                   <td align="center" style="padding:22px 16px;">
                     <div style="font-family:{FONT};font-size:11px;font-weight:800;color:{GOLD};
@@ -175,7 +166,7 @@ def feature_box_3000() -> str:
                     <div style="font-family:{FONT};font-size:16px;font-weight:800;color:{TEXT};
                       letter-spacing:0.04em;margin-top:6px;">DENEME KASASI</div>
                     <div style="font-family:{FONT};font-size:13px;line-height:1.5;color:{MUTED};
-                      margin-top:10px;max-width:380px;">Kayıt ol, deneme kasanı al — risk almadan başla.</div>
+                      margin-top:10px;">Kayıt tamamlanınca deneme bakiyen hesabına tanımlanır.</div>
                   </td>
                 </tr>
               </table>
@@ -183,18 +174,17 @@ def feature_box_3000() -> str:
           </tr>"""
 
 
-def promo_card(title: str, desc: str, *, left_border: bool = True) -> str:
-    border_left = f"border-left:3px solid {GOLD};" if left_border else ""
+def promo_card(title: str, desc: str) -> str:
     return f"""
           <tr>
             <td style="padding:0 20px 8px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                style="background:{ROW};border:1px solid {BORDER};{border_left}border-radius:12px;">
+                bgcolor="{ROW}"
+                style="background-color:{ROW};border:1px solid {BORDER};border-left:3px solid {GOLD};border-radius:12px;">
                 <tr>
-                  <td style="padding:12px 14px;">
-                    <a href="{CTA}" target="_blank" rel="noopener"
-                      style="font-family:{FONT};font-size:14px;font-weight:800;color:{GOLD};text-decoration:none;">{title}</a>
-                    <div style="font-family:{FONT};font-size:12px;color:{MUTED};line-height:1.45;margin-top:4px;">{desc}</div>
+                  <td style="padding:13px 14px;">
+                    <div style="font-family:{FONT};font-size:14px;font-weight:800;color:{GOLD};line-height:1.3;">{title}</div>
+                    <div style="font-family:{FONT};font-size:12px;color:{MUTED};line-height:1.5;margin-top:5px;">{desc}</div>
                   </td>
                 </tr>
               </table>
@@ -207,16 +197,24 @@ def numbered_promo(n: int, title: str, desc: str) -> str:
           <tr>
             <td style="padding:0 20px 8px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                style="background:{ROW};border:1px solid {BORDER};border-left:3px solid {GOLD};border-radius:12px;">
+                bgcolor="{ROW}"
+                style="background-color:{ROW};border:1px solid {BORDER};border-left:3px solid {GOLD};border-radius:12px;">
                 <tr>
-                  <td width="40" valign="top" style="padding:12px 0 12px 12px;">
-                    <div style="width:26px;height:26px;border-radius:50%;background:{GOLD_SOFT};
-                      border:1px solid rgba(255,204,0,0.45);text-align:center;line-height:26px;
-                      font-family:{FONT};font-size:12px;font-weight:800;color:{GOLD};">{n}</div>
+                  <td width="40" valign="top" style="padding:13px 0 13px 12px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="26" height="26"
+                      style="width:26px;height:26px;">
+                      <tr>
+                        <td align="center" valign="middle" bgcolor="{GOLD_SOFT_BG}"
+                          style="width:26px;height:26px;background-color:{GOLD_SOFT_BG};border-radius:50%;
+                          border:1px solid #5a4208;font-family:{FONT};font-size:12px;font-weight:800;color:{GOLD};">
+                          {n}
+                        </td>
+                      </tr>
+                    </table>
                   </td>
-                  <td valign="top" style="padding:11px 14px 11px 4px;">
+                  <td valign="top" style="padding:12px 14px 12px 6px;">
                     <div style="font-family:{FONT};font-size:13px;font-weight:800;color:{GOLD};line-height:1.3;">{title}</div>
-                    <div style="font-family:{FONT};font-size:12px;color:{MUTED};margin-top:3px;line-height:1.45;">{desc}</div>
+                    <div style="font-family:{FONT};font-size:12px;color:{MUTED};margin-top:4px;line-height:1.5;">{desc}</div>
                   </td>
                 </tr>
               </table>
@@ -224,43 +222,18 @@ def numbered_promo(n: int, title: str, desc: str) -> str:
           </tr>"""
 
 
-def promo_cards(items: Sequence[tuple[str, str]], *, left_border: bool = True) -> str:
-    return "".join(promo_card(t, d, left_border=left_border) for t, d in items)
+def promo_cards(items: Sequence[tuple[str, str]]) -> str:
+    return "".join(promo_card(t, d) for t, d in items)
 
 
 def numbered_list(items: Sequence[tuple[str, str]]) -> str:
     return "".join(numbered_promo(i, t, d) for i, (t, d) in enumerate(items, 1))
 
 
-def tag_pills(labels: Iterable[str] = TAG_PILLS) -> str:
-    labs = list(labels)
-    # two rows of 3 for mobile readability
-    chunks = [labs[i : i + 3] for i in range(0, len(labs), 3)]
-    rows = []
-    for chunk in chunks:
-        cells = "".join(
-            f'<td style="padding:3px;">'
-            f'<span style="display:inline-block;padding:6px 10px;border-radius:999px;'
-            f"border:1px solid {BORDER};background:{CARD};color:{TEXT};"
-            f'font-family:{FONT};font-size:10px;font-weight:700;">{lab}</span></td>'
-            for lab in chunk
-        )
-        rows.append(f"<tr>{cells}</tr>")
-    return f"""
-          <tr>
-            <td align="center" style="padding:4px 16px 14px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                {''.join(rows)}
-              </table>
-            </td>
-          </tr>"""
-
-
 def footer_legal() -> str:
-    """Legal footer — no raw affiliate URL text."""
     return f"""
           <tr>
-            <td align="center" style="padding:8px 20px 22px;font-family:{FONT};font-size:11px;
+            <td align="center" style="padding:12px 20px 22px;font-family:{FONT};font-size:11px;
               line-height:1.5;color:{MUTED};border-top:1px solid {BORDER};">
               Spam’de butonlar kilitli · Spam değil deyip tekrar dene<br>
               18+ · Sorumlu oyun · Makrobet
@@ -268,12 +241,7 @@ def footer_legal() -> str:
           </tr>"""
 
 
-def shell(
-    *,
-    title: str,
-    body_rows: str,
-    preheader: str = "",
-) -> str:
+def shell(*, title: str, body_rows: str, preheader: str = "") -> str:
     pre = (
         f'<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;'
         f'opacity:0;overflow:hidden;mso-hide:all;">{preheader}&nbsp;&#847;&nbsp;&#847;</div>'
@@ -281,49 +249,40 @@ def shell(
         else ""
     )
     return f"""<!DOCTYPE html>
-<html lang="tr" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<html lang="tr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="x-apple-disable-message-reformatting">
   <meta name="color-scheme" content="dark">
-  <meta name="supported-color-schemes" content="dark">
   <title>{title}</title>
   <!--[if mso]>
-  <noscript>
-    <xml>
-      <o:OfficeDocumentSettings>
-        <o:AllowPNG/>
-        <o:PixelsPerInch>96</o:PixelsPerInch>
-      </o:OfficeDocumentSettings>
-    </xml>
-  </noscript>
-  <style>table,td{{font-family:Segoe UI,Arial,sans-serif !important;}}</style>
+  <style>table,td{{font-family:Arial,sans-serif !important;}}</style>
   <![endif]-->
   <style type="text/css">
     body,table,td,a{{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}}
     table,td{{mso-table-lspace:0pt;mso-table-rspace:0pt;border-collapse:collapse;}}
-    img{{-ms-interpolation-mode:bicubic;border:0;height:auto;line-height:100%;outline:none;text-decoration:none;}}
+    img{{-ms-interpolation-mode:bicubic;border:0;outline:none;text-decoration:none;display:block;}}
     body{{margin:0 !important;padding:0 !important;width:100% !important;background:{INK};}}
     a[x-apple-data-detectors]{{color:inherit !important;text-decoration:none !important;}}
     @media only screen and (max-width:620px){{
       .mb-shell{{width:100% !important;}}
-      .mb-pad{{padding-left:14px !important;padding-right:14px !important;}}
     }}
   </style>
 </head>
 <body style="margin:0;padding:0;background-color:{INK};font-family:{FONT};">
   {pre}
   {notice_spam()}
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{INK};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="{INK}" style="background-color:{INK};">
     <tr>
       <td align="center" style="padding:8px 10px 32px;">
         <table role="presentation" class="mb-shell" width="{MAX_W}" cellpadding="0" cellspacing="0" border="0"
-          style="width:100%;max-width:{MAX_W}px;background:{BG};border:1px solid {BORDER};border-radius:16px;overflow:hidden;">
-          <tr><td style="height:3px;line-height:3px;font-size:0;background:{GOLD};">&nbsp;</td></tr>
+          bgcolor="{BG}"
+          style="width:100%;max-width:{MAX_W}px;background-color:{BG};border:1px solid {BORDER};border-radius:16px;">
+          <tr><td height="3" bgcolor="{GOLD}" style="height:3px;line-height:3px;font-size:0;background-color:{GOLD};">&nbsp;</td></tr>
           <tr>
-            <td align="center" style="padding:22px 20px 10px;background:{BG};">
+            <td align="center" bgcolor="{BG}" style="padding:22px 20px 12px;background-color:{BG};">
               {logo_block()}
             </td>
           </tr>
@@ -337,27 +296,29 @@ def shell(
 </html>"""
 
 
-# ── Preset builders ────────────────────────────────────────────────────────
+# ── Presets (coherent copy, no tag pills, single bottom CTA) ───────────────
 def preset_davet_test() -> dict:
     items = [
-        ("%100 Kayıp Bonusu", "Sıfır risk — güvence Makrobet’ten."),
-        ("Arkadaşını Getir", "Arkadaşının yatırım bonusunu sen de al."),
-        ("Amusnet Race · Bilet · Manager", "Yarış, bilet etkinliği ve Makro Manager."),
+        (
+            "%100 Kayıp Bonusu",
+            "Yatırımın kayba dönerse aynı tutarı tekrar hesabına ekleriz — risk Makrobet’te.",
+        ),
+        (
+            "Arkadaşını Getir",
+            "Davet ettiğin üye ilk yatırımını yapınca hem sen hem o bonus kazanır.",
+        ),
+        (
+            "Amusnet Race",
+            "Haftalık yarış sıralamasına gir; ödül havuzundan payını kap.",
+        ),
     ]
     body = (
-        f"""
-          <tr><td align="center" style="padding:4px 20px 10px;">{badge("DENEME BONUSU")}</td></tr>
-        """
+        f'<tr><td align="center" style="padding:4px 20px 10px;">{badge("DENEME BONUSU")}</td></tr>'
         + eyebrow("Özel davet")
         + headline("Merhaba {{name}}, seni 3.000 TL deneme kasası bekliyor")
-        + lead("Makrobet’te güncel promosyonlar ve hızlı ödeme seni bekliyor.")
+        + lead("Kayıt ol, deneme kasanı aç. Aşağıdaki 3 kampanya da yeni üyelerde aktif.")
         + feature_box_3000()
-        + f"""
-          <tr>
-            <td style="padding:0 22px 8px;font-family:{FONT};font-size:11px;font-weight:800;
-              letter-spacing:0.1em;text-transform:uppercase;color:{GOLD};">Diğer promosyonlar</td>
-          </tr>
-        """
+        + section_label("Diğer promosyonlar")
         + numbered_list(items)
         + cta_row("Deneme Bonusu Al")
     )
@@ -366,13 +327,13 @@ def preset_davet_test() -> dict:
         "subject": "{{name}}, Makrobet'te seni 3.000 TL deneme kasası bekliyor!",
         "html_body": shell(
             title="Makrobet Deneme Bonusu",
-            preheader="3.000 TL deneme kasası + numaralı promosyon listesi",
+            preheader="3.000 TL deneme kasası seni bekliyor",
             body_rows=body,
         ),
         "text_body": (
             "Merhaba {{name}},\n\n"
             "3.000 TL deneme kasası seni bekliyor.\n"
-            "1) %100 Kayıp Bonusu\n2) Arkadaşını Getir\n3) Race · Bilet · Manager\n\n"
+            "1) %100 Kayıp Bonusu\n2) Arkadaşını Getir\n3) Amusnet Race\n\n"
             f"Katıl: {AFF}\n"
         ),
     }
@@ -380,23 +341,36 @@ def preset_davet_test() -> dict:
 
 def preset_davet_mailing() -> dict:
     items = [
-        ("3.000 TL Deneme Kasası", "Yeni üye başlangıç kasası"),
-        ("Arkadaşını Getir", "Arkadaşının yatırım bonusunu sen de al"),
-        ("%100 Kayıp Bonusu", "Sıfır risk — güvence Makrobet’ten"),
-        ("Amusnet Race · Bilet · Manager", "Yarış, bilet etkinliği, Makro Manager"),
-        ("Prim & Çevrim Bonusu", "Aktif prim / çevrim kampanyaları"),
+        (
+            "3.000 TL Deneme Kasası",
+            "Yeni üyelikte hesabına tanımlanan başlangıç bakiyesi — kayıt sonrası hemen oyna.",
+        ),
+        (
+            "Arkadaşını Getir",
+            "Arkadaşın yatırım yaptıkça sen de bonus al; davet linkinle ekibini büyüt.",
+        ),
+        (
+            "%100 Kayıp Bonusu",
+            "Kaybın kadar ek bakiye tanımlanır; ilk adımlarını güvenceye alırsın.",
+        ),
+        (
+            "Amusnet Race",
+            "Ödül havuzlu slot yarışında sıralamaya gir, haftalık ödülleri kovala.",
+        ),
+        (
+            "Prim & Çevrim",
+            "Güncel prim ve çevrim kampanyalarıyla yatırımını daha verimli kullan.",
+        ),
     ]
     body = (
         eyebrow("Özel davet")
         + headline("3.000 TL deneme kasası seni bekliyor")
         + hero_image(IMG_KASA, "Deneme Kasası")
-        + cta_row("Hemen Kayıt Ol")
         + lead(
             "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — kayıt ol, deneme kasanı aç. "
-            "Aşağıdaki kampanyalar da aktif."
+            "Aynı anda aktif olan kampanyalar:"
         )
-        + promo_cards(items, left_border=True)
-        + tag_pills()
+        + promo_cards(items)
         + cta_row("Hemen Kayıt Ol")
     )
     return {
@@ -404,34 +378,45 @@ def preset_davet_mailing() -> dict:
         "subject": "{{name}}, Makrobet'te seni 3.000 TL deneme kasası bekliyor!",
         "html_body": shell(
             title="Makrobet Davet",
-            preheader="Hazine kasası + Hemen Kayıt Ol",
+            preheader="3.000 TL deneme kasası + Hemen Kayıt Ol",
             body_rows=body,
         ),
-        "text_body": (
-            "Merhaba {{name}},\n\n3.000 TL deneme kasası + promosyonlar.\n"
-            f"Kayıt: {AFF}\n"
-        ),
+        "text_body": f"Merhaba {{{{name}}}},\n\n3.000 TL deneme kasası seni bekliyor.\n{AFF}\n",
     }
 
 
 def preset_pasif_uye() -> dict:
     items = [
-        ("%100 Kayıp Bonusu", "Güvenli geri dönüş"),
-        ("Makro Kasa", "Yatırıma ek kasa"),
-        ("Amusnet Race", "Ödül havuzlu yarış"),
-        ("Bilet · Makro Manager", "Etkinlik + rolling"),
-        ("Prim & Çevrim", "Aktif dönem bonusları"),
+        (
+            "%100 Kayıp Bonusu",
+            "Geri döndüğünde kayıpların kadar ek bakiye — yeniden başlamak için güvence.",
+        ),
+        (
+            "Makro Kasa",
+            "Yatırımına ek kasa tanımı; dönüş yatırımını daha güçlü başlat.",
+        ),
+        (
+            "Amusnet Race",
+            "Yarışa tekrar katıl, sıralamada yüksel, ödül havuzundan pay al.",
+        ),
+        (
+            "Bilet Etkinliği",
+            "Etkinlik biletlerini topla; çekiliş ve ödül turlarına hak kazan.",
+        ),
+        (
+            "Makro Manager",
+            "Manager döneminde rolling hedeflerini tamamla, ekstra prim kap.",
+        ),
     ]
     body = (
         eyebrow("Geri dönüş")
         + headline("Seni özledik — dönüş paketini aç")
         + hero_image(IMG_KAYIP, "Kayıp Bonusu")
-        + cta_row("Hesabıma Dön")
         + lead(
-            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — %100 kayıp, kasa, race ve manager ile geri dön."
+            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — hesabın seni bekliyor. "
+            "Dönüş paketindeki kampanyalar:"
         )
         + promo_cards(items)
-        + tag_pills()
         + cta_row("Hesabıma Dön")
     )
     return {
@@ -448,24 +433,32 @@ def preset_pasif_uye() -> dict:
 
 def preset_memnuniyet() -> dict:
     items = [
-        ("Memnuniyet Bonusu", "Özel jest — hesabını kontrol et"),
-        ("%100 Kayıp Bonusu", "Risk Makrobet’te"),
-        ("Makro Kasa", "Ek kasa fırsatı"),
-        ("Prim · Çevrim · Manager · Bilet", "Aktif etkinlik seti"),
+        (
+            "Memnuniyet Bonusu",
+            "Çekim veya işlem aksamalarına özel jest — hesabındaki tanımlı bakiyeyi kontrol et.",
+        ),
+        (
+            "%100 Kayıp Bonusu",
+            "Yeniden yatırımında kayıp kadar ek bakiye; deneyimini telafi edelim.",
+        ),
+        (
+            "Makro Kasa",
+            "Memnuniyet paketinin yanında yatırıma ek kasa fırsatı.",
+        ),
+        (
+            "Prim & Çevrim",
+            "Aktif prim / çevrim kampanyalarıyla bakiyeni daha verimli kullan.",
+        ),
     ]
     body = (
-        f"""
-          <tr><td align="center" style="padding:4px 20px 8px;">{badge("MEMNUNİYET", solid=False)}</td></tr>
-        """
+        f'<tr><td align="center" style="padding:4px 20px 8px;">{badge("MEMNUNİYET", solid=False)}</td></tr>'
         + headline("Senin için ekstra bir jest")
-        + hero_image(IMG_KASA, "Makro Kasa")
-        + cta_row("Bonusu Kontrol Et")
+        + hero_image(IMG_KASA, "Memnuniyet")
         + lead(
-            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — çekim aksamalarına özel memnuniyet jesti "
-            "+ sitedeki güçlü kampanyalar."
+            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — yaşanan aksaklığa özel "
+            "memnuniyet jesti ve destek kampanyaları:"
         )
         + promo_cards(items)
-        + tag_pills(("Memnuniyet", "Makro Kasa", "Prim", "Çevrim", "Manager", "Bilet"))
         + cta_row("Bonusu Kontrol Et")
     )
     return {
@@ -482,21 +475,32 @@ def preset_memnuniyet() -> dict:
 
 def preset_ilk_yatirim() -> dict:
     items = [
-        ("Makro Kasa", "Yatırıma ekstra kasa"),
-        ("%100 Kayıp Güvencesi", "Rahat ilk adım"),
-        ("Amusnet Race", "Ödül yarışı"),
-        ("Prim · Çevrim · Bilet · Manager", "Tam paket"),
+        (
+            "Makro Kasa",
+            "İlk yatırımına ekstra kasa eklenir — bakiyen ilk günden büyür.",
+        ),
+        (
+            "%100 Kayıp Güvencesi",
+            "İlk yatırımın kayba dönerse aynı tutarı tekrar tanımlarız.",
+        ),
+        (
+            "Amusnet Race",
+            "İlk yatırımdan sonra yarışa katıl; ödül sıralamasında yerini al.",
+        ),
+        (
+            "Prim & Çevrim",
+            "Yeni üye prim / çevrim kampanyalarıyla ilk yatırımını değerlendir.",
+        ),
     ]
     body = (
         eyebrow("İlk yatırım")
         + headline("Kasanı büyütme zamanı")
         + hero_image(IMG_KASA, "Yatırım Kasası")
-        + cta_row("İlk Yatırımı Yap")
         + lead(
-            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — ilk yatırımınla Makro Kasa, Race, prim ve çevrimi aç."
+            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — ilk yatırımınla "
+            "aşağıdaki paketleri aç:"
         )
         + promo_cards(items)
-        + tag_pills()
         + cta_row("İlk Yatırımı Yap")
     )
     return {
@@ -513,21 +517,32 @@ def preset_ilk_yatirim() -> dict:
 
 def preset_turnuva() -> dict:
     items = [
-        ("Amusnet Race", "Ödül havuzlu yarış"),
-        ("Bilet Etkinliği", "Bilet topla, ödül turuna gir"),
-        ("Makro Manager", "Manager rolling"),
-        ("Arkadaşını Getir", "Ekibini büyüt"),
+        (
+            "Amusnet Race",
+            "Ödül havuzlu slot yarışı — sıralamaya gir, haftanın ödüllerini kap.",
+        ),
+        (
+            "Bilet Etkinliği",
+            "Oynadıkça bilet biriktir; çekiliş ve özel ödül turlarına katıl.",
+        ),
+        (
+            "Makro Manager",
+            "Manager döneminde hedef rolling’i tamamla, ekstra prim kazan.",
+        ),
+        (
+            "Arkadaşını Getir",
+            "Ekibini davet et; arkadaşın yatırım yaptıkça sen de bonus al.",
+        ),
     ]
     body = (
         eyebrow("Etkinlik")
         + headline("Race, Bilet, Manager bu hafta sahnede")
         + hero_image(IMG_RACE, "Amusnet Race")
-        + cta_row("Etkinliklere Katıl")
         + lead(
-            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — turnuva ve toplu etkinliklere katıl."
+            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — bu haftanın "
+            "turnuva ve etkinlikleri:"
         )
         + promo_cards(items)
-        + tag_pills(("Amusnet Race", "Bilet", "Makro Manager", "Arkadaşını Getir", "Prim", "Çevrim"))
         + cta_row("Etkinliklere Katıl")
     )
     return {

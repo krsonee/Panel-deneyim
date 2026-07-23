@@ -1,7 +1,7 @@
 """Makrobet 2026 mailing şablonları — unified template engine (6 preset).
 
 Engine: mail_template_engine_makrobet.py
-Logo: __MAIL_LOGO__ → makrobet-logo-mail.jpg
+Logo: __MAIL_LOGO__ → makrobet-logo-mail.png
 CTA: {{link:sc:https://makrovip.com/Vipmail}} (buton içinde; ham URL yok)
 """
 
@@ -17,7 +17,7 @@ from database import (
 )
 from mail_template_engine_makrobet import build_all_presets
 
-SEED_FLAG = "seeded_makrobet_templates_v2026e"
+SEED_FLAG = "seeded_makrobet_templates_v2026f"
 
 TEMPLATES = build_all_presets()
 

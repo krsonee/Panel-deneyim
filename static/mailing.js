@@ -1989,9 +1989,9 @@
 
   function mailLogoPreviewUrl() {
     try {
-      return (window.location.origin || "") + "/static/mailing/makrobet-logo-mail.jpg?v=20260723b";
+      return (window.location.origin || "") + "/static/mailing/makrobet-logo-mail.png?v=20260723c";
     } catch (e) {
-      return "/static/mailing/makrobet-logo-mail.jpg?v=20260723b";
+      return "/static/mailing/makrobet-logo-mail.png?v=20260723c";
     }
   }
 
@@ -2007,9 +2007,9 @@
     return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
       '<tr><td align="center" style="padding:0 12px 12px;">' +
       '<table role="presentation" width="600" cellpadding="0" cellspacing="0" bgcolor="#1a1608" ' +
-      'style="width:100%;max-width:600px;background:rgba(245,158,11,0.1);border:1px solid rgba(255,204,0,0.35);border-radius:12px;">' +
-      '<tr><td align="center" style="padding:12px 16px;font-family:Inter,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;' +
-      'font-size:12px;line-height:1.5;color:#ffcc00;background:rgba(245,158,11,0.1);">' +
+      'style="width:100%;max-width:600px;background-color:#1a1608;border:1px solid #5a4208;border-radius:12px;">' +
+      '<tr><td align="center" style="padding:12px 16px;font-family:Arial,Helvetica,sans-serif;' +
+      'font-size:12px;line-height:1.5;color:#ffcc00;background-color:#1a1608;">' +
       "Spam klasöründeyse " +
       '<strong style="color:#ffcc00;">butonlar çalışmaz</strong>. ' +
       'Önce <strong style="color:#ffcc00;">Spam değil</strong> deyin, sonra tıklayın.' +

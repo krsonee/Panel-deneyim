@@ -341,7 +341,7 @@ DEFAULT_GREETING_NAME = "Değerli üye"
 def _mail_logo_url():
     """Şablonlardaki __MAIL_LOGO__ — güncel renkli site logosu (navy zeminli jpg)."""
     base = _public_base()
-    path = "/static/mailing/makrobet-logo-mail.jpg?v=20260723b"
+    path = "/static/mailing/makrobet-logo-mail.png?v=20260723c"
     return (base + path) if base else path
 
 
@@ -358,11 +358,11 @@ def _spam_tip_banner_html():
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
         '<tr><td align="center" style="padding:0 12px 12px;">'
         '<table role="presentation" width="600" cellpadding="0" cellspacing="0" bgcolor="#1a1608" '
-        'style="width:100%;max-width:600px;background:rgba(245,158,11,0.1);'
-        'border:1px solid rgba(255,204,0,0.35);border-radius:12px;">'
+        'style="width:100%;max-width:600px;background-color:#1a1608;'
+        'border:1px solid #5a4208;border-radius:12px;">'
         '<tr><td align="center" style="padding:12px 16px;'
-        "font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;"
-        f'font-size:12px;line-height:1.5;color:{gold};background:rgba(245,158,11,0.1);">'
+        f"font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:{gold};"
+        'background-color:#1a1608;">'
         "Spam klasöründeyse "
         f'<strong style="color:{gold};">butonlar çalışmaz</strong>. '
         f'Önce <strong style="color:{gold};">Spam değil</strong> deyin, sonra tıklayın.'
