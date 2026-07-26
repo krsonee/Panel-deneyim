@@ -626,10 +626,21 @@
             </div>
             <div class="mail-camp-tag-list" id="mail-camp-tag-list" aria-label="Kampanya etiketleri"></div>
             <p class="hint" id="mail-camp-tag-breakdown" style="margin:0.45rem 0 0;"></p>
-            <div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.55rem;align-items:center;">
-              <button type="button" class="btn btn-sm btn-primary" id="mail-camp-open-picker">Listeden kişi seç</button>
-              <button type="button" class="btn btn-sm" id="mail-camp-use-all-tags">Etiketteki herkese gönder</button>
-              <span class="hint" id="mail-camp-pick-hint" style="margin:0;">Manuel seçersen yalnızca işaretlediklerin gider; «herkese» = tüm etiket birleşimi.</span>
+            <div style="margin-top:0.65rem;padding:0.65rem 0.75rem;border:1px solid var(--border);border-radius:10px;background:rgba(2,6,23,0.28);">
+              <p class="hint" style="margin:0 0 0.45rem;">
+                <strong>Karışık gönderim:</strong> bir etiketten kişi seç + diğer işaretli etiketlerin <em>hepsine</em> gönder.
+                Kısmi seçtiğin etiket tam listeden otomatik kalkar.
+              </p>
+              <div style="display:flex;gap:0.45rem;flex-wrap:wrap;align-items:end;">
+                <div style="min-width:200px;flex:1;">
+                  <label>İçinden kişi seçeceğin etiket</label>
+                  <select id="mail-camp-pick-source"><option value="">— seç —</option></select>
+                </div>
+                <button type="button" class="btn btn-sm btn-primary" id="mail-camp-open-picker">Bu etiketten kişi seç</button>
+                <button type="button" class="btn btn-sm" id="mail-camp-use-all-tags">İşaretli etiketlerin hepsine</button>
+                <button type="button" class="btn btn-sm" id="mail-camp-clear-picks">Manuel seçimi sil</button>
+              </div>
+              <p class="hint" id="mail-camp-pick-hint" style="margin:0.5rem 0 0;">Henüz manuel seçim yok — yalnız işaretli etiketlerin tamamı gider.</p>
             </div>
             <input type="hidden" id="mail-camp-tag" value="">
           </div>

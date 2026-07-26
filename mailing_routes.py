@@ -997,7 +997,10 @@ def _attach_campaign_recipients(
     conn, campaign_id, *, tag_filter, max_recipients, exclude_previously_sent, now,
     only_verified=False, contact_ids=None, emails=None,
 ):
-    """Etiket / seçili ID / elle e-posta ile kampanya alıcılarını ekler."""
+    """Etiket / seçili ID / elle e-posta ile kampanya alıcılarını ekler.
+
+    tag_filter + contact_ids birlikte gelirse birleşim (OR): tam etiketler ∪ manuel seçimler.
+    """
     contact_ids = list(contact_ids or [])
     emails = list(emails or [])
 
@@ -1006,25 +1009,53 @@ def _attach_campaign_recipients(
         # Elle girilen adresler bilinçli test — verified filtresi uygulama
         only_verified = False
 
+    merged = []
+    seen = set()
+
+    def _push(ids):
+        for cid in ids:
+            try:
+                cid = int(cid)
+            except (TypeError, ValueError):
+                continue
+            if cid in seen:
+                continue
+            seen.add(cid)
+            merged.append(cid)
+
     if contact_ids:
-        filtered = _filter_sendable_contact_ids(
+        _push(_filter_sendable_contact_ids(
             conn, contact_ids,
             exclude_previously_sent=exclude_previously_sent,
             only_verified=only_verified,
-        )
-        if max_recipients:
-            filtered = filtered[: int(max_recipients)]
-        return _insert_campaign_recipient_ids(conn, campaign_id, filtered, now)
+        ))
 
-    where_sql, params = _campaign_selection_where(
-        tag_filter, exclude_previously_sent, only_verified=only_verified,
-    )
-    sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
+    tags = _parse_tag_filter_list(tag_filter)
+    if tags:
+        where_sql, params = _campaign_selection_where(
+            tag_filter, exclude_previously_sent, only_verified=only_verified,
+        )
+        sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
+        # Limit birleşimde sonda uygulanır — önce tam etiket + seçimleri topla
+        tag_ids = [r["id"] for r in fetchall(conn, sql, tuple(params))]
+        _push(tag_ids)
+
+    if not tags and not contact_ids and not emails:
+        # Eski davranış: boş filtre = tüm aktif (nadiren)
+        where_sql, params = _campaign_selection_where(
+            "", exclude_previously_sent, only_verified=only_verified,
+        )
+        sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
+        if max_recipients:
+            sql += " LIMIT ?"
+            params.append(max_recipients)
+        return _insert_campaign_recipient_ids(
+            conn, campaign_id, [r["id"] for r in fetchall(conn, sql, tuple(params))], now,
+        )
+
     if max_recipients:
-        sql += " LIMIT ?"
-        params.append(max_recipients)
-    ids = [r["id"] for r in fetchall(conn, sql, tuple(params))]
-    return _insert_campaign_recipient_ids(conn, campaign_id, ids, now)
+        merged = merged[: int(max_recipients)]
+    return _insert_campaign_recipient_ids(conn, campaign_id, merged, now)
 
 
 def _merge_contact_tag_sql(existing_tags_json, tag):
@@ -3744,12 +3775,14 @@ def create_mailing_blueprint(permission_required):
         if recipient_mode == "manual" and not emails:
             return jsonify({"error": "Elle e-posta listesi boş."}), 400
         if recipient_mode == "tag":
-            contact_ids = []
+            # contact_ids kalabilir → tam etiketler ∪ manuel seçim (karışık)
             emails = []
         elif recipient_mode == "selected":
             emails = []
+            tag_filter = ""
         elif recipient_mode == "manual":
             contact_ids = []
+            tag_filter = ""
         try:
             rate = int(data.get("rate_per_minute") or 120)
         except (TypeError, ValueError):
@@ -3785,8 +3818,10 @@ def create_mailing_blueprint(permission_required):
             except Exception:
                 pass
             notes_extra = (data.get("notes") or "").strip()
-            if recipient_mode != "tag":
-                tag_filter = ""
+            if recipient_mode == "tag" and contact_ids and tag_filter:
+                mix_note = f"[mixed: {len(contact_ids)} seçili + etiket]"
+                notes_extra = f"{mix_note} {notes_extra}".strip()
+            elif recipient_mode != "tag":
                 if notes_extra:
                     notes_extra = f"[{recipient_mode}] {notes_extra}"
                 else:
@@ -3857,10 +3892,18 @@ def create_mailing_blueprint(permission_required):
             if not cid:
                 return jsonify({"error": "Kampanya kaydı yazılamadı (DB)."}), 500
             try:
+                attach_ids = None
+                if recipient_mode == "selected":
+                    attach_ids = contact_ids
+                elif recipient_mode == "tag" and contact_ids:
+                    attach_ids = contact_ids  # birleşim: etiket + seçili
+                elif recipient_mode == "manual":
+                    attach_ids = contact_ids or None
                 attached = _attach_campaign_recipients(
-                    conn, cid, tag_filter=tag_filter, max_recipients=max_recipients,
+                    conn, cid, tag_filter=tag_filter if recipient_mode == "tag" else "",
+                    max_recipients=max_recipients,
                     exclude_previously_sent=exclude_sent, now=now, only_verified=only_verified,
-                    contact_ids=contact_ids if recipient_mode in ("selected", "manual") else None,
+                    contact_ids=attach_ids,
                     emails=emails if recipient_mode == "manual" else None,
                 )
             except Exception as attach_exc:
@@ -3941,6 +3984,7 @@ def create_mailing_blueprint(permission_required):
             else:
                 only_verified = bool(only_verified)
             approx = True
+            mixed_selected = 0
             if recipient_mode == "manual":
                 total = len(emails)
                 approx = False
@@ -3953,30 +3997,61 @@ def create_mailing_blueprint(permission_required):
                 total = len(filtered)
                 approx = False
             else:
+                # Etiket ∪ manuel seçim (karışık)
+                filtered = []
+                if contact_ids:
+                    filtered = _filter_sendable_contact_ids(
+                        conn, contact_ids,
+                        exclude_previously_sent=exclude_sent,
+                        only_verified=only_verified,
+                    )
+                    mixed_selected = len(filtered)
                 where_sql, params = _campaign_selection_where(
                     tag_filter, exclude_sent, only_verified=only_verified,
                 )
-                total = None
-                # Tek etiket + ek filtre yok → registry hızlı sayım
-                if len(tags_list) == 1 and not exclude_sent and not only_verified:
-                    total = _registry_tag_count(conn, tags_list[0])
-                if total is None and tags_list:
+                if tags_list and filtered:
+                    ph = ",".join(["?"] * len(filtered))
                     try:
                         total = int(scalar(
                             conn,
-                            f"SELECT COUNT(*) FROM mail_contacts WHERE {where_sql}",
-                            tuple(params),
+                            f"SELECT COUNT(*) FROM mail_contacts WHERE ({where_sql}) OR id IN ({ph})",
+                            tuple(params) + tuple(filtered),
                         ) or 0)
                         approx = False
                     except Exception:
-                        total = None
-                if total is None:
+                        total = mixed_selected
+                        approx = True
+                elif tags_list:
+                    total = None
+                    if len(tags_list) == 1 and not exclude_sent and not only_verified:
+                        total = _registry_tag_count(conn, tags_list[0])
+                    if total is None:
+                        try:
+                            total = int(scalar(
+                                conn,
+                                f"SELECT COUNT(*) FROM mail_contacts WHERE {where_sql}",
+                                tuple(params),
+                            ) or 0)
+                            approx = False
+                        except Exception:
+                            total = None
+                    if total is None:
+                        try:
+                            total, approx = _approx_contact_total(conn)
+                        except Exception:
+                            total = 0
+                            approx = True
+                    total = int(total or 0)
+                elif filtered:
+                    total = len(filtered)
+                    approx = False
+                else:
                     try:
                         total, approx = _approx_contact_total(conn)
                     except Exception:
                         total = 0
                         approx = True
-                total = int(total or 0)
+                    total = int(total or 0)
                 if tags_list:
                     tag_breakdown = _tag_breakdown_for_campaign(
                         conn, tags_list,
@@ -3992,6 +4067,9 @@ def create_mailing_blueprint(permission_required):
             "recipient_mode": recipient_mode,
             "tag_filters": tags_list,
             "tag_breakdown": tag_breakdown,
+            "manual_selected": mixed_selected if recipient_mode == "tag" else (
+                len(contact_ids) if recipient_mode == "selected" else 0
+            ),
         })
 
     @bp.route("/campaigns/<int:campaign_id>", methods=["PATCH"])

@@ -1193,6 +1193,8 @@
 
   // ── Mail Rehber ───────────────────────────────────────────
   var MAIL_SELECTED_KEY = "makro_mail_camp_selected_ids";
+  var MAIL_PICK_SOURCE_KEY = "makro_mail_camp_pick_source";
+  var mailCampPickFromTag = "";
 
   function mailReadCampSelectedIds() {
     try {
@@ -1210,6 +1212,23 @@
       sessionStorage.setItem(MAIL_SELECTED_KEY, JSON.stringify(ids || []));
     } catch (e) { /* ignore */ }
     mailUpdateCampSelectedHint();
+    mailSyncCampPickHint();
+  }
+
+  function mailReadCampPickSource() {
+    try {
+      return sessionStorage.getItem(MAIL_PICK_SOURCE_KEY) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function mailWriteCampPickSource(tag) {
+    mailCampPickFromTag = (tag || "").trim();
+    try {
+      if (mailCampPickFromTag) sessionStorage.setItem(MAIL_PICK_SOURCE_KEY, mailCampPickFromTag);
+      else sessionStorage.removeItem(MAIL_PICK_SOURCE_KEY);
+    } catch (e) { /* ignore */ }
   }
 
   function mailUpdateCampSelectedHint() {
@@ -1219,6 +1238,48 @@
     hint.textContent = ids.length
       ? (fmtNum(ids.length) + " kontak kampanya için hazır (Mail Rehber seçimi).")
       : "Mail Rehber’de kişi seçip «Seçilileri kampanyaya» de — veya burada bekleyen seçim yok.";
+  }
+
+  function mailSyncCampPickHint() {
+    var hint = document.getElementById("mail-camp-pick-hint");
+    if (!hint) return;
+    var ids = mailReadCampSelectedIds();
+    var tags = typeof mailCampSelectedTags === "function" ? mailCampSelectedTags() : [];
+    var src = mailCampPickFromTag || mailReadCampPickSource();
+    if (!ids.length) {
+      hint.textContent = tags.length
+        ? ("Manuel seçim yok — işaretli " + tags.length + " etiketin tamamı gider.")
+        : "Henüz manuel seçim yok — yalnız işaretli etiketlerin tamamı gider.";
+      return;
+    }
+    var parts = [fmtNum(ids.length) + " kişi"];
+    if (src) parts[0] += " («" + src + "» içinden)";
+    if (tags.length) {
+      parts.push("tam etiket: " + tags.join(" · "));
+      hint.textContent = parts.join(" + ") + " → birleşim gönderilir.";
+    } else {
+      hint.textContent = parts[0] + " — tam etiket işaretlemezsen yalnız bunlar gider.";
+    }
+  }
+
+  function mailFillCampPickSource() {
+    var sel = document.getElementById("mail-camp-pick-source");
+    if (!sel) return;
+    var prev = sel.value || mailReadCampPickSource() || "";
+    var list = mailTagNameList();
+    sel.innerHTML = '<option value="">— seç —</option>' + list.map(function (name) {
+      return '<option value="' + esc(name) + '">' + esc(name) + "</option>";
+    }).join("");
+    if (prev) sel.value = prev;
+  }
+
+  function mailUncheckCampTag(tagName) {
+    var box = document.getElementById("mail-camp-tag-list");
+    if (!box || !tagName) return;
+    box.querySelectorAll('input[type="checkbox"]').forEach(function (el) {
+      if (el.value === tagName) el.checked = false;
+    });
+    if (typeof mailSyncCampTagHidden === "function") mailSyncCampTagHidden();
   }
 
   function mailCampRecipientMode() {
@@ -1273,8 +1334,10 @@
     });
     mailRenderTagPickLists();
     mailFillCampTagSelect();
+    mailFillCampPickSource();
     mailFillScrubTagSelect();
     mailRenderTagManageList();
+    mailSyncCampPickHint();
   }
 
   function mailScrubSelectedTags() {
@@ -1659,15 +1722,22 @@
         mailToast("Önce listeden kişi seç — veya «Etiketteki herkese gönder»");
         return;
       }
+      var src = mailCampPickFromTag || mailReadCampPickSource() || (mailPickerState.tags && mailPickerState.tags[0]) || "";
+      mailWriteCampPickSource(src);
       mailWriteCampSelectedIds(ids);
-      var modeSel = document.querySelector('input[name="mail-camp-recipient-mode"][value="selected"]');
-      if (modeSel) {
-        modeSel.checked = true;
+      // Etiket modunda kal — kısmi seçilen etiketi tam listeden çıkar
+      var modeTag = document.querySelector('input[name="mail-camp-recipient-mode"][value="tag"]');
+      if (modeTag) {
+        modeTag.checked = true;
         mailSyncCampRecipientModeUI();
       }
-      var hint = document.getElementById("mail-camp-pick-hint");
-      if (hint) hint.textContent = fmtNum(ids.length) + " kişi seçildi — yalnızca bunlar gidecek.";
-      mailToast(fmtNum(ids.length) + " kontak kampanyaya aktarıldı");
+      if (src) mailUncheckCampTag(src);
+      mailSyncCampPickHint();
+      mailToast(
+        fmtNum(ids.length) + " kişi eklendi" +
+        (src ? (" («" + src + "»)") : "") +
+        " · tam göndermek istediğin etiketleri işaretli bırak"
+      );
       mailCloseContactPicker();
     });
     bindClick("mail-picker-use-all-tags", function () {
@@ -1677,18 +1747,21 @@
         mailSyncCampRecipientModeUI();
       }
       mailWriteCampSelectedIds([]);
-      var hint = document.getElementById("mail-camp-pick-hint");
-      if (hint) hint.textContent = "Etiketteki herkese gönder (manuel seçim yok).";
+      mailWriteCampPickSource("");
+      mailSyncCampPickHint();
       mailToast("Etiket birleşimindeki herkese gönderilecek");
       mailCloseContactPicker();
     });
     bindClick("mail-camp-open-picker", function () {
-      var tags = mailCampSelectedTags();
-      if (!tags.length) {
-        mailToast("Önce en az 1 etiket seç (örn. Davet Datası + mail_mx_ok)");
+      var srcEl = document.getElementById("mail-camp-pick-source");
+      var src = ((srcEl && srcEl.value) || "").trim();
+      if (!src) {
+        mailToast("Önce «İçinden kişi seçeceğin etiket»i seç (örn. Makro Test)");
         return;
       }
-      mailOpenContactPicker({ mode: "campaign", tags: tags });
+      mailWriteCampPickSource(src);
+      // Tam göndermek için diğer etiketler işaretli kalsın; picker yalnız kaynak etiketten açılır
+      mailOpenContactPicker({ mode: "campaign", tags: [src] });
     });
     bindClick("mail-camp-use-all-tags", function () {
       var tags = mailCampSelectedTags();
@@ -1702,9 +1775,17 @@
         mailSyncCampRecipientModeUI();
       }
       mailWriteCampSelectedIds([]);
-      var hint = document.getElementById("mail-camp-pick-hint");
-      if (hint) hint.textContent = "Etiketteki herkese gönder · " + tags.join(" · ");
-      mailToast("Etiket birleşimi: herkese");
+      mailWriteCampPickSource("");
+      mailSyncCampPickHint();
+      mailToast("İşaretli etiketlerin hepsine: " + tags.join(" · "));
+    });
+    bindClick("mail-camp-clear-picks", function () {
+      mailWriteCampSelectedIds([]);
+      mailWriteCampPickSource("");
+      var srcEl = document.getElementById("mail-camp-pick-source");
+      if (srcEl) srcEl.value = "";
+      mailSyncCampPickHint();
+      mailToast("Manuel seçim temizlendi");
     });
   }
 
@@ -3914,6 +3995,7 @@
       var onlyV = document.getElementById("mail-camp-only-verified");
       var mode = mailCampRecipientMode();
       var tags = mode === "tag" ? mailCampSelectedTags() : [];
+      var picks = mailReadCampSelectedIds();
       var when = mailCampWhenMode();
       var scheduled = when === "schedule"
         ? ((document.getElementById("mail-camp-schedule") || {}).value || "").trim()
@@ -3930,7 +4012,10 @@
         only_verified: onlyV ? !!onlyV.checked : false
       };
       if (mode === "selected") {
-        body.contact_ids = mailReadCampSelectedIds();
+        body.contact_ids = picks;
+      } else if (mode === "tag" && picks.length) {
+        // Karışık: tam etiketler ∪ manuel seçimler
+        body.contact_ids = picks;
       }
       if (mode === "manual") {
         body.manual_emails = (document.getElementById("mail-camp-manual-emails") || {}).value || "";
@@ -3950,9 +4035,15 @@
     var campTagList = document.getElementById("mail-camp-tag-list");
     if (campTagList) {
       campTagList.addEventListener("change", function (e) {
-        if (e.target && e.target.matches('input[type="checkbox"]')) mailSyncCampTagHidden();
+        if (e.target && e.target.matches('input[type="checkbox"]')) {
+          mailSyncCampTagHidden();
+          mailSyncCampPickHint();
+        }
       });
     }
+    mailCampPickFromTag = mailReadCampPickSource();
+    mailFillCampPickSource();
+    mailSyncCampPickHint();
     bindClick("mail-camp-tag-all", function () {
       var box = document.getElementById("mail-camp-tag-list");
       if (!box) return;
@@ -4042,7 +4133,8 @@
               return;
             }
             mailToast(qRes.data.message || ("Kampanya #" + campId + " hazır"));
-            if (mailCampRecipientMode() === "selected") mailWriteCampSelectedIds([]);
+            mailWriteCampSelectedIds([]);
+            mailWriteCampPickSource("");
             campForm.reset();
             document.getElementById("mail-camp-exclude-sent").checked = true;
             document.getElementById("mail-camp-rate").value = "120";
@@ -4082,9 +4174,15 @@
           var willAttach = res.data.will_attach != null ? res.data.will_attach : total;
           var tags = res.data.tag_filters || [];
           var breakdown = res.data.tag_breakdown || [];
+          var manualN = res.data.manual_selected || 0;
           var approxBit = res.data.approx ? " (yaklaşık)" : "";
           var html = "Filtreye uyan: <strong>" + fmtNum(total) + "</strong>" + approxBit +
             " kişi · eklenecek: <strong>" + fmtNum(willAttach) + "</strong> kişi";
+          if (manualN && tags.length) {
+            html += ' <span class="muted">· karışık: ' + fmtNum(manualN) + " manuel + etiket birleşimi</span>";
+          } else if (manualN && !tags.length) {
+            html += ' <span class="muted">· yalnız manuel seçim</span>';
+          }
           if (breakdown.length) {
             var map = {};
             var anyApprox = false;
