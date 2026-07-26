@@ -665,6 +665,56 @@ def platform_warmup_program_patch():
     return jsonify({"ok": True, "program": snap})
 
 
+@app.get("/api/platform/weekly-maintenance")
+@require_superadmin
+def platform_weekly_maintenance_get():
+    from mail_weekly_maintenance import snapshot
+
+    with closing(get_db()) as conn:
+        snap = snapshot(conn)
+    return jsonify({"maintenance": snap})
+
+
+@app.post("/api/platform/weekly-maintenance/run")
+@require_superadmin
+def platform_weekly_maintenance_run():
+    from mail_weekly_maintenance import run_weekly_maintenance
+
+    data = request.get_json(silent=True) or {}
+    force = bool(data.get("force"))
+    try:
+        with closing(get_db()) as conn:
+            result = run_weekly_maintenance(conn, force=force)
+            conn.commit()
+    except Exception as exc:
+        return jsonify({"error": f"Bakım çalıştırılamadı: {exc}"}), 500
+    return jsonify(result)
+
+
+@app.patch("/api/platform/weekly-maintenance")
+@require_superadmin
+def platform_weekly_maintenance_patch():
+    from mail_weekly_maintenance import set_weekly_task, snapshot
+
+    data = request.get_json(silent=True) or {}
+    with closing(get_db()) as conn:
+        try:
+            if "task_key" in data:
+                snap = set_weekly_task(
+                    conn,
+                    str(data.get("task_key") or ""),
+                    bool(data.get("done")),
+                )
+            else:
+                snap = snapshot(conn)
+            conn.commit()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "maintenance": snap})
+
+
 @app.get("/app")
 @require_mail_login
 def mail_app():

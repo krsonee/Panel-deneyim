@@ -88,7 +88,7 @@
           <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20"/><path d="M12 2a15 15 0 0 0 0 20"/></svg></span>
           <span class="nav-item-text">Domain / IP Havuzu</span>
         </button>
-        <button type="button" class="nav-item" data-mm-nav="plat-warmup" data-title="Isıtma Programı" data-sub="Günlük görevler · warm-up">
+        <button type="button" class="nav-item" data-mm-nav="plat-warmup" data-title="Isıtma Programı" data-sub="Günlük ısıtma · Pazar bakımı">
           <span class="icon"><svg class="mm-nav-ico" viewBox="0 0 24 24"><path d="M12 2v6"/><path d="M12 18v4"/><path d="m4.9 4.9 4.2 4.2"/><path d="m14.9 14.9 4.2 4.2"/><path d="M2 12h6"/><path d="M16 12h6"/><path d="m4.9 19.1 4.2-4.2"/><path d="m14.9 9.1 4.2-4.2"/></svg></span>
           <span class="nav-item-text">Warm-up Yönetimi</span>
         </button>
@@ -123,6 +123,10 @@
       <div id="mm-warmup-banner" class="mm-warmup-banner" hidden>
         <span id="mm-warmup-banner-text">Isıtma görevleri bekliyor</span>
         <button type="button" class="btn btn-sm btn-primary" id="mm-warmup-banner-go">Programa git</button>
+      </div>
+      <div id="mm-weekly-banner" class="mm-weekly-banner" hidden>
+        <span id="mm-weekly-banner-text">Pazar bakımı bekliyor</span>
+        <button type="button" class="btn btn-sm btn-primary" id="mm-weekly-banner-go">Bakıma git</button>
       </div>
       <div id="mm-scrub-banner" class="mm-scrub-banner" hidden>
         <span id="mm-scrub-banner-text">Liste temizliği çalışıyor…</span>
@@ -263,6 +267,23 @@
           </div>
 
           <div class="mm-plat-pane" id="mm-plat-warmup" data-mm-plat="warmup">
+            <section class="card" style="margin-bottom:1rem;" id="mm-weekly-card">
+              <div class="card-head">
+                <span class="mm-label-row" style="margin:0;">
+                  Haftalık bakım (Pazar)
+                  <span class="mm-tip" tabindex="0" data-tip="Her Pazar (Türkiye saati). Otomatik: cap sync + ısıtma catch-up. Manuel: liste, spam probe, bounce, şablon rotasyonu.">?</span>
+                </span>
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                  <button type="button" class="btn btn-sm btn-secondary" id="mm-weekly-refresh">Yenile</button>
+                  <button type="button" class="btn btn-sm btn-primary" id="mm-weekly-run">Bakımı çalıştır</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <p class="hint" id="mm-weekly-status" style="margin:0 0 0.75rem;">—</p>
+                <div id="mm-weekly-tasks" class="mm-wu-tasks"></div>
+                <p class="hint" id="mm-weekly-meta" style="margin:0.75rem 0 0;">—</p>
+              </div>
+            </section>
             <section class="card" style="margin-bottom:1rem;">
               <div class="card-head">
                 <span class="mm-label-row" style="margin:0;">

@@ -563,6 +563,136 @@
     return ids.filter(function (n) { return n > 0; }).slice(0, 8);
   }
 
+  function applyWeeklyBanner(maint) {
+    var banner = document.getElementById("mm-weekly-banner");
+    var text = document.getElementById("mm-weekly-banner-text");
+    if (!banner) return;
+    var show = maint && maint.banner && maint.banner.show;
+    banner.hidden = !show;
+    if (text) text.textContent = (maint && maint.banner && maint.banner.text) || "Pazar bakımı bekliyor";
+  }
+
+  function renderWeeklyMaintenance(maint) {
+    window._mmWeeklyMaint = maint || null;
+    applyWeeklyBanner(maint);
+    var statusEl = document.getElementById("mm-weekly-status");
+    var tasksEl = document.getElementById("mm-weekly-tasks");
+    var metaEl = document.getElementById("mm-weekly-meta");
+    var runBtn = document.getElementById("mm-weekly-run");
+    if (!maint) {
+      if (statusEl) statusEl.textContent = "Haftalık bakım yüklenemedi";
+      return;
+    }
+    var pending = maint.pending || 0;
+    var gap = maint.warmup_gap_days || 0;
+    if (statusEl) {
+      if (maint.is_sunday) {
+        statusEl.textContent = maint.all_done
+          ? "Bu Pazar bakımı tamam · gelecek Pazara kadar tamam."
+          : ("Pazar bakımı aktif · " + pending + " görev bekliyor" +
+            (gap >= 2 ? (" · ısıtma gap " + gap + " gün (soft resume önerilir)") : ""));
+      } else {
+        statusEl.textContent =
+          "Program: her Pazar (TR) · bu hafta " + (maint.week_key || "—") +
+          (maint.last_run_at ? (" · son auto-run " + String(maint.last_run_at).slice(0, 16)) : " · henüz auto-run yok");
+      }
+    }
+    if (tasksEl) {
+      tasksEl.innerHTML = (maint.tasks || []).map(function (t) {
+        var autoTag = t.auto ? ' <span class="muted">(otomatik)</span>' : "";
+        return '<label class="mm-wu-task' + (t.done ? " is-done" : "") + '">' +
+          '<input type="checkbox" data-weekly-task="' + esc(t.key) + '"' + (t.done ? " checked" : "") + ">" +
+          '<span class="mm-wu-task-body"><strong>' + esc(t.title) + autoTag + "</strong>" +
+          '<small>' + esc(t.hint) + "</small></span></label>";
+      }).join("");
+    }
+    if (metaEl) {
+      var run = maint.this_week_run;
+      var act = run && run.actions ? run.actions.length : 0;
+      metaEl.textContent = run
+        ? ("Bu hafta auto-run: " + String(run.ran_at || "").slice(0, 19) + " · " + act + " adım")
+        : "Bu hafta henüz otomatik bakım koşmadı — «Bakımı çalıştır» ile başlat.";
+    }
+    if (runBtn) {
+      runBtn.textContent = maint.this_week_run ? "Tekrar çalıştır" : "Bakımı çalıştır";
+    }
+  }
+
+  function refreshWeeklyMaintenance() {
+    return api("/api/platform/weekly-maintenance").then(function (res) {
+      if (!res.ok) {
+        applyWeeklyBanner(null);
+        var statusEl = document.getElementById("mm-weekly-status");
+        if (statusEl) statusEl.textContent = (res.data && res.data.error) || "Yüklenemedi";
+        return;
+      }
+      renderWeeklyMaintenance(res.data.maintenance);
+    });
+  }
+
+  function bindWeeklyMaintenanceUi() {
+    var refreshBtn = document.getElementById("mm-weekly-refresh");
+    if (refreshBtn) refreshBtn.addEventListener("click", refreshWeeklyMaintenance);
+    var runBtn = document.getElementById("mm-weekly-run");
+    if (runBtn) {
+      runBtn.addEventListener("click", function () {
+        var force = !!(window._mmWeeklyMaint && window._mmWeeklyMaint.this_week_run);
+        if (!confirm(force
+          ? "Bu haftanın bakımını tekrar çalıştır? (cap sync + soft resume)"
+          : "Pazar bakımı çalışsın mı? (cap sync + ısıtma catch-up)")) return;
+        api("/api/platform/weekly-maintenance/run", {
+          method: "POST",
+          body: { force: force }
+        }).then(function (res) {
+          if (!res.ok) {
+            alert((res.data && res.data.error) || "Çalıştırılamadı");
+            return;
+          }
+          if (res.data.skipped) {
+            alert(res.data.reason || "Zaten çalışmış");
+          } else {
+            var acts = res.data.actions || [];
+            var sync = (acts[0] && acts[0].result) || {};
+            alert(
+              "Bakım tamam · cap=" + (sync.daily_cap || "—") +
+              " · gün=" + (sync.effective_day || "—") +
+              (sync.resumed ? " · program devam ettirildi" : "")
+            );
+          }
+          renderWeeklyMaintenance(res.data.snapshot);
+          refreshWarmupProgram();
+          refreshDomains();
+        });
+      });
+    }
+    var bannerGo = document.getElementById("mm-weekly-banner-go");
+    if (bannerGo) {
+      bannerGo.addEventListener("click", function () {
+        if (window.mmNavigate) window.mmNavigate("plat-warmup");
+      });
+    }
+    var tasksEl = document.getElementById("mm-weekly-tasks");
+    if (tasksEl) {
+      tasksEl.addEventListener("change", function (e) {
+        var el = e.target;
+        if (!el || !el.getAttribute) return;
+        var key = el.getAttribute("data-weekly-task");
+        if (!key) return;
+        api("/api/platform/weekly-maintenance", {
+          method: "PATCH",
+          body: { task_key: key, done: !!el.checked }
+        }).then(function (res) {
+          if (!res.ok) {
+            el.checked = !el.checked;
+            alert((res.data && res.data.error) || "Kaydedilemedi");
+            return;
+          }
+          renderWeeklyMaintenance(res.data.maintenance);
+        });
+      });
+    }
+  }
+
   function bindWarmupProgramUi() {
     var refreshBtn = document.getElementById("mm-wu-refresh");
     if (refreshBtn) refreshBtn.addEventListener("click", refreshWarmupProgram);
@@ -974,10 +1104,16 @@
         }
       });
       bindWarmupProgramUi();
+      bindWeeklyMaintenanceUi();
       this.refresh();
     },
     refresh: function () {
-      return Promise.all([refreshTenants(), refreshDomains(), refreshWarmupProgram()]);
+      return Promise.all([
+        refreshTenants(),
+        refreshDomains(),
+        refreshWarmupProgram(),
+        refreshWeeklyMaintenance()
+      ]);
     }
   };
 

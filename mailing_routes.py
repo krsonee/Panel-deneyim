@@ -2079,6 +2079,18 @@ def create_mailing_blueprint(permission_required):
                     print(f"✉️  seeded {nb} Bizzo mail templates")
             except Exception as seed_exc:
                 print(f"⚠️  mail template seed: {seed_exc}")
+            try:
+                from mail_weekly_maintenance import ensure_sunday_maintenance
+                _wm = ensure_sunday_maintenance(conn)
+                if _wm and not _wm.get("skipped") and _wm.get("ok"):
+                    print(
+                        f"✉️  Sunday weekly maintenance ran: "
+                        f"week={_wm.get('week_key')} actions={len(_wm.get('actions') or [])}"
+                    )
+                elif _wm and _wm.get("skipped"):
+                    print(f"✉️  Sunday weekly maintenance already done ({_wm.get('week_key')})")
+            except Exception as wm_exc:
+                print(f"⚠️  weekly maintenance: {wm_exc}")
     except Exception as exc:
         print(f"⚠️  mail_ops/scrub ensure: {exc}")
     try:

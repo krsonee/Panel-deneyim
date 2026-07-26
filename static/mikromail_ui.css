@@ -439,6 +439,19 @@ input:focus, select:focus, textarea:focus {
 .mm-chart-wrap canvas { width: 100% !important; height: 100% !important; }
 
 /* —— Warmup program —— */
+.mm-weekly-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.65rem 1rem;
+  background: rgba(251, 191, 36, 0.12);
+  border-bottom: 1px solid rgba(251, 191, 36, 0.35);
+  color: #fbbf24;
+  font-size: 0.88rem;
+}
+.mm-weekly-banner[hidden] { display: none !important; }
 .mm-warmup-banner {
   display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
   padding: 0.55rem 1.1rem; margin: 0;
