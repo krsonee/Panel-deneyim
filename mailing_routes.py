@@ -494,18 +494,82 @@ def _split_smartico_marker(dest):
     return dest, False
 
 
-def _make_click_token(conn, *, dest_url, send_id=None, contact_id=None, campaign_id=None, is_smartico=False):
-    token = secrets.token_urlsafe(10)
-    now = iso(utcnow())
-    insert_returning_id(
-        conn,
-        """
-        INSERT INTO mail_click_links
-        (token, send_id, contact_id, campaign_id, dest_url, is_smartico, click_count, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-        """,
-        (token, send_id, contact_id, campaign_id, dest_url, 1 if is_smartico else 0, now),
+def _click_serializer():
+    """İmzalı tıklama tokenı — DB silinse bile dest_url yönlendirmesi çalışır."""
+    from itsdangerous import URLSafeSerializer
+
+    secret = (
+        os.environ.get("MAILING_SECRET_KEY")
+        or os.environ.get("SECRET_KEY")
+        or "dev-mikromail"
     )
+    return URLSafeSerializer(str(secret), salt="mail-click-v2")
+
+
+def _normalize_click_token(raw: str) -> str:
+    import urllib.parse
+
+    t = urllib.parse.unquote((raw or "").strip())
+    # Gmail / istemci sondaki noktalama ekleyebiliyor
+    t = t.strip().rstrip(".,);]>\"'")
+    if t.endswith("/"):
+        t = t[:-1]
+    return t
+
+
+def _loads_signed_click(token: str):
+    """İmzalı token → dict veya None."""
+    if not token:
+        return None
+    try:
+        data = _click_serializer().loads(token)
+        if isinstance(data, dict) and (data.get("d") or "").strip():
+            return data
+    except Exception:
+        return None
+    return None
+
+
+def _make_click_token(conn, *, dest_url, send_id=None, contact_id=None, campaign_id=None, is_smartico=False):
+    """Takip tokenı üret.
+
+    v2: dest imzalı token içinde (kontak/send silinse bile buton çalışır).
+    DB kaydı analitik için best-effort.
+    """
+    dest_url = (dest_url or "").strip()
+    payload = {
+        "d": dest_url,
+        "s": int(send_id) if send_id else None,
+        "c": int(contact_id) if contact_id else None,
+        "g": int(campaign_id) if campaign_id else None,
+        "sc": 1 if is_smartico else 0,
+    }
+    try:
+        token = _click_serializer().dumps(payload)
+    except Exception:
+        token = secrets.token_urlsafe(12)
+    now = iso(utcnow())
+    try:
+        insert_returning_id(
+            conn,
+            """
+            INSERT INTO mail_click_links
+            (token, send_id, contact_id, campaign_id, dest_url, is_smartico, click_count, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+            """,
+            (
+                token,
+                send_id,
+                contact_id,
+                campaign_id,
+                dest_url,
+                1 if is_smartico else 0,
+                now,
+            ),
+        )
+    except Exception as exc:
+        # İmzalı token yine de yönlendirir
+        print(f"⚠️  mail_click_links insert: {exc}")
     return token
 
 
@@ -1838,6 +1902,9 @@ def _delete_contacts_by_ids(conn, ids):
     """Kontakları FK bağımlılıklarıyla sil (kampanya / send / click / ivr).
 
     Postgres'te ON DELETE CASCADE yok; düz DELETE IntegrityError verir.
+
+    ÖNEMLİ: mail_click_links SATIRLARI SİLİNMEZ — sadece FK nullenir.
+    Aksi halde eski maillerdeki /m/c/<token> butonları 'link bulunamadı' olur.
     """
     ids = [int(x) for x in (ids or []) if x is not None]
     ids = list(dict.fromkeys(ids))
@@ -1846,18 +1913,39 @@ def _delete_contacts_by_ids(conn, ids):
     ph = ",".join(["?"] * len(ids))
     params = tuple(ids)
 
-    # Önce send_id üzerinden bağlı satırlar (contact_id NULL olabilir)
-    for child_sql in (
-        f"DELETE FROM mail_click_links WHERE send_id IN (SELECT id FROM mail_sends WHERE contact_id IN ({ph}))",
-        f"DELETE FROM mail_ivr_events WHERE send_id IN (SELECT id FROM mail_sends WHERE contact_id IN ({ph}))",
-    ):
+    # Tıklama linklerini koru (dest_url + token kalsın) — sadece FK kopar
+    try:
+        execute(
+            conn,
+            f"""
+            UPDATE mail_click_links
+            SET contact_id = NULL,
+                send_id = NULL
+            WHERE contact_id IN ({ph})
+               OR send_id IN (SELECT id FROM mail_sends WHERE contact_id IN ({ph}))
+            """,
+            params + params,
+        )
+    except Exception:
         try:
-            execute(conn, child_sql, params)
+            execute(
+                conn,
+                f"UPDATE mail_click_links SET contact_id = NULL WHERE contact_id IN ({ph})",
+                params,
+            )
         except Exception:
             pass
 
+    try:
+        execute(
+            conn,
+            f"DELETE FROM mail_ivr_events WHERE send_id IN (SELECT id FROM mail_sends WHERE contact_id IN ({ph}))",
+            params,
+        )
+    except Exception:
+        pass
+
     for table in (
-        "mail_click_links",
         "mail_ivr_events",
         "mail_campaign_recipients",
         "mail_sends",
@@ -1998,38 +2086,112 @@ def create_mailing_click_blueprint():
     """Public click / open / unsubscribe — auth yok."""
     bp = Blueprint("mailing_click", __name__)
 
-    @bp.route("/m/c/<token>", methods=["GET"])
+    @bp.route("/m/c/<path:token>", methods=["GET"])
     def mail_click(token):
-        token = (token or "").strip()
+        token = _normalize_click_token(token)
         now = iso(utcnow())
-        with closing(get_db()) as conn:
-            row = fetchone(conn, "SELECT * FROM mail_click_links WHERE token = ?", (token,))
-            if not row:
-                # Token yok / yanlış host — operatör ve kullanıcıya çıkış kapısı
-                html = (
-                    "<!doctype html><meta charset=utf-8><title>Link</title>"
-                    "<body style='font-family:sans-serif;padding:2rem;background:#0f172a;color:#e2e8f0'>"
-                    "<h2>Bu takip linki bulunamadı</h2>"
-                    "<p>Mail eski olabilir veya yanlış sunucuya işaret ediyor. Siteye doğrudan gidebilirsin:</p>"
-                    "<p><a style='color:#38bdf8' href='https://girbize.com'>Bizzo — girbize.com</a></p>"
-                    "<p><a style='color:#facc15' href='https://makrovip.com/Vipmail'>Makrobet — Vipmail</a></p>"
-                    "</body>"
-                )
-                return html, 404, {"Content-Type": "text/html; charset=utf-8"}
-            dest = (row["dest_url"] or "").strip()
-            # sc: prefix yanlışlıkla DB’ye yazılmışsa temizle
-            dest, _is_sc_stored = _split_smartico_marker(dest)
-            is_sc = bool(row["is_smartico"]) or _is_sc_stored
+
+        def _finalize_dest(dest, *, is_sc=False, contact_id=None):
+            dest = (dest or "").strip()
+            dest, sc2 = _split_smartico_marker(dest)
+            is_sc = bool(is_sc) or sc2
             if not dest:
-                dest = "https://makrovip.com/Vipmail"
-            if is_sc and row["contact_id"]:
-                subid_param = (get_mail_setting(conn, "smartico_subid_param", "afp1") or "afp1").strip() or "afp1"
-                dest = _append_query_param(dest, subid_param, row["contact_id"])
-            # Göreli / schemesiz dest kurtar
+                dest = (os.environ.get("MAIL_CLICK_FALLBACK_URL") or "").strip() or "https://makrovip.com/Vipmail"
+            if is_sc and contact_id:
+                try:
+                    with closing(get_db()) as c2:
+                        subid_param = (get_mail_setting(c2, "smartico_subid_param", "afp1") or "afp1").strip() or "afp1"
+                except Exception:
+                    subid_param = "afp1"
+                dest = _append_query_param(dest, subid_param, contact_id)
             if dest.startswith("/"):
-                dest = "https://girbize.com"
+                dest = "https://makrovip.com/Vipmail"
             elif not re.match(r"^https?://", dest, re.I):
                 dest = "https://" + dest.lstrip("/")
+            return dest
+
+        # 1) İmzalı v2 token — DB şart değil (acil kurtarma)
+        signed = _loads_signed_click(token)
+        if signed:
+            dest = _finalize_dest(
+                signed.get("d"),
+                is_sc=bool(signed.get("sc")),
+                contact_id=signed.get("c"),
+            )
+            try:
+                with closing(get_db()) as conn:
+                    row = fetchone(conn, "SELECT * FROM mail_click_links WHERE token = ?", (token,))
+                    if row:
+                        first = row["first_clicked_at"] or now
+                        execute(
+                            conn,
+                            """
+                            UPDATE mail_click_links SET
+                                click_count = COALESCE(click_count, 0) + 1,
+                                first_clicked_at = ?,
+                                last_clicked_at = ?
+                            WHERE id = ?
+                            """,
+                            (first, now, row["id"]),
+                        )
+                        if row["send_id"]:
+                            execute(
+                                conn,
+                                "UPDATE mail_sends SET clicked_at = COALESCE(clicked_at, ?) WHERE id = ?",
+                                (now, row["send_id"]),
+                            )
+                        if row["contact_id"]:
+                            _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
+                    elif signed.get("c"):
+                        try:
+                            _tag_contact(conn, int(signed["c"]), "mail_tiklayan", now)
+                        except Exception:
+                            pass
+                    conn.commit()
+            except Exception as exc:
+                print(f"⚠️  mail_click signed analytics: {exc}")
+            return redirect(dest, code=302)
+
+        # 2) Eski rastgele token — DB
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM mail_click_links WHERE token = ?", (token,))
+            if not row and token:
+                # Kısmi eşleşme (kesilmiş token)
+                try:
+                    row = fetchone(
+                        conn,
+                        "SELECT * FROM mail_click_links WHERE token LIKE ? ORDER BY id DESC LIMIT 1",
+                        (token[:12] + "%",),
+                    )
+                except Exception:
+                    row = None
+            if not row:
+                # Son çare: env fallback veya marka seçici (eski silinmiş tokenlar)
+                fallback = (os.environ.get("MAIL_CLICK_FALLBACK_URL") or "").strip()
+                if fallback:
+                    return redirect(fallback, code=302)
+                html = (
+                    "<!doctype html><meta charset=utf-8><title>Link</title>"
+                    "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                    "<body style='font-family:sans-serif;padding:1.5rem;background:#0f172a;color:#e2e8f0'>"
+                    "<h2 style='margin:0 0 0.75rem'>Link yenilenmeli</h2>"
+                    "<p style='line-height:1.5;color:#94a3b8'>Bu maildeki takip kaydı silinmiş. "
+                    "Aşağıdan siteye geç — yeni maillerde bu sorun olmayacak.</p>"
+                    "<p style='margin:1.25rem 0'>"
+                    "<a style='display:block;text-align:center;padding:14px 18px;border-radius:12px;"
+                    "background:#0ea5e9;color:#fff;font-weight:800;text-decoration:none;margin:0 0 0.75rem'"
+                    " href='https://girbize.com'>Bizzo’ya git</a>"
+                    "<a style='display:block;text-align:center;padding:14px 18px;border-radius:12px;"
+                    "background:#facc15;color:#08142c;font-weight:800;text-decoration:none'"
+                    " href='https://makrovip.com/Vipmail'>Makrobet’e git</a>"
+                    "</p></body>"
+                )
+                return html, 404, {"Content-Type": "text/html; charset=utf-8"}
+            dest = _finalize_dest(
+                row["dest_url"],
+                is_sc=bool(row["is_smartico"]),
+                contact_id=row["contact_id"],
+            )
             first = row["first_clicked_at"] or now
             execute(
                 conn,
@@ -2045,10 +2207,7 @@ def create_mailing_click_blueprint():
             if row["send_id"]:
                 execute(
                     conn,
-                    """
-                    UPDATE mail_sends SET clicked_at = COALESCE(clicked_at, ?)
-                    WHERE id = ?
-                    """,
+                    "UPDATE mail_sends SET clicked_at = COALESCE(clicked_at, ?) WHERE id = ?",
                     (now, row["send_id"]),
                 )
             if row["contact_id"]:
