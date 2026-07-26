@@ -1,4 +1,4 @@
-"""Makrobet unified HTML email template engine — 8 campaign presets.
+"""Makrobet unified HTML email template engine — 9 campaign presets.
 
 Placeholders:
   __MAIL_LOGO__, __MB_IMG_KASA__, __MB_IMG_KAYIP__, __MB_IMG_ARKADAS__, __MB_IMG_RACE__
@@ -653,6 +653,73 @@ def preset_yil_donumu() -> dict:
     }
 
 
+def preset_dogum_gunu() -> dict:
+    """Doğum günü kutlaması — hediye hesabına eklendi."""
+    steps = [
+        (
+            "Doğum günün kutlu olsun",
+            "Bugün senin günün — Makrobet ailesi adına en güzel dileklerimizle.",
+        ),
+        (
+            "Hediye hesabında",
+            "Doğum günü hediyen hesabına tanımlandı; ekstra başvuru veya kod gerekmez.",
+        ),
+        (
+            "Hemen kontrol et",
+            "Bakiyeni / bonus alanını aç, hediyeni gör ve gününe özel oynamaya başla.",
+        ),
+    ]
+    extras = [
+        (
+            "Sadece sana özel",
+            "Bu jest doğum gününe özeldir — hediyen hesabında seni bekliyor.",
+        ),
+        (
+            "Bugün de fırsatlar açık",
+            "Race, Bilet ve Manager etkinlikleriyle hediyeni daha keyifli değerlendir.",
+        ),
+    ]
+    body = (
+        f'<tr><td align="center" style="padding:4px 20px 8px;">{badge("DOĞUM GÜNÜ")}</td></tr>'
+        + eyebrow("Kutlama")
+        + headline("İyi ki doğdun, {{name}}")
+        + hero_image(IMG_KASA, "Doğum Günü Hediyesi")
+        + lead(
+            "Doğum günün <strong style='color:#ffffff;'>kutlu olsun</strong>! "
+            "Senin için özel bir doğum günü hediyesi hesabına eklendi."
+        )
+        + feature_box(
+            kicker="★ Doğum günü hediyesi ★",
+            big="HEDİYE HESABINDA",
+            subtitle="Bugüne özel tanımlanan jest",
+            note="Hediye bakiyene / bonus alanına işlendi. Detay için hesabına bak, günün tadını çıkar.",
+        )
+        + section_label("Nasıl?")
+        + numbered_list(steps)
+        + section_label("Gününe özel")
+        + promo_cards(extras)
+        + cta_row("Hediyemi Gör")
+    )
+    return {
+        "name": "2026 · Doğum Günü Kutlaması",
+        "subject": "{{name}}, iyi ki doğdun — hediyen hesabında seni bekliyor!",
+        "html_body": shell(
+            title="Makrobet Doğum Günü",
+            preheader="Doğum günü hediyen hesabına eklendi",
+            body_rows=body,
+        ),
+        "text_body": (
+            "Merhaba {{name}},\n\n"
+            "İyi ki doğdun!\n"
+            "Doğum günü hediyen hesabına eklendi.\n"
+            "1) Doğum günün kutlu olsun\n"
+            "2) Hediye hesabında\n"
+            "3) Hemen kontrol et\n\n"
+            f"Hesaba git: {AFF}\n"
+        ),
+    }
+
+
 def preset_etkinlik_tanitim() -> dict:
     """Sitedeki mevcut etkinlik / kampanya tanıtım mailingi."""
     live = [
@@ -727,6 +794,7 @@ PRESET_BUILDERS = (
     preset_ilk_yatirim,
     preset_turnuva,
     preset_yil_donumu,
+    preset_dogum_gunu,
     preset_etkinlik_tanitim,
 )
 
