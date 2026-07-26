@@ -534,10 +534,26 @@ def _inject_tracking(conn, body, *, send_id, contact_id=None, campaign_id=None, 
     if not body:
         return body
 
+    base = _public_base() or "https://mikromail.onrender.com"
+
+    def absolutize_track(url):
+        u = (url or "").strip()
+        if not u:
+            return u
+        if u.startswith("/m/c/"):
+            return base + u
+        if u.startswith("m/c/"):
+            return base + "/" + u
+        return u
+
     def token_for(raw_dest):
         dest, is_sc = _split_smartico_marker(raw_dest)
-        if not dest or dest.startswith("/m/c/") or "/m/c/" in dest:
+        dest = (dest or "").strip()
+        if not dest:
             return dest
+        # Zaten takip linki — göreliyse mutlaklaştır (Gmail göreli href açmaz)
+        if "/m/c/" in dest:
+            return absolutize_track(dest)
         tok = _make_click_token(
             conn,
             dest_url=dest,
@@ -572,6 +588,29 @@ def _inject_tracking(conn, body, *, send_id, contact_id=None, campaign_id=None, 
             return f"{m.group(1)}{tracked}{m.group(3)}"
 
         body = HREF_RE.sub(repl_href, body)
+        # Göreli takip linklerini mutlaklaştır (eski şablon artıkları)
+        body = re.sub(
+            r'href=(["\'])(/m/c/[^"\']+)\1',
+            lambda m: f"href={m.group(1)}{base}{m.group(2)}{m.group(1)}",
+            body,
+            flags=re.I,
+        )
+
+    # Hiçbir {{link:…}} kalmasın — kalırsa Gmail’de buton ölür
+    if "{{link:" in body or "{{ link:" in body:
+        def _leftover(m):
+            dest, _ = _split_smartico_marker(m.group(1))
+            dest = (dest or "").strip() or "https://makrovip.com/Vipmail"
+            return token_for(m.group(1)) if dest else dest
+
+        body = LINK_TOKEN_RE.sub(_leftover, body)
+        # Hâlâ kalırsa ham URL’ye düş
+        body = re.sub(
+            r"\{\{\s*link\s*:\s*([^}]+)\s*\}\}",
+            lambda m: _split_smartico_marker(m.group(1))[0].strip() or "https://makrovip.com/Vipmail",
+            body,
+            flags=re.I,
+        )
     return body
 
 
@@ -1966,11 +2005,31 @@ def create_mailing_click_blueprint():
         with closing(get_db()) as conn:
             row = fetchone(conn, "SELECT * FROM mail_click_links WHERE token = ?", (token,))
             if not row:
-                return ("Link bulunamadı.", 404)
-            dest = row["dest_url"]
-            if row["is_smartico"] and row["contact_id"]:
+                # Token yok / yanlış host — operatör ve kullanıcıya çıkış kapısı
+                html = (
+                    "<!doctype html><meta charset=utf-8><title>Link</title>"
+                    "<body style='font-family:sans-serif;padding:2rem;background:#0f172a;color:#e2e8f0'>"
+                    "<h2>Bu takip linki bulunamadı</h2>"
+                    "<p>Mail eski olabilir veya yanlış sunucuya işaret ediyor. Siteye doğrudan gidebilirsin:</p>"
+                    "<p><a style='color:#38bdf8' href='https://girbize.com'>Bizzo — girbize.com</a></p>"
+                    "<p><a style='color:#facc15' href='https://makrovip.com/Vipmail'>Makrobet — Vipmail</a></p>"
+                    "</body>"
+                )
+                return html, 404, {"Content-Type": "text/html; charset=utf-8"}
+            dest = (row["dest_url"] or "").strip()
+            # sc: prefix yanlışlıkla DB’ye yazılmışsa temizle
+            dest, _is_sc_stored = _split_smartico_marker(dest)
+            is_sc = bool(row["is_smartico"]) or _is_sc_stored
+            if not dest:
+                dest = "https://makrovip.com/Vipmail"
+            if is_sc and row["contact_id"]:
                 subid_param = (get_mail_setting(conn, "smartico_subid_param", "afp1") or "afp1").strip() or "afp1"
                 dest = _append_query_param(dest, subid_param, row["contact_id"])
+            # Göreli / schemesiz dest kurtar
+            if dest.startswith("/"):
+                dest = "https://girbize.com"
+            elif not re.match(r"^https?://", dest, re.I):
+                dest = "https://" + dest.lstrip("/")
             first = row["first_clicked_at"] or now
             execute(
                 conn,

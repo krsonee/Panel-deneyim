@@ -2441,6 +2441,30 @@ if feature_enabled("mailing"):
     from mailing_routes import create_mailing_blueprint, create_mailing_click_blueprint
     app.register_blueprint(create_mailing_blueprint(permission_required))
     app.register_blueprint(create_mailing_click_blueprint())
+else:
+    # Embedded mailing kapalı olsa bile eski maillerdeki /m/c linkleri makroz.ink /
+    # takipmkr üzerinden gelirse Mikromail’e proxy et (token DB’si orada).
+    _mm = (
+        os.environ.get("MIKROMAIL_URL")
+        or os.environ.get("MAKROMAIL_URL")
+        or "https://mikromail.onrender.com"
+    ).rstrip("/")
+
+    @app.route("/m/c/<path:token>", methods=["GET"])
+    def _proxy_mail_click(token):
+        from flask import redirect as _redir
+        return _redir(f"{_mm}/m/c/{token}", code=302)
+
+    @app.route("/m/o/<path:rest>", methods=["GET"])
+    def _proxy_mail_open(rest):
+        from flask import redirect as _redir
+        return _redir(f"{_mm}/m/o/{rest}", code=302)
+
+    @app.route("/m/u/<path:token>", methods=["GET", "POST"])
+    def _proxy_mail_unsub(token):
+        from flask import redirect as _redir
+        return _redir(f"{_mm}/m/u/{token}", code=302)
+
 if feature_enabled("marketing"):
     from marketing_routes import create_marketing_blueprint
     app.register_blueprint(create_marketing_blueprint(permission_required))
