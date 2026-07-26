@@ -1,6 +1,6 @@
 """Bizzo Casino 2026 HTML email engine — high-conversion deposit presets.
 
-CTA / tüm tıklanabilir alanlar: {{link:sc:https://girbize.com/}}
+CTA / tüm tıklanabilir alanlar: {{link:sc:https://girbize.com}}
 Logo: __BIZZO_LOGO__
 """
 
@@ -27,8 +27,8 @@ NOTICE_GOLD = "#FFD27A"
 FONT = "Arial, Helvetica, sans-serif"
 MAX_W = 600
 
-AFF = "https://girbize.com/"
-CTA = "{{link:sc:https://girbize.com/}}"
+AFF = "https://girbize.com"
+CTA = "{{link:sc:https://girbize.com}}"
 LOGO = "__BIZZO_LOGO__"
 
 

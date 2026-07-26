@@ -461,13 +461,25 @@ def _plain_to_html(text):
 
 
 def _public_base():
+    """Click/open/unsub absolute base — worker’da request yoksa da kırılmasın."""
     base = (os.environ.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
     if base:
         return base
     try:
-        return (request.url_root or "").rstrip("/")
+        root = (request.url_root or "").rstrip("/")
+        if root:
+            return root
     except RuntimeError:
-        return ""
+        pass
+    mode = (os.environ.get("SERVICE_MODE") or "").strip().lower()
+    if mode in ("mailing", "mailing-worker"):
+        return "https://mikromail.onrender.com"
+    return ""
+
+
+def _track_url(token):
+    base = _public_base() or "https://mikromail.onrender.com"
+    return f"{base}/m/c/{token}"
 
 
 _SMARTICO_LINK_RE = re.compile(r"^\s*sc\s*:\s*(.+)$", re.I | re.S)
@@ -495,10 +507,6 @@ def _make_click_token(conn, *, dest_url, send_id=None, contact_id=None, campaign
         (token, send_id, contact_id, campaign_id, dest_url, 1 if is_smartico else 0, now),
     )
     return token
-
-
-def _track_url(token):
-    return f"{_public_base()}/m/c/{token}"
 
 
 def _append_query_param(url, key, value):
@@ -2177,6 +2185,17 @@ def create_mailing_blueprint(permission_required):
                     print(f"✉️  Sunday weekly maintenance already done ({_wm.get('week_key')})")
             except Exception as wm_exc:
                 print(f"⚠️  weekly maintenance: {wm_exc}")
+            try:
+                from mail_template_cta_repair import repair_mail_cta_links
+                _cta = repair_mail_cta_links(conn)
+                print(
+                    f"✉️  CTA repair: templates={_cta.get('templates_updated')} "
+                    f"click_bizzo={_cta.get('click_links_bizzo')} "
+                    f"click_makro={_cta.get('click_links_makro')} "
+                    f"bizzo={_cta.get('bizzo_cta')} makro={_cta.get('makro_cta')}"
+                )
+            except Exception as cta_exc:
+                print(f"⚠️  CTA repair: {cta_exc}")
     except Exception as exc:
         print(f"⚠️  mail_ops/scrub ensure: {exc}")
     try:
