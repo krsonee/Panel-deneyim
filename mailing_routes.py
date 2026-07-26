@@ -2091,12 +2091,26 @@ def create_mailing_click_blueprint():
         token = _normalize_click_token(token)
         now = iso(utcnow())
 
+        def _dead_click_page():
+            # Marka / fallback link YOK — operatör sıfırdan kuracak
+            html = (
+                "<!doctype html><meta charset=utf-8><title>Link</title>"
+                "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                "<body style='font-family:sans-serif;padding:1.5rem;background:#0f172a;color:#e2e8f0'>"
+                "<h2 style='margin:0 0 0.5rem'>Link geçersiz</h2>"
+                "<p style='color:#94a3b8;line-height:1.5'>Bu takip linki artık aktif değil.</p>"
+                "</body>"
+            )
+            return html, 404, {"Content-Type": "text/html; charset=utf-8"}
+
         def _finalize_dest(dest, *, is_sc=False, contact_id=None):
             dest = (dest or "").strip()
             dest, sc2 = _split_smartico_marker(dest)
             is_sc = bool(is_sc) or sc2
-            if not dest:
-                dest = (os.environ.get("MAIL_CLICK_FALLBACK_URL") or "").strip() or "https://makrovip.com/Vipmail"
+            if not dest or dest.startswith("/"):
+                return None
+            if not re.match(r"^https?://", dest, re.I):
+                dest = "https://" + dest.lstrip("/")
             if is_sc and contact_id:
                 try:
                     with closing(get_db()) as c2:
@@ -2104,13 +2118,9 @@ def create_mailing_click_blueprint():
                 except Exception:
                     subid_param = "afp1"
                 dest = _append_query_param(dest, subid_param, contact_id)
-            if dest.startswith("/"):
-                dest = "https://makrovip.com/Vipmail"
-            elif not re.match(r"^https?://", dest, re.I):
-                dest = "https://" + dest.lstrip("/")
             return dest
 
-        # 1) İmzalı v2 token — DB şart değil (acil kurtarma)
+        # 1) İmzalı v2 token — DB şart değil
         signed = _loads_signed_click(token)
         if signed:
             dest = _finalize_dest(
@@ -2118,6 +2128,8 @@ def create_mailing_click_blueprint():
                 is_sc=bool(signed.get("sc")),
                 contact_id=signed.get("c"),
             )
+            if not dest:
+                return _dead_click_page()
             try:
                 with closing(get_db()) as conn:
                     row = fetchone(conn, "SELECT * FROM mail_click_links WHERE token = ?", (token,))
@@ -2155,43 +2167,15 @@ def create_mailing_click_blueprint():
         # 2) Eski rastgele token — DB
         with closing(get_db()) as conn:
             row = fetchone(conn, "SELECT * FROM mail_click_links WHERE token = ?", (token,))
-            if not row and token:
-                # Kısmi eşleşme (kesilmiş token)
-                try:
-                    row = fetchone(
-                        conn,
-                        "SELECT * FROM mail_click_links WHERE token LIKE ? ORDER BY id DESC LIMIT 1",
-                        (token[:12] + "%",),
-                    )
-                except Exception:
-                    row = None
             if not row:
-                # Son çare: env fallback veya marka seçici (eski silinmiş tokenlar)
-                fallback = (os.environ.get("MAIL_CLICK_FALLBACK_URL") or "").strip()
-                if fallback:
-                    return redirect(fallback, code=302)
-                html = (
-                    "<!doctype html><meta charset=utf-8><title>Link</title>"
-                    "<meta name=viewport content='width=device-width,initial-scale=1'>"
-                    "<body style='font-family:sans-serif;padding:1.5rem;background:#0f172a;color:#e2e8f0'>"
-                    "<h2 style='margin:0 0 0.75rem'>Link yenilenmeli</h2>"
-                    "<p style='line-height:1.5;color:#94a3b8'>Bu maildeki takip kaydı silinmiş. "
-                    "Aşağıdan siteye geç — yeni maillerde bu sorun olmayacak.</p>"
-                    "<p style='margin:1.25rem 0'>"
-                    "<a style='display:block;text-align:center;padding:14px 18px;border-radius:12px;"
-                    "background:#0ea5e9;color:#fff;font-weight:800;text-decoration:none;margin:0 0 0.75rem'"
-                    " href='https://girbize.com'>Bizzo’ya git</a>"
-                    "<a style='display:block;text-align:center;padding:14px 18px;border-radius:12px;"
-                    "background:#facc15;color:#08142c;font-weight:800;text-decoration:none'"
-                    " href='https://makrovip.com/Vipmail'>Makrobet’e git</a>"
-                    "</p></body>"
-                )
-                return html, 404, {"Content-Type": "text/html; charset=utf-8"}
+                return _dead_click_page()
             dest = _finalize_dest(
                 row["dest_url"],
                 is_sc=bool(row["is_smartico"]),
                 contact_id=row["contact_id"],
             )
+            if not dest:
+                return _dead_click_page()
             first = row["first_clicked_at"] or now
             execute(
                 conn,
@@ -2262,6 +2246,34 @@ def create_mailing_click_blueprint():
         )
 
     return bp
+
+
+def _purge_all_mail_click_links_once():
+    """Bir kerelik: tüm takip yönlendirme kayıtlarını sil (operatör sıfırdan kuracak)."""
+    flag = "purge_all_click_links_v20260726a"
+    try:
+        with closing(get_db()) as conn:
+            if (get_mail_setting(conn, flag, "") or "").strip() == "1":
+                return 0
+            before = 0
+            try:
+                before = int(scalar(conn, "SELECT COUNT(*) FROM mail_click_links") or 0)
+            except Exception:
+                before = -1
+            if uses_postgres():
+                try:
+                    execute(conn, "TRUNCATE TABLE mail_click_links RESTART IDENTITY CASCADE")
+                except Exception:
+                    execute(conn, "DELETE FROM mail_click_links")
+            else:
+                execute(conn, "DELETE FROM mail_click_links")
+            upsert_mail_setting(conn, flag, "1")
+            conn.commit()
+            print(f"✉️  purged mail_click_links: {before}")
+            return before
+    except Exception as exc:
+        print(f"⚠️  purge mail_click_links: {exc}")
+        return 0
 
 
 def _purge_all_mail_contacts_once():
@@ -2403,19 +2415,13 @@ def create_mailing_blueprint(permission_required):
                     print(f"✉️  Sunday weekly maintenance already done ({_wm.get('week_key')})")
             except Exception as wm_exc:
                 print(f"⚠️  weekly maintenance: {wm_exc}")
-            try:
-                from mail_template_cta_repair import repair_mail_cta_links
-                _cta = repair_mail_cta_links(conn)
-                print(
-                    f"✉️  CTA repair: templates={_cta.get('templates_updated')} "
-                    f"click_bizzo={_cta.get('click_links_bizzo')} "
-                    f"click_makro={_cta.get('click_links_makro')} "
-                    f"bizzo={_cta.get('bizzo_cta')} makro={_cta.get('makro_cta')}"
-                )
-            except Exception as cta_exc:
-                print(f"⚠️  CTA repair: {cta_exc}")
+            # CTA repair kapalı — karışık marka fallback / otomatik rewrite istemiyoruz
     except Exception as exc:
         print(f"⚠️  mail_ops/scrub ensure: {exc}")
+    try:
+        _purge_all_mail_click_links_once()
+    except Exception as exc:
+        print(f"⚠️  startup click-links purge: {exc}")
     try:
         _cancel_all_active_imports()
     except Exception as exc:
