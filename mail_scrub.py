@@ -54,6 +54,16 @@ def _normalize_scrub_tag_filter(tag_filter) -> str:
     return ", ".join(_parse_scrub_tags(tag_filter))
 
 
+def _like_literal(value: str) -> str:
+    """LIKE jokerlerini (% _) ve escape karakterini nötralize et."""
+    return (
+        (value or "")
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+
 def _scrub_tag_match_sql(tag_filter):
     """Birden fazla etiket → OR (birleşim). Returns (sql_fragment|'', params)."""
     tags = _parse_scrub_tags(tag_filter)
@@ -62,8 +72,9 @@ def _scrub_tag_match_sql(tag_filter):
     clauses = []
     params = []
     for t in tags:
-        clauses.append("tags LIKE ?")
-        params.append(f'%"{t}"%')
+        # ESCAPE: «%100» gibi etiket adları tüm listeyi jokerle açmasın
+        clauses.append("tags LIKE ? ESCAPE '\\'")
+        params.append(f'%"{_like_literal(t)}"%')
     if len(clauses) == 1:
         return clauses[0], tuple(params)
     return "(" + " OR ".join(clauses) + ")", tuple(params)
@@ -551,6 +562,22 @@ def _process_scrub_job(job_id: int):
             total = len(selected_ids)
             if resume_after:
                 selected_ids = [i for i in selected_ids if i > resume_after]
+        elif tag_filter:
+            # Seçili etiket birleşimi — tam COUNT (küçük kapsam; UI'da 239k yanıltmasın)
+            try:
+                tag_sql, tag_params = _scrub_tag_match_sql(tag_filter)
+                if tag_sql:
+                    total = int(scalar(
+                        conn,
+                        f"SELECT COUNT(*) FROM mail_contacts WHERE unsubscribed = 0 AND {tag_sql}",
+                        tag_params,
+                    ) or 0)
+                else:
+                    total = 0
+            except Exception:
+                with suppress(Exception):
+                    conn.rollback()
+                total = 0
         elif not total:
             # Exact COUNT(*) 200k+ satırda dakikalar sürebilir → UI 0'da kalır.
             # Postgres istatistiği veya hızlı üst sınır; iş bitince gerçek total yazılır.

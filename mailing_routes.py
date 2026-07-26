@@ -272,16 +272,27 @@ def _tags_json(tags):
     return json.dumps(_parse_tags(tags), ensure_ascii=False)
 
 
+def _like_literal(value: str) -> str:
+    """LIKE jokerlerini (% _) ve escape karakterini nötralize et."""
+    return (
+        (value or "")
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+
 def _tag_match_clause(tag, column="tags"):
     """Etiket eşleşme SQL'i — JSON text içinde `\"etiket\"` (PG + SQLite).
 
     jsonb cast kullanılmaz: bozuk tags satırları tüm sorguyu abort eder.
+    Etiket adındaki % / _ literal kalır (örn. «%100» kampanya etiketi).
     """
     tag = (tag or "").strip()
     if not tag:
         return "1=0", ()
     # Standart JSON dizi elemanı: ..."Etiket"...
-    return f"{column} LIKE ?", (f'%"{tag}"%',)
+    return f"{column} LIKE ? ESCAPE '\\'", (f'%"{_like_literal(tag)}"%',)
 
 
 def _parse_tag_filter_list(tag_filter):
