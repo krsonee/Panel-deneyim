@@ -29,6 +29,45 @@ from database import (
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+
+def _parse_scrub_tags(tag_filter):
+    """tag_filter: tek etiket, 'a, b' veya liste → benzersiz etiketler."""
+    if isinstance(tag_filter, (list, tuple)):
+        raw_parts = [str(x) for x in tag_filter]
+    else:
+        raw = (tag_filter or "").strip()
+        if not raw:
+            return []
+        raw_parts = re.split(r"[,|;]+", raw)
+    out = []
+    seen = set()
+    for part in raw_parts:
+        t = (part or "").strip()
+        if not t or t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+    return out
+
+
+def _normalize_scrub_tag_filter(tag_filter) -> str:
+    return ", ".join(_parse_scrub_tags(tag_filter))
+
+
+def _scrub_tag_match_sql(tag_filter):
+    """Birden fazla etiket → OR (birleşim). Returns (sql_fragment|'', params)."""
+    tags = _parse_scrub_tags(tag_filter)
+    if not tags:
+        return "", ()
+    clauses = []
+    params = []
+    for t in tags:
+        clauses.append("tags LIKE ?")
+        params.append(f'%"{t}"%')
+    if len(clauses) == 1:
+        return clauses[0], tuple(params)
+    return "(" + " OR ".join(clauses) + ")", tuple(params)
+
 ROLE_LOCALS = frozenset({
     "info", "noreply", "no-reply", "mailer-daemon", "postmaster", "abuse",
     "admin", "administrator", "support", "help", "sales", "marketing",
@@ -569,9 +608,10 @@ def _process_scrub_job(job_id: int):
             with closing(get_db()) as conn:
                 clauses = ["unsubscribed = 0", "id > ?"]
                 params = [cursor]
-                if tag_filter:
-                    clauses.append("tags LIKE ?")
-                    params.append(f'%"{tag_filter}"%')
+                tag_sql, tag_params = _scrub_tag_match_sql(tag_filter)
+                if tag_sql:
+                    clauses.append(tag_sql)
+                    params.extend(tag_params)
                 where = " AND ".join(clauses)
                 rows = fetchall(
                     conn,
@@ -791,6 +831,7 @@ def start_scrub_job(*, tag_filter="", contact_ids=None, scope="filter") -> int:
     now = iso(utcnow())
     ids = list(contact_ids or [])
     ids_json = json.dumps([int(x) for x in ids], ensure_ascii=False)
+    tag_filter = _normalize_scrub_tag_filter(tag_filter)
     with closing(get_db()) as conn:
         ensure_mail_scrub_schema(conn)
         _cancel_stale_scrub_jobs(conn, older_seconds=120)
@@ -815,7 +856,7 @@ def start_scrub_job(*, tag_filter="", contact_ids=None, scope="filter") -> int:
              error, last_contact_id, created_at, updated_at)
             VALUES ('pending', ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, ?, ?)
             """,
-            (scope or "filter", (tag_filter or "").strip(), ids_json, now, now),
+            (scope or "filter", tag_filter, ids_json, now, now),
         )
         conn.commit()
     # Web process'te hemen başlat (external worker olsa bile).

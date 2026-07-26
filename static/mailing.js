@@ -1267,15 +1267,66 @@
     document.querySelectorAll("select.mail-tag-select").forEach(function (sel) {
       var cur = sel.value;
       var isFilter = sel.id === "mail-contact-tag-filter";
-      var isScrub = sel.id === "mail-scrub-tag";
-      var emptyLabel = isFilter || isScrub ? "Tüm etiketler" : "Etiket yok";
-      if (isScrub) emptyLabel = "Tüm kontaklar";
+      var emptyLabel = isFilter ? "Tüm etiketler" : "Etiket yok";
       sel.innerHTML = optionsWithEmpty(emptyLabel);
       if (cur) sel.value = cur;
     });
     mailRenderTagPickLists();
     mailFillCampTagSelect();
+    mailFillScrubTagSelect();
     mailRenderTagManageList();
+  }
+
+  function mailScrubSelectedTags() {
+    var box = document.getElementById("mail-scrub-tag-list");
+    if (!box) return [];
+    return Array.prototype.map.call(
+      box.querySelectorAll('input[type="checkbox"]:checked'),
+      function (el) { return el.value; }
+    ).filter(Boolean);
+  }
+
+  function mailSyncScrubTagHidden() {
+    var tags = mailScrubSelectedTags();
+    var hidden = document.getElementById("mail-scrub-tag");
+    if (hidden) hidden.value = tags.join(", ");
+    var picked = document.getElementById("mail-scrub-tag-picked");
+    if (picked) {
+      if (!tags.length) picked.textContent = "Seçim yok = tüm kontaklar";
+      else if (tags.length === 1) picked.textContent = "1 etiket: " + tags[0];
+      else picked.textContent = tags.length + " etiket (birleşim)";
+    }
+    var box = document.getElementById("mail-scrub-tag-list");
+    if (box) {
+      box.querySelectorAll(".mail-camp-tag-item").forEach(function (lab) {
+        var inp = lab.querySelector('input[type="checkbox"]');
+        lab.classList.toggle("is-checked", !!(inp && inp.checked));
+      });
+    }
+  }
+
+  function mailFillScrubTagSelect() {
+    var box = document.getElementById("mail-scrub-tag-list");
+    if (!box) return;
+    var prev = {};
+    mailScrubSelectedTags().forEach(function (t) { prev[t] = true; });
+    var countMap = {};
+    (mailTagCounts || []).forEach(function (t) { countMap[t.name] = t.count; });
+    var list = mailTagNameList();
+    if (!list.length) {
+      box.innerHTML = '<span class="muted">Önce etiket oluştur</span>';
+      mailSyncScrubTagHidden();
+      return;
+    }
+    box.innerHTML = list.map(function (name) {
+      var c = countMap[name];
+      var label = c == null ? name : (name + " (" + fmtNum(c) + ")");
+      var checked = prev[name] ? " checked" : "";
+      return '<label class="mail-camp-tag-item' + (prev[name] ? " is-checked" : "") + '">' +
+        '<input type="checkbox" value="' + esc(name) + '"' + checked + "> " +
+        "<span>" + esc(label) + "</span></label>";
+    }).join("");
+    mailSyncScrubTagHidden();
   }
 
   function mailGetMoveFromTag() {
@@ -2031,13 +2082,18 @@
   function mailStartScrub(opts) {
     opts = opts || {};
     var body = {};
+    var scopeLabel = "tüm kontaklar";
     if (opts.contact_ids && opts.contact_ids.length) {
       body.contact_ids = opts.contact_ids;
+      scopeLabel = opts.contact_ids.length + " seçili kontak";
     } else {
-      body.tag_filter = (document.getElementById("mail-scrub-tag") || {}).value || "";
+      var tags = mailScrubSelectedTags();
+      body.tag_filter = tags.join(", ");
+      body.tag_filters = tags;
+      if (tags.length === 1) scopeLabel = "etiket: " + tags[0];
+      else if (tags.length > 1) scopeLabel = tags.length + " etiket birleşimi (" + tags.join(", ") + ")";
     }
-    var n = opts.contact_ids ? opts.contact_ids.length : "filtre";
-    if (!confirm("Liste temizliği başlasın mı? Kapsam: " + n)) return;
+    if (!confirm("Liste temizliği başlasın mı?\nKapsam: " + scopeLabel)) return;
     function doStart() {
       return mailApi("/api/mailing/contacts/scrub/start", { method: "POST", body: body, timeoutMs: 30000 }).then(function (res) {
         if (!res || !res.ok) {
@@ -4102,6 +4158,27 @@
       window.open(url, "_blank");
     });
     bindClick("mail-scrub-start", function () { mailStartScrub({}); });
+    bindClick("mail-scrub-tag-all", function () {
+      var box = document.getElementById("mail-scrub-tag-list");
+      if (!box) return;
+      box.querySelectorAll('input[type="checkbox"]').forEach(function (el) { el.checked = true; });
+      mailSyncScrubTagHidden();
+    });
+    bindClick("mail-scrub-tag-none", function () {
+      var box = document.getElementById("mail-scrub-tag-list");
+      if (!box) return;
+      box.querySelectorAll('input[type="checkbox"]').forEach(function (el) { el.checked = false; });
+      mailSyncScrubTagHidden();
+    });
+    var scrubTagList = document.getElementById("mail-scrub-tag-list");
+    if (scrubTagList && !scrubTagList._mailBound) {
+      scrubTagList._mailBound = true;
+      scrubTagList.addEventListener("change", function (e) {
+        if (e.target && e.target.matches && e.target.matches('input[type="checkbox"]')) {
+          mailSyncScrubTagHidden();
+        }
+      });
+    }
     bindClick("mail-scrub-force-reset", function () {
       if (!confirm("Takılı / yarım kalmış tüm temizlik işlerini iptal et?")) return;
       mailApi("/api/mailing/contacts/scrub/force-reset", { method: "POST", timeoutMs: 30000 }).then(function (res) {

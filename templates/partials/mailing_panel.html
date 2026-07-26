@@ -393,11 +393,17 @@
           Geçersizler suppression’a alınır; geçerli olanlar <code>mail_valid</code> etiketi alır.
           SMTP ping “pasif kullanıcı” bulmaz — sadece mailbox’ın kabul edilip edilmediğine bakar.
         </p>
-        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end;">
-          <div style="min-width:180px;">
-            <label>Kapsam etiketi (boş = tümü)</label>
-            <select id="mail-scrub-tag" class="mail-tag-select"><option value="">Tüm kontaklar</option></select>
+        <div style="margin-bottom:0.65rem;">
+          <label>Kapsam etiketleri (boş = tümü · birden fazla = birleşim)</label>
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin:0.35rem 0 0.45rem;">
+            <button type="button" class="btn btn-sm" id="mail-scrub-tag-all">Tümünü seç</button>
+            <button type="button" class="btn btn-sm" id="mail-scrub-tag-none">Temizle</button>
+            <span class="hint" id="mail-scrub-tag-picked" style="margin:0;align-self:center;">Seçim yok = tüm kontaklar</span>
           </div>
+          <div class="mail-camp-tag-list" id="mail-scrub-tag-list" aria-label="Temizlik kapsam etiketleri"></div>
+          <input type="hidden" id="mail-scrub-tag" value="">
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
           <button type="button" class="btn btn-primary" id="mail-scrub-start">Listeyi temizle</button>
           <button type="button" class="btn btn-sm" id="mail-scrub-selected">Seçilileri temizle</button>
           <button type="button" class="btn btn-sm" id="mail-scrub-cancel" hidden>İptal</button>

@@ -2936,7 +2936,11 @@ def create_mailing_blueprint(permission_required):
         from mail_scrub import job_public, start_scrub_job
 
         data = request.get_json(silent=True) or {}
-        tag_filter = (data.get("tag_filter") or "").strip()
+        # tag_filters[] veya virgüllü tag_filter — birden fazla etiket = birleşim (OR)
+        if data.get("tag_filters") is not None:
+            tag_filter = _normalize_tag_filter_storage(data.get("tag_filters"))
+        else:
+            tag_filter = _normalize_tag_filter_storage(data.get("tag_filter"))
         contact_ids = data.get("contact_ids") or []
         if not isinstance(contact_ids, list):
             contact_ids = []
