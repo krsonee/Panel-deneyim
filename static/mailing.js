@@ -1547,11 +1547,15 @@
         return;
       }
       if (!confirm(fmtNum(ids.length) + " kontak rehberden silinsin mi?")) return;
+      var delBtn = document.getElementById("mail-picker-delete");
+      if (delBtn) delBtn.disabled = true;
+      mailToast("Siliniyor…");
       mailApi("/api/mailing/contacts/bulk-delete", {
         method: "POST",
         body: { contact_ids: ids },
-        timeoutMs: 120000
+        timeoutMs: 180000
       }).then(function (res) {
+        if (delBtn) delBtn.disabled = false;
         if (!res || !res.ok) {
           mailToast((res && res.data && res.data.error) || "Silinemedi");
           return;
@@ -1568,17 +1572,25 @@
       var tag = mailPickerState.tags[0];
       if (!tag) return;
       var typed = prompt(
-        "«" + tag + "» etiketindeki TÜM kontaklar silinecek.\nOnay için etiket adını aynen yaz:"
+        "«" + tag + "» etiketindeki TÜM kontaklar silinecek.\nOnay için etiket adını aynen yaz:\n\n" + tag
       );
-      if (typed !== tag) {
-        mailToast("Onay iptal / etiket adı uyuşmadı");
+      if (typed == null) {
+        mailToast("Onay iptal");
         return;
       }
+      if (String(typed).trim() !== tag) {
+        mailToast("Etiket adı uyuşmadı — aynen yaz: " + tag);
+        return;
+      }
+      var delTagBtn = document.getElementById("mail-picker-delete-tag");
+      if (delTagBtn) delTagBtn.disabled = true;
+      mailToast("Etiketteki kontaklar siliniyor… bu biraz sürebilir");
       mailApi("/api/mailing/contacts/bulk-delete", {
         method: "POST",
         body: { tag: tag, confirm_tag: tag, limit: 20000 },
         timeoutMs: 300000
       }).then(function (res) {
+        if (delTagBtn) delTagBtn.disabled = false;
         if (!res || !res.ok) {
           mailToast((res && res.data && res.data.error) || "Silinemedi");
           return;

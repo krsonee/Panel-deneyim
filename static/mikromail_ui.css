@@ -151,6 +151,11 @@ input:focus, select:focus, textarea:focus {
   position: relative;
   z-index: 1;
 }
+/* display:inline-flex [hidden] attribute'unu ezer — zorunlu */
+.btn[hidden],
+button[hidden] {
+  display: none !important;
+}
 .btn-primary, .btn.btn-primary {
   background: #0ea5e9 !important; border-color: #0284c7 !important; color: #fff !important;
 }

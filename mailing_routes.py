@@ -1727,24 +1727,68 @@ def _maybe_sync_missing_tags_async(*, force=False, interval_sec=21600):
     return
 
 
-def _recount_tag(conn, name):
-    """Tek etiketin kontak sayısını DB'ye yazar (hızlı CRM için)."""
+def _set_registry_tag_count(conn, name, n):
+    """Registry contact_count güncelle (COUNT atmadan)."""
     name = (name or "").strip()
     if not name:
-        return 0
-    n = _tag_usage_count(conn, name)
-    cols = None
+        return
     try:
         from database import _table_columns
-        cols = _table_columns(conn, "mail_contact_tags")
+        cols = _table_columns(conn, "mail_contact_tags") or set()
     except Exception:
         cols = set()
     if cols and "contact_count" in cols:
         execute(
             conn,
             "UPDATE mail_contact_tags SET contact_count = ? WHERE name = ?",
-            (n, name),
+            (int(n or 0), name),
         )
+
+
+def _delete_contacts_by_ids(conn, ids):
+    """Kontakları FK bağımlılıklarıyla sil (kampanya / send / click / ivr).
+
+    Postgres'te ON DELETE CASCADE yok; düz DELETE IntegrityError verir.
+    """
+    ids = [int(x) for x in (ids or []) if x is not None]
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return 0
+    ph = ",".join(["?"] * len(ids))
+    params = tuple(ids)
+
+    # Önce send_id üzerinden bağlı satırlar (contact_id NULL olabilir)
+    for child_sql in (
+        f"DELETE FROM mail_click_links WHERE send_id IN (SELECT id FROM mail_sends WHERE contact_id IN ({ph}))",
+        f"DELETE FROM mail_ivr_events WHERE send_id IN (SELECT id FROM mail_sends WHERE contact_id IN ({ph}))",
+    ):
+        try:
+            execute(conn, child_sql, params)
+        except Exception:
+            pass
+
+    for table in (
+        "mail_click_links",
+        "mail_ivr_events",
+        "mail_campaign_recipients",
+        "mail_sends",
+    ):
+        try:
+            execute(conn, f"DELETE FROM {table} WHERE contact_id IN ({ph})", params)
+        except Exception:
+            pass
+
+    execute(conn, f"DELETE FROM mail_contacts WHERE id IN ({ph})", params)
+    return len(ids)
+
+
+def _recount_tag(conn, name):
+    """Tek etiketin kontak sayısını DB'ye yazar (hızlı CRM için)."""
+    name = (name or "").strip()
+    if not name:
+        return 0
+    n = _tag_usage_count(conn, name)
+    _set_registry_tag_count(conn, name, n)
     return n
 
 
@@ -2388,63 +2432,87 @@ def create_mailing_blueprint(permission_required):
 
         with closing(get_db()) as conn:
             deleted = 0
-            if ids:
-                for i in range(0, len(ids), 400):
-                    chunk = ids[i : i + 400]
-                    ph = ",".join(["?"] * len(chunk))
-                    execute(conn, f"DELETE FROM mail_contacts WHERE id IN ({ph})", tuple(chunk))
-                    deleted += len(chunk)
-            elif tag:
-                if confirm_tag != tag:
-                    return jsonify({
-                        "error": f"Onay için confirm_tag olarak tam etiket adını gönder: «{tag}»",
-                    }), 400
-                clause, tparams = _tag_match_clause(tag)
-                # Tenant scope
-                extra = ""
-                params = list(tparams)
-                try:
-                    from mail_tenant import current_tenant_id
-                    _tid = current_tenant_id()
-                    if _tid:
-                        extra = " AND tenant_id = ?"
-                        params.append(int(_tid))
-                except Exception:
-                    pass
-                # Parça parça sil — bellek şişmesin
-                while deleted < limit:
-                    rows = fetchall(
-                        conn,
-                        f"SELECT id FROM mail_contacts WHERE {clause}{extra} ORDER BY id ASC LIMIT 400",
-                        tuple(params),
-                    ) or []
-                    if not rows:
-                        break
-                    chunk_ids = [int(r["id"]) for r in rows]
-                    ph = ",".join(["?"] * len(chunk_ids))
-                    execute(conn, f"DELETE FROM mail_contacts WHERE id IN ({ph})", tuple(chunk_ids))
-                    deleted += len(chunk_ids)
-                    if len(chunk_ids) < 400:
-                        break
-                try:
-                    _recount_tag(conn, tag)
-                except Exception:
-                    pass
-            else:
-                return jsonify({"error": "contact_ids veya tag gerekli."}), 400
-
-            _invalidate_mail_stats_cache()
             try:
-                from mail_ops import audit
-                audit(
-                    conn,
-                    request.headers.get("X-Admin-User") or "admin",
-                    "contacts_bulk_delete",
-                    f"deleted={deleted} tag={tag or '-'} ids={len(ids)}",
-                )
-            except Exception:
-                pass
-            conn.commit()
+                if ids:
+                    for i in range(0, len(ids), 200):
+                        chunk = ids[i : i + 200]
+                        deleted += _delete_contacts_by_ids(conn, chunk)
+                        try:
+                            conn.commit()
+                        except Exception:
+                            pass
+                elif tag:
+                    if confirm_tag != tag:
+                        return jsonify({
+                            "error": f"Onay için confirm_tag olarak tam etiket adını gönder: «{tag}»",
+                        }), 400
+                    clause, tparams = _tag_match_clause(tag)
+                    # Tenant scope
+                    extra = ""
+                    params = list(tparams)
+                    try:
+                        from mail_tenant import current_tenant_id
+                        _tid = current_tenant_id()
+                        if _tid:
+                            extra = " AND tenant_id = ?"
+                            params.append(int(_tid))
+                    except Exception:
+                        pass
+                    # Parça parça sil — bellek şişmesin + FK bağımlılıkları temizlensin
+                    exhausted = False
+                    while deleted < limit:
+                        rows = fetchall(
+                            conn,
+                            f"SELECT id FROM mail_contacts WHERE {clause}{extra} ORDER BY id ASC LIMIT 200",
+                            tuple(params),
+                        ) or []
+                        if not rows:
+                            exhausted = True
+                            break
+                        chunk_ids = [int(r["id"]) for r in rows]
+                        deleted += _delete_contacts_by_ids(conn, chunk_ids)
+                        try:
+                            conn.commit()
+                        except Exception:
+                            pass
+                        if len(chunk_ids) < 200:
+                            exhausted = True
+                            break
+                    # Tamamen bittiyse COUNT atmadan 0; limit kesildiyse hafif recount
+                    try:
+                        if exhausted:
+                            _set_registry_tag_count(conn, tag, 0)
+                        else:
+                            _recount_tag(conn, tag)
+                    except Exception:
+                        try:
+                            _set_registry_tag_count(conn, tag, 0)
+                        except Exception:
+                            pass
+                else:
+                    return jsonify({"error": "contact_ids veya tag gerekli."}), 400
+
+                _invalidate_mail_stats_cache()
+                try:
+                    from mail_ops import audit
+                    audit(
+                        conn,
+                        request.headers.get("X-Admin-User") or "admin",
+                        "contacts_bulk_delete",
+                        f"deleted={deleted} tag={tag or '-'} ids={len(ids)}",
+                    )
+                except Exception:
+                    pass
+                conn.commit()
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                return jsonify({
+                    "error": f"Silme başarısız: {exc}",
+                    "deleted": deleted,
+                }), 500
         return jsonify({
             "ok": True,
             "deleted": deleted,
@@ -2629,9 +2697,16 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_CRM)
     def delete_contact(contact_id):
         with closing(get_db()) as conn:
-            execute(conn, "DELETE FROM mail_contacts WHERE id = ?", (contact_id,))
-            _invalidate_mail_stats_cache()
-            conn.commit()
+            try:
+                _delete_contacts_by_ids(conn, [contact_id])
+                _invalidate_mail_stats_cache()
+                conn.commit()
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                return jsonify({"error": f"Silme başarısız: {exc}"}), 500
         return jsonify({"ok": True})
 
     @bp.route("/contacts/import", methods=["POST"])
