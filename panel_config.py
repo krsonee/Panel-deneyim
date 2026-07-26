@@ -192,6 +192,14 @@ def can_access_mailing(username: str | None) -> bool:
     return bool(user) and user in MAILING_ALLOWED_USERS
 
 
+def can_see_mikromail_nav(username: str | None) -> bool:
+    """Standalone Mikromail menü linki — embedded mailing kapalıyken allowlist."""
+    if PANEL_BRAND != "makro":
+        return False
+    user = (username or "").strip().lower()
+    return bool(user) and user in MAILING_ALLOWED_USERS
+
+
 def panel_context(username: str | None = None) -> dict:
     """Jinja /api/me için panel bağlamı.
 
@@ -202,6 +210,11 @@ def panel_context(username: str | None = None) -> dict:
     features = dict(FEATURES)
     if features.get("mailing") and username is not None and not can_access_mailing(username):
         features["mailing"] = False
+    mikromail_url = (
+        os.environ.get("MIKROMAIL_URL")
+        or os.environ.get("MAKROMAIL_URL")
+        or "https://mikromail.onrender.com"
+    ).rstrip("/")
     return {
         "brand": BRAND["brand"],
         "service_name": BRAND["service_name"],
@@ -228,16 +241,11 @@ def panel_context(username: str | None = None) -> dict:
         "biolink_pack": pack,
         "enabled_modules": list(ENABLED_MODULES),
         "features": features,
-        "mikromail_url": (
-            os.environ.get("MIKROMAIL_URL")
-            or os.environ.get("MAKROMAIL_URL")
-            or "https://mikromail.onrender.com"
-        ).rstrip("/"),
+        "mikromail_url": mikromail_url,
         # Geriye uyumluluk
-        "makromail_url": (
-            os.environ.get("MIKROMAIL_URL")
-            or os.environ.get("MAKROMAIL_URL")
-            or "https://mikromail.onrender.com"
-        ).rstrip("/"),
+        "makromail_url": mikromail_url,
+        "show_mikromail_nav": (
+            not features.get("mailing") and can_see_mikromail_nav(username)
+        ),
         "mailing_standalone": MAILING_STANDALONE,
     }

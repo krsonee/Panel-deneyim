@@ -992,6 +992,14 @@ def _proceed_after_password_ok(user):
     return redirect(url_for("admin_page"))
 
 
+@app.route("/login", methods=["GET", "POST"])
+def login_alias():
+    """Kısa /login yolu — asıl giriş /admin/login."""
+    if request.method == "POST":
+        return login_page()
+    return redirect(url_for("login_page", **request.args.to_dict()))
+
+
 @app.route("/admin/login", methods=["GET", "POST"])
 def login_page():
     if session.get("admin_logged_in"):
