@@ -1,15 +1,14 @@
-"""Şablon + gönderilmiş takip linklerinde CTA URL düzeltmesi.
+"""Şablon CTA temizliği — marka karışması yok.
 
-Bizzo → https://girbize.com
-Makro → https://makrovip.com/Vipmail
+Bizzo şablonları → yalnızca https://girbize.com
+Makro şablonları → yalnızca https://makrovip.com/Vipmail
 
-Gönderilmiş maillerdeki /m/c/<token> butonları dest_url üzerinden yönlenir;
-şablon güncellemek yetmez — mail_click_links.dest_url da düzeltilir.
+Click-link tablosuna dokunulmaz; gönderimde butonlar zaten direkt siteye gider.
 """
 
 from __future__ import annotations
 
-from database import execute, fetchall, scalar, upsert_mail_setting
+from database import execute, fetchall, upsert_mail_setting
 
 BIZZO_CTA = "https://girbize.com"
 MAKRO_CTA = "https://makrovip.com/Vipmail"
@@ -42,8 +41,20 @@ def _rewrite_bizzo_body(body: str) -> str:
         ("http://www.bizzocasino168.com", BIZZO_CTA),
         ("https://bizzocasino168.com/", BIZZO_CTA),
         ("https://bizzocasino168.com", BIZZO_CTA),
+        # Bizzo’dan Makro CTA / Vipmail temizle
         (MAKRO_TOKEN, BIZZO_TOKEN),
+        ("{{link:sc:https://makrovip.com/Vipmail}}", BIZZO_TOKEN),
+        ("{{link:https://makrovip.com/Vipmail}}", BIZZO_TOKEN),
+        ("{{link:sc:https://makrogir.com}}", BIZZO_TOKEN),
+        ("{{link:sc:https://vipmakro.com}}", BIZZO_TOKEN),
         (MAKRO_CTA, BIZZO_CTA),
+        ("https://makrovip.com/Vipmail", BIZZO_CTA),
+        ("https://makrovip.com/vipmail", BIZZO_CTA),
+        ("https://www.makrovip.com/Vipmail", BIZZO_CTA),
+        ("https://makrogir.com/", BIZZO_CTA),
+        ("https://makrogir.com", BIZZO_CTA),
+        ("https://vipmakro.com/", BIZZO_CTA),
+        ("https://vipmakro.com", BIZZO_CTA),
     ):
         out = out.replace(old, new)
     return out
@@ -66,17 +77,28 @@ def _rewrite_makro_body(body: str) -> str:
         ("https://makrogir.com", MAKRO_CTA),
         ("https://vipmakro.com/", MAKRO_CTA),
         ("https://vipmakro.com", MAKRO_CTA),
+        # Makro’dan Bizzo CTA temizle
         ("{{link:sc:https://girbize.com/}}", MAKRO_TOKEN),
         ("{{link:sc:https://girbize.com}}", MAKRO_TOKEN),
+        ("{{link:https://girbize.com}}", MAKRO_TOKEN),
+        ("{{link:sc:https://bizzocasino168.com}}", MAKRO_TOKEN),
+        ("{{link:sc:https://www.bizzocasino168.com}}", MAKRO_TOKEN),
+        (BIZZO_TOKEN, MAKRO_TOKEN),
         ("https://girbize.com/", MAKRO_CTA),
         ("https://girbize.com", MAKRO_CTA),
+        ("http://girbize.com/", MAKRO_CTA),
+        ("http://girbize.com", MAKRO_CTA),
+        ("https://www.bizzocasino168.com/", MAKRO_CTA),
+        ("https://www.bizzocasino168.com", MAKRO_CTA),
+        ("https://bizzocasino168.com/", MAKRO_CTA),
+        ("https://bizzocasino168.com", MAKRO_CTA),
     ):
         out = out.replace(old, new)
     return out
 
 
 def repair_mail_cta_links(conn) -> dict:
-    """Şablon gövdeleri + mail_click_links.dest_url düzelt (her deploy’da güvenli)."""
+    """Şablon gövdelerini markaya göre düzelt (her deploy’da)."""
     templates = fetchall(conn, "SELECT id, name, html_body, text_body FROM mail_templates") or []
     tpl_updated = 0
     for row in templates:
@@ -97,83 +119,13 @@ def repair_mail_cta_links(conn) -> dict:
             )
             tpl_updated += 1
 
-    try:
-        bizzo_before = int(scalar(
-            conn,
-            """
-            SELECT COUNT(*) FROM mail_click_links
-            WHERE dest_url IS NOT NULL AND dest_url != ?
-              AND (
-                LOWER(dest_url) LIKE 'https://girbize.com%'
-                OR LOWER(dest_url) LIKE 'http://girbize.com%'
-                OR LOWER(dest_url) LIKE '%bizzocasino%'
-              )
-            """,
-            (BIZZO_CTA,),
-        ) or 0)
-    except Exception:
-        bizzo_before = 0
-
-    execute(
-        conn,
-        """
-        UPDATE mail_click_links
-        SET dest_url = ?
-        WHERE dest_url IS NOT NULL
-          AND dest_url != ?
-          AND (
-            LOWER(dest_url) LIKE 'https://girbize.com%'
-            OR LOWER(dest_url) LIKE 'http://girbize.com%'
-            OR LOWER(dest_url) LIKE '%bizzocasino%'
-          )
-        """,
-        (BIZZO_CTA, BIZZO_CTA),
-    )
-
-    try:
-        makro_before = int(scalar(
-            conn,
-            """
-            SELECT COUNT(*) FROM mail_click_links
-            WHERE dest_url IS NOT NULL AND dest_url != ?
-              AND (
-                LOWER(dest_url) LIKE '%makrovip.com%'
-                OR LOWER(dest_url) LIKE '%makroaffi%'
-                OR LOWER(dest_url) LIKE '%makrogir.com%'
-                OR LOWER(dest_url) LIKE '%vipmakro.com%'
-              )
-            """,
-            (MAKRO_CTA,),
-        ) or 0)
-    except Exception:
-        makro_before = 0
-
-    execute(
-        conn,
-        """
-        UPDATE mail_click_links
-        SET dest_url = ?
-        WHERE dest_url IS NOT NULL
-          AND dest_url != ?
-          AND (
-            LOWER(dest_url) LIKE '%makrovip.com%'
-            OR LOWER(dest_url) LIKE '%makroaffi%'
-            OR LOWER(dest_url) LIKE '%makrogir.com%'
-            OR LOWER(dest_url) LIKE '%vipmakro.com%'
-          )
-        """,
-        (MAKRO_CTA, MAKRO_CTA),
-    )
-
-    upsert_mail_setting(conn, "mail_cta_repair_v20260726b", "1")
+    upsert_mail_setting(conn, "mail_cta_repair_v20260726c", "1")
     try:
         conn.commit()
     except Exception:
         pass
     return {
         "templates_updated": tpl_updated,
-        "click_links_bizzo": bizzo_before,
-        "click_links_makro": makro_before,
         "bizzo_cta": BIZZO_CTA,
         "makro_cta": MAKRO_CTA,
     }

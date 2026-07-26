@@ -588,59 +588,62 @@ def _append_query_param(url, key, value):
 
 
 def _inject_tracking(conn, body, *, send_id, contact_id=None, campaign_id=None, as_html=True):
-    """{{link:url}} / {{link:sc:url}} ve <a href> adreslerini kişiye özel takip URL'sine çevir.
+    """{{link:url}} / {{link:sc:url}} → doğrudan hedef site (mikromail /m/c yok).
 
-    'sc:' önekiyle işaretlenen linkler Smartico affiliate linkidir; tıklanınca
-    contact_id, sub-id parametresi (afp1 vb.) olarak Smartico'ya iletilir —
-    böylece kayıt/FTD raporunda hangi contact'ın dönüştüğü görülebilir.
+    Butonlar mikromail.onrender.com üzerinden geçmez; tıklanınca direkt site açılır.
+    'sc:' Smartico linklerinde contact_id, afp1 (veya ayar) olarak URL'ye eklenir.
     """
     body = body or ""
     if not body:
         return body
 
-    base = _public_base() or "https://mikromail.onrender.com"
-
-    def absolutize_track(url):
-        u = (url or "").strip()
-        if not u:
-            return u
-        if u.startswith("/m/c/"):
-            return base + u
-        if u.startswith("m/c/"):
-            return base + "/" + u
-        return u
-
-    def token_for(raw_dest):
+    def resolve_dest(raw_dest):
         dest, is_sc = _split_smartico_marker(raw_dest)
         dest = (dest or "").strip()
         if not dest:
             return dest
-        # Zaten takip linki — göreliyse mutlaklaştır (Gmail göreli href açmaz)
+        # Eski takip URL’si şablonda kalmışsa — imzalıysa dest çıkar, değilse dokunma
         if "/m/c/" in dest:
-            return absolutize_track(dest)
-        tok = _make_click_token(
-            conn,
-            dest_url=dest,
-            send_id=send_id,
-            contact_id=contact_id,
-            campaign_id=campaign_id,
-            is_smartico=is_sc,
-        )
-        return _track_url(tok)
+            try:
+                tok = dest.split("/m/c/", 1)[1].split("?", 1)[0].strip().strip("/")
+                signed = _loads_signed_click(_normalize_click_token(tok))
+                if signed and (signed.get("d") or "").strip():
+                    dest = (signed.get("d") or "").strip()
+                    is_sc = bool(signed.get("sc")) or is_sc
+                else:
+                    return dest  # kırık eski link — dokunma
+            except Exception:
+                return dest
+        if not re.match(r"^https?://", dest, re.I):
+            if dest.startswith("//"):
+                dest = "https:" + dest
+            elif not dest.startswith("/"):
+                dest = "https://" + dest.lstrip("/")
+        if is_sc and contact_id:
+            try:
+                subid_param = (
+                    get_mail_setting(conn, "smartico_subid_param", "afp1") or "afp1"
+                ).strip() or "afp1"
+            except Exception:
+                subid_param = "afp1"
+            dest = _append_query_param(dest, subid_param, contact_id)
+        return dest
 
     def repl_token(m):
-        tracked = token_for(m.group(1))
+        dest = resolve_dest(m.group(1))
         if as_html:
-            safe_dest, _ = _split_smartico_marker(m.group(1))
-            safe_dest = html_lib.escape(safe_dest, quote=True)
-            return f'<a href="{tracked}" target="_blank" rel="noopener">{safe_dest}</a>'
-        return tracked
+            label = html_lib.escape(
+                _split_smartico_marker(m.group(1))[0].strip() or dest, quote=True
+            )
+            href = html_lib.escape(dest, quote=True)
+            return f'<a href="{href}" target="_blank" rel="noopener">{label}</a>'
+        return dest
 
     if as_html:
         def repl_href_link(m):
             q = m.group(1)
-            tracked = token_for(m.group(2))
-            return f"href={q}{tracked}{q}"
+            dest = resolve_dest(m.group(2))
+            return f"href={q}{dest}{q}"
 
         body = HREF_LINK_TOKEN_RE.sub(repl_href_link, body)
 
@@ -648,30 +651,17 @@ def _inject_tracking(conn, body, *, send_id, contact_id=None, campaign_id=None, 
 
     if as_html:
         def repl_href(m):
-            tracked = token_for(m.group(2))
-            return f"{m.group(1)}{tracked}{m.group(3)}"
+            dest = resolve_dest(m.group(2))
+            return f"{m.group(1)}{dest}{m.group(3)}"
 
         body = HREF_RE.sub(repl_href, body)
-        # Göreli takip linklerini mutlaklaştır (eski şablon artıkları)
-        body = re.sub(
-            r'href=(["\'])(/m/c/[^"\']+)\1',
-            lambda m: f"href={m.group(1)}{base}{m.group(2)}{m.group(1)}",
-            body,
-            flags=re.I,
-        )
 
     # Hiçbir {{link:…}} kalmasın — kalırsa Gmail’de buton ölür
     if "{{link:" in body or "{{ link:" in body:
-        def _leftover(m):
-            dest, _ = _split_smartico_marker(m.group(1))
-            dest = (dest or "").strip() or "https://makrovip.com/Vipmail"
-            return token_for(m.group(1)) if dest else dest
-
-        body = LINK_TOKEN_RE.sub(_leftover, body)
-        # Hâlâ kalırsa ham URL’ye düş
+        body = LINK_TOKEN_RE.sub(repl_token, body)
         body = re.sub(
             r"\{\{\s*link\s*:\s*([^}]+)\s*\}\}",
-            lambda m: _split_smartico_marker(m.group(1))[0].strip() or "https://makrovip.com/Vipmail",
+            lambda m: resolve_dest(m.group(1)) or "",
             body,
             flags=re.I,
         )
@@ -2415,7 +2405,15 @@ def create_mailing_blueprint(permission_required):
                     print(f"✉️  Sunday weekly maintenance already done ({_wm.get('week_key')})")
             except Exception as wm_exc:
                 print(f"⚠️  weekly maintenance: {wm_exc}")
-            # CTA repair kapalı — karışık marka fallback / otomatik rewrite istemiyoruz
+            try:
+                from mail_template_cta_repair import repair_mail_cta_links
+                _cta = repair_mail_cta_links(conn)
+                print(
+                    f"✉️  CTA repair (templates only): updated={_cta.get('templates_updated')} "
+                    f"bizzo={_cta.get('bizzo_cta')} makro={_cta.get('makro_cta')}"
+                )
+            except Exception as cta_exc:
+                print(f"⚠️  CTA repair: {cta_exc}")
     except Exception as exc:
         print(f"⚠️  mail_ops/scrub ensure: {exc}")
     try:
