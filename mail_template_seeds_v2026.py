@@ -1,4 +1,4 @@
-"""Makrobet 2026 mailing şablonları — unified template engine (6 preset).
+"""Makrobet 2026 mailing şablonları — unified template engine (8 preset).
 
 Engine: mail_template_engine_makrobet.py
 Logo: __MAIL_LOGO__ → makrobet-logo-mail.png
@@ -17,7 +17,7 @@ from database import (
 )
 from mail_template_engine_makrobet import build_all_presets
 
-SEED_FLAG = "seeded_makrobet_templates_v2026f"
+SEED_FLAG = "seeded_makrobet_templates_v2026g"
 
 TEMPLATES = build_all_presets()
 

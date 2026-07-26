@@ -1,4 +1,4 @@
-"""Makrobet unified HTML email template engine — 6 campaign presets.
+"""Makrobet unified HTML email template engine — 8 campaign presets.
 
 Placeholders:
   __MAIL_LOGO__, __MB_IMG_KASA__, __MB_IMG_KAYIP__, __MB_IMG_ARKADAS__, __MB_IMG_RACE__
@@ -167,6 +167,35 @@ def feature_box_3000() -> str:
                       letter-spacing:0.04em;margin-top:6px;">DENEME KASASI</div>
                     <div style="font-family:{FONT};font-size:13px;line-height:1.5;color:{MUTED};
                       margin-top:10px;">Kayıt tamamlanınca deneme bakiyen hesabına tanımlanır.</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>"""
+
+
+def feature_box(
+    *,
+    kicker: str,
+    big: str,
+    subtitle: str,
+    note: str,
+) -> str:
+    return f"""
+          <tr>
+            <td style="padding:4px 20px 14px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                bgcolor="{CARD}" style="background-color:{CARD};border-radius:16px;border:2px solid {GOLD};">
+                <tr>
+                  <td align="center" style="padding:22px 16px;">
+                    <div style="font-family:{FONT};font-size:11px;font-weight:800;color:{GOLD};
+                      letter-spacing:0.12em;text-transform:uppercase;">{kicker}</div>
+                    <div style="font-family:{FONT};font-size:30px;font-weight:900;color:{GOLD};
+                      line-height:1.1;margin-top:8px;">{big}</div>
+                    <div style="font-family:{FONT};font-size:15px;font-weight:800;color:{TEXT};
+                      letter-spacing:0.03em;margin-top:8px;">{subtitle}</div>
+                    <div style="font-family:{FONT};font-size:13px;line-height:1.55;color:{MUTED};
+                      margin-top:10px;">{note}</div>
                   </td>
                 </tr>
               </table>
@@ -557,6 +586,139 @@ def preset_turnuva() -> dict:
     }
 
 
+def preset_yil_donumu() -> dict:
+    """Kayıt tarihinden itibaren yıl dönümü → hesaba ödül tanımı."""
+    steps = [
+        (
+            "Kayıt tarihin baz alınır",
+            "Üyelik yıl dönümün, hesabına ilk kayıt olduğun güne göre hesaplanır.",
+        ),
+        (
+            "Ödül otomatik eklenir",
+            "Yıl dönümünde özel kutlama ödülü hesabına tanımlanır — ekstra başvuru gerekmez.",
+        ),
+        (
+            "Hesabından kontrol et",
+            "Bakiyeni / bonus alanını aç; ödülün yansıdığını gör ve oynamaya devam et.",
+        ),
+    ]
+    extras = [
+        (
+            "Sadakat jesti",
+            "Her yıl dönümünde Makrobet ailesine katıldığın günü birlikte kutlarız.",
+        ),
+        (
+            "Aktif kampanyalar",
+            "Ödülünün yanında Race, Bilet ve Manager etkinlikleri de seni bekliyor.",
+        ),
+    ]
+    body = (
+        f'<tr><td align="center" style="padding:4px 20px 8px;">{badge("YIL DÖNÜMÜ")}</td></tr>'
+        + eyebrow("Kutlama")
+        + headline("Kayıt yıl dönümün kutlu olsun, {{name}}")
+        + hero_image(IMG_KASA, "Yıl Dönümü Ödülü")
+        + lead(
+            "Hesabının <strong style='color:#ffffff;'>kayıt tarihinden itibaren</strong> her yıl "
+            "dönümünde özel bir kutlama ödülü hesabına ekleniyor. Bu mail, o jesti haber vermek için."
+        )
+        + feature_box(
+            kicker="★ Üyelik yıl dönümü ★",
+            big="ÖDÜL HESABINDA",
+            subtitle="Kayıt günün anısına tanımlanır",
+            note="Tarih geldiğinde ödül bakiyene / bonus alanına işlenir. Detay için hesabına bak.",
+        )
+        + section_label("Nasıl işler?")
+        + numbered_list(steps)
+        + section_label("Birlikte devam")
+        + promo_cards(extras)
+        + cta_row("Ödülümü Kontrol Et")
+    )
+    return {
+        "name": "2026 · Yıl Dönümü Kutlaması",
+        "subject": "{{name}}, kayıt yıl dönümün kutlu olsun — ödülün hesabında!",
+        "html_body": shell(
+            title="Makrobet Yıl Dönümü",
+            preheader="Kayıt yıl dönümü ödülün hesabına eklendi",
+            body_rows=body,
+        ),
+        "text_body": (
+            "Merhaba {{name}},\n\n"
+            "Kayıt yıl dönümün kutlu olsun!\n"
+            "Hesabının kayıt tarihinden itibaren her yıl dönümünde özel ödül hesabına eklenir.\n"
+            "1) Kayıt tarihin baz alınır\n"
+            "2) Ödül otomatik eklenir\n"
+            "3) Hesabından kontrol et\n\n"
+            f"Hesaba git: {AFF}\n"
+        ),
+    }
+
+
+def preset_etkinlik_tanitim() -> dict:
+    """Sitedeki mevcut etkinlik / kampanya tanıtım mailingi."""
+    live = [
+        (
+            "Amusnet Race",
+            "Ödül havuzlu slot yarışı — sıralamaya gir, haftalık ödül payını kap.",
+        ),
+        (
+            "Bilet Etkinliği",
+            "Oynadıkça bilet biriktir; çekiliş ve özel ödül turlarına hak kazan.",
+        ),
+        (
+            "Makro Manager",
+            "Manager döneminde rolling hedeflerini tamamla, ekstra prim kazan.",
+        ),
+    ]
+    always = [
+        (
+            "%100 Kayıp Bonusu",
+            "Yatırımın kayba dönerse aynı tutarı tekrar hesabına ekleriz.",
+        ),
+        (
+            "Arkadaşını Getir",
+            "Davet ettiğin üye yatırım yaptıkça hem sen hem o bonus alır.",
+        ),
+        (
+            "Makro Kasa & Prim",
+            "Yatırıma ek kasa ve güncel prim / çevrim kampanyalarıyla bakiyeni büyüt.",
+        ),
+    ]
+    body = (
+        f'<tr><td align="center" style="padding:4px 20px 8px;">{badge("ETKİNLİKLER", solid=False)}</td></tr>'
+        + eyebrow("Promosyonlar")
+        + headline("Sitedeki etkinlikler seni bekliyor")
+        + hero_image(IMG_RACE, "Makrobet Etkinlikleri")
+        + lead(
+            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — Makrobet’te şu an "
+            "aktif olan turnuva, bilet ve kampanya fırsatlarının kısa turu:"
+        )
+        + section_label("Canlı etkinlikler")
+        + promo_cards(live)
+        + section_label("Sürekli kampanyalar")
+        + promo_cards(always)
+        + lead(
+            "Hepsi hesabında hazır. Tek tıkla siteye geç, katılmak istediğin etkinliği seç."
+        )
+        + cta_row("Etkinlikleri İncele")
+    )
+    return {
+        "name": "2026 · Etkinlik Tanıtımı",
+        "subject": "{{name}}, Race · Bilet · Manager ve daha fazlası seni bekliyor",
+        "html_body": shell(
+            title="Makrobet Etkinlik Tanıtımı",
+            preheader="Sitedeki aktif etkinlik ve kampanyalar",
+            body_rows=body,
+        ),
+        "text_body": (
+            "Merhaba {{name}},\n\n"
+            "Sitedeki etkinlikler:\n"
+            "- Amusnet Race\n- Bilet Etkinliği\n- Makro Manager\n"
+            "- %100 Kayıp Bonusu\n- Arkadaşını Getir\n- Makro Kasa & Prim\n\n"
+            f"İncele: {AFF}\n"
+        ),
+    }
+
+
 PRESET_BUILDERS = (
     preset_davet_test,
     preset_davet_mailing,
@@ -564,6 +726,8 @@ PRESET_BUILDERS = (
     preset_memnuniyet,
     preset_ilk_yatirim,
     preset_turnuva,
+    preset_yil_donumu,
+    preset_etkinlik_tanitim,
 )
 
 
