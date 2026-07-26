@@ -2282,12 +2282,18 @@ def create_mailing_blueprint(permission_required):
     def list_contacts():
         q = (request.args.get("q") or "").strip().lower()
         tag = (request.args.get("tag") or "").strip()
+        tags_raw = (request.args.get("tags") or "").strip()
+        tag_list = _parse_tag_filter_list(tags_raw) if tags_raw else ([tag] if tag else [])
         limit = min(int(request.args.get("limit") or 200), 1000)
+        try:
+            offset = max(0, int(request.args.get("offset") or 0))
+        except (TypeError, ValueError):
+            offset = 0
         with closing(get_db()) as conn:
             clauses = []
             params = []
-            if tag:
-                clause, tparams = _tag_match_clause(tag)
+            if tag_list:
+                clause, tparams = _tag_match_any_clause(tag_list)
                 clauses.append(clause)
                 params.extend(tparams)
             if q:
@@ -2307,25 +2313,25 @@ def create_mailing_blueprint(permission_required):
             # 3M satırda COUNT(*) + LIKE paneli kilitler / 15s abort
             total = None
             total_approx = False
-            if tag and not q:
-                reg = _registry_tag_count(conn, tag)
+            if len(tag_list) == 1 and not q:
+                reg = _registry_tag_count(conn, tag_list[0])
                 if reg is not None:
                     total = reg
                 else:
                     # Registry yoksa sayma — sayfa sonucu yeter
                     total = None
                     total_approx = True
-            elif not tag and not q:
+            elif not tag_list and not q:
                 total, total_approx = _approx_contact_total(conn)
             else:
-                # q ile filtre: exact count pahalı — atla
+                # q / çoklu etiket: exact count pahalı — atla
                 total = None
                 total_approx = True
 
             rows = _rows(fetchall(
                 conn,
-                f"SELECT * FROM mail_contacts{where} ORDER BY id DESC LIMIT ?",
-                tuple(params) + (limit,),
+                f"SELECT * FROM mail_contacts{where} ORDER BY id DESC LIMIT ? OFFSET ?",
+                tuple(params) + (limit, offset),
             ))
             # Görünen etiketleri registry'ye ekle (ucuz, eksik dropdown düzeltir)
             page_tags = set()
@@ -2342,7 +2348,7 @@ def create_mailing_blueprint(permission_required):
 
             if total is None:
                 # En az sayfa boyutu kadar göster
-                total = len(rows)
+                total = len(rows) + offset
                 if len(rows) >= limit:
                     total_approx = True
 
@@ -2353,6 +2359,97 @@ def create_mailing_blueprint(permission_required):
             "total": int(total),
             "total_approx": bool(total_approx),
             "limit": limit,
+            "offset": offset,
+            "has_more": len(out) >= limit,
+            "tags": tag_list,
+        })
+
+    @bp.route("/contacts/bulk-delete", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def bulk_delete_contacts():
+        """Seçili ID'leri veya bir etiketteki kontakları sil (rehberden)."""
+        data = request.get_json(silent=True) or {}
+        raw_ids = data.get("contact_ids") or []
+        tag = (data.get("tag") or "").strip()
+        confirm_tag = (data.get("confirm_tag") or "").strip()
+        try:
+            limit = min(int(data.get("limit") or 5000), 20000)
+        except (TypeError, ValueError):
+            limit = 5000
+
+        ids = []
+        if isinstance(raw_ids, list):
+            for x in raw_ids:
+                try:
+                    ids.append(int(x))
+                except (TypeError, ValueError):
+                    continue
+        ids = list(dict.fromkeys(ids))[:5000]
+
+        with closing(get_db()) as conn:
+            deleted = 0
+            if ids:
+                for i in range(0, len(ids), 400):
+                    chunk = ids[i : i + 400]
+                    ph = ",".join(["?"] * len(chunk))
+                    execute(conn, f"DELETE FROM mail_contacts WHERE id IN ({ph})", tuple(chunk))
+                    deleted += len(chunk)
+            elif tag:
+                if confirm_tag != tag:
+                    return jsonify({
+                        "error": f"Onay için confirm_tag olarak tam etiket adını gönder: «{tag}»",
+                    }), 400
+                clause, tparams = _tag_match_clause(tag)
+                # Tenant scope
+                extra = ""
+                params = list(tparams)
+                try:
+                    from mail_tenant import current_tenant_id
+                    _tid = current_tenant_id()
+                    if _tid:
+                        extra = " AND tenant_id = ?"
+                        params.append(int(_tid))
+                except Exception:
+                    pass
+                # Parça parça sil — bellek şişmesin
+                while deleted < limit:
+                    rows = fetchall(
+                        conn,
+                        f"SELECT id FROM mail_contacts WHERE {clause}{extra} ORDER BY id ASC LIMIT 400",
+                        tuple(params),
+                    ) or []
+                    if not rows:
+                        break
+                    chunk_ids = [int(r["id"]) for r in rows]
+                    ph = ",".join(["?"] * len(chunk_ids))
+                    execute(conn, f"DELETE FROM mail_contacts WHERE id IN ({ph})", tuple(chunk_ids))
+                    deleted += len(chunk_ids)
+                    if len(chunk_ids) < 400:
+                        break
+                try:
+                    _recount_tag(conn, tag)
+                except Exception:
+                    pass
+            else:
+                return jsonify({"error": "contact_ids veya tag gerekli."}), 400
+
+            _invalidate_mail_stats_cache()
+            try:
+                from mail_ops import audit
+                audit(
+                    conn,
+                    request.headers.get("X-Admin-User") or "admin",
+                    "contacts_bulk_delete",
+                    f"deleted={deleted} tag={tag or '-'} ids={len(ids)}",
+                )
+            except Exception:
+                pass
+            conn.commit()
+        return jsonify({
+            "ok": True,
+            "deleted": deleted,
+            "tag": tag or None,
+            "message": f"{deleted} kontak silindi.",
         })
 
     @bp.route("/contacts", methods=["POST"])

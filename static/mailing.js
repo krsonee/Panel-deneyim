@@ -1369,11 +1369,280 @@
       if (c == null) c = 0;
       var empty = Number(c) === 0;
       return '<span class="mail-tag-manage-item' + (empty ? " is-empty" : "") + '">' +
-        '<span>' + esc(name) + "</span>" +
+        '<button type="button" class="mail-tag-open-btn" data-tag="' + esc(name) + '" data-count="' + c + '" title="Kontakları aç">' +
+        esc(name) + '</button>' +
         '<span class="mail-tag-manage-count">' + fmtNum(c) + "</span>" +
         '<button type="button" class="mail-tag-delete-btn" data-tag="' + esc(name) + '" data-count="' + c + '" title="Etiketi sil">×</button>' +
         "</span>";
     }).join("");
+  }
+
+  // ── Etiket / kampanya kontak seçici ─────────────────────────────────────
+  var mailPickerState = {
+    mode: "manage", // manage | campaign
+    tags: [],
+    offset: 0,
+    limit: 200,
+    hasMore: false,
+    selected: {}, // id -> true
+    loading: false,
+    q: ""
+  };
+
+  function mailPickerSelectedIds() {
+    return Object.keys(mailPickerState.selected)
+      .filter(function (k) { return mailPickerState.selected[k]; })
+      .map(Number)
+      .filter(function (n) { return n > 0; });
+  }
+
+  function mailPickerUpdateSelectedCount() {
+    var el = document.getElementById("mail-picker-selected-count");
+    if (el) el.textContent = "Seçili: " + fmtNum(mailPickerSelectedIds().length);
+  }
+
+  function mailCloseContactPicker() {
+    var modal = document.getElementById("mail-contact-picker-modal");
+    if (modal) modal.classList.remove("open");
+  }
+
+  function mailOpenContactPicker(opts) {
+    opts = opts || {};
+    mailPickerState.mode = opts.mode || "manage";
+    mailPickerState.tags = (opts.tags || []).filter(Boolean);
+    mailPickerState.offset = 0;
+    mailPickerState.selected = {};
+    mailPickerState.q = "";
+    var qEl = document.getElementById("mail-picker-q");
+    if (qEl) qEl.value = "";
+    var title = document.getElementById("mail-picker-title");
+    if (title) {
+      title.textContent = mailPickerState.mode === "campaign"
+        ? ("Kampanya seçimi — " + (mailPickerState.tags.join(" · ") || "etiketler"))
+        : ("Etiket kontakları — " + (mailPickerState.tags[0] || ""));
+    }
+    var delBtn = document.getElementById("mail-picker-delete");
+    var delTagBtn = document.getElementById("mail-picker-delete-tag");
+    var applyBtn = document.getElementById("mail-picker-apply");
+    var useAllBtn = document.getElementById("mail-picker-use-all-tags");
+    if (delBtn) delBtn.hidden = mailPickerState.mode !== "manage";
+    if (delTagBtn) delTagBtn.hidden = !(mailPickerState.mode === "manage" && mailPickerState.tags.length === 1);
+    if (applyBtn) applyBtn.hidden = mailPickerState.mode !== "campaign";
+    if (useAllBtn) useAllBtn.hidden = mailPickerState.mode !== "campaign";
+    var modal = document.getElementById("mail-contact-picker-modal");
+    if (modal) modal.classList.add("open");
+    mailPickerUpdateSelectedCount();
+    mailPickerLoad({ reset: true });
+  }
+
+  function mailPickerLoad(opts) {
+    opts = opts || {};
+    if (mailPickerState.loading) return Promise.resolve();
+    if (opts.reset) mailPickerState.offset = 0;
+    mailPickerState.loading = true;
+    var tbody = document.getElementById("mail-picker-table");
+    var meta = document.getElementById("mail-picker-meta");
+    if (tbody && opts.reset) tbody.innerHTML = '<tr><td colspan="5" class="empty">Yükleniyor…</td></tr>';
+    var url = "/api/mailing/contacts?limit=" + mailPickerState.limit + "&offset=" + mailPickerState.offset;
+    if (mailPickerState.tags.length === 1) {
+      url += "&tag=" + encodeURIComponent(mailPickerState.tags[0]);
+    } else if (mailPickerState.tags.length > 1) {
+      url += "&tags=" + encodeURIComponent(mailPickerState.tags.join(","));
+    }
+    if (mailPickerState.q) url += "&q=" + encodeURIComponent(mailPickerState.q);
+    return mailApi(url, { timeoutMs: 60000 }).then(function (res) {
+      mailPickerState.loading = false;
+      if (!tbody) return;
+      if (!res || !res.ok) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">' +
+          esc((res && res.data && res.data.error) || "Yüklenemedi") + "</td></tr>";
+        return;
+      }
+      var rows = res.data.contacts || [];
+      mailPickerState.hasMore = !!res.data.has_more;
+      var total = res.data.total;
+      var approx = res.data.total_approx;
+      if (meta) {
+        meta.textContent =
+          (mailPickerState.tags.length ? ("Etiket: " + mailPickerState.tags.join(" · ") + " · ") : "") +
+          "Gösterilen " + fmtNum(mailPickerState.offset + rows.length) +
+          (total != null ? (" / " + fmtNum(total) + (approx ? "+" : "")) : "") +
+          (mailPickerState.q ? (" · arama: " + mailPickerState.q) : "");
+      }
+      var moreBtn = document.getElementById("mail-picker-more");
+      if (moreBtn) moreBtn.disabled = !mailPickerState.hasMore;
+      if (!rows.length && opts.reset) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">Kontak yok</td></tr>';
+        return;
+      }
+      var html = rows.map(function (c) {
+        var checked = mailPickerState.selected[String(c.id)] ? " checked" : "";
+        var tags = (c.tags || []).slice(0, 4).map(function (t) {
+          return '<span class="acc-chip"><span class="acc-chip-text">' + esc(t) + "</span></span>";
+        }).join(" ");
+        return "<tr>" +
+          '<td><input type="checkbox" class="mail-picker-check" value="' + c.id + '"' + checked + "></td>" +
+          "<td>" + esc(c.email) + (c.unsubscribed ? ' <span class="muted">(unsub)</span>' : "") + "</td>" +
+          "<td>" + esc(c.name || "—") + "</td>" +
+          "<td>" + esc(c.verify_status || "—") + "</td>" +
+          "<td>" + (tags || "—") + "</td></tr>";
+      }).join("");
+      if (opts.reset) tbody.innerHTML = html;
+      else tbody.insertAdjacentHTML("beforeend", html);
+      mailPickerState.offset += rows.length;
+    });
+  }
+
+  function mailPickerBindUi() {
+    bindClick("mail-picker-close", mailCloseContactPicker);
+    var modal = document.getElementById("mail-contact-picker-modal");
+    if (modal) {
+      modal.addEventListener("click", function (e) {
+        if (e.target === modal) mailCloseContactPicker();
+      });
+    }
+    bindClick("mail-picker-search", function () {
+      mailPickerState.q = ((document.getElementById("mail-picker-q") || {}).value || "").trim();
+      mailPickerLoad({ reset: true });
+    });
+    var qEl = document.getElementById("mail-picker-q");
+    if (qEl) {
+      qEl.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          mailPickerState.q = (qEl.value || "").trim();
+          mailPickerLoad({ reset: true });
+        }
+      });
+    }
+    bindClick("mail-picker-more", function () {
+      if (mailPickerState.hasMore) mailPickerLoad({ reset: false });
+    });
+    bindClick("mail-picker-select-page", function () {
+      document.querySelectorAll(".mail-picker-check").forEach(function (el) {
+        el.checked = true;
+        mailPickerState.selected[String(el.value)] = true;
+      });
+      mailPickerUpdateSelectedCount();
+    });
+    bindClick("mail-picker-clear", function () {
+      mailPickerState.selected = {};
+      document.querySelectorAll(".mail-picker-check").forEach(function (el) { el.checked = false; });
+      mailPickerUpdateSelectedCount();
+    });
+    var tbody = document.getElementById("mail-picker-table");
+    if (tbody) {
+      tbody.addEventListener("change", function (e) {
+        var el = e.target;
+        if (!el || !el.classList || !el.classList.contains("mail-picker-check")) return;
+        if (el.checked) mailPickerState.selected[String(el.value)] = true;
+        else delete mailPickerState.selected[String(el.value)];
+        mailPickerUpdateSelectedCount();
+      });
+    }
+    bindClick("mail-picker-delete", function () {
+      var ids = mailPickerSelectedIds();
+      if (!ids.length) {
+        mailToast("Önce kontak seç");
+        return;
+      }
+      if (!confirm(fmtNum(ids.length) + " kontak rehberden silinsin mi?")) return;
+      mailApi("/api/mailing/contacts/bulk-delete", {
+        method: "POST",
+        body: { contact_ids: ids },
+        timeoutMs: 120000
+      }).then(function (res) {
+        if (!res || !res.ok) {
+          mailToast((res && res.data && res.data.error) || "Silinemedi");
+          return;
+        }
+        mailToast(res.data.message || "Silindi");
+        ids.forEach(function (id) { delete mailPickerState.selected[String(id)]; });
+        mailPickerUpdateSelectedCount();
+        mailLoadContactStats();
+        mailLoadContacts();
+        mailPickerLoad({ reset: true });
+      });
+    });
+    bindClick("mail-picker-delete-tag", function () {
+      var tag = mailPickerState.tags[0];
+      if (!tag) return;
+      var typed = prompt(
+        "«" + tag + "» etiketindeki TÜM kontaklar silinecek.\nOnay için etiket adını aynen yaz:"
+      );
+      if (typed !== tag) {
+        mailToast("Onay iptal / etiket adı uyuşmadı");
+        return;
+      }
+      mailApi("/api/mailing/contacts/bulk-delete", {
+        method: "POST",
+        body: { tag: tag, confirm_tag: tag, limit: 20000 },
+        timeoutMs: 300000
+      }).then(function (res) {
+        if (!res || !res.ok) {
+          mailToast((res && res.data && res.data.error) || "Silinemedi");
+          return;
+        }
+        mailToast(res.data.message || "Silindi");
+        mailCloseContactPicker();
+        mailLoadContactStats();
+        mailLoadContacts();
+        mailLoadTags();
+      });
+    });
+    bindClick("mail-picker-apply", function () {
+      var ids = mailPickerSelectedIds();
+      if (!ids.length) {
+        mailToast("Önce listeden kişi seç — veya «Etiketteki herkese gönder»");
+        return;
+      }
+      mailWriteCampSelectedIds(ids);
+      var modeSel = document.querySelector('input[name="mail-camp-recipient-mode"][value="selected"]');
+      if (modeSel) {
+        modeSel.checked = true;
+        mailSyncCampRecipientModeUI();
+      }
+      var hint = document.getElementById("mail-camp-pick-hint");
+      if (hint) hint.textContent = fmtNum(ids.length) + " kişi seçildi — yalnızca bunlar gidecek.";
+      mailToast(fmtNum(ids.length) + " kontak kampanyaya aktarıldı");
+      mailCloseContactPicker();
+    });
+    bindClick("mail-picker-use-all-tags", function () {
+      var modeTag = document.querySelector('input[name="mail-camp-recipient-mode"][value="tag"]');
+      if (modeTag) {
+        modeTag.checked = true;
+        mailSyncCampRecipientModeUI();
+      }
+      mailWriteCampSelectedIds([]);
+      var hint = document.getElementById("mail-camp-pick-hint");
+      if (hint) hint.textContent = "Etiketteki herkese gönder (manuel seçim yok).";
+      mailToast("Etiket birleşimindeki herkese gönderilecek");
+      mailCloseContactPicker();
+    });
+    bindClick("mail-camp-open-picker", function () {
+      var tags = mailCampSelectedTags();
+      if (!tags.length) {
+        mailToast("Önce en az 1 etiket seç (örn. Davet Datası + mail_mx_ok)");
+        return;
+      }
+      mailOpenContactPicker({ mode: "campaign", tags: tags });
+    });
+    bindClick("mail-camp-use-all-tags", function () {
+      var tags = mailCampSelectedTags();
+      if (!tags.length) {
+        mailToast("Önce etiket seç");
+        return;
+      }
+      var modeTag = document.querySelector('input[name="mail-camp-recipient-mode"][value="tag"]');
+      if (modeTag) {
+        modeTag.checked = true;
+        mailSyncCampRecipientModeUI();
+      }
+      mailWriteCampSelectedIds([]);
+      var hint = document.getElementById("mail-camp-pick-hint");
+      if (hint) hint.textContent = "Etiketteki herkese gönder · " + tags.join(" · ");
+      mailToast("Etiket birleşimi: herkese");
+    });
   }
 
   function mailRenderTagFilterOptions() {
@@ -3181,6 +3450,12 @@
     });
 
     document.addEventListener("click", function (e) {
+      var openTag = e.target.closest(".mail-tag-open-btn");
+      if (openTag) {
+        var openName = openTag.getAttribute("data-tag") || "";
+        if (openName) mailOpenContactPicker({ mode: "manage", tags: [openName] });
+        return;
+      }
       var delTag = e.target.closest(".mail-tag-delete-btn");
       if (!delTag) return;
       var name = delTag.getAttribute("data-tag") || "";
@@ -3216,6 +3491,8 @@
         mailLoadContacts();
       });
     });
+
+    mailPickerBindUi();
 
     var tagCreateForm = document.getElementById("mail-tag-create-form");
     if (tagCreateForm) {

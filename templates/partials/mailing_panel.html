@@ -231,7 +231,7 @@
           <span class="hint" id="mail-tag-manage-status" style="margin:0;">—</span>
         </div>
         <div id="mail-tag-manage-list" class="mail-tag-manage-list" style="margin-top:0.75rem;"></div>
-        <p class="hint" style="margin-top:0.55rem;">Önce etiketi oluştur, sonra data yüklerken listeden seç. Taşıma sonrası 0 kalan etiket otomatik silinir; elle de silebilirsin.</p>
+        <p class="hint" style="margin-top:0.55rem;">Etikete tıkla → kontak listesi açılır (sil / seç). × = yalnızca etiketi siler. Taşıma sonrası 0 kalan etiket otomatik gider.</p>
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
@@ -620,6 +620,11 @@
             </div>
             <div class="mail-camp-tag-list" id="mail-camp-tag-list" aria-label="Kampanya etiketleri"></div>
             <p class="hint" id="mail-camp-tag-breakdown" style="margin:0.45rem 0 0;"></p>
+            <div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.55rem;align-items:center;">
+              <button type="button" class="btn btn-sm btn-primary" id="mail-camp-open-picker">Listeden kişi seç</button>
+              <button type="button" class="btn btn-sm" id="mail-camp-use-all-tags">Etiketteki herkese gönder</button>
+              <span class="hint" id="mail-camp-pick-hint" style="margin:0;">Manuel seçersen yalnızca işaretlediklerin gider; «herkese» = tüm etiket birleşimi.</span>
+            </div>
             <input type="hidden" id="mail-camp-tag" value="">
           </div>
           <div id="mail-camp-mode-selected" hidden style="grid-column:1/-1;">
@@ -913,6 +918,40 @@
     </div>
     <div class="modal-body mail-tpl-view-body">
       <iframe id="mail-tpl-view-frame" class="mail-tpl-view-frame" title="Şablon önizleme" sandbox="allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"></iframe>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="mail-contact-picker-modal">
+  <div class="modal" style="max-width:860px;width:96%;max-height:90vh;display:flex;flex-direction:column;">
+    <div class="modal-head">
+      <h3 id="mail-picker-title">Kontak listesi</h3>
+      <button type="button" class="modal-close" id="mail-picker-close">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:0.85rem 1rem;overflow:auto;flex:1;min-height:0;">
+      <p class="hint" id="mail-picker-meta" style="margin:0 0 0.65rem;">—</p>
+      <div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-bottom:0.65rem;align-items:center;">
+        <input type="search" id="mail-picker-q" placeholder="E-posta / ad ara…" style="flex:1;min-width:160px;">
+        <button type="button" class="btn btn-sm" id="mail-picker-search">Ara</button>
+        <button type="button" class="btn btn-sm" id="mail-picker-select-page">Sayfayı seç</button>
+        <button type="button" class="btn btn-sm" id="mail-picker-clear">Seçimi temizle</button>
+        <span class="hint" id="mail-picker-selected-count" style="margin:0;">Seçili: 0</span>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll" style="max-height:48vh;">
+          <table>
+            <thead><tr><th></th><th>E-posta</th><th>Ad</th><th>Doğrulama</th><th>Etiket</th></tr></thead>
+            <tbody id="mail-picker-table"><tr><td colspan="5" class="empty">—</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.75rem;align-items:center;">
+        <button type="button" class="btn btn-sm" id="mail-picker-more">Daha fazla yükle</button>
+        <button type="button" class="btn btn-sm btn-danger" id="mail-picker-delete" hidden>Seçilenleri sil</button>
+        <button type="button" class="btn btn-sm btn-danger" id="mail-picker-delete-tag" hidden>Etiketteki tümünü sil</button>
+        <button type="button" class="btn btn-primary" id="mail-picker-apply" hidden>Kampanyaya aktar</button>
+        <button type="button" class="btn btn-sm" id="mail-picker-use-all-tags" hidden>Etiketteki herkese gönder</button>
+      </div>
     </div>
   </div>
 </div>
