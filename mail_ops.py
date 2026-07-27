@@ -300,7 +300,10 @@ def record_open(conn, send_id):
 
 
 def inject_ops_footer(conn, body, *, send_id, contact_id=None, email="", as_html=True):
-    """Open pixel + unsubscribe footer. Dönüş: (body, unsub_url)."""
+    """Open pixel (+ gizli unsub URL header için). Görünür 'Abonelikten çık' yok.
+
+    Dönüş: (body, unsub_url) — unsub_url yalnızca List-Unsubscribe header'ına gider.
+    """
     import re
 
     body = body or ""
@@ -309,22 +312,18 @@ def inject_ops_footer(conn, body, *, send_id, contact_id=None, email="", as_html
     uurl = unsub_url(token)
     opixel = open_url(send_id, conn)
     if as_html:
+        # Sadece görünmez open pixel — mail gövdesinde unsub linki yok
         footer = (
-            '<div style="margin-top:24px;padding-top:12px;border-top:1px solid #e5e7eb;'
-            'font-size:12px;color:#6b7280;line-height:1.5;">'
-            f'<a href="{html_lib.escape(uurl, quote=True)}" style="color:#6b7280;">'
-            "Abonelikten çık / Unsubscribe</a>"
             f'<img src="{html_lib.escape(opixel, quote=True)}" width="1" height="1" alt="" '
             'style="display:block;width:1px;height:1px;border:0;" />'
-            "</div>"
         )
         if re.search(r"(?i)</body>", body):
             body = re.sub(r"(?i)</body>", footer + "</body>", body, count=1)
         else:
             body = body + footer
         return body, uurl
-    footer = f"\n\n---\nAbonelikten çık: {uurl}\n"
-    return body + footer, uurl
+    # Plain text: görünür unsub satırı yok
+    return body, uurl
 
 
 def list_unsubscribe_headers(unsub_http_url):
