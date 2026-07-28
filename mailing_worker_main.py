@@ -65,7 +65,11 @@ def main():
         ensure_tenant_schema(conn)
         conn.commit()
 
-    from mail_campaign_worker import ensure_campaign_scheduler, start_campaign_send
+    from mail_campaign_worker import (
+        _tick_scheduled,
+        ensure_campaign_scheduler,
+        start_campaign_send,
+    )
     from mail_scrub import ensure_mail_scrub_schema, reclaim_scrub_jobs
 
     ensure_campaign_scheduler()
@@ -73,15 +77,21 @@ def main():
 
     while True:
         try:
+            # Zamanı gelen scheduled kampanyaları da burada zorla kontrol et
+            # (thread uyusa / kaçırsa diye yedek)
+            try:
+                _tick_scheduled()
+            except Exception as tick_exc:
+                print(f"⚠️  scheduled tick: {tick_exc}")
             with closing(get_db()) as conn:
                 ensure_mail_scrub_schema(conn)
-                # Resume queued campaigns that lost in-process threads
+                # Resume queued/sending campaigns that lost in-process threads
                 rows = fetchall(
                     conn,
                     """
                     SELECT id FROM mail_campaigns
                     WHERE status IN ('queued', 'sending')
-                    ORDER BY id ASC LIMIT 10
+                    ORDER BY id ASC LIMIT 15
                     """,
                 ) or []
                 for r in rows:
@@ -96,7 +106,7 @@ def main():
                 print(f"✉️  scrub reclaim started={n_scrub}")
         except Exception as exc:
             print(f"⚠️  worker loop: {exc}")
-        time.sleep(25)
+        time.sleep(12)
 
 
 if __name__ == "__main__":

@@ -4030,9 +4030,14 @@ def create_mailing_blueprint(permission_required):
             rate = 120
         rate = max(1, min(rate, 6000))
         scheduled_raw = (data.get("scheduled_at") or "").strip() or None
-        # datetime-local → ISO
-        if scheduled_raw and "T" in scheduled_raw and len(scheduled_raw) == 16:
-            scheduled_raw = scheduled_raw + ":00"
+        # datetime-local (TR) → timezone-aware ISO
+        if scheduled_raw:
+            try:
+                from mail_campaign_worker import normalize_scheduled_at
+                scheduled_raw = normalize_scheduled_at(scheduled_raw) or scheduled_raw
+            except Exception:
+                if "T" in scheduled_raw and len(scheduled_raw) == 16:
+                    scheduled_raw = scheduled_raw + ":00"
         with closing(get_db()) as conn:
             from mail_scrub import scrub_settings as _scrub_settings
             scrub_cfg = _scrub_settings(conn)
@@ -4328,8 +4333,13 @@ def create_mailing_blueprint(permission_required):
             scheduled_raw = data.get("scheduled_at") if "scheduled_at" in data else row.get("scheduled_at")
             if isinstance(scheduled_raw, str):
                 scheduled_raw = scheduled_raw.strip() or None
-                if scheduled_raw and "T" in scheduled_raw and len(scheduled_raw) == 16:
-                    scheduled_raw = scheduled_raw + ":00"
+                if scheduled_raw:
+                    try:
+                        from mail_campaign_worker import normalize_scheduled_at
+                        scheduled_raw = normalize_scheduled_at(scheduled_raw) or scheduled_raw
+                    except Exception:
+                        if "T" in scheduled_raw and len(scheduled_raw) == 16:
+                            scheduled_raw = scheduled_raw + ":00"
             try:
                 rate = int(data.get("rate_per_minute") if "rate_per_minute" in data else (row.get("rate_per_minute") or 120))
             except (TypeError, ValueError):

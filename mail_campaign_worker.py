@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from database import execute, fetchall, fetchone, get_db, get_mail_setting, iso, scalar, utcnow
 from mail_delivery import deliver_mail
@@ -14,20 +14,53 @@ _lock = threading.Lock()
 _running = set()
 _scheduler_started = False
 
+# Panel datetime-local = operatör saati (TR). Naive değerler UTC sanılmasın.
+try:
+    from zoneinfo import ZoneInfo
+
+    OP_TZ = ZoneInfo("Europe/Istanbul")
+except Exception:
+    OP_TZ = timezone(timedelta(hours=3))
+
 
 def _parse_iso(value):
-    text = (value or "").strip()
+    """scheduled_at → timezone-aware UTC datetime.
+
+    Naive ISO (datetime-local) = Europe/Istanbul. Aksi halde eski mailler
+    3 saat geç başlardı / hiç tetiklenmez gibi görünürdü.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=OP_TZ)
+        return dt.astimezone(timezone.utc)
+    text = str(value).strip()
     if not text:
         return None
     try:
         if text.endswith("Z"):
             text = text[:-1] + "+00:00"
+        # "2026-07-28 15:00:00" → ISO
+        if " " in text and "T" not in text:
+            text = text.replace(" ", "T", 1)
         dt = datetime.fromisoformat(text)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
+            dt = dt.replace(tzinfo=OP_TZ)
+        return dt.astimezone(timezone.utc)
     except ValueError:
         return None
+
+
+def normalize_scheduled_at(raw):
+    """API'den gelen zamanı saklanabilir ISO'ya çevir (TR → +03:00 koru)."""
+    dt = _parse_iso(raw)
+    if not dt:
+        return None
+    # İstanbul offset ile sakla — okuyunca belirsiz kalmasın
+    local = dt.astimezone(OP_TZ)
+    return local.isoformat(timespec="seconds")
 
 
 def is_campaign_running(campaign_id):
@@ -64,46 +97,71 @@ def _scheduler_loop():
             _tick_scheduled()
         except Exception as exc:
             print(f"⚠️  mail campaign scheduler: {exc}")
-        time.sleep(20)
+        time.sleep(8)
 
 
 def _tick_scheduled():
+    """Zamanı gelen scheduled + bekleyen queued kampanyaları başlat."""
     now = utcnow()
     now_iso = iso(now)
+    due = []
     with closing(get_db()) as conn:
-        rows = fetchall(
+        # 1) Zamanı gelenler — kuyruk LIMIT'ine takılmasın
+        scheduled_rows = fetchall(
             conn,
             """
             SELECT id, scheduled_at, status FROM mail_campaigns
-            WHERE status IN ('scheduled', 'queued')
+            WHERE status = 'scheduled'
+            ORDER BY id ASC
+            LIMIT 50
+            """,
+        ) or []
+        for r in scheduled_rows:
+            cid = int(r["id"])
+            if is_campaign_running(cid):
+                continue
+            sched = _parse_iso(r.get("scheduled_at"))
+            if sched is None or sched <= now:
+                due.append(cid)
+                print(
+                    f"✉️  campaign #{cid} due "
+                    f"(scheduled_at={r.get('scheduled_at')!r} now_utc={now_iso})"
+                )
+
+        # 2) Kuyruktakiler
+        queued_rows = fetchall(
+            conn,
+            """
+            SELECT id FROM mail_campaigns
+            WHERE status = 'queued'
             ORDER BY id ASC
             LIMIT 20
             """,
-        )
-        due = []
-        for r in rows:
-            cid = r["id"]
-            if is_campaign_running(cid):
-                continue
-            if r["status"] == "queued":
+        ) or []
+        for r in queued_rows:
+            cid = int(r["id"])
+            if not is_campaign_running(cid) and cid not in due:
                 due.append(cid)
-                continue
-            sched = _parse_iso(r.get("scheduled_at"))
-            if sched and sched <= now:
-                due.append(cid)
-            elif not sched and r["status"] == "scheduled":
-                # Zaman yoksa hemen başlat
-                due.append(cid)
+
         for cid in due:
             execute(
                 conn,
-                "UPDATE mail_campaigns SET status = 'queued', updated_at = ? WHERE id = ? AND status IN ('scheduled', 'queued')",
-                (now_iso, cid),
+                """
+                UPDATE mail_campaigns
+                SET status = 'queued',
+                    queued_at = COALESCE(queued_at, ?),
+                    updated_at = ?
+                WHERE id = ? AND status IN ('scheduled', 'queued')
+                """,
+                (now_iso, now_iso, cid),
             )
         if due:
             conn.commit()
+
     for cid in due:
-        start_campaign_send(cid)
+        started = start_campaign_send(cid)
+        if started:
+            print(f"✉️  campaign #{cid} send thread started")
 
 
 def _campaign_cancelled(conn, campaign_id):
