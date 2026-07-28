@@ -98,32 +98,43 @@ def cta_button(
     pad: str = "14px 28px",
     width_pct: int | None = None,
 ) -> str:
-    """Bulletproof table CTA → https://makrovip.com/Vipmail."""
+    """İç buton — HTML width=\"100%\" KULLANMA (padding’li hücrede sağa taşar)."""
     bg = "linear-gradient(180deg,#ffe066 0%,#ffcc00 45%,#e6b800 100%)" if gradient else GOLD
-    bg_solid = GOLD  # email clients that ignore gradient
+    bg_solid = GOLD
     shadow = (
         "box-shadow:0 0 0 2px rgba(255,204,0,0.35),0 8px 24px rgba(255,204,0,0.35);"
         if glow
         else ""
     )
-    w_attr = f' width="{width_pct}%"' if width_pct else ""
-    w_style = f"width:{width_pct}%;" if width_pct else ("width:100%;max-width:420px;" if wide else "")
-    a_display = "block" if (wide or width_pct) else "inline-block"
-    a_width = "width:100%;" if (wide or width_pct) else ""
+    link = (
+        f'<a href="{CTA}" target="_blank" rel="noopener" '
+        f'style="display:block;box-sizing:border-box;background-color:{bg_solid};background:{bg};'
+        f"color:{CTA_INK};font-family:{FONT};font-size:{font_px}px;font-weight:800;"
+        f'line-height:1.2;text-decoration:none;padding:{pad};border-radius:12px;text-align:center;">'
+        f"{label}</a>"
+    )
+    cell = (
+        f'<td align="center" bgcolor="{bg_solid}" '
+        f'style="background-color:{bg_solid};background:{bg};border-radius:12px;'
+        f'mso-padding-alt:{pad};{shadow}">{link}</td>'
+    )
+    if width_pct is not None:
+        return f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"
+  style="margin:0 auto;width:{int(width_pct)}%;max-width:{int(width_pct)}%;border-collapse:collapse;">
+  <tr>{cell}</tr>
+</table>"""
+    if wide:
+        # Kartlarla aynı: dış 20px padding cta_row’da; burada sadece içerik genişliği
+        return f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"
+  style="width:100%;max-width:100%;border-collapse:collapse;">
+  <tr>{cell}</tr>
+</table>"""
     return f"""
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"
-  style="margin:0 auto;{w_style}"{w_attr}>
-  <tr>
-    <td align="center" bgcolor="{bg_solid}"
-      style="background-color:{bg_solid};background:{bg};border-radius:12px;
-      mso-padding-alt:{pad};{shadow}">
-      <a href="{CTA}" target="_blank" rel="noopener"
-        style="display:{a_display};{a_width}background-color:{bg_solid};background:{bg};
-        color:{CTA_INK};font-family:{FONT};font-size:{font_px}px;font-weight:800;
-        line-height:1.2;text-decoration:none;padding:{pad};border-radius:12px;
-        text-align:center;">{label}</a>
-    </td>
-  </tr>
+  style="margin:0 auto;border-collapse:collapse;">
+  <tr>{cell}</tr>
 </table>"""
 
 
@@ -137,7 +148,7 @@ def cta_row(
     pad: str = "14px 28px",
     width_pct: int | None = None,
 ) -> str:
-    # Kartlarla aynı 20px dış padding — geniş CTA tam hizalı
+    """Kartlarla aynı dış gutter: padding 10px 20px 20px — taşma yok."""
     btn = cta_button(
         label,
         wide=wide,
@@ -145,15 +156,14 @@ def cta_row(
         gradient=gradient,
         font_px=font_px,
         pad=pad,
-        width_pct=100 if wide and width_pct is None else width_pct,
+        width_pct=width_pct,
     )
     return f"""
           <tr>
-            <td align="center" style="padding:10px 20px 20px;">
+            <td align="left" style="padding:10px 20px 20px;">
               {btn}
             </td>
           </tr>"""
-
 def hero_image(src: str, alt: str, width: int = 300, *, soft: bool = False, glow: bool = False) -> str:
     radius = "18px" if soft else "0"
     shadow = (
