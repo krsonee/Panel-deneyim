@@ -89,14 +89,23 @@ def main():
                 rows = fetchall(
                     conn,
                     """
-                    SELECT id FROM mail_campaigns
+                    SELECT id, scheduled_at, sent_count, status FROM mail_campaigns
                     WHERE status IN ('queued', 'sending')
                     ORDER BY id ASC LIMIT 15
                     """,
                 ) or []
+                from mail_campaign_worker import schedule_is_future
                 for r in rows:
                     try:
-                        start_campaign_send(int(r["id"]))
+                        cid = int(r["id"])
+                        # Gelecek saatli + henüz mail gitmemiş → resume etme
+                        if (
+                            int(r.get("sent_count") or 0) <= 0
+                            and r.get("scheduled_at")
+                            and schedule_is_future(r.get("scheduled_at"))
+                        ):
+                            continue
+                        start_campaign_send(cid)
                     except Exception as exc:
                         print(f"⚠️  resume campaign {r['id']}: {exc}")
                 _tick_warm_domains(conn)

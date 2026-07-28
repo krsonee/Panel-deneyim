@@ -3953,8 +3953,12 @@ def create_mailing_blueprint(permission_required):
                     (r["id"],),
                 ) or 0
                 r["is_running"] = is_campaign_running(r["id"])
-                # Worker düştüyse queued/sending'i yeniden başlat
+                # Worker düştüyse queued/sending'i yeniden başlat —
+                # AMA gelecekteki schedule'ı olanları ASLA (erken gönderim)
                 if r["status"] in ("queued", "sending") and not r["is_running"] and r["pending_count"] > 0:
+                    from mail_campaign_worker import schedule_is_future
+                    if r.get("scheduled_at") and schedule_is_future(r.get("scheduled_at")) and int(r.get("sent_count") or 0) <= 0:
+                        continue
                     start_campaign_send(r["id"])
                     r["is_running"] = True
         return jsonify({"campaigns": rows})
@@ -4410,15 +4414,19 @@ def create_mailing_blueprint(permission_required):
             scheduled_at = camp.get("scheduled_at")
             start_immediately = force_now
             if not start_immediately and scheduled_at:
-                from mail_campaign_worker import _parse_iso
+                from mail_campaign_worker import _parse_iso, schedule_is_future
                 sched = _parse_iso(scheduled_at)
-                if sched and sched > now_dt:
+                if not sched:
+                    return jsonify({
+                        "error": "Zamanlama saati okunamadı — kampanya başlatılmadı. Saati tekrar seç."
+                    }), 400
+                if schedule_is_future(scheduled_at, now=now_dt):
                     execute(
                         conn,
                         """
                         UPDATE mail_campaigns
                         SET status = 'scheduled', total_count = COALESCE(NULLIF(total_count, 0), ?),
-                            updated_at = ?, error = ''
+                            queued_at = NULL, updated_at = ?, error = ''
                         WHERE id = ?
                         """,
                         (pending, now, campaign_id),
@@ -4431,8 +4439,9 @@ def create_mailing_blueprint(permission_required):
                         "scheduled_at": scheduled_at,
                         "pending": pending,
                         "mode": mode,
-                        "message": f"Kampanya zamanlandı · {pending} alıcı · {scheduled_at}",
+                        "message": f"Kampanya zamanlandı · {pending} alıcı · {scheduled_at} (saat gelince başlar)",
                     })
+                # Saat geçmiş → kullanıcı bilinçli gönderiyor sayılır, aşağıda kuyruk
 
             execute(
                 conn,

@@ -54,13 +54,30 @@ def _parse_iso(value):
 
 
 def normalize_scheduled_at(raw):
-    """API'den gelen zamanı saklanabilir ISO'ya çevir (TR → +03:00 koru)."""
+    """API zamanını UTC ISO (Z) olarak sakla — karşılaştırma belirsiz olmasın."""
     dt = _parse_iso(raw)
     if not dt:
         return None
-    # İstanbul offset ile sakla — okuyunca belirsiz kalmasın
-    local = dt.astimezone(OP_TZ)
-    return local.isoformat(timespec="seconds")
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def schedule_is_due(scheduled_at, *, now=None, skew_seconds: int = 0) -> bool:
+    """True yalnızca parse edilebilen ve zamanı gelmiş schedule için."""
+    sched = _parse_iso(scheduled_at)
+    if sched is None:
+        return False
+    now = now or utcnow()
+    if skew_seconds:
+        now = now - timedelta(seconds=int(skew_seconds))
+    return sched <= now
+
+
+def schedule_is_future(scheduled_at, *, now=None) -> bool:
+    sched = _parse_iso(scheduled_at)
+    if sched is None:
+        return False
+    now = now or utcnow()
+    return sched > now
 
 
 def is_campaign_running(campaign_id):
@@ -101,12 +118,15 @@ def _scheduler_loop():
 
 
 def _tick_scheduled():
-    """Zamanı gelen scheduled + bekleyen queued kampanyaları başlat."""
+    """Zamanı gelen scheduled + gerçekten kuyruktaki kampanyaları başlat.
+
+    ÖNEMLİ: scheduled_at parse edilemezse / gelecekteyse ASLA başlatma.
+    """
     now = utcnow()
     now_iso = iso(now)
     due = []
     with closing(get_db()) as conn:
-        # 1) Zamanı gelenler — kuyruk LIMIT'ine takılmasın
+        # 1) Sadece zamanı GELMİŞ scheduled
         scheduled_rows = fetchall(
             conn,
             """
@@ -120,19 +140,29 @@ def _tick_scheduled():
             cid = int(r["id"])
             if is_campaign_running(cid):
                 continue
-            sched = _parse_iso(r.get("scheduled_at"))
-            if sched is None or sched <= now:
-                due.append(cid)
+            raw = r.get("scheduled_at")
+            if not raw:
+                print(f"⚠️  campaign #{cid} scheduled ama scheduled_at boş — bekletiliyor")
+                continue
+            if schedule_is_future(raw, now=now):
+                continue
+            if not schedule_is_due(raw, now=now):
                 print(
-                    f"✉️  campaign #{cid} due "
-                    f"(scheduled_at={r.get('scheduled_at')!r} now_utc={now_iso})"
+                    f"⚠️  campaign #{cid} scheduled_at parse edilemedi "
+                    f"({raw!r}) — gönderim YOK"
                 )
+                continue
+            due.append(cid)
+            print(
+                f"✉️  campaign #{cid} due "
+                f"(scheduled_at={raw!r} now_utc={now_iso})"
+            )
 
-        # 2) Kuyruktakiler
+        # 2) Kuyruk — geleceğe ayarlı yanlışlıkla queued kalanları geri al
         queued_rows = fetchall(
             conn,
             """
-            SELECT id FROM mail_campaigns
+            SELECT id, scheduled_at, sent_count FROM mail_campaigns
             WHERE status = 'queued'
             ORDER BY id ASC
             LIMIT 20
@@ -140,8 +170,25 @@ def _tick_scheduled():
         ) or []
         for r in queued_rows:
             cid = int(r["id"])
-            if not is_campaign_running(cid) and cid not in due:
-                due.append(cid)
+            if is_campaign_running(cid) or cid in due:
+                continue
+            raw = r.get("scheduled_at")
+            sent = int(r.get("sent_count") or 0)
+            # Henüz mail gitmemiş + saat gelecekte → scheduled'a geri çek
+            if sent <= 0 and raw and schedule_is_future(raw, now=now):
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_campaigns
+                    SET status = 'scheduled', queued_at = NULL, updated_at = ?,
+                        error = 'Zamanı gelmeden kuyruğa alınmıştı — tekrar zamanlandı'
+                    WHERE id = ? AND status = 'queued'
+                    """,
+                    (now_iso, cid),
+                )
+                print(f"✉️  campaign #{cid} future schedule — queued→scheduled")
+                continue
+            due.append(cid)
 
         for cid in due:
             execute(
@@ -150,7 +197,8 @@ def _tick_scheduled():
                 UPDATE mail_campaigns
                 SET status = 'queued',
                     queued_at = COALESCE(queued_at, ?),
-                    updated_at = ?
+                    updated_at = ?,
+                    error = ''
                 WHERE id = ? AND status IN ('scheduled', 'queued')
                 """,
                 (now_iso, now_iso, cid),
@@ -202,7 +250,8 @@ def _process_campaign(campaign_id):
     # Lazy import — circular: mailing_routes helpers
     from mailing_routes import _inject_tracking, _plain_to_html, _render_template
 
-    now = iso(utcnow())
+    now_dt = utcnow()
+    now = iso(now_dt)
     with closing(get_db()) as conn:
         camp = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (campaign_id,))
         if not camp:
@@ -210,6 +259,28 @@ def _process_campaign(campaign_id):
         camp = dict(camp) if not isinstance(camp, dict) else camp
         if camp["status"] in ("done", "cancelled", "error"):
             return
+
+        # Güvenlik: saat gelmeden gönderim YOK (canlı giden kampanyaya dokunma)
+        sent_so_far = int(camp.get("sent_count") or 0)
+        raw_sched = camp.get("scheduled_at")
+        if sent_so_far <= 0 and raw_sched and schedule_is_future(raw_sched, now=now_dt):
+            execute(
+                conn,
+                """
+                UPDATE mail_campaigns
+                SET status = 'scheduled', queued_at = NULL, updated_at = ?,
+                    error = 'Saat gelmeden başlatma engellendi'
+                WHERE id = ? AND status IN ('queued', 'sending', 'scheduled')
+                """,
+                (now, campaign_id),
+            )
+            conn.commit()
+            print(
+                f"✉️  campaign #{campaign_id} blocked — not due yet "
+                f"(scheduled_at={raw_sched!r})"
+            )
+            return
+
         tpl = fetchone(conn, "SELECT * FROM mail_templates WHERE id = ?", (camp["template_id"],))
         if not tpl:
             execute(

@@ -275,6 +275,25 @@
     }
   }
 
+  /** datetime-local (tarayıcı yerel saati) → UTC ISO Z — sunucu TR varsaymasın */
+  function mailScheduleLocalToUtcIso(localVal) {
+    if (!localVal) return "";
+    var v = String(localVal).trim();
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) v += ":00";
+    var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(v);
+    if (!m) return v;
+    var d = new Date(
+      Number(m[1]),
+      Number(m[2]) - 1,
+      Number(m[3]),
+      Number(m[4]),
+      Number(m[5]),
+      Number(m[6] || 0)
+    );
+    if (isNaN(d.getTime())) return v;
+    return d.toISOString();
+  }
+
   function fmtNum(n) {
     n = Number(n) || 0;
     try { return n.toLocaleString("tr-TR"); } catch (e) { return String(n); }
@@ -3997,9 +4016,10 @@
       var tags = mode === "tag" ? mailCampSelectedTags() : [];
       var picks = mailReadCampSelectedIds();
       var when = mailCampWhenMode();
-      var scheduled = when === "schedule"
+      var scheduledLocal = when === "schedule"
         ? ((document.getElementById("mail-camp-schedule") || {}).value || "").trim()
         : "";
+      var scheduled = scheduledLocal ? mailScheduleLocalToUtcIso(scheduledLocal) : "";
       var body = {
         recipient_mode: mode,
         tag_filter: tags.join(", "),
@@ -4087,9 +4107,20 @@
           return;
         }
         var when = mailCampWhenMode();
-        if (when === "schedule" && !body.scheduled_at) {
-          mailToast("Zamanla seçili — gönderim zamanı seç");
-          return;
+        if (when === "schedule") {
+          if (!body.scheduled_at) {
+            mailToast("Zamanla seçili — gönderim zamanı seç");
+            return;
+          }
+          var schedMs = Date.parse(body.scheduled_at);
+          if (!schedMs || isNaN(schedMs)) {
+            mailToast("Zaman okunamadı — tekrar seç");
+            return;
+          }
+          if (schedMs <= Date.now() + 45000) {
+            mailToast("Zamanlama en az ~1 dk sonrası olmalı (şimdi göndermek için «Hemen» seç)");
+            return;
+          }
         }
         var submitBtn = campForm.querySelector('button[type="submit"]');
         if (submitBtn) submitBtn.disabled = true;
