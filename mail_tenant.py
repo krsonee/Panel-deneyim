@@ -294,38 +294,28 @@ def ensure_tenant_schema(conn) -> None:
             """,
             ("makro", "Makro", "Platform tenant (migrated)", now, now),
         )
-    # Allocate all existing domains to makro if none allocated
-    makro = fetchone(conn, "SELECT id FROM mail_tenants WHERE slug = ?", ("makro",))
-    if makro:
-        tid = int(makro["id"])
-        for d in fetchall(conn, "SELECT id FROM mail_domains") or []:
-            did = int(d["id"])
-            exists = scalar(
-                conn,
-                "SELECT COUNT(*) FROM mail_domain_allocations WHERE domain_id = ? AND tenant_id = ?",
-                (did, tid),
-            )
-            if not exists:
-                insert_returning_id(
-                    conn,
-                    """
-                    INSERT INTO mail_domain_allocations (domain_id, tenant_id, exclusive, created_at)
-                    VALUES (?, ?, 0, ?)
-                    """,
-                    (did, tid, now),
-                )
-        try:
-            execute(conn, "UPDATE mail_domains SET platform_owned = 1 WHERE platform_owned IS NULL")
-            execute(
-                conn,
-                "UPDATE mail_domains SET warm_status = COALESCE(NULLIF(warm_status, ''), 'cold')",
-            )
-        except Exception:
-            pass
-        try:
-            heal_ready_domains(conn)
-        except Exception as exc:
-            print(f"⚠️  heal_ready_domains: {exc}")
+    # ESKİ BUG: her ensure’da “makro tahsisi yoksa ekle” → X ile silinen makro geri geliyordu.
+    # Artık otomatik tahsis YOK; operatör Domain havuzu’ndan elle bağlar.
+    try:
+        from database import get_mail_setting, upsert_mail_setting
+
+        boot_flag = "makro_domain_alloc_bootstrap_v2"
+        if (get_mail_setting(conn, boot_flag, "") or "").strip() != "1":
+            upsert_mail_setting(conn, boot_flag, "1")
+    except Exception:
+        pass
+    try:
+        execute(conn, "UPDATE mail_domains SET platform_owned = 1 WHERE platform_owned IS NULL")
+        execute(
+            conn,
+            "UPDATE mail_domains SET warm_status = COALESCE(NULLIF(warm_status, ''), 'cold')",
+        )
+    except Exception:
+        pass
+    try:
+        heal_ready_domains(conn)
+    except Exception as exc:
+        print(f"⚠️  heal_ready_domains: {exc}")
 
     # Bootstrap superadmin from env if empty
     if not scalar(conn, "SELECT COUNT(*) FROM mail_superadmins"):
