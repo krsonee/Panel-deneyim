@@ -67,55 +67,116 @@ def logo_block(width: int = 180) -> str:
     )
 
 
-def badge(label: str, *, solid: bool = True) -> str:
+def badge(label: str, *, solid: bool = True, glow: bool = False) -> str:
+    glow_css = (
+        f"box-shadow:0 0 0 3px rgba(255,204,0,0.22),0 0 18px rgba(255,204,0,0.45);"
+        if glow
+        else ""
+    )
     if solid:
         return (
             f'<span style="display:inline-block;background:{GOLD};color:{CTA_INK};'
-            f"font-family:{FONT};font-size:11px;font-weight:800;letter-spacing:0.08em;"
-            f'text-transform:uppercase;padding:6px 14px;border-radius:999px;">{label}</span>'
+            f"font-family:{FONT};font-size:11px;font-weight:800;letter-spacing:0.1em;"
+            f"text-transform:uppercase;padding:8px 18px;border-radius:999px;{glow_css}"
+            f'">{label}</span>'
         )
     return (
         f'<span style="display:inline-block;background:{GOLD_SOFT_BG};color:{GOLD};'
-        f"font-family:{FONT};font-size:11px;font-weight:800;letter-spacing:0.08em;"
-        f"text-transform:uppercase;padding:6px 14px;border-radius:999px;"
-        f'border:1px solid #5a4208;">{label}</span>'
+        f"font-family:{FONT};font-size:11px;font-weight:800;letter-spacing:0.1em;"
+        f"text-transform:uppercase;padding:8px 18px;border-radius:999px;"
+        f'border:1px solid #5a4208;{glow_css}">{label}</span>'
     )
 
 
-def cta_button(label: str) -> str:
-    """Bulletproof table CTA — no MSO hacks that shift buttons."""
+def cta_button(
+    label: str,
+    *,
+    wide: bool = False,
+    glow: bool = False,
+    gradient: bool = False,
+    font_px: int = 15,
+    pad: str = "14px 28px",
+    width_pct: int | None = None,
+) -> str:
+    """Bulletproof table CTA → https://makrovip.com/Vipmail."""
+    bg = "linear-gradient(180deg,#ffe066 0%,#ffcc00 45%,#e6b800 100%)" if gradient else GOLD
+    bg_solid = GOLD  # email clients that ignore gradient
+    shadow = (
+        "box-shadow:0 0 0 2px rgba(255,204,0,0.35),0 8px 24px rgba(255,204,0,0.35);"
+        if glow
+        else ""
+    )
+    w_attr = f' width="{width_pct}%"' if width_pct else ""
+    w_style = f"width:{width_pct}%;" if width_pct else ("width:100%;max-width:420px;" if wide else "")
+    a_display = "block" if (wide or width_pct) else "inline-block"
+    a_width = "width:100%;" if (wide or width_pct) else ""
     return f"""
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"
+  style="margin:0 auto;{w_style}"{w_attr}>
   <tr>
-    <td align="center" bgcolor="{GOLD}" style="background-color:{GOLD};border-radius:12px;mso-padding-alt:14px 28px;">
+    <td align="center" bgcolor="{bg_solid}"
+      style="background-color:{bg_solid};background:{bg};border-radius:12px;
+      mso-padding-alt:{pad};{shadow}">
       <a href="{CTA}" target="_blank" rel="noopener"
-        style="display:inline-block;background-color:{GOLD};color:{CTA_INK};
-        font-family:{FONT};font-size:15px;font-weight:800;line-height:1.2;
-        text-decoration:none;padding:14px 28px;border-radius:12px;">{label}</a>
+        style="display:{a_display};{a_width}background-color:{bg_solid};background:{bg};
+        color:{CTA_INK};font-family:{FONT};font-size:{font_px}px;font-weight:800;
+        line-height:1.2;text-decoration:none;padding:{pad};border-radius:12px;
+        text-align:center;">{label}</a>
     </td>
   </tr>
 </table>"""
 
 
-def cta_row(label: str) -> str:
+def cta_row(
+    label: str,
+    *,
+    wide: bool = False,
+    glow: bool = False,
+    gradient: bool = False,
+    font_px: int = 15,
+    pad: str = "14px 28px",
+    width_pct: int | None = None,
+) -> str:
     return f"""
           <tr>
-            <td align="center" style="padding:8px 20px 18px;">
-              {cta_button(label)}
+            <td align="center" style="padding:10px 20px 20px;">
+              {cta_button(
+                  label,
+                  wide=wide,
+                  glow=glow,
+                  gradient=gradient,
+                  font_px=font_px,
+                  pad=pad,
+                  width_pct=width_pct,
+              )}
             </td>
           </tr>"""
 
 
-def hero_image(src: str, alt: str, width: int = 300) -> str:
+def hero_image(src: str, alt: str, width: int = 300, *, soft: bool = False, glow: bool = False) -> str:
+    radius = "18px" if soft else "0"
+    shadow = (
+        "box-shadow:0 0 28px rgba(255,204,0,0.35),0 0 0 1px rgba(255,204,0,0.2);"
+        if glow
+        else ""
+    )
     return f"""
           <tr>
-            <td align="center" bgcolor="{BG}" style="padding:2px 24px 10px;background-color:{BG};">
+            <td align="center" bgcolor="{BG}" style="padding:4px 24px 12px;background-color:{BG};">
               <a href="{CTA}" target="_blank" rel="noopener" style="text-decoration:none;border:0;">
                 <img src="{src}" alt="{alt}" width="{width}" border="0"
                   style="display:block;margin:0 auto;width:100%;max-width:{width}px;height:auto;
-                  border:0;outline:none;background-color:{BG};">
+                  border:0;outline:none;background-color:transparent;border-radius:{radius};{shadow}">
               </a>
             </td>
+          </tr>"""
+
+
+def gold_subhead(text: str) -> str:
+    return f"""
+          <tr>
+            <td align="center" style="padding:0 22px 14px;font-family:{FONT};font-size:16px;
+              line-height:1.4;font-weight:800;color:{GOLD};">{text}</td>
           </tr>"""
 
 
@@ -127,19 +188,22 @@ def eyebrow(text: str) -> str:
           </tr>"""
 
 
-def headline(text: str) -> str:
+def headline(text: str, *, size: int = 22, color: str | None = None) -> str:
+    c = color or TEXT
     return f"""
           <tr>
-            <td align="center" style="padding:0 20px 10px;font-family:{FONT};font-size:22px;
-              line-height:1.3;font-weight:800;color:{TEXT};">{text}</td>
+            <td align="center" style="padding:0 20px 10px;font-family:{FONT};font-size:{size}px;
+              line-height:1.3;font-weight:800;color:{c};">{text}</td>
           </tr>"""
 
 
-def lead(text: str) -> str:
+def lead(text: str, *, size: int = 14, emphasize: bool = False) -> str:
+    color = TEXT if emphasize else MUTED
+    weight = "700" if emphasize else "400"
     return f"""
           <tr>
-            <td align="center" style="padding:0 22px 14px;font-family:{FONT};font-size:14px;
-              line-height:1.55;color:{MUTED};">{text}</td>
+            <td align="center" style="padding:0 22px 14px;font-family:{FONT};font-size:{size}px;
+              line-height:1.55;font-weight:{weight};color:{color};">{text}</td>
           </tr>"""
 
 
@@ -203,17 +267,43 @@ def feature_box(
           </tr>"""
 
 
-def promo_card(title: str, desc: str) -> str:
+def promo_card(
+    title: str,
+    desc: str,
+    *,
+    highlight: bool = False,
+    icon: str | None = None,
+    pad_y: int = 12,
+) -> str:
+    border = (
+        f"border:2px solid {GOLD};border-left:5px solid {GOLD};"
+        if highlight
+        else f"border:1px solid {BORDER};border-left:4px solid {GOLD};"
+    )
+    bg = CARD if highlight else ROW
+    icon_cell = ""
+    if icon:
+        icon_cell = f"""
+                  <td width="44" valign="middle" style="padding:{pad_y}px 0 {pad_y}px 12px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="32" height="32">
+                      <tr>
+                        <td align="center" valign="middle" bgcolor="{GOLD_SOFT_BG}"
+                          style="width:32px;height:32px;background-color:{GOLD_SOFT_BG};border-radius:8px;
+                          border:1px solid #5a4208;font-family:{FONT};font-size:14px;line-height:1;">{icon}</td>
+                      </tr>
+                    </table>
+                  </td>"""
     return f"""
           <tr>
-            <td style="padding:0 20px 8px;">
+            <td style="padding:0 20px 10px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                bgcolor="{ROW}"
-                style="background-color:{ROW};border:1px solid {BORDER};border-left:3px solid {GOLD};border-radius:12px;">
+                bgcolor="{bg}"
+                style="background-color:{bg};{border}border-radius:12px;">
                 <tr>
-                  <td style="padding:13px 14px;">
+                  {icon_cell}
+                  <td style="padding:{pad_y}px 14px;">
                     <div style="font-family:{FONT};font-size:14px;font-weight:800;color:{GOLD};line-height:1.3;">{title}</div>
-                    <div style="font-family:{FONT};font-size:12px;color:{MUTED};line-height:1.5;margin-top:5px;">{desc}</div>
+                    <div style="font-family:{FONT};font-size:12px;color:{MUTED};line-height:1.55;margin-top:6px;">{desc}</div>
                   </td>
                 </tr>
               </table>
@@ -224,26 +314,26 @@ def promo_card(title: str, desc: str) -> str:
 def numbered_promo(n: int, title: str, desc: str) -> str:
     return f"""
           <tr>
-            <td style="padding:0 20px 8px;">
+            <td style="padding:0 20px 10px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
                 bgcolor="{ROW}"
-                style="background-color:{ROW};border:1px solid {BORDER};border-left:3px solid {GOLD};border-radius:12px;">
+                style="background-color:{ROW};border:1px solid {BORDER};border-left:5px solid {GOLD};border-radius:12px;">
                 <tr>
-                  <td width="40" valign="top" style="padding:13px 0 13px 12px;">
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="26" height="26"
-                      style="width:26px;height:26px;">
+                  <td width="48" valign="middle" align="center" style="padding:14px 0 14px 12px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="30" height="30"
+                      style="width:30px;height:30px;margin:0 auto;">
                       <tr>
-                        <td align="center" valign="middle" bgcolor="{GOLD_SOFT_BG}"
-                          style="width:26px;height:26px;background-color:{GOLD_SOFT_BG};border-radius:50%;
-                          border:1px solid #5a4208;font-family:{FONT};font-size:12px;font-weight:800;color:{GOLD};">
+                        <td align="center" valign="middle" bgcolor="{GOLD}"
+                          style="width:30px;height:30px;background-color:{GOLD};border-radius:50%;
+                          font-family:{FONT};font-size:13px;font-weight:900;color:{CTA_INK};line-height:30px;">
                           {n}
                         </td>
                       </tr>
                     </table>
                   </td>
-                  <td valign="top" style="padding:12px 14px 12px 6px;">
-                    <div style="font-family:{FONT};font-size:13px;font-weight:800;color:{GOLD};line-height:1.3;">{title}</div>
-                    <div style="font-family:{FONT};font-size:12px;color:{MUTED};margin-top:4px;line-height:1.5;">{desc}</div>
+                  <td valign="middle" style="padding:14px 14px 14px 8px;">
+                    <div style="font-family:{FONT};font-size:14px;font-weight:800;color:{GOLD};line-height:1.3;">{title}</div>
+                    <div style="font-family:{FONT};font-size:12px;color:{MUTED};margin-top:5px;line-height:1.55;">{desc}</div>
                   </td>
                 </tr>
               </table>
@@ -251,21 +341,72 @@ def numbered_promo(n: int, title: str, desc: str) -> str:
           </tr>"""
 
 
-def promo_cards(items: Sequence[tuple[str, str]]) -> str:
-    return "".join(promo_card(t, d) for t, d in items)
+def promo_cards(
+    items: Sequence[tuple[str, str]],
+    *,
+    highlight_first: int = 0,
+    icons: Sequence[str] | None = None,
+    pad_y: int = 12,
+) -> str:
+    out = []
+    for i, (t, d) in enumerate(items):
+        icon = icons[i] if icons and i < len(icons) else None
+        out.append(
+            promo_card(
+                t,
+                d,
+                highlight=(i < highlight_first),
+                icon=icon,
+                pad_y=pad_y,
+            )
+        )
+    return "".join(out)
 
 
 def numbered_list(items: Sequence[tuple[str, str]]) -> str:
     return "".join(numbered_promo(i, t, d) for i, (t, d) in enumerate(items, 1))
 
 
-def footer_legal() -> str:
+def dual_feature_cards(left: tuple[str, str], right: tuple[str, str]) -> str:
+    """İki vurgulu kart — yan yana (mobilde alt alta düşer)."""
+
+    def cell(title: str, desc: str) -> str:
+        return f"""
+                <td width="50%" valign="top" style="padding:0 5px 10px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                    bgcolor="{CARD}"
+                    style="background-color:{CARD};border:2px solid {GOLD};border-radius:12px;">
+                    <tr>
+                      <td style="padding:14px 12px;">
+                        <div style="font-family:{FONT};font-size:13px;font-weight:800;color:{GOLD};line-height:1.3;">{title}</div>
+                        <div style="font-family:{FONT};font-size:12px;color:{MUTED};line-height:1.5;margin-top:6px;">{desc}</div>
+                      </td>
+                    </tr>
+                  </table>
+                </td>"""
+
     return f"""
           <tr>
-            <td align="center" style="padding:12px 20px 22px;font-family:{FONT};font-size:11px;
-              line-height:1.5;color:{MUTED};border-top:1px solid {BORDER};">
-              Spam’de butonlar kilitli · Spam değil deyip tekrar dene<br>
-              18+ · Sorumlu oyun · Makrobet
+            <td style="padding:0 15px 4px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  {cell(left[0], left[1])}
+                  {cell(right[0], right[1])}
+                </tr>
+              </table>
+            </td>
+          </tr>"""
+
+
+def footer_legal() -> str:
+    """Dipnot — spam uyarısı üstte (notice_spam); burada sadece yasal."""
+    return f"""
+          <tr>
+            <td align="center" style="padding:14px 20px 22px;font-family:{FONT};font-size:11px;
+              line-height:1.55;color:{MUTED};border-top:1px solid {BORDER};">
+              18+ · Sorumlu oyun · Makrobet<br>
+              <a href="{CTA}" target="_blank" rel="noopener"
+                style="color:{GOLD};font-weight:700;text-decoration:none;">makrovip.com/Vipmail</a>
             </td>
           </tr>"""
 
@@ -342,14 +483,14 @@ def preset_davet_test() -> dict:
         ),
     ]
     body = (
-        f'<tr><td align="center" style="padding:4px 20px 10px;">{badge("DENEME BONUSU")}</td></tr>'
-        + eyebrow("Özel davet")
-        + headline("Merhaba {{name}}, seni 3.000 TL deneme kasası bekliyor")
+        f'<tr><td align="center" style="padding:6px 20px 12px;">{badge("ÖZEL DAVET", glow=True)}</td></tr>'
+        + eyebrow("Deneme bonusu")
+        + headline("Merhaba {{name}}, seni 3.000 TL deneme kasası bekliyor", size=24)
         + lead("Kayıt ol, deneme kasanı aç. Aşağıdaki 3 kampanya da yeni üyelerde aktif.")
         + feature_box_3000()
         + section_label("Diğer promosyonlar")
         + numbered_list(items)
-        + cta_row("Deneme Bonusu Al")
+        + cta_row("Deneme Bonusu Al", wide=True, font_px=16, pad="16px 36px")
     )
     return {
         "name": "2026 · Davet Test",
@@ -392,15 +533,17 @@ def preset_davet_mailing() -> dict:
         ),
     ]
     body = (
-        eyebrow("Özel davet")
-        + headline("3.000 TL deneme kasası seni bekliyor")
-        + hero_image(IMG_KASA, "Deneme Kasası")
+        f'<tr><td align="center" style="padding:4px 20px 10px;">{badge("ÖZEL DAVET", glow=True)}</td></tr>'
+        + headline("3.000 TL deneme kasası seni bekliyor", size=24)
+        + hero_image(IMG_KASA, "Deneme Kasası", soft=True, glow=True)
         + lead(
-            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — kayıt ol, deneme kasanı aç. "
-            "Aynı anda aktif olan kampanyalar:"
+            "Merhaba <strong style=\"color:#ffcc00;\">{{name}}</strong> — kayıt ol, deneme kasanı aç.",
+            size=17,
+            emphasize=True,
         )
-        + promo_cards(items)
-        + cta_row("Hemen Kayıt Ol")
+        + lead("Aynı anda aktif olan kampanyalar:")
+        + promo_cards(items, pad_y=12)
+        + cta_row("Hemen Kayıt Ol", wide=True, font_px=16, pad="16px 36px")
     )
     return {
         "name": "2026 · Davet Mailingi",
@@ -415,15 +558,17 @@ def preset_davet_mailing() -> dict:
 
 
 def preset_pasif_uye() -> dict:
-    items = [
-        (
-            "%100 Kayıp Bonusu",
-            "Geri döndüğünde kayıpların kadar ek bakiye — yeniden başlamak için güvence.",
-        ),
+    featured = [
         (
             "Makro Kasa",
             "Yatırımına ek kasa tanımı; dönüş yatırımını daha güçlü başlat.",
         ),
+        (
+            "%100 Kayıp Bonusu",
+            "Geri döndüğünde kayıpların kadar ek bakiye — yeniden başlamak için güvence.",
+        ),
+    ]
+    rest = [
         (
             "Amusnet Race",
             "Yarışa tekrar katıl, sıralamada yüksel, ödül havuzundan pay al.",
@@ -438,15 +583,21 @@ def preset_pasif_uye() -> dict:
         ),
     ]
     body = (
-        eyebrow("Geri dönüş")
-        + headline("Seni özledik — dönüş paketini aç")
-        + hero_image(IMG_KAYIP, "Kayıp Bonusu")
+        f'<tr><td align="center" style="padding:4px 20px 8px;">{badge("ÖZEL TEKLİF", glow=True)}</td></tr>'
+        + eyebrow("Geri dönüş")
+        + headline("Seni özledik — dönüş paketini aç", size=24)
+        + hero_image(IMG_KAYIP, "Kayıp Bonusu", soft=True, glow=True)
+        + gold_subhead("Hesabına ekstra bakiye tanımlandı!")
         + lead(
             "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — hesabın seni bekliyor. "
-            "Dönüş paketindeki kampanyalar:"
+            "Dönüş paketindeki kampanyalar:",
+            size=15,
         )
-        + promo_cards(items)
-        + cta_row("Hesabıma Dön")
+        + section_label("Öne çıkanlar")
+        + promo_cards(featured, highlight_first=2, pad_y=14)
+        + section_label("Ayrıca seni bekleyenler")
+        + promo_cards(rest, pad_y=12)
+        + cta_row("Hesabıma Dön", glow=True, font_px=16, pad="16px 36px", wide=True)
     )
     return {
         "name": "2026 · Pasif Üye Geri Getirme",
@@ -479,16 +630,37 @@ def preset_memnuniyet() -> dict:
             "Aktif prim / çevrim kampanyalarıyla bakiyeni daha verimli kullan.",
         ),
     ]
+    # Logo shell’de zorunlu; VIP rozet + hero ile üst alan güçlendirilir
     body = (
-        f'<tr><td align="center" style="padding:4px 20px 8px;">{badge("MEMNUNİYET", solid=False)}</td></tr>'
-        + headline("Senin için ekstra bir jest")
-        + hero_image(IMG_KASA, "Memnuniyet")
+        f'<tr><td align="center" style="padding:6px 20px 10px;">{badge("MEMNUNİYET", glow=True)}</td></tr>'
+        + f"""
+          <tr>
+            <td align="center" style="padding:0 20px 8px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+                <tr>
+                  <td align="center" bgcolor="{GOLD_SOFT_BG}"
+                    style="background-color:{GOLD_SOFT_BG};border:1px solid #5a4208;border-radius:14px;
+                    padding:10px 18px;font-family:{FONT};font-size:13px;font-weight:800;color:{GOLD};">
+                    ★ VIP jest · hesabına özel
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>"""
+        + headline("Senin için ekstra bir jest", size=20)
+        + hero_image(IMG_KASA, "Memnuniyet", soft=True, glow=True)
         + lead(
             "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — yaşanan aksaklığa özel "
-            "memnuniyet jesti ve destek kampanyaları:"
+            "memnuniyet jesti ve destek kampanyaları:",
+            size=15,
         )
-        + promo_cards(items)
-        + cta_row("Bonusu Kontrol Et")
+        + promo_cards(items, highlight_first=2, pad_y=14)
+        + cta_row(
+            "Bonusunu Kontrol Et",
+            width_pct=80,
+            font_px=16,
+            pad="16px 28px",
+        )
     )
     return {
         "name": "2026 · Memnuniyet Bonusu",
@@ -503,7 +675,7 @@ def preset_memnuniyet() -> dict:
 
 
 def preset_ilk_yatirim() -> dict:
-    items = [
+    featured = (
         (
             "Makro Kasa",
             "İlk yatırımına ekstra kasa eklenir — bakiyen ilk günden büyür.",
@@ -512,6 +684,8 @@ def preset_ilk_yatirim() -> dict:
             "%100 Kayıp Güvencesi",
             "İlk yatırımın kayba dönerse aynı tutarı tekrar tanımlarız.",
         ),
+    )
+    rest = [
         (
             "Amusnet Race",
             "İlk yatırımdan sonra yarışa katıl; ödül sıralamasında yerini al.",
@@ -523,14 +697,22 @@ def preset_ilk_yatirim() -> dict:
     ]
     body = (
         eyebrow("İlk yatırım")
-        + headline("Kasanı büyütme zamanı")
-        + hero_image(IMG_KASA, "Yatırım Kasası")
+        + headline("Kasanı büyütme zamanı", size=26, color=GOLD)
+        + hero_image(IMG_KASA, "Yatırım Kasası", soft=True, glow=True)
         + lead(
             "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — ilk yatırımınla "
-            "aşağıdaki paketleri aç:"
+            "aşağıdaki paketleri aç:",
+            size=15,
         )
-        + promo_cards(items)
-        + cta_row("İlk Yatırımı Yap")
+        + dual_feature_cards(featured[0], featured[1])
+        + promo_cards(rest, pad_y=12)
+        + cta_row(
+            "İlk Yatırımı Yap",
+            gradient=True,
+            wide=True,
+            font_px=16,
+            pad="16px 36px",
+        )
     )
     return {
         "name": "2026 · Yeni Üye İlk Yatırım",
@@ -563,16 +745,19 @@ def preset_turnuva() -> dict:
             "Ekibini davet et; arkadaşın yatırım yaptıkça sen de bonus al.",
         ),
     ]
+    icons = ("🏆", "🎟", "📊", "🤝")
     body = (
-        eyebrow("Etkinlik")
-        + headline("Race, Bilet, Manager bu hafta sahnede")
-        + hero_image(IMG_RACE, "Amusnet Race")
+        f'<tr><td align="center" style="padding:4px 20px 8px;">{badge("BU HAFTA", glow=True)}</td></tr>'
+        + eyebrow("Etkinlik")
+        + headline("Race, Bilet, Manager — bu hafta sahne senin!", size=24)
+        + hero_image(IMG_RACE, "Amusnet Race", soft=True, glow=True)
         + lead(
             "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — bu haftanın "
-            "turnuva ve etkinlikleri:"
+            "turnuva ve etkinlikleri:",
+            size=15,
         )
-        + promo_cards(items)
-        + cta_row("Etkinliklere Katıl")
+        + promo_cards(items, icons=icons, pad_y=13)
+        + cta_row("Etkinliklere Katıl", pad="14px 32px", font_px=16, wide=True)
     )
     return {
         "name": "2026 · Turnuva & Bilet Etkinlikleri",

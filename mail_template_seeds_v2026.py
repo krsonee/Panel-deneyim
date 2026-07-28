@@ -17,7 +17,7 @@ from database import (
 )
 from mail_template_engine_makrobet import build_all_presets
 
-SEED_FLAG = "seeded_makrobet_templates_v2026j"
+SEED_FLAG = "seeded_makrobet_templates_v2026k"
 
 TEMPLATES = build_all_presets()
 
