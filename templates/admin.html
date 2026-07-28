@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/biolink-admin.css?v=20260721a">
   <link rel="stylesheet" href="/static/biolink-skins.css?v=20260716b">
   {% if panel.brand == "makro" %}
-  <link rel="stylesheet" href="/static/makropanel_ui.css?v=20260726a">
+  <link rel="stylesheet" href="/static/makropanel_ui.css?v=20260728a">
   {% endif %}
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -2115,10 +2115,6 @@
         <button type="button" class="nav-item" data-module="accounting" data-perm="module.accounting"><span class="icon">💰</span> Muhasebe</button>
         {% if panel.features.mailing %}
         <button type="button" class="nav-item" data-module="mailing" data-perm="module.mailing"><span class="icon">✉️</span> Mailing</button>
-        {% elif panel.show_mikromail_nav and panel.mikromail_url %}
-        <a class="nav-item nav-item-external" href="{{ panel.mikromail_url }}" target="_blank" rel="noopener noreferrer" title="Mikromail (ayrı servis)">
-          <span class="icon">✉️</span> Mikromail <span class="badge">↗</span>
-        </a>
         {% endif %}
         {% if panel.features.marketing %}
         <button type="button" class="nav-item" data-module="marketing" data-perm="module.marketing"><span class="icon">📣</span> Marketing</button>
@@ -2908,13 +2904,6 @@
               <strong>Panel URL</strong>
               PUBLIC_BASE_URL=https://takipmkr.onrender.com
             </div>
-            {% if panel.brand == "makro" and panel.mikromail_url %}
-            <div class="tip-card">
-              <strong>Mikromail</strong>
-              Mailing ayrı serviste:
-              <a href="{{ panel.mikromail_url }}" target="_blank" rel="noopener noreferrer">{{ panel.mikromail_url }}</a>
-            </div>
-            {% endif %}
           </div>
         </section>
       </div>
@@ -3380,7 +3369,7 @@
           else openMobileSidebar();
         });
         backdrop.addEventListener("click", closeMobileSidebar);
-        document.querySelectorAll(".nav-item[data-module], .nav-item-external, .sidebar-foot a").forEach(function(el) {
+        document.querySelectorAll(".nav-item[data-module], .sidebar-foot a").forEach(function(el) {
           el.addEventListener("click", function() {
             if (window.matchMedia("(max-width: 768px)").matches) closeMobileSidebar();
           });

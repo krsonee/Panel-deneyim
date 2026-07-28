@@ -192,14 +192,6 @@ def can_access_mailing(username: str | None) -> bool:
     return bool(user) and user in MAILING_ALLOWED_USERS
 
 
-def can_see_mikromail_nav(username: str | None) -> bool:
-    """Standalone Mikromail menü linki — embedded mailing kapalıyken allowlist."""
-    if PANEL_BRAND != "makro":
-        return False
-    user = (username or "").strip().lower()
-    return bool(user) and user in MAILING_ALLOWED_USERS
-
-
 def panel_context(username: str | None = None) -> dict:
     """Jinja /api/me için panel bağlamı.
 
@@ -242,10 +234,7 @@ def panel_context(username: str | None = None) -> dict:
         "enabled_modules": list(ENABLED_MODULES),
         "features": features,
         "mikromail_url": mikromail_url,
-        # Geriye uyumluluk
+        # Geriye uyumluluk — URL config’de kalır; sidebar’da Mikromail menüsü yok
         "makromail_url": mikromail_url,
-        "show_mikromail_nav": (
-            not features.get("mailing") and can_see_mikromail_nav(username)
-        ),
         "mailing_standalone": MAILING_STANDALONE,
     }
