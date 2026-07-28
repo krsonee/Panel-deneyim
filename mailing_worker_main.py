@@ -113,6 +113,13 @@ def main():
             n_scrub = reclaim_scrub_jobs(limit=2)
             if n_scrub:
                 print(f"✉️  scrub reclaim started={n_scrub}")
+            try:
+                from mail_domain_health import tick_domain_health_once
+                n_pause = tick_domain_health_once()
+                if n_pause:
+                    print(f"✉️  domain auto-pause count={n_pause}")
+            except Exception as hexc:
+                print(f"⚠️  domain health tick: {hexc}")
         except Exception as exc:
             print(f"⚠️  worker loop: {exc}")
         time.sleep(12)

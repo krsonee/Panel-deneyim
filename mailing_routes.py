@@ -588,62 +588,63 @@ def _append_query_param(url, key, value):
 
 
 def _inject_tracking(conn, body, *, send_id, contact_id=None, campaign_id=None, as_html=True):
-    """{{link:url}} / {{link:sc:url}} → doğrudan hedef site (mikromail /m/c yok).
+    """{{link:url}} / {{link:sc:url}} → imzalı /m/c/ takip URL.
 
-    Butonlar mikromail.onrender.com üzerinden geçmez; tıklanınca direkt site açılır.
-    'sc:' Smartico linklerinde contact_id, afp1 (veya ayar) olarak URL'ye eklenir.
+    Tıklanınca mikromail 302 ile siteye gider; clicked_at + raporlar çalışır.
+    'sc:' Smartico — redirect anında afp1 eklenir (mail_click).
     """
     body = body or ""
     if not body:
         return body
 
-    def resolve_dest(raw_dest):
+    base = _public_base() or "https://mikromail.onrender.com"
+
+    def absolutize_track(url):
+        u = (url or "").strip()
+        if not u:
+            return u
+        if u.startswith("/m/c/"):
+            return base + u
+        if u.startswith("m/c/"):
+            return base + "/" + u
+        return u
+
+    def token_for(raw_dest):
         dest, is_sc = _split_smartico_marker(raw_dest)
         dest = (dest or "").strip()
         if not dest:
             return dest
-        # Eski takip URL’si şablonda kalmışsa — imzalıysa dest çıkar, değilse dokunma
         if "/m/c/" in dest:
-            try:
-                tok = dest.split("/m/c/", 1)[1].split("?", 1)[0].strip().strip("/")
-                signed = _loads_signed_click(_normalize_click_token(tok))
-                if signed and (signed.get("d") or "").strip():
-                    dest = (signed.get("d") or "").strip()
-                    is_sc = bool(signed.get("sc")) or is_sc
-                else:
-                    return dest  # kırık eski link — dokunma
-            except Exception:
-                return dest
+            return absolutize_track(dest)
         if not re.match(r"^https?://", dest, re.I):
             if dest.startswith("//"):
                 dest = "https:" + dest
             elif not dest.startswith("/"):
                 dest = "https://" + dest.lstrip("/")
-        if is_sc and contact_id:
-            try:
-                subid_param = (
-                    get_mail_setting(conn, "smartico_subid_param", "afp1") or "afp1"
-                ).strip() or "afp1"
-            except Exception:
-                subid_param = "afp1"
-            dest = _append_query_param(dest, subid_param, contact_id)
-        return dest
+        tok = _make_click_token(
+            conn,
+            dest_url=dest,
+            send_id=send_id,
+            contact_id=contact_id,
+            campaign_id=campaign_id,
+            is_smartico=is_sc,
+        )
+        return _track_url(tok)
 
     def repl_token(m):
-        dest = resolve_dest(m.group(1))
+        tracked = token_for(m.group(1))
         if as_html:
             label = html_lib.escape(
-                _split_smartico_marker(m.group(1))[0].strip() or dest, quote=True
+                _split_smartico_marker(m.group(1))[0].strip() or tracked, quote=True
             )
-            href = html_lib.escape(dest, quote=True)
-            return f'<a href="{href}" target="_blank" rel="noopener">{label}</a>'
-        return dest
+            return f'<a href="{html_lib.escape(tracked, quote=True)}" target="_blank" rel="noopener">{label}</a>'
+        return tracked
 
     if as_html:
         def repl_href_link(m):
             q = m.group(1)
-            dest = resolve_dest(m.group(2))
-            return f"href={q}{dest}{q}"
+            tracked = token_for(m.group(2))
+            return f"href={q}{tracked}{q}"
 
         body = HREF_LINK_TOKEN_RE.sub(repl_href_link, body)
 
@@ -651,17 +652,26 @@ def _inject_tracking(conn, body, *, send_id, contact_id=None, campaign_id=None, 
 
     if as_html:
         def repl_href(m):
-            dest = resolve_dest(m.group(2))
-            return f"{m.group(1)}{dest}{m.group(3)}"
+            # Zaten takip / unsub / pixel değilse sarmala
+            raw = m.group(2) or ""
+            if "/m/c/" in raw or "/m/u/" in raw or "/m/o/" in raw:
+                return m.group(0)
+            tracked = token_for(raw)
+            return f"{m.group(1)}{tracked}{m.group(3)}"
 
         body = HREF_RE.sub(repl_href, body)
+        body = re.sub(
+            r'href=(["\'])(/m/c/[^"\']+)\1',
+            lambda m: f"href={m.group(1)}{base}{m.group(2)}{m.group(1)}",
+            body,
+            flags=re.I,
+        )
 
-    # Hiçbir {{link:…}} kalmasın — kalırsa Gmail’de buton ölür
     if "{{link:" in body or "{{ link:" in body:
         body = LINK_TOKEN_RE.sub(repl_token, body)
         body = re.sub(
             r"\{\{\s*link\s*:\s*([^}]+)\s*\}\}",
-            lambda m: resolve_dest(m.group(1)) or "",
+            lambda m: token_for(m.group(1)) or "",
             body,
             flags=re.I,
         )
@@ -954,23 +964,83 @@ def _tag_breakdown_for_campaign(
 
 
 def _insert_campaign_recipient_ids(conn, campaign_id, contact_ids, now):
+    """Alıcı ekle — contact_id tekil; duplicate yutulur (UNIQUE)."""
+    from database import uses_postgres
+
+    contact_ids = [int(x) for x in (contact_ids or []) if x is not None]
+    contact_ids = list(dict.fromkeys(contact_ids))
+    if not contact_ids:
+        return 0
     attached = 0
-    chunk_size = 5000
+    chunk_size = 2000
     for i in range(0, len(contact_ids), chunk_size):
         chunk = contact_ids[i:i + chunk_size]
         if not chunk:
             continue
-        values_sql = ",".join(["(?, ?, 'pending', ?)"] * len(chunk))
-        vparams = []
-        for contact_id in chunk:
-            vparams += [campaign_id, contact_id, now]
-        execute(
-            conn,
-            f"INSERT INTO mail_campaign_recipients (campaign_id, contact_id, status, created_at) VALUES {values_sql}",
-            tuple(vparams),
+        if uses_postgres():
+            values_sql = ",".join(["(?, ?, 'pending', ?)"] * len(chunk))
+            vparams = []
+            for contact_id in chunk:
+                vparams += [campaign_id, contact_id, now]
+            try:
+                cur = execute(
+                    conn,
+                    f"""
+                    INSERT INTO mail_campaign_recipients (campaign_id, contact_id, status, created_at)
+                    VALUES {values_sql}
+                    ON CONFLICT (campaign_id, contact_id) DO NOTHING
+                    """,
+                    tuple(vparams),
+                )
+                try:
+                    attached += int(cur.rowcount or 0)
+                except Exception:
+                    attached += len(chunk)
+            except Exception as exc:
+                print(f"⚠️  recipient insert chunk: {exc}")
+                # Fallback tek tek
+                for contact_id in chunk:
+                    try:
+                        execute(
+                            conn,
+                            """
+                            INSERT INTO mail_campaign_recipients (campaign_id, contact_id, status, created_at)
+                            VALUES (?, ?, 'pending', ?)
+                            ON CONFLICT (campaign_id, contact_id) DO NOTHING
+                            """,
+                            (campaign_id, contact_id, now),
+                        )
+                        attached += 1
+                    except Exception:
+                        pass
+        else:
+            for contact_id in chunk:
+                try:
+                    execute(
+                        conn,
+                        """
+                        INSERT OR IGNORE INTO mail_campaign_recipients
+                        (campaign_id, contact_id, status, created_at)
+                        VALUES (?, ?, 'pending', ?)
+                        """,
+                        (campaign_id, contact_id, now),
+                    )
+                    attached += 1
+                except Exception:
+                    pass
+    # Gerçek eklenen sayı
+    try:
+        real = int(
+            scalar(
+                conn,
+                "SELECT COUNT(*) FROM mail_campaign_recipients WHERE campaign_id = ?",
+                (campaign_id,),
+            )
+            or 0
         )
-        attached += len(chunk)
-    return attached
+        return real
+    except Exception:
+        return attached
 
 
 def _filter_sendable_contact_ids(conn, ids, *, exclude_previously_sent=False, only_verified=False):
@@ -1142,16 +1212,9 @@ def _attach_campaign_recipients(
         _push(tag_ids)
 
     if not tags and not contact_ids and not emails:
-        # Eski davranış: boş filtre = tüm aktif (nadiren)
-        where_sql, params = _campaign_selection_where(
-            "", exclude_previously_sent, only_verified=only_verified,
-        )
-        sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
-        if max_recipients:
-            sql += " LIMIT ?"
-            params.append(max_recipients)
-        return _insert_campaign_recipient_ids(
-            conn, campaign_id, [r["id"] for r in fetchall(conn, sql, tuple(params))], now,
+        raise ValueError(
+            "Alıcı seçilmedi — etiket, seçili kontak veya elle liste zorunlu "
+            "(tüm rehber tek seferde eklenmez)."
         )
 
     if max_recipients:
@@ -2494,6 +2557,21 @@ def create_mailing_blueprint(permission_required):
             sends_failed = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'failed'") or 0)
             opened = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE opened_at IS NOT NULL") or 0)
             clicked = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE clicked_at IS NOT NULL") or 0)
+            try:
+                link_clicked = int(
+                    scalar(
+                        conn,
+                        """
+                        SELECT COUNT(DISTINCT send_id) FROM mail_click_links
+                        WHERE send_id IS NOT NULL AND COALESCE(click_count, 0) > 0
+                        """,
+                    )
+                    or 0
+                )
+                if link_clicked > clicked:
+                    clicked = link_clicked
+            except Exception:
+                pass
             ivr_events = scalar(conn, "SELECT COUNT(*) FROM mail_ivr_events") or 0
             try:
                 from mail_tenant import enrich_domain_public, heal_ready_domains
@@ -4786,6 +4864,22 @@ def create_mailing_blueprint(permission_required):
                 (f"{kind}: {reason}", email),
             )
             audit(conn, "webhook", kind, email)
+            # Metrik spike → domain auto-pause
+            try:
+                from mail_domain_health import evaluate_and_maybe_pause
+                dom = fetchone(
+                    conn,
+                    """
+                    SELECT domain_id FROM mail_sends
+                    WHERE LOWER(to_email) = ? AND domain_id IS NOT NULL
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (email,),
+                )
+                if dom and dom.get("domain_id"):
+                    evaluate_and_maybe_pause(conn, int(dom["domain_id"]))
+            except Exception as hexc:
+                print(f"⚠️  bounce→domain health: {hexc}")
             conn.commit()
         return jsonify({"ok": True, "email": email, "type": kind})
 

@@ -408,9 +408,76 @@ def campaign_analytics(conn, campaign_id=None):
     out = []
     for r in rows or []:
         d = dict(r)
+        # Tıklama: mail_sends.clicked_at ∪ mail_click_links (eski / yeni)
+        clicked = int(d.get("clicked") or 0)
+        try:
+            link_clicks = int(
+                scalar(
+                    conn,
+                    """
+                    SELECT COUNT(DISTINCT send_id) FROM mail_click_links
+                    WHERE campaign_id = ?
+                      AND send_id IS NOT NULL
+                      AND COALESCE(click_count, 0) > 0
+                    """,
+                    (d["id"],),
+                )
+                or 0
+            )
+            if link_clicks > clicked:
+                clicked = link_clicks
+                d["clicked"] = clicked
+        except Exception:
+            pass
+        # Alıcı / gönderim sapması
+        try:
+            recip = int(
+                scalar(
+                    conn,
+                    "SELECT COUNT(*) FROM mail_campaign_recipients WHERE campaign_id = ?",
+                    (d["id"],),
+                )
+                or 0
+            )
+            uniq_emails = int(
+                scalar(
+                    conn,
+                    """
+                    SELECT COUNT(*) FROM (
+                      SELECT LOWER(to_email) AS e FROM mail_sends
+                      WHERE campaign_id = ? AND status IN ('sent','simulated')
+                      GROUP BY LOWER(to_email)
+                    ) t
+                    """,
+                    (d["id"],),
+                )
+                or 0
+            )
+            send_rows = int(
+                scalar(
+                    conn,
+                    """
+                    SELECT COUNT(*) FROM mail_sends
+                    WHERE campaign_id = ? AND status IN ('sent','simulated')
+                    """,
+                    (d["id"],),
+                )
+                or 0
+            )
+            d["recipient_count"] = recip
+            d["unique_delivered"] = uniq_emails
+            d["oversend"] = bool(send_rows > recip and recip > 0)
+            d["dup_sends"] = max(0, send_rows - uniq_emails)
+        except Exception:
+            d["recipient_count"] = int(d.get("total_count") or 0)
+            d["unique_delivered"] = int(d.get("delivered") or 0)
+            d["oversend"] = False
+            d["dup_sends"] = 0
+
         delivered = int(d.get("delivered") or 0) or 1
         d["open_rate"] = round(100.0 * int(d.get("opened") or 0) / delivered, 2)
-        d["click_rate"] = round(100.0 * int(d.get("clicked") or 0) / delivered, 2)
+        d["click_rate"] = round(100.0 * clicked / delivered, 2)
+        d["clicked"] = clicked
         sc = _empty_sc_metrics()
         try:
             cid_rows = fetchall(

@@ -262,6 +262,30 @@ def deliver_mail(
         )
         return send_id, "skipped", "Suppression / unsubscribed"
 
+    # Domain pause / daily_cap
+    try:
+        from mail_domain_health import domain_is_send_blocked
+        blocked, block_reason = domain_is_send_blocked(conn, domain_id)
+        if blocked:
+            send_id = insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_sends (
+                    channel, campaign_id, contact_id, template_id, domain_id,
+                    to_email, to_phone, subject, status, provider_msg_id, error,
+                    opened_at, clicked_at, sent_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    channel, campaign_id, contact_id, template_id, domain_id,
+                    to_email, to_phone or "", subject or "", "skipped", "",
+                    block_reason[:200], None, None, None, now,
+                ),
+            )
+            return send_id, "skipped", block_reason
+    except Exception as exc:
+        print(f"⚠️  domain block check: {exc}")
+
     send_id = insert_returning_id(
         conn,
         """

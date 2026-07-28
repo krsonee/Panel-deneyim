@@ -281,6 +281,26 @@ def _process_campaign(campaign_id):
             )
             return
 
+        # Domain pause / cap — kampanya başında
+        try:
+            from mail_domain_health import domain_is_send_blocked
+            blocked, block_reason = domain_is_send_blocked(conn, camp.get("domain_id"))
+            if blocked:
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_campaigns
+                    SET status = 'paused', updated_at = ?, error = ?
+                    WHERE id = ?
+                    """,
+                    (now, f"Domain engeli: {block_reason}"[:400], campaign_id),
+                )
+                conn.commit()
+                print(f"✉️  campaign #{campaign_id} paused — {block_reason}")
+                return
+        except Exception as dex:
+            print(f"⚠️  domain gate: {dex}")
+
         tpl = fetchone(conn, "SELECT * FROM mail_templates WHERE id = ?", (camp["template_id"],))
         if not tpl:
             execute(

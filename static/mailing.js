@@ -2981,19 +2981,29 @@
         setText("mail-rep-queued", k.sends_queued);
         setText("mail-rep-failed", k.sends_failed);
         setText("mail-rep-opened", k.opened);
+        setText("mail-rep-clicked", k.clicked);
       }
       if (timelineRes && timelineRes.ok) mailRenderEngagementChart(timelineRes.data);
       var atbody = document.getElementById("mail-rep-analytics");
       if (atbody) {
         var camps = (analyticsRes && analyticsRes.ok && analyticsRes.data.campaigns) || [];
         if (!camps.length) {
-          atbody.innerHTML = '<tr><td colspan="14" class="empty">Kampanya yok</td></tr>';
+          atbody.innerHTML = '<tr><td colspan="16" class="empty">Kampanya yok</td></tr>';
         } else {
           atbody.innerHTML = camps.map(function (c) {
+            var warn = "";
+            if (c.oversend) warn += ' <span class="muted" style="color:var(--rose);">oversend</span>';
+            if (c.dup_sends) warn += ' <span class="muted" style="color:var(--rose);">+' + fmtNum(c.dup_sends) + " çift</span>";
             return "<tr>" +
-              "<td>" + esc(c.name) + "</td>" +
+              "<td>" + esc(c.name) + warn + "</td>" +
               "<td>" + mmStatusBadge(mailCampStatusLabel(c.status)) + "</td>" +
-              "<td>" + fmtNum(c.delivered) + "</td>" +
+              "<td>" + fmtNum(c.recipient_count != null ? c.recipient_count : c.total_count) + "</td>" +
+              "<td>" + fmtNum(c.delivered) +
+                (c.unique_delivered != null && c.unique_delivered !== c.delivered
+                  ? (' <span class="muted">(' + fmtNum(c.unique_delivered) + " tekil)</span>")
+                  : "") +
+              "</td>" +
+              "<td>" + fmtNum(c.clicked) + "</td>" +
               "<td>" + esc(String(c.open_rate)) + "%</td>" +
               "<td>" + esc(String(c.click_rate)) + "%</td>" +
               "<td>" + fmtNum(c.sc_register) + "</td>" +
