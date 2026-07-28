@@ -137,21 +137,22 @@ def cta_row(
     pad: str = "14px 28px",
     width_pct: int | None = None,
 ) -> str:
+    # Kartlarla aynı 20px dış padding — geniş CTA tam hizalı
+    btn = cta_button(
+        label,
+        wide=wide,
+        glow=glow,
+        gradient=gradient,
+        font_px=font_px,
+        pad=pad,
+        width_pct=100 if wide and width_pct is None else width_pct,
+    )
     return f"""
           <tr>
             <td align="center" style="padding:10px 20px 20px;">
-              {cta_button(
-                  label,
-                  wide=wide,
-                  glow=glow,
-                  gradient=gradient,
-                  font_px=font_px,
-                  pad=pad,
-                  width_pct=width_pct,
-              )}
+              {btn}
             </td>
           </tr>"""
-
 
 def hero_image(src: str, alt: str, width: int = 300, *, soft: bool = False, glow: bool = False) -> str:
     radius = "18px" if soft else "0"
@@ -275,11 +276,8 @@ def promo_card(
     icon: str | None = None,
     pad_y: int = 12,
 ) -> str:
-    border = (
-        f"border:2px solid {GOLD};border-left:5px solid {GOLD};"
-        if highlight
-        else f"border:1px solid {BORDER};border-left:4px solid {GOLD};"
-    )
+    # Hepsi aynı dış hiza (20px) + aynı sol altın şerit — highlight sadece arka plan
+    border = f"border:1px solid {BORDER};border-left:5px solid {GOLD};"
     bg = CARD if highlight else ROW
     icon_cell = ""
     if icon:
@@ -295,10 +293,10 @@ def promo_card(
                   </td>"""
     return f"""
           <tr>
-            <td style="padding:0 20px 10px;">
+            <td align="left" style="padding:0 20px 10px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
                 bgcolor="{bg}"
-                style="background-color:{bg};{border}border-radius:12px;">
+                style="width:100%;background-color:{bg};{border}border-radius:12px;">
                 <tr>
                   {icon_cell}
                   <td style="padding:{pad_y}px 14px;">
@@ -368,34 +366,8 @@ def numbered_list(items: Sequence[tuple[str, str]]) -> str:
 
 
 def dual_feature_cards(left: tuple[str, str], right: tuple[str, str]) -> str:
-    """İki vurgulu kart — yan yana (mobilde alt alta düşer)."""
-
-    def cell(title: str, desc: str) -> str:
-        return f"""
-                <td width="50%" valign="top" style="padding:0 5px 10px;">
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                    bgcolor="{CARD}"
-                    style="background-color:{CARD};border:2px solid {GOLD};border-radius:12px;">
-                    <tr>
-                      <td style="padding:14px 12px;">
-                        <div style="font-family:{FONT};font-size:13px;font-weight:800;color:{GOLD};line-height:1.3;">{title}</div>
-                        <div style="font-family:{FONT};font-size:12px;color:{MUTED};line-height:1.5;margin-top:6px;">{desc}</div>
-                      </td>
-                    </tr>
-                  </table>
-                </td>"""
-
-    return f"""
-          <tr>
-            <td style="padding:0 15px 4px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  {cell(left[0], left[1])}
-                  {cell(right[0], right[1])}
-                </tr>
-              </table>
-            </td>
-          </tr>"""
+    """İki kart — tek sütun (aynı dış hiza; yan yana mobilde yamuk görünüyordu)."""
+    return promo_cards([left, right], highlight_first=2, pad_y=14)
 
 
 def footer_legal() -> str:
@@ -675,7 +647,7 @@ def preset_memnuniyet() -> dict:
 
 
 def preset_ilk_yatirim() -> dict:
-    featured = (
+    items = [
         (
             "Makro Kasa",
             "İlk yatırımına ekstra kasa eklenir — bakiyen ilk günden büyür.",
@@ -684,8 +656,6 @@ def preset_ilk_yatirim() -> dict:
             "%100 Kayıp Güvencesi",
             "İlk yatırımın kayba dönerse aynı tutarı tekrar tanımlarız.",
         ),
-    )
-    rest = [
         (
             "Amusnet Race",
             "İlk yatırımdan sonra yarışa katıl; ödül sıralamasında yerini al.",
@@ -704,8 +674,8 @@ def preset_ilk_yatirim() -> dict:
             "aşağıdaki paketleri aç:",
             size=15,
         )
-        + dual_feature_cards(featured[0], featured[1])
-        + promo_cards(rest, pad_y=12)
+        # Tek sütun, aynı 20px dış hiza — yan yana kartlar mobilde yamuk görünüyordu
+        + promo_cards(items, highlight_first=2, pad_y=14)
         + cta_row(
             "İlk Yatırımı Yap",
             gradient=True,
