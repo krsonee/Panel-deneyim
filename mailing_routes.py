@@ -4003,7 +4003,7 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/campaigns", methods=["GET"])
     @mail_perm(*MAIL_CAMP)
     def list_campaigns():
-        from mail_campaign_worker import is_campaign_running, start_campaign_send
+        from mail_campaign_worker import is_campaign_running
 
         with closing(get_db()) as conn:
             try:
@@ -4031,14 +4031,8 @@ def create_mailing_blueprint(permission_required):
                     (r["id"],),
                 ) or 0
                 r["is_running"] = is_campaign_running(r["id"])
-                # Worker düştüyse queued/sending'i yeniden başlat —
-                # AMA gelecekteki schedule'ı olanları ASLA (erken gönderim)
-                if r["status"] in ("queued", "sending") and not r["is_running"] and r["pending_count"] > 0:
-                    from mail_campaign_worker import schedule_is_future
-                    if r.get("scheduled_at") and schedule_is_future(r.get("scheduled_at")) and int(r.get("sent_count") or 0) <= 0:
-                        continue
-                    start_campaign_send(r["id"])
-                    r["is_running"] = True
+                # Çift gönderim riski: panel refresh’te web process’inden start YOK.
+                # Sadece mikromail-worker resume eder.
         return jsonify({"campaigns": rows})
 
     @bp.route("/campaigns", methods=["POST"])

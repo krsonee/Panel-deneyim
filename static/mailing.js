@@ -2992,8 +2992,10 @@
         } else {
           atbody.innerHTML = camps.map(function (c) {
             var warn = "";
-            if (c.oversend) warn += ' <span class="muted" style="color:var(--rose);">oversend</span>';
-            if (c.dup_sends) warn += ' <span class="muted" style="color:var(--rose);">+' + fmtNum(c.dup_sends) + " çift</span>";
+            if (c.oversend || c.dup_sends) {
+              warn += ' <span title="Aynı kişiye birden fazla iletim kaydı (eski çift worker). Yeni kampanyalarda engellendi." style="color:#f87171;font-size:0.72rem;">çift gönderim +' +
+                fmtNum(c.dup_sends || 0) + "</span>";
+            }
             return "<tr>" +
               "<td>" + esc(c.name) + warn + "</td>" +
               "<td>" + mmStatusBadge(mailCampStatusLabel(c.status)) + "</td>" +

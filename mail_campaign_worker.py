@@ -86,7 +86,10 @@ def is_campaign_running(campaign_id):
 
 
 def start_campaign_send(campaign_id):
-    """Kampanyayı arka planda gönderime başlat (idempotent)."""
+    """Kampanyayı arka planda gönderime başlat (process-içi idempotent).
+
+    Asıl çift-gönderim koruması DB’de: alıcı status pending→sending claim.
+    """
     cid = int(campaign_id)
     with _lock:
         if cid in _running:
@@ -95,6 +98,54 @@ def start_campaign_send(campaign_id):
     t = threading.Thread(target=_run_campaign_job, args=(cid,), daemon=True, name=f"mail-camp-{cid}")
     t.start()
     return True
+
+
+def _claim_recipient(conn, recipient_id) -> bool:
+    """pending → sending atomik; sadece bir worker alır (çift mail engeli)."""
+    now = iso(utcnow())
+    try:
+        cur = execute(
+            conn,
+            """
+            UPDATE mail_campaign_recipients
+            SET status = 'sending'
+            WHERE id = ? AND status = 'pending'
+            """,
+            (int(recipient_id),),
+        )
+        conn.commit()
+        try:
+            return int(cur.rowcount or 0) == 1
+        except Exception:
+            # rowcount yoksa tekrar oku
+            row = fetchone(
+                conn,
+                "SELECT status FROM mail_campaign_recipients WHERE id = ?",
+                (int(recipient_id),),
+            )
+            return bool(row and (row["status"] or "") == "sending")
+    except Exception as exc:
+        print(f"⚠️  claim recipient {recipient_id}: {exc}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def _already_delivered_contact(conn, campaign_id, contact_id) -> bool:
+    if not contact_id:
+        return False
+    n = scalar(
+        conn,
+        """
+        SELECT COUNT(*) FROM mail_sends
+        WHERE campaign_id = ? AND contact_id = ?
+          AND status IN ('sent', 'simulated')
+        """,
+        (int(campaign_id), int(contact_id)),
+    )
+    return int(n or 0) > 0
 
 
 def ensure_campaign_scheduler():
@@ -398,6 +449,18 @@ def _process_campaign(campaign_id):
                     break
                 rec = dict(rec)
                 now = iso(utcnow())
+                # Atomik claim — iki process aynı pending’i alamaz
+                if not _claim_recipient(conn, rec["recipient_id"]):
+                    continue
+                if _already_delivered_contact(conn, campaign_id, rec.get("contact_id")):
+                    execute(
+                        conn,
+                        "UPDATE mail_campaign_recipients SET status = 'skipped' WHERE id = ?",
+                        (rec["recipient_id"],),
+                    )
+                    skipped_count += 1
+                    conn.commit()
+                    continue
                 if rec.get("unsubscribed"):
                     execute(
                         conn,
@@ -405,6 +468,7 @@ def _process_campaign(campaign_id):
                         (rec["recipient_id"],),
                     )
                     skipped_count += 1
+                    conn.commit()
                     continue
 
                 contact = {
