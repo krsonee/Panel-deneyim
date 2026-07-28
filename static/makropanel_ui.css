@@ -244,6 +244,10 @@ body.panel-brand-makro .chart-wrap {
   min-height: 280px;
   height: 280px;
 }
+body.panel-brand-makro .chart-wrap-games {
+  height: auto;
+  min-height: 220px;
+}
 body.panel-brand-makro .chart-card h3 {
   color: #e2e8f0;
 }

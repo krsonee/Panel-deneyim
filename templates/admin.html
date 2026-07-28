@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/biolink-admin.css?v=20260721a">
   <link rel="stylesheet" href="/static/biolink-skins.css?v=20260716b">
   {% if panel.brand == "makro" %}
-  <link rel="stylesheet" href="/static/makropanel_ui.css?v=20260728a">
+  <link rel="stylesheet" href="/static/makropanel_ui.css?v=20260729a">
   {% endif %}
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -1006,6 +1006,7 @@
     .chart-card h3 { font-size: 0.85rem; font-weight: 600; }
     .chart-card p.sub { font-size: 0.68rem; color: var(--muted); margin: 0.2rem 0 0.75rem; }
     .chart-wrap { position: relative; height: 190px; }
+    .chart-wrap-games { height: 260px; min-height: 220px; }
     .chart-empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); font-size: 0.78rem; background: rgba(6,10,16,0.75); border-radius: 8px; }
 
     .top5-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.85rem; margin-bottom: 0.85rem; }
@@ -2227,7 +2228,7 @@
           <div class="chart-card">
             <h3>Tıklanan Linkler</h3>
             <p class="sub">Ziyaretçilerin sitede tıkladığı bağlantılar</p>
-            <div class="chart-wrap"><canvas id="chart-games"></canvas><div class="chart-empty" id="empty-games">Veri yok</div></div>
+            <div class="chart-wrap chart-wrap-games"><canvas id="chart-games"></canvas><div class="chart-empty" id="empty-games">Veri yok</div></div>
           </div>
         </section>
 
@@ -4305,26 +4306,43 @@
           });
         }
 
-        var gameLabels = games.map(function(g){
-          var name = String(g.game || "");
-          return name.length > 28 ? name.slice(0, 26) + "…" : name;
+        var gameRows = games.slice(0, 10);
+        var gameLabels = gameRows.map(function(g){
+          var name = String(g.game || "").replace(/\s+/g, " ").trim();
+          return name.length > 22 ? name.slice(0, 20) + "…" : name;
         });
-        var gameData = games.map(function(g){ return g.clicks; });
+        var gameData = gameRows.map(function(g){ return g.clicks; });
+        var gamesWrap = document.getElementById("chart-games");
+        if (gamesWrap && gamesWrap.parentElement) {
+          var rowH = 34;
+          var padH = 56;
+          var nextH = Math.max(220, (gameLabels.length || 1) * rowH + padH);
+          gamesWrap.parentElement.style.height = nextH + "px";
+        }
 
         if (charts.games) {
           charts.games.data.labels = gameLabels;
           charts.games.data.datasets[0].data = gameData;
+          charts.games.resize();
           charts.games.update("none");
         } else {
           charts.games = new Chart(document.getElementById("chart-games"), {
             type: "bar",
             data: {
               labels: gameLabels,
-              datasets: [{ data: gameData, backgroundColor: ["#f59e0baa","#f43f5eaa","#06b6d4aa"], borderRadius: 5 }]
+              datasets: [{
+                data: gameData,
+                backgroundColor: ["#f59e0baa","#f43f5eaa","#06b6d4aa","#22c55eaa","#a78bfaaa","#38bdf8aa","#fb7185aa","#fbbf24aa","#34d399aa","#818cf8aa"],
+                borderRadius: 5,
+                barThickness: 18,
+                maxBarThickness: 22,
+                categoryPercentage: 0.8,
+                barPercentage: 0.85
+              }]
             },
             options: Object.assign({}, chartBaseOpts, {
               indexAxis: "y",
-              layout: { padding: { right: 8 } },
+              layout: { padding: { right: 10, left: 4, top: 4, bottom: 4 } },
               plugins: { legend: { display: false } },
               scales: {
                 x: {
@@ -4337,7 +4355,10 @@
                     color: "#cbd5e1",
                     font: { size: 11 },
                     autoSkip: false,
-                    crossAlign: "far"
+                    maxRotation: 0,
+                    minRotation: 0,
+                    crossAlign: "far",
+                    padding: 6
                   },
                   grid: { display: false }
                 }
