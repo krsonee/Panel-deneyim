@@ -6,7 +6,15 @@ import smtplib
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
-from database import execute, fetchone, get_mail_setting, insert_returning_id, iso, utcnow
+from database import (
+    execute,
+    fetchone,
+    get_mail_setting,
+    insert_returning_id,
+    iso,
+    safe_rollback,
+    utcnow,
+)
 
 
 def normalize_from_local(local: str, default: str = "info") -> str:
@@ -317,16 +325,39 @@ def deliver_mail(
     tracked_html = html_body or ""
     tracked_text = text_body or ""
     if inject_tracking:
-        if tracked_html:
-            tracked_html = inject_tracking(
-                conn, tracked_html, send_id=send_id, contact_id=contact_id,
-                campaign_id=campaign_id, as_html=True,
-            ) or tracked_html
-        if tracked_text:
-            tracked_text = inject_tracking(
-                conn, tracked_text, send_id=send_id, contact_id=contact_id,
-                campaign_id=campaign_id, as_html=False,
-            ) or tracked_text
+        try:
+            if tracked_html:
+                tracked_html = inject_tracking(
+                    conn, tracked_html, send_id=send_id, contact_id=contact_id,
+                    campaign_id=campaign_id, as_html=True,
+                ) or tracked_html
+            if tracked_text:
+                tracked_text = inject_tracking(
+                    conn, tracked_text, send_id=send_id, contact_id=contact_id,
+                    campaign_id=campaign_id, as_html=False,
+                ) or tracked_text
+        except Exception as exc:
+            print(f"⚠️  inject_tracking: {exc}")
+            # Click insert SAVEPOINT kullanır; yine de txn öldüyse send'i kurtar
+            try:
+                fetchone(conn, "SELECT 1")
+            except Exception:
+                safe_rollback(conn)
+                send_id = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_sends (
+                        channel, campaign_id, contact_id, template_id, domain_id,
+                        to_email, to_phone, subject, status, provider_msg_id, error,
+                        opened_at, clicked_at, sent_at, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        channel, campaign_id, contact_id, template_id, domain_id,
+                        to_email, to_phone or "", subject or "", "queued", "",
+                        "", None, None, None, now,
+                    ),
+                )
 
     unsub_http = ""
     try:
@@ -347,6 +378,10 @@ def deliver_mail(
             )
     except Exception as exc:
         print(f"⚠️  mail ops footer: {exc}")
+        try:
+            fetchone(conn, "SELECT 1")
+        except Exception:
+            safe_rollback(conn)
 
     if mode != "smtp":
         msg_id = f"stub-{send_id}-{now[-8:]}"
@@ -383,6 +418,7 @@ def deliver_mail(
                 (domain_id,),
             )
         except Exception:
+            safe_rollback(conn)
             drow = fetchone(conn, "SELECT smtp_password FROM mail_domains WHERE id = ?", (domain_id,))
         domain_smtp_pw = _resolve_domain_smtp_password(drow)
 
@@ -432,6 +468,12 @@ def deliver_mail(
         return send_id, "failed", err
 
     extra = list_unsubscribe_headers(unsub_http) if unsub_http else None
+
+    # SMTP 15s+ sürebilir — idle_in_transaction_session_timeout txn'i öldürmesin
+    try:
+        conn.commit()
+    except Exception:
+        safe_rollback(conn)
 
     # Yanlış bölge host’u 535 verebiliyor — sırayla dene
     host_list = []

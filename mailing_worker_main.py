@@ -63,6 +63,11 @@ def main():
     with closing(get_db()) as conn:
         init_mailing_schema(conn)
         ensure_tenant_schema(conn)
+        try:
+            from database import ensure_mail_click_links_table
+            ensure_mail_click_links_table(conn)
+        except Exception as schema_exc:
+            print(f"⚠️  click links schema: {schema_exc}")
         conn.commit()
 
     from mail_campaign_worker import (

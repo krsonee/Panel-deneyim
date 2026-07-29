@@ -2996,8 +2996,13 @@
               warn += ' <span title="Aynı kişiye birden fazla iletim kaydı (eski çift worker). Yeni kampanyalarda engellendi." style="color:#f87171;font-size:0.72rem;">çift gönderim +' +
                 fmtNum(c.dup_sends || 0) + "</span>";
             }
+            var errLine = (c.error || "").trim();
+            var errHtml = errLine
+              ? '<div class="muted" style="font-size:0.68rem;color:#fca5a5;max-width:220px;">' +
+                esc(errLine.slice(0, 180)) + "</div>"
+              : "";
             return "<tr>" +
-              "<td>" + esc(c.name) + warn + "</td>" +
+              "<td>" + esc(c.name) + warn + errHtml + "</td>" +
               "<td>" + mmStatusBadge(mailCampStatusLabel(c.status)) + "</td>" +
               "<td>" + fmtNum(c.recipient_count != null ? c.recipient_count : c.total_count) + "</td>" +
               "<td>" + fmtNum(c.delivered) +

@@ -25,6 +25,7 @@ from database import (
     get_mail_setting,
     insert_returning_id,
     iso,
+    safe_rollback,
     scalar,
     upsert_mail_setting,
     utcnow,
@@ -549,27 +550,70 @@ def _make_click_token(conn, *, dest_url, send_id=None, contact_id=None, campaign
     except Exception:
         token = secrets.token_urlsafe(12)
     now = iso(utcnow())
+
+    def _insert_click(with_smartico: bool):
+        if with_smartico:
+            insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_click_links
+                (token, send_id, contact_id, campaign_id, dest_url, is_smartico, click_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+                """,
+                (
+                    token,
+                    send_id,
+                    contact_id,
+                    campaign_id,
+                    dest_url,
+                    1 if is_smartico else 0,
+                    now,
+                ),
+            )
+        else:
+            insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_click_links
+                (token, send_id, contact_id, campaign_id, dest_url, click_count, created_at)
+                VALUES (?, ?, ?, ?, ?, 0, ?)
+                """,
+                (token, send_id, contact_id, campaign_id, dest_url, now),
+            )
+
+    # SAVEPOINT: insert fail olsa mail_sends satırını rollback etme
+    sp = "sp_mail_click"
     try:
-        insert_returning_id(
-            conn,
-            """
-            INSERT INTO mail_click_links
-            (token, send_id, contact_id, campaign_id, dest_url, is_smartico, click_count, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-            """,
-            (
-                token,
-                send_id,
-                contact_id,
-                campaign_id,
-                dest_url,
-                1 if is_smartico else 0,
-                now,
-            ),
-        )
+        if uses_postgres():
+            execute(conn, f"SAVEPOINT {sp}")
+        _insert_click(True)
+        if uses_postgres():
+            execute(conn, f"RELEASE SAVEPOINT {sp}")
     except Exception as exc:
-        # İmzalı token yine de yönlendirir
         print(f"⚠️  mail_click_links insert: {exc}")
+        try:
+            if uses_postgres():
+                execute(conn, f"ROLLBACK TO SAVEPOINT {sp}")
+            else:
+                safe_rollback(conn)
+        except Exception:
+            safe_rollback(conn)
+        # is_smartico kolonu yoksa / FK vs. — kolon olmadan dene
+        try:
+            if uses_postgres():
+                execute(conn, f"SAVEPOINT {sp}")
+            _insert_click(False)
+            if uses_postgres():
+                execute(conn, f"RELEASE SAVEPOINT {sp}")
+        except Exception as exc2:
+            print(f"⚠️  mail_click_links insert retry: {exc2}")
+            try:
+                if uses_postgres():
+                    execute(conn, f"ROLLBACK TO SAVEPOINT {sp}")
+                else:
+                    safe_rollback(conn)
+            except Exception:
+                safe_rollback(conn)
     return token
 
 

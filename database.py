@@ -121,6 +121,18 @@ def q(sql):
     return sql
 
 
+def safe_rollback(conn):
+    """Postgres'te failed statement sonrası transaction'ı temizle.
+
+    except içinde SQL yutulup rollback yapılmazsa sonraki tüm komutlar
+    'current transaction is aborted' ile ölür.
+    """
+    try:
+        conn.rollback()
+    except Exception:
+        pass
+
+
 def execute(conn, sql, params=()):
     cur = conn.cursor()
     cur.execute(q(sql), params)

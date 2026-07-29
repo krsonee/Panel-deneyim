@@ -7,7 +7,17 @@ import time
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
-from database import execute, fetchall, fetchone, get_db, get_mail_setting, iso, scalar, utcnow
+from database import (
+    execute,
+    fetchall,
+    fetchone,
+    get_db,
+    get_mail_setting,
+    iso,
+    safe_rollback,
+    scalar,
+    utcnow,
+)
 from mail_delivery import deliver_mail
 
 _lock = threading.Lock()
@@ -351,6 +361,7 @@ def _process_campaign(campaign_id):
                 return
         except Exception as dex:
             print(f"⚠️  domain gate: {dex}")
+            safe_rollback(conn)
 
         tpl = fetchone(conn, "SELECT * FROM mail_templates WHERE id = ?", (camp["template_id"],))
         if not tpl:
@@ -362,6 +373,21 @@ def _process_campaign(campaign_id):
             conn.commit()
             return
         tpl = dict(tpl) if not isinstance(tpl, dict) else tpl
+
+        # Önceki crash'te 'sending' kalan alıcıları tekrar dene
+        try:
+            execute(
+                conn,
+                """
+                UPDATE mail_campaign_recipients
+                SET status = 'pending'
+                WHERE campaign_id = ? AND status = 'sending'
+                """,
+                (campaign_id,),
+            )
+            conn.commit()
+        except Exception:
+            safe_rollback(conn)
 
         total = scalar(
             conn,
@@ -471,70 +497,101 @@ def _process_campaign(campaign_id):
                     conn.commit()
                     continue
 
-                contact = {
-                    "name": rec.get("name") or "",
-                    "email": rec.get("email") or "",
-                    "phone": rec.get("phone") or "",
-                }
-                subject = _render_template(tpl["subject"], contact)
-                html_body = _render_template(
-                    tpl.get("html_body") or _plain_to_html(tpl.get("text_body") or ""), contact
-                )
-                text_body = _render_template(tpl.get("text_body") or "", contact)
-                send_id, status, err = deliver_mail(
-                    conn,
-                    channel="bulk",
-                    to_email=rec["email"],
-                    subject=subject,
-                    contact=contact,
-                    campaign_id=campaign_id,
-                    contact_id=rec["contact_id"],
-                    template_id=camp["template_id"],
-                    domain_id=camp["domain_id"],
-                    to_phone=rec.get("phone") or "",
-                    html_body=html_body,
-                    text_body=text_body,
-                    inject_tracking=_inject_tracking,
-                )
-                recip_status = status if status in ("simulated", "sent", "queued", "failed", "skipped") else "failed"
-                execute(
-                    conn,
-                    "UPDATE mail_campaign_recipients SET status = ?, send_id = ? WHERE id = ?",
-                    (recip_status, send_id, rec["recipient_id"]),
-                )
-                if status in ("simulated", "sent"):
-                    sent_count += 1
-                    try:
-                        from mail_tenant import bump_usage
-                        tid = camp.get("tenant_id")
-                        if tid:
-                            bump_usage(conn, int(tid), sent=1)
-                    except Exception:
-                        pass
-                elif status == "skipped":
-                    skipped_count += 1
-                elif status == "failed":
-                    failed_count += 1
-                    try:
-                        from mail_tenant import bump_usage
-                        tid = camp.get("tenant_id")
-                        if tid:
-                            bump_usage(conn, int(tid), failed=1)
-                    except Exception:
-                        pass
-                else:
-                    failed_count += 1
+                try:
+                    contact = {
+                        "name": rec.get("name") or "",
+                        "email": rec.get("email") or "",
+                        "phone": rec.get("phone") or "",
+                    }
+                    subject = _render_template(tpl["subject"], contact)
+                    html_body = _render_template(
+                        tpl.get("html_body") or _plain_to_html(tpl.get("text_body") or ""), contact
+                    )
+                    text_body = _render_template(tpl.get("text_body") or "", contact)
+                    send_id, status, err = deliver_mail(
+                        conn,
+                        channel="bulk",
+                        to_email=rec["email"],
+                        subject=subject,
+                        contact=contact,
+                        campaign_id=campaign_id,
+                        contact_id=rec["contact_id"],
+                        template_id=camp["template_id"],
+                        domain_id=camp["domain_id"],
+                        to_phone=rec.get("phone") or "",
+                        html_body=html_body,
+                        text_body=text_body,
+                        inject_tracking=_inject_tracking,
+                    )
+                    recip_status = status if status in ("simulated", "sent", "queued", "failed", "skipped") else "failed"
+                    execute(
+                        conn,
+                        "UPDATE mail_campaign_recipients SET status = ?, send_id = ? WHERE id = ?",
+                        (recip_status, send_id, rec["recipient_id"]),
+                    )
+                    if status in ("simulated", "sent"):
+                        sent_count += 1
+                        try:
+                            from mail_tenant import bump_usage
+                            tid = camp.get("tenant_id")
+                            if tid:
+                                bump_usage(conn, int(tid), sent=1)
+                        except Exception:
+                            safe_rollback(conn)
+                    elif status == "skipped":
+                        skipped_count += 1
+                    elif status == "failed":
+                        failed_count += 1
+                        try:
+                            from mail_tenant import bump_usage
+                            tid = camp.get("tenant_id")
+                            if tid:
+                                bump_usage(conn, int(tid), failed=1)
+                        except Exception:
+                            safe_rollback(conn)
+                    else:
+                        failed_count += 1
 
-                execute(
-                    conn,
-                    """
-                    UPDATE mail_campaigns
-                    SET sent_count = ?, failed_count = ?, skipped_count = ?, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (sent_count, failed_count, skipped_count, now, campaign_id),
-                )
-                conn.commit()
+                    execute(
+                        conn,
+                        """
+                        UPDATE mail_campaigns
+                        SET sent_count = ?, failed_count = ?, skipped_count = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (sent_count, failed_count, skipped_count, now, campaign_id),
+                    )
+                    conn.commit()
+                except Exception as recip_exc:
+                    print(f"⚠️  campaign #{campaign_id} recipient {rec.get('recipient_id')}: {recip_exc}")
+                    safe_rollback(conn)
+                    failed_count += 1
+                    try:
+                        execute(
+                            conn,
+                            "UPDATE mail_campaign_recipients SET status = 'failed' WHERE id = ?",
+                            (rec["recipient_id"],),
+                        )
+                        execute(
+                            conn,
+                            """
+                            UPDATE mail_campaigns
+                            SET sent_count = ?, failed_count = ?, skipped_count = ?,
+                                error = ?, updated_at = ?
+                            WHERE id = ?
+                            """,
+                            (
+                                sent_count,
+                                failed_count,
+                                skipped_count,
+                                str(recip_exc)[:400],
+                                iso(utcnow()),
+                                campaign_id,
+                            ),
+                        )
+                        conn.commit()
+                    except Exception:
+                        safe_rollback(conn)
                 if delay > 0:
                     time.sleep(delay)
 

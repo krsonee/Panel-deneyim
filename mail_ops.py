@@ -17,6 +17,7 @@ from database import (
     get_mail_setting,
     insert_returning_id,
     iso,
+    safe_rollback,
     scalar,
     upsert_mail_setting,
     uses_postgres,
@@ -221,14 +222,29 @@ def suppress_email(conn, email, reason="unsubscribed", source="system"):
 
 def make_unsub_token(conn, *, email, contact_id=None, send_id=None):
     token = secrets.token_urlsafe(18)
-    execute(
-        conn,
-        """
-        INSERT INTO mail_unsub_tokens (token, contact_id, send_id, email, used_at, created_at)
-        VALUES (?, ?, ?, ?, NULL, ?)
-        """,
-        (token, contact_id, send_id, (email or "").strip().lower(), iso(utcnow())),
-    )
+    sp = "sp_mail_unsub"
+    try:
+        if uses_postgres():
+            execute(conn, f"SAVEPOINT {sp}")
+        execute(
+            conn,
+            """
+            INSERT INTO mail_unsub_tokens (token, contact_id, send_id, email, used_at, created_at)
+            VALUES (?, ?, ?, ?, NULL, ?)
+            """,
+            (token, contact_id, send_id, (email or "").strip().lower(), iso(utcnow())),
+        )
+        if uses_postgres():
+            execute(conn, f"RELEASE SAVEPOINT {sp}")
+    except Exception as exc:
+        print(f"⚠️  mail_unsub_tokens insert: {exc}")
+        try:
+            if uses_postgres():
+                execute(conn, f"ROLLBACK TO SAVEPOINT {sp}")
+            else:
+                safe_rollback(conn)
+        except Exception:
+            safe_rollback(conn)
     return token
 
 
@@ -386,6 +402,7 @@ def campaign_analytics(conn, campaign_id=None):
             c.id,
             c.name,
             c.status,
+            c.error,
             c.domain_id,
             COALESCE(c.sent_count, 0) AS sent_count,
             COALESCE(c.failed_count, 0) AS failed_count,
@@ -428,7 +445,7 @@ def campaign_analytics(conn, campaign_id=None):
                 clicked = link_clicks
                 d["clicked"] = clicked
         except Exception:
-            pass
+            safe_rollback(conn)
         # Alıcı / gönderim sapması
         try:
             recip = int(
@@ -469,6 +486,7 @@ def campaign_analytics(conn, campaign_id=None):
             d["oversend"] = bool(send_rows > recip and recip > 0)
             d["dup_sends"] = max(0, send_rows - uniq_emails)
         except Exception:
+            safe_rollback(conn)
             d["recipient_count"] = int(d.get("total_count") or 0)
             d["unique_delivered"] = int(d.get("delivered") or 0)
             d["oversend"] = False
@@ -478,6 +496,7 @@ def campaign_analytics(conn, campaign_id=None):
         d["open_rate"] = round(100.0 * int(d.get("opened") or 0) / delivered, 2)
         d["click_rate"] = round(100.0 * clicked / delivered, 2)
         d["clicked"] = clicked
+        d["error"] = (d.get("error") or "") or ""
         sc = _empty_sc_metrics()
         try:
             cid_rows = fetchall(
@@ -489,6 +508,7 @@ def campaign_analytics(conn, campaign_id=None):
                 (d["id"],),
             ) or []
         except Exception:
+            safe_rollback(conn)
             cid_rows = []
         seen = set()
         for cr in cid_rows:

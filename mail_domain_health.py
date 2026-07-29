@@ -118,6 +118,11 @@ def pause_domain(conn, domain_id: int, reason: str) -> bool:
         )
     except Exception as exc:
         print(f"⚠️  pause campaigns for domain {domain_id}: {exc}")
+        try:
+            from database import safe_rollback
+            safe_rollback(conn)
+        except Exception:
+            pass
     print(f"✉️  AUTO-PAUSE domain #{domain_id} ({row.get('domain')}): {reason}")
     return True
 
@@ -151,6 +156,11 @@ def review_all_active_domains(conn) -> list[dict]:
             out.append(result)
         except Exception as exc:
             print(f"⚠️  domain health #{r.get('id')}: {exc}")
+            try:
+                from database import safe_rollback
+                safe_rollback(conn)
+            except Exception:
+                pass
     return out
 
 
