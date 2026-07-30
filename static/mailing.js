@@ -4247,7 +4247,16 @@
                 (anyApprox ? ", etiket sayıları yaklaşık olabilir" : "") +
                 "; aynı kişi birden fazla etikette olabilir</span>";
             }
-          } else if (tags.length) {
+          }
+          var exemptTags = res.data.exclude_sent_exempt_tags || [];
+          if (!exemptTags.length && breakdown.length) {
+            exemptTags = breakdown.filter(function (x) { return x.exclude_sent_exempt; })
+              .map(function (x) { return x.tag; });
+          }
+          if (exemptTags.length) {
+            html += '<br><span class="muted">Önceden gönderilmiş filtresinden muaf: ' +
+              exemptTags.map(function (t) { return esc(t); }).join(", ") + "</span>";
+          } else if (!breakdown.length && tags.length) {
             html += " · etiket: " + esc(tags.join(", "));
           }
           hint.innerHTML = html;

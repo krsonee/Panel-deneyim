@@ -918,11 +918,81 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
     }
 
 
-def _campaign_selection_where(tag_filter, exclude_previously_sent, only_verified=False):
+# «Önceden mail atılmışları hariç tut» — bu etiketler / önekler muaf (test QA).
+_EXCLUDE_SENT_EXEMPT_EXACT = frozenset({"test", "qa", "sandbox", "deneme"})
+_EXCLUDE_SENT_EXEMPT_PREFIXES = (
+    "test-", "test_", "test:", "test/", "test ",
+    "qa-", "qa_", "qa:", "qa/", "qa ",
+    "sandbox-", "sandbox_", "sandbox:", "sandbox/", "sandbox ",
+    "deneme-", "deneme_", "deneme:", "deneme/", "deneme ",
+)
+
+
+def _load_exclude_sent_exempt_custom(conn=None):
+    """Ayarlar: exclude_sent_exempt_tags = 'benim-test, lab' (virgüllü)."""
+    if conn is None:
+        return []
+    try:
+        raw = (get_mail_setting(conn, "exclude_sent_exempt_tags", "") or "").strip()
+    except Exception:
+        return []
+    return _parse_tag_filter_list(raw)
+
+
+def _tag_is_exclude_sent_exempt(tag, custom_exempt=None):
+    """True → bu etiket üzerinden seçilenlere 'önceden gönderilmiş' filtresi uygulanmaz."""
+    t = (tag or "").strip()
+    if not t:
+        return False
+    tl = t.lower()
+    if tl in _EXCLUDE_SENT_EXEMPT_EXACT:
+        return True
+    for c in (custom_exempt or []):
+        c = (c or "").strip()
+        if c and (t == c or tl == c.lower()):
+            return True
+    for prefix in _EXCLUDE_SENT_EXEMPT_PREFIXES:
+        if tl.startswith(prefix):
+            return True
+    return False
+
+
+def _contact_has_exclude_exempt_tag_sql(custom_exempt=None):
+    """Kontak tags alanında muaf etiket var mı? (manuel seçim / karışık kampanya)."""
+    parts = []
+    params = []
+    seen = set()
+    for name in sorted(_EXCLUDE_SENT_EXEMPT_EXACT):
+        clause, tparams = _tag_match_clause(name)
+        parts.append(f"({clause})")
+        params.extend(tparams)
+        seen.add(name.lower())
+    for name in (custom_exempt or []):
+        name = (name or "").strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        clause, tparams = _tag_match_clause(name)
+        parts.append(f"({clause})")
+        params.extend(tparams)
+    for prefix in _EXCLUDE_SENT_EXEMPT_PREFIXES:
+        # JSON elemanı önek ile başlar: ..."test-foo"...
+        parts.append("tags LIKE ? ESCAPE '\\'")
+        params.append(f'%"{_like_literal(prefix)}%')
+    if not parts:
+        return "1=0", ()
+    return "(" + " OR ".join(parts) + ")", tuple(params)
+
+
+def _campaign_selection_where(
+    tag_filter, exclude_previously_sent, only_verified=False, custom_exempt=None,
+):
     """Kampanya alıcı seçiminde kullanılan WHERE + params — hem sayım
     önizlemesinde hem gerçek eklemede aynı filtre mantığı kullanılsın diye.
 
     tag_filter: tek etiket, 'a, b' veya liste — birden fazla ise OR (birleşim).
+    test / qa / sandbox / deneme (+ önekler) ve Ayarlar exclude_sent_exempt_tags
+    etiketleri «önceden gönderilmiş» filtresinden muaf.
     """
     clauses = [
         "unsubscribed = 0",
@@ -935,16 +1005,37 @@ def _campaign_selection_where(tag_filter, exclude_previously_sent, only_verified
         clauses.append(clause)
         params.extend(tparams)
     if exclude_previously_sent:
-        clauses.append(
-            "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
-        )
+        exempt_tags = [t for t in tags if _tag_is_exclude_sent_exempt(t, custom_exempt)]
+        non_exempt_tags = [t for t in tags if not _tag_is_exclude_sent_exempt(t, custom_exempt)]
+        if not tags:
+            # Etiketsiz sorgu (nadir) — klasik filtre
+            clauses.append(
+                "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
+            )
+        elif not non_exempt_tags:
+            # Sadece test/muaf etiketler — filtre yok
+            pass
+        elif not exempt_tags:
+            clauses.append(
+                "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
+            )
+        else:
+            # Karışık: muaf etiketi olanlar geçer; diğerleri daha önce gönderildiyse elenir
+            ex_clause, ex_params = _tag_match_any_clause(exempt_tags)
+            clauses.append(
+                f"(({ex_clause}) OR NOT EXISTS ("
+                f"SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id))"
+            )
+            params.extend(ex_params)
     if only_verified:
         # SMTP ile valid + (SMTP kapalıyken) mx_ok kabul
         clauses.append("LOWER(COALESCE(verify_status, '')) IN ('valid', 'mx_ok')")
     return " AND ".join(clauses), params
 
 
-def _count_tag_campaign_match(conn, tag, *, exclude_previously_sent=False, only_verified=False):
+def _count_tag_campaign_match(
+    conn, tag, *, exclude_previously_sent=False, only_verified=False, custom_exempt=None,
+):
     """Tek etiket için kampanya filtreleriyle eşleşen kontak sayısı.
 
     Returns: (count, approx)
@@ -952,6 +1043,8 @@ def _count_tag_campaign_match(conn, tag, *, exclude_previously_sent=False, only_
     tag = (tag or "").strip()
     if not tag:
         return 0, False
+    if custom_exempt is None:
+        custom_exempt = _load_exclude_sent_exempt_custom(conn)
     # Ek filtre yoksa registry hızlı; unsub/suppression farkı için approx=True
     if not exclude_previously_sent and not only_verified:
         n = _registry_tag_count(conn, tag)
@@ -959,6 +1052,7 @@ def _count_tag_campaign_match(conn, tag, *, exclude_previously_sent=False, only_
             return int(n), True
     where_sql, params = _campaign_selection_where(
         tag, exclude_previously_sent, only_verified=only_verified,
+        custom_exempt=custom_exempt,
     )
     try:
         n = int(scalar(
@@ -974,6 +1068,7 @@ def _count_tag_campaign_match(conn, tag, *, exclude_previously_sent=False, only_
 
 def _tag_breakdown_for_campaign(
     conn, tags, *, exclude_previously_sent=False, only_verified=False, limit=25,
+    custom_exempt=None,
 ):
     """Seçilen etiketler için etiket başına sayı.
 
@@ -982,6 +1077,8 @@ def _tag_breakdown_for_campaign(
     filtreli sayım yapılır.
     """
     tags = _parse_tag_filter_list(tags)[: max(0, int(limit or 25))]
+    if custom_exempt is None:
+        custom_exempt = _load_exclude_sent_exempt_custom(conn)
     out = []
     # Filtreliyse bile breakdown için önce registry (UI donmasın);
     # birleşim toplamı select-preview'da ayrı exact COUNT ile gelir.
@@ -992,6 +1089,7 @@ def _tag_breakdown_for_campaign(
                 conn, tag,
                 exclude_previously_sent=exclude_previously_sent,
                 only_verified=only_verified,
+                custom_exempt=custom_exempt,
             )
         else:
             n = _registry_tag_count(conn, tag)
@@ -1000,10 +1098,16 @@ def _tag_breakdown_for_campaign(
                     conn, tag,
                     exclude_previously_sent=False,
                     only_verified=False,
+                    custom_exempt=custom_exempt,
                 )
             else:
                 count, approx = int(n), True
-        out.append({"tag": tag, "count": int(count or 0), "approx": bool(approx)})
+        out.append({
+            "tag": tag,
+            "count": int(count or 0),
+            "approx": bool(approx),
+            "exclude_sent_exempt": _tag_is_exclude_sent_exempt(tag, custom_exempt),
+        })
     return out
 
 
@@ -1087,7 +1191,9 @@ def _insert_campaign_recipient_ids(conn, campaign_id, contact_ids, now):
         return attached
 
 
-def _filter_sendable_contact_ids(conn, ids, *, exclude_previously_sent=False, only_verified=False):
+def _filter_sendable_contact_ids(
+    conn, ids, *, exclude_previously_sent=False, only_verified=False, custom_exempt=None,
+):
     """Verilen ID listesini unsub/suppression/(opsiyonel) verify filtrelerinden geçir."""
     from database import _table_columns
 
@@ -1095,6 +1201,8 @@ def _filter_sendable_contact_ids(conn, ids, *, exclude_previously_sent=False, on
     ids = list(dict.fromkeys(ids))
     if not ids:
         return []
+    if custom_exempt is None:
+        custom_exempt = _load_exclude_sent_exempt_custom(conn)
     cols = _table_columns(conn, "mail_contacts") or set()
     has_verify = "verify_status" in cols
     out = []
@@ -1129,9 +1237,12 @@ def _filter_sendable_contact_ids(conn, ids, *, exclude_previously_sent=False, on
         except Exception:
             pass
         if exclude_previously_sent:
+            ex_sql, ex_params = _contact_has_exclude_exempt_tag_sql(custom_exempt)
             clauses.append(
-                "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
+                f"(NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id) "
+                f"OR {ex_sql})"
             )
+            params.extend(ex_params)
         if only_verified and has_verify:
             clauses.append("LOWER(COALESCE(verify_status, '')) IN ('valid', 'mx_ok')")
         rows = fetchall(
@@ -1238,17 +1349,21 @@ def _attach_campaign_recipients(
             seen.add(cid)
             merged.append(cid)
 
+    custom_exempt = _load_exclude_sent_exempt_custom(conn)
+
     if contact_ids:
         _push(_filter_sendable_contact_ids(
             conn, contact_ids,
             exclude_previously_sent=exclude_previously_sent,
             only_verified=only_verified,
+            custom_exempt=custom_exempt,
         ))
 
     tags = _parse_tag_filter_list(tag_filter)
     if tags:
         where_sql, params = _campaign_selection_where(
             tag_filter, exclude_previously_sent, only_verified=only_verified,
+            custom_exempt=custom_exempt,
         )
         sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
         # Limit birleşimde sonda uygulanır — önce tam etiket + seçimleri topla
@@ -4341,6 +4456,7 @@ def create_mailing_blueprint(permission_required):
         except (TypeError, ValueError):
             max_recipients = None
         tag_breakdown = []
+        custom_exempt = []
         with closing(get_db()) as conn:
             from mail_scrub import scrub_settings as _scrub_settings
             scrub_cfg = _scrub_settings(conn)
@@ -4351,6 +4467,7 @@ def create_mailing_blueprint(permission_required):
                 only_verified = bool(only_verified)
             approx = True
             mixed_selected = 0
+            custom_exempt = _load_exclude_sent_exempt_custom(conn)
             if recipient_mode == "manual":
                 total = len(emails)
                 approx = False
@@ -4359,6 +4476,7 @@ def create_mailing_blueprint(permission_required):
                     conn, contact_ids,
                     exclude_previously_sent=exclude_sent,
                     only_verified=only_verified,
+                    custom_exempt=custom_exempt,
                 )
                 total = len(filtered)
                 approx = False
@@ -4370,10 +4488,12 @@ def create_mailing_blueprint(permission_required):
                         conn, contact_ids,
                         exclude_previously_sent=exclude_sent,
                         only_verified=only_verified,
+                        custom_exempt=custom_exempt,
                     )
                     mixed_selected = len(filtered)
                 where_sql, params = _campaign_selection_where(
                     tag_filter, exclude_sent, only_verified=only_verified,
+                    custom_exempt=custom_exempt,
                 )
                 if tags_list and filtered:
                     ph = ",".join(["?"] * len(filtered))
@@ -4423,8 +4543,12 @@ def create_mailing_blueprint(permission_required):
                         conn, tags_list,
                         exclude_previously_sent=exclude_sent,
                         only_verified=only_verified,
+                        custom_exempt=custom_exempt,
                     )
         will_attach = min(total, max_recipients) if max_recipients else total
+        exempt_selected = [
+            t for t in tags_list if _tag_is_exclude_sent_exempt(t, custom_exempt)
+        ]
         return jsonify({
             "matching_count": total,
             "will_attach": will_attach,
@@ -4433,6 +4557,7 @@ def create_mailing_blueprint(permission_required):
             "recipient_mode": recipient_mode,
             "tag_filters": tags_list,
             "tag_breakdown": tag_breakdown,
+            "exclude_sent_exempt_tags": exempt_selected,
             "manual_selected": mixed_selected if recipient_mode == "tag" else (
                 len(contact_ids) if recipient_mode == "selected" else 0
             ),
