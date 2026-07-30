@@ -115,6 +115,7 @@ _BRANDS = {
         "casino_name": "Makrobet",
         "shortlink_label": "Kısa Link",
         "shortlink_host_placeholder": "kisalink.com",
+        "shortlink_max_hosts": 0,  # 0 = sınırsız
         "default_short_host": "",
         "default_aff_base": "",
         "domain_prefix_placeholder": "makrobet",
@@ -147,7 +148,8 @@ _BRANDS = {
         "login_sub": "Link takip, bio sayfa ve muhasebe",
         "casino_name": "Bizzo Casino",
         "shortlink_label": "Kısa Link",
-        "shortlink_host_placeholder": "kisalink.com",
+        "shortlink_host_placeholder": "kisalink1.com",
+        "shortlink_max_hosts": 4,  # Bizzo: 3–4 farklı short domain
         "default_short_host": "",
         "default_aff_base": "",
         "domain_prefix_placeholder": "bizzocasino",
@@ -217,6 +219,7 @@ def panel_context(username: str | None = None) -> dict:
         "casino_name": BRAND["casino_name"],
         "shortlink_label": BRAND["shortlink_label"],
         "shortlink_host_placeholder": BRAND["shortlink_host_placeholder"],
+        "shortlink_max_hosts": int(BRAND.get("shortlink_max_hosts") or 0),
         "domain_prefix_placeholder": BRAND["domain_prefix_placeholder"],
         "accent": BRAND["accent"],
         "invoice_vendor": BRAND["invoice_vendor"],

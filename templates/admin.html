@@ -2243,7 +2243,7 @@
             </div>
           </div>
           <div class="card-body" id="makrolink-settings-box" data-admin-only="1" style="display:none;">
-            <p class="hint">Kısa domainler Render custom domain + CNAME. Hepsi aynı kodu açar. Hedef = eklediğiniz casino/site URL’si (Smartico yok).</p>
+            <p class="hint">Kısa domainler Render custom domain + CNAME. Hepsi aynı kodu açar. Hedef = eklediğiniz casino/site URL’si{% if not panel.features.smartico %} (Smartico yok){% endif %}.{% if panel.brand == "bizzo" and panel.shortlink_max_hosts %} En fazla {{ panel.shortlink_max_hosts }} short domain.{% endif %}</p>
             <div class="hint" style="margin:0.5rem 0 0.75rem;padding:0.55rem 0.7rem;border:1px solid rgba(245,158,11,0.35);border-radius:8px;background:rgba(245,158,11,0.08);color:var(--text);font-size:0.78rem;line-height:1.45;">
               <strong>Önemli:</strong> Tablodaki <em>tıklama</em> = short URL’ye gelen her hit.<br>
               Üstteki <em>Online oyuncu</em> = casino sitesinde <code>tracker.js</code> çalışan oturumlar.<br>
@@ -2293,6 +2293,21 @@
             </form>
           </div>
           <div class="card-body">
+            {% if panel.brand == "bizzo" %}
+            <div id="makrolink-hosts-manager" data-admin-only="1" style="margin-bottom:0.9rem;padding:0.7rem 0.8rem;border:1px solid var(--border,#243044);border-radius:10px;background:rgba(56,189,248,0.05);">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.45rem;">
+                <label style="margin:0;font-weight:600;">Kısa domainler <span class="muted" style="font-weight:400;">(en fazla {{ panel.shortlink_max_hosts }})</span></label>
+                <span class="muted" id="makrolink-hosts-count" style="font-size:0.72rem;"></span>
+              </div>
+              <div id="makrolink-host-chips" style="display:flex;flex-wrap:wrap;gap:0.35rem;min-height:1.6rem;margin-bottom:0.5rem;"></div>
+              <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
+                <input id="makrolink-host-add-input" placeholder="{{ panel.shortlink_host_placeholder }}" autocomplete="off" style="min-width:160px;flex:1;">
+                <button type="button" class="btn btn-sm" id="btn-makrolink-host-add">Domain ekle</button>
+                <button type="button" class="btn btn-sm btn-primary" id="btn-makrolink-hosts-save">Kaydet</button>
+              </div>
+              <p class="muted-sm" style="margin:0.45rem 0 0;">Her domain Render Custom Domain + DNS CNAME → <code>bizzopanel.onrender.com</code>. Aynı kod tüm domainlerde açılır.</p>
+            </div>
+            {% endif %}
             <form id="makrolink-create-form">
               <div class="form-row-4">
                 <div class="form-span-2"><label for="makrolink-dest">Hedef link <span class="muted">(site URL — eklediğiniz domain)</span></label>
@@ -2301,6 +2316,16 @@
                 <div><label for="makrolink-label">Etiket</label><input id="makrolink-label" placeholder="örn. slot kampanya" required autocomplete="off"></div>
                 <div><label for="makrolink-code">Özel kod</label><input id="makrolink-code" placeholder="örn. slot-kampanya" required autocomplete="off"></div>
               </div>
+              {% if panel.brand == "bizzo" %}
+              <div class="form-row-4" style="margin-top:0.5rem;">
+                <div>
+                  <label for="makrolink-preferred-host">Kopyalanacak domain</label>
+                  <select id="makrolink-preferred-host">
+                    <option value="">Varsayılan short host</option>
+                  </select>
+                </div>
+              </div>
+              {% endif %}
               <div class="form-row-4" style="margin-top:0.5rem;">
                 {% if panel.features.smartico %}
                 <div><label for="makrolink-affid">Smartico Affiliate ID</label><input id="makrolink-affid" placeholder="örn. 12345 (online eşleme için)" autocomplete="off"></div>
@@ -2329,14 +2354,15 @@
               <p class="muted-sm" style="margin-top:0.4rem;">Hedef olarak takip ettiğiniz domain URL’sini girin. Online takip: Ayarlar’daki <strong>canlı domain grubu</strong>.</p>
             </form>
             <div id="makrolink-created-box" style="display:none;margin-top:0.75rem;padding:0.65rem 0.75rem;border:1px solid var(--border, #333);border-radius:8px;">
-              <div class="muted" style="font-size:0.72rem;margin-bottom:0.25rem;">Son oluşturulan kısa link</div>
+              <div class="muted" style="font-size:0.72rem;margin-bottom:0.25rem;">Son oluşturulan kısa link{% if panel.brand == "bizzo" %} — tüm domainler{% endif %}</div>
               <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
                 <a id="makrolink-created-url" class="ml-link" href="#" target="_blank" rel="noopener"></a>
                 <button type="button" class="icon-btn" id="btn-makrolink-created-copy" title="Kopyala"></button>
                 <span class="muted" style="font-size:0.72rem;">DNS yokken test: <code id="makrolink-created-test"></code></span>
               </div>
+              <div id="makrolink-created-urls" style="display:none;margin-top:0.5rem;flex-direction:column;gap:0.3rem;"></div>
             </div>
-            <p class="hint" style="margin-top:0.5rem;">Akış: <code>kisalink.com/xxx</code> → eklediğiniz site URL’si (örn. casino-domain.com/promotions).</p>
+            <p class="hint" style="margin-top:0.5rem;">{% if panel.brand == "bizzo" %}Akış: <code>domain1.com/xxx</code> · <code>domain2.com/xxx</code> → hedef site URL’si. Hepsi aynı koda gider.{% else %}Akış: <code>kisalink.com/xxx</code> → eklediğiniz site URL’si (örn. casino-domain.com/promotions).{% endif %}</p>
           </div>
           <div class="table-wrap">
             <div class="makrolink-table-toolbar" style="flex-wrap:wrap;gap:0.45rem;align-items:end;">
@@ -3118,6 +3144,8 @@
       casinoName: {{ panel.casino_name|tojson }},
       promoPlaceholder: {{ panel.biolink_promo_placeholder|tojson }},
       shortlinkLabel: {{ panel.shortlink_label|tojson }},
+      shortlinkMaxHosts: {{ (panel.shortlink_max_hosts or 0)|tojson }},
+      shortlinkHostPlaceholder: {{ panel.shortlink_host_placeholder|tojson }},
       domainPrefix: {{ panel.domain_prefix_placeholder|tojson }},
       defaultLogo: {{ (panel.default_brand_logo or '')|tojson }},
       pack: {{ panel.biolink_pack|tojson }}
@@ -5168,6 +5196,156 @@
         sel.innerHTML = opts;
       }
 
+      var makrolinkShortHosts = [];
+      var MAKROLINK_MAX_HOSTS = (window.PANEL_BIOLINK && window.PANEL_BIOLINK.shortlinkMaxHosts) || 0;
+
+      function makrolinkCleanHost(h) {
+        h = String(h || "").trim().toLowerCase()
+          .replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+        if (h.indexOf("www.") === 0) h = h.slice(4);
+        return h;
+      }
+
+      function makrolinkSyncHostsTextarea() {
+        var hostsEl = document.getElementById("makrolink-hosts");
+        if (hostsEl) hostsEl.value = makrolinkShortHosts.join("\n");
+      }
+
+      function makrolinkSyncPreferredHostSelect() {
+        var sel = document.getElementById("makrolink-preferred-host");
+        if (!sel) return;
+        var cur = sel.value;
+        var opts = '<option value="">Varsayılan short host</option>';
+        makrolinkShortHosts.forEach(function(h) {
+          opts += '<option value="' + esc(h) + '"' + (h === cur ? " selected" : "") + ">" + esc(h) + "</option>";
+        });
+        sel.innerHTML = opts;
+        if (cur && makrolinkShortHosts.indexOf(cur) >= 0) sel.value = cur;
+      }
+
+      function makrolinkRenderHostChips() {
+        var box = document.getElementById("makrolink-host-chips");
+        var countEl = document.getElementById("makrolink-hosts-count");
+        if (countEl) {
+          countEl.textContent = MAKROLINK_MAX_HOSTS
+            ? (makrolinkShortHosts.length + " / " + MAKROLINK_MAX_HOSTS)
+            : (makrolinkShortHosts.length + " domain");
+        }
+        if (!box) return;
+        if (!makrolinkShortHosts.length) {
+          box.innerHTML = '<span class="muted" style="font-size:0.78rem;">Henüz kısa domain yok — aşağıdan ekle.</span>';
+        } else {
+          box.innerHTML = makrolinkShortHosts.map(function(h, i) {
+            var def = i === 0 ? ' <span class="muted" style="font-size:0.65rem;">(varsayılan)</span>' : "";
+            return '<span class="ml-cat-badge" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.25rem 0.5rem;">' +
+              esc(h) + def +
+              '<button type="button" class="makrolink-host-remove" data-host="' + esc(h) + '" title="Kaldır" style="border:0;background:transparent;color:inherit;cursor:pointer;padding:0;line-height:1;font-size:0.95rem;">×</button>' +
+              "</span>";
+          }).join("");
+        }
+        makrolinkSyncHostsTextarea();
+        makrolinkSyncPreferredHostSelect();
+        var hostEl = document.getElementById("makrolink-host");
+        if (hostEl && makrolinkShortHosts.length && (!hostEl.value || makrolinkShortHosts.indexOf(makrolinkCleanHost(hostEl.value)) < 0)) {
+          hostEl.value = makrolinkShortHosts[0];
+        }
+      }
+
+      function makrolinkAddHostFromInput() {
+        var inp = document.getElementById("makrolink-host-add-input");
+        var h = makrolinkCleanHost(inp && inp.value);
+        if (!h || h.indexOf(".") < 0) {
+          alert("Geçerli domain yaz (örn. kisalink1.com).");
+          return;
+        }
+        if (makrolinkShortHosts.indexOf(h) >= 0) {
+          toast("Bu domain zaten listede");
+          if (inp) inp.value = "";
+          return;
+        }
+        if (MAKROLINK_MAX_HOSTS && makrolinkShortHosts.length >= MAKROLINK_MAX_HOSTS) {
+          alert("En fazla " + MAKROLINK_MAX_HOSTS + " kısa domain eklenebilir.");
+          return;
+        }
+        makrolinkShortHosts.push(h);
+        if (inp) inp.value = "";
+        makrolinkRenderHostChips();
+      }
+
+      function makrolinkSaveShortHosts() {
+        if (!makrolinkShortHosts.length) {
+          alert("En az bir kısa domain gerekli.");
+          return;
+        }
+        var publicHost = ((document.getElementById("makrolink-host") || {}).value || "").trim();
+        if (!publicHost || makrolinkShortHosts.indexOf(makrolinkCleanHost(publicHost)) < 0) {
+          publicHost = makrolinkShortHosts[0];
+        }
+        fetch(API + "/api/makrolink/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            short_hosts: makrolinkShortHosts,
+            public_host: publicHost,
+            public_scheme: ((document.getElementById("makrolink-scheme") || {}).value || "https")
+          })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(res) {
+            if (!res.ok) { alert((res.data && res.data.error) || "Kaydedilemedi"); return; }
+            makrolinkShortHosts = res.data.short_hosts || makrolinkShortHosts;
+            makrolinkRenderHostChips();
+            toast("Kısa domainler kaydedildi");
+            lastMakrolinkSig = "";
+            loadMakroLinks();
+          })
+          .catch(function() { alert("İstek başarısız"); });
+      }
+
+      function makrolinkPickPrimaryUrl(link) {
+        var urls = (link && link.short_urls && link.short_urls.length)
+          ? link.short_urls.slice()
+          : (link && link.short_url ? [link.short_url] : []);
+        var pref = ((document.getElementById("makrolink-preferred-host") || {}).value || "").trim().toLowerCase();
+        if (pref && urls.length) {
+          for (var i = 0; i < urls.length; i++) {
+            if (urls[i].toLowerCase().indexOf("://" + pref + "/") >= 0) return urls[i];
+          }
+        }
+        return urls[0] || (link && link.short_url) || "";
+      }
+
+      function makrolinkShowCreated(link) {
+        var box = document.getElementById("makrolink-created-box");
+        if (box) box.style.display = "block";
+        var urls = (link.short_urls && link.short_urls.length)
+          ? link.short_urls.slice()
+          : (link.short_url ? [link.short_url] : []);
+        var primary = makrolinkPickPrimaryUrl(link) || urls[0] || "";
+        var urlA = document.getElementById("makrolink-created-url");
+        if (urlA) {
+          urlA.href = primary || "#";
+          urlA.textContent = primary || "";
+        }
+        var testEl = document.getElementById("makrolink-created-test");
+        if (testEl) testEl.textContent = link.test_url || link.panel_url || "";
+        var list = document.getElementById("makrolink-created-urls");
+        if (list) {
+          if (urls.length > 1) {
+            list.style.display = "flex";
+            list.innerHTML = urls.map(function(u) {
+              return '<div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">' +
+                '<a class="ml-link" href="' + esc(u) + '" target="_blank" rel="noopener" style="font-size:0.82rem;">' + esc(u) + "</a>" +
+                '<button type="button" class="icon-btn makrolink-copy" data-url="' + esc(u) + '" title="Kopyala">' + COPY_ICON_SVG + "</button>" +
+                "</div>";
+            }).join("");
+          } else {
+            list.style.display = "none";
+            list.innerHTML = "";
+          }
+        }
+        return primary;
+      }
+
       function renderMakroLinkTable(links, opts) {
         opts = opts || {};
         makrolinkLast = links || [];
@@ -5181,8 +5359,9 @@
             return false;
           }
           if (!q) return true;
-          return [l.code, l.label, l.destination_url, l.affiliate_id, l.ref_code, l.short_url, l.category]
-            .join(" ").toLowerCase().indexOf(q) >= 0;
+          var hay = [l.code, l.label, l.destination_url, l.affiliate_id, l.ref_code, l.short_url, l.category]
+            .concat(l.short_urls || []).join(" ").toLowerCase();
+          return hay.indexOf(q) >= 0;
         });
         if (opts.resetPage) makrolinkPage = 1;
         var totalPages = Math.max(1, Math.ceil(rows.length / MAKROLINK_PAGE_SIZE));
@@ -5205,11 +5384,22 @@
             var catCell = cat
               ? '<span class="ml-cat-badge" data-id="' + l.id + '" data-cat="' + esc(cat) + '" title="Kategori değiştir">' + esc(cat) + '</span>'
               : '<span class="ml-cat-badge empty" data-id="' + l.id + '" data-cat="" title="Kategori seç">Kategori yok</span>';
+            var urls = (l.short_urls && l.short_urls.length) ? l.short_urls : (l.short_url ? [l.short_url] : []);
+            var primary = urls[0] || l.short_url || "";
+            var moreHtml = "";
+            if (urls.length > 1) {
+              moreHtml = '<details style="margin-top:0.2rem;font-size:0.72rem;"><summary class="muted" style="cursor:pointer;">+' + (urls.length - 1) + ' domain</summary>' +
+                urls.slice(1).map(function(u) {
+                  return '<div style="display:flex;align-items:center;gap:0.3rem;margin-top:0.2rem;">' +
+                    '<a class="ml-link" href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(u) + "</a>" +
+                    '<button type="button" class="icon-btn makrolink-copy" data-url="' + esc(u) + '" title="Kopyala">' + COPY_ICON_SVG + "</button></div>";
+                }).join("") + "</details>";
+            }
             return '<tr data-ml-id="' + l.id + '">' +
-              '<td><div style="display:flex;align-items:center;gap:0.4rem;">' +
-              '<a class="ml-link" href="' + esc(l.short_url) + '" target="_blank" rel="noopener">' + esc(l.short_url) + '</a>' +
-              '<button type="button" class="icon-btn makrolink-copy" data-url="' + esc(l.short_url) + '" title="Kopyala">' + COPY_ICON_SVG + '</button>' +
-              '</div></td>' +
+              '<td><div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">' +
+              '<a class="ml-link" href="' + esc(primary) + '" target="_blank" rel="noopener">' + esc(primary) + '</a>' +
+              '<button type="button" class="icon-btn makrolink-copy" data-url="' + esc(primary) + '" title="Kopyala">' + COPY_ICON_SVG + '</button>' +
+              "</div>" + moreHtml + "</td>" +
               '<td>' + esc(l.label || "—") + '</td>' +
               '<td>' + catCell + '</td>' +
               '<td title="' + esc(dest) + '"><code style="font-size:0.72rem;">' + esc(destShort) + '</code></td>' +
@@ -5331,6 +5521,11 @@
             if (affEl) affEl.value = d.aff_base || "";
             var hostsEl = document.getElementById("makrolink-hosts");
             if (hostsEl) hostsEl.value = (d.short_hosts || []).join("\n");
+            makrolinkShortHosts = (d.short_hosts || []).slice();
+            if (typeof d.max_short_hosts === "number" && d.max_short_hosts > 0) {
+              MAKROLINK_MAX_HOSTS = d.max_short_hosts;
+            }
+            makrolinkRenderHostChips();
             var groupEl = document.getElementById("makrolink-online-group");
             if (groupEl) groupEl.value = d.online_domain_group || "";
             var gst = document.getElementById("makrolink-online-group-status");
@@ -6137,6 +6332,9 @@
 
       bindOptional("makrolink-config-form", "submit", function(e) {
         e.preventDefault();
+        if (PANEL_BRAND === "bizzo" && makrolinkShortHosts.length) {
+          makrolinkSyncHostsTextarea();
+        }
         fetch(API + "/api/makrolink/config", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -6167,6 +6365,22 @@
             loadMakroLinkConfig();
             loadMakroLinks();
           });
+      });
+
+      bindOptional("btn-makrolink-host-add", "click", function() { makrolinkAddHostFromInput(); });
+      bindOptional("makrolink-host-add-input", "keydown", function(e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          makrolinkAddHostFromInput();
+        }
+      });
+      bindOptional("btn-makrolink-hosts-save", "click", function() { makrolinkSaveShortHosts(); });
+      bindOptional("makrolink-host-chips", "click", function(e) {
+        var btn = e.target && e.target.closest ? e.target.closest(".makrolink-host-remove") : null;
+        if (!btn) return;
+        var h = btn.getAttribute("data-host") || "";
+        makrolinkShortHosts = makrolinkShortHosts.filter(function(x) { return x !== h; });
+        makrolinkRenderHostChips();
       });
 
       bindOptional("btn-makrolink-ga4-test", "click", function() {
@@ -6274,23 +6488,21 @@
             if (btn) { btn.disabled = false; btn.textContent = "Kısalt & kopyala"; }
             if (!res.ok) { alert(res.data.error || "Oluşturulamadı."); return; }
             var link = res.data.link || {};
+            var prefKeep = ((document.getElementById("makrolink-preferred-host") || {}).value || "");
             var createForm = document.getElementById("makrolink-create-form");
             if (createForm) createForm.reset();
             makrolinkSyncCreateCategorySelect();
-            var box = document.getElementById("makrolink-created-box");
-            if (box) box.style.display = "block";
-            var urlA = document.getElementById("makrolink-created-url");
-            if (urlA) {
-              urlA.href = link.short_url || "#";
-              urlA.textContent = link.short_url || "";
-            }
-            var testEl = document.getElementById("makrolink-created-test");
-            if (testEl) testEl.textContent = link.test_url || link.panel_url || "";
-            toast("Kısa link oluşturuldu");
+            makrolinkSyncPreferredHostSelect();
+            var prefSel = document.getElementById("makrolink-preferred-host");
+            if (prefSel && prefKeep) prefSel.value = prefKeep;
+            var primary = makrolinkShowCreated(link);
+            toast(link.short_urls && link.short_urls.length > 1
+              ? ("Kısa link oluşturuldu (" + link.short_urls.length + " domain)")
+              : "Kısa link oluşturuldu");
             lastMakrolinkSig = "";
             loadMakroLinks();
             try {
-              if (link.short_url && navigator.clipboard) navigator.clipboard.writeText(link.short_url);
+              if (primary && navigator.clipboard) navigator.clipboard.writeText(primary);
             } catch (err) {}
           })
           .catch(function() {

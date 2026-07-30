@@ -32,9 +32,10 @@ from database import (
 IntegrityError = integrity_error_type()
 
 try:
-    from panel_config import BRAND, feature_enabled as _panel_feature
+    from panel_config import BRAND, PANEL_BRAND, feature_enabled as _panel_feature
 except ImportError:
     BRAND = {"default_short_host": "", "default_aff_base": ""}
+    PANEL_BRAND = "makro"
 
     def _panel_feature(name):
         return name != "smartico"
@@ -42,6 +43,14 @@ except ImportError:
 DEFAULT_PUBLIC_HOST = BRAND.get("default_short_host") or ""
 DEFAULT_AFF_BASE = BRAND.get("default_aff_base") or ""
 SMARTICO_ENABLED = _panel_feature("smartico")
+# Bizzo: en fazla N short host; Makro: 0 = sınırsız
+MAX_SHORT_HOSTS = int(BRAND.get("shortlink_max_hosts") or 0)
+
+
+def _max_short_hosts():
+    return int(BRAND.get("shortlink_max_hosts") or 0)
+
+
 CODE_ALPHABET = string.ascii_letters + string.digits
 CODE_LEN = 7
 
@@ -390,6 +399,7 @@ def get_config(conn, include_secrets=False):
         online_domains = []
         online_group_error = str(exc)
 
+    max_hosts = _max_short_hosts()
     cfg = {
         "public_host": default_host or "",
         "short_hosts": hosts,
@@ -403,6 +413,8 @@ def get_config(conn, include_secrets=False):
         "ga4_measurement_id": mid,
         "ga4_configured": bool(mid and secret),
         "categories": list_categories(conn),
+        "max_short_hosts": max_hosts,
+        "brand": PANEL_BRAND,
     }
     if include_secrets:
         cfg["ga4_api_secret"] = secret
@@ -427,6 +439,11 @@ def save_config(
         else:
             raw = str(short_hosts)
         hosts = _parse_host_list(raw, DEFAULT_PUBLIC_HOST)
+        max_hosts = _max_short_hosts()
+        if max_hosts and len(hosts) > max_hosts:
+            raise ValueError(f"En fazla {max_hosts} kısa domain eklenebilir.")
+        if max_hosts and not hosts:
+            raise ValueError("En az bir kısa domain gerekli.")
         upsert_setting(conn, "short_hosts", "\n".join(hosts))
         # public_host listede yoksa ilkini varsayılan yap
         current_default = _clean_host(get_setting(conn, "public_host", "") or "")
@@ -440,6 +457,9 @@ def save_config(
         hosts = _parse_host_list(get_setting(conn, "short_hosts", ""), host)
         if host not in hosts:
             hosts.insert(0, host)
+            max_hosts = _max_short_hosts()
+            if max_hosts and len(hosts) > max_hosts:
+                raise ValueError(f"En fazla {max_hosts} kısa domain eklenebilir.")
             upsert_setting(conn, "short_hosts", "\n".join(hosts))
 
     if public_scheme is not None:
@@ -719,11 +739,27 @@ def short_url(conn, code, host=None):
     return f"{cfg['public_scheme']}://{h}/{code}"
 
 
+def short_urls_for_code(conn, code):
+    """Tüm kayıtlı short host’larda aynı kodun URL listesi."""
+    cfg = get_config(conn)
+    code = (code or "").strip()
+    if not code:
+        return []
+    out = []
+    for h in cfg.get("short_hosts") or []:
+        if h:
+            out.append(f"{cfg['public_scheme']}://{h}/{code}")
+    if not out and cfg.get("public_host"):
+        out.append(f"{cfg['public_scheme']}://{cfg['public_host']}/{code}")
+    return out
+
+
 def _row_to_dict(conn, row):
     if not row:
         return None
     d = dict(row)
     d["short_url"] = short_url(conn, d["code"])
+    d["short_urls"] = short_urls_for_code(conn, d["code"])
     d["clicks"] = int(d.get("click_count") or 0)
     return d
 
