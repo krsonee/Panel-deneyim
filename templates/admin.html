@@ -6335,27 +6335,33 @@
         if (PANEL_BRAND === "bizzo" && makrolinkShortHosts.length) {
           makrolinkSyncHostsTextarea();
         }
+        var cfgBody = {
+          public_host: document.getElementById("makrolink-host").value.trim(),
+          public_scheme: document.getElementById("makrolink-scheme").value,
+          short_hosts: document.getElementById("makrolink-hosts")
+            ? document.getElementById("makrolink-hosts").value
+            : "",
+          online_domain_group: document.getElementById("makrolink-online-group")
+            ? document.getElementById("makrolink-online-group").value
+            : "",
+          ga4_measurement_id: document.getElementById("makrolink-ga4-id")
+            ? document.getElementById("makrolink-ga4-id").value.trim()
+            : "",
+          ga4_api_secret: document.getElementById("makrolink-ga4-secret")
+            ? document.getElementById("makrolink-ga4-secret").value.trim()
+            : undefined
+        };
+        // Smartico sadece Makro'da — Bizzo kaydında aff_base gönderme
+        if (PANEL_FEATURES && PANEL_FEATURES.smartico) {
+          cfgBody.aff_base = document.getElementById("makrolink-aff-base")
+            ? document.getElementById("makrolink-aff-base").value.trim()
+            : "";
+        } else {
+          cfgBody.aff_base = "";
+        }
         fetch(API + "/api/makrolink/config", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            public_host: document.getElementById("makrolink-host").value.trim(),
-            public_scheme: document.getElementById("makrolink-scheme").value,
-            aff_base: document.getElementById("makrolink-aff-base")
-              ? document.getElementById("makrolink-aff-base").value.trim()
-              : "",
-            short_hosts: document.getElementById("makrolink-hosts")
-              ? document.getElementById("makrolink-hosts").value
-              : "",
-            online_domain_group: document.getElementById("makrolink-online-group")
-              ? document.getElementById("makrolink-online-group").value
-              : "",
-            ga4_measurement_id: document.getElementById("makrolink-ga4-id")
-              ? document.getElementById("makrolink-ga4-id").value.trim()
-              : "",
-            ga4_api_secret: document.getElementById("makrolink-ga4-secret")
-              ? document.getElementById("makrolink-ga4-secret").value.trim()
-              : undefined
-          })
+          body: JSON.stringify(cfgBody)
         }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
           .then(function(res) {
             if (!res.ok) { alert(res.data.error || "Kaydedilemedi."); return; }

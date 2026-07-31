@@ -553,12 +553,16 @@ def save_config(
         upsert_setting(conn, "public_scheme", scheme if scheme in ("https", "http") else "https")
 
     if aff_base is not None:
-        base = (aff_base or "").strip().rstrip("/")
-        if base and not base.startswith("http"):
-            base = "https://" + base
-        if not base or not _valid_url(base + "/x"):
-            raise ValueError("Geçerli Smartico aff base gerekli (örn. https://go.aff.makroaffi.com).")
-        upsert_setting(conn, "aff_base", base)
+        # Bizzo / Smartico kapalı: aff_base zorunlu değil, boş kaydet
+        if not SMARTICO_ENABLED:
+            upsert_setting(conn, "aff_base", "")
+        else:
+            base = (aff_base or "").strip().rstrip("/")
+            if base and not base.startswith("http"):
+                base = "https://" + base
+            if not base or not _valid_url(base + "/x"):
+                raise ValueError("Geçerli Smartico aff base gerekli (örn. https://go.aff.makroaffi.com).")
+            upsert_setting(conn, "aff_base", base)
 
     if online_domain_group is not None:
         raw_group = str(online_domain_group or "").strip()
