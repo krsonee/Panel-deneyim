@@ -41,6 +41,7 @@ from permissions import (
 )
 import totp
 from panel_config import BRAND, PANEL_BRAND, can_access_mailing, feature_enabled, panel_context
+import makrolink_api
 from database import (
     DB_PATH,
     APP_DIR,
@@ -1507,6 +1508,15 @@ def handle_tracked_domain_redirect():
         return None
     if request.method not in ("GET", "HEAD"):
         return None
+    # Kısa link domaininde /kod path'ini çalma (çift kayıt olsa bile)
+    seg = path.strip("/")
+    if seg and "/" not in seg and feature_enabled("makrolink"):
+        try:
+            with closing(get_db()) as conn:
+                if makrolink_api.is_makrolink_host(request.host, conn):
+                    return None
+        except Exception:
+            pass
     link = find_redirect_tracked_link(request.host)
     if not link:
         return None
@@ -2423,7 +2433,6 @@ def static_files(filename):
 from accounting_routes import create_accounting_blueprint
 from makrolink_routes import create_makrolink_blueprint
 from biolink_routes import create_biolink_blueprint, handle_custom_domain_biolink
-import makrolink_api
 
 app.register_blueprint(create_accounting_blueprint(permission_required, superadmin_required))
 if feature_enabled("makrolink"):
@@ -2476,22 +2485,14 @@ def biolink_custom_domain():
 
 
 @app.before_request
-def tracked_domain_redirect():
-    """Bio olmayan özel domain → hedef siteye yönlendir + say."""
-    # Bio sayfa varsa o öncelikli (custom_domain dolu sayfa)
-    return handle_tracked_domain_redirect()
-
-
-@app.before_request
 def makrolink_host_short_codes():
-    """makrovip.com/AbC123 → redirect (panel host'taki /admin vs. dokunulmaz)."""
+    """Kısa domain /kod → hedef URL (tracked redirect'ten ÖNCE; aksi halde path ezilir)."""
     host = (request.host or "").split(":")[0].strip().lower()
     path = (request.path or "/").strip("/")
     if not path or "/" in path:
         return None
     if path.lower() in makrolink_api.RESERVED_PATHS:
         return None
-    # Only short-code paths on the configured public host (or www)
     try:
         with closing(get_db()) as conn:
             if not makrolink_api.is_makrolink_host(host, conn):
@@ -2504,11 +2505,21 @@ def makrolink_host_short_codes():
                 referer=request.headers.get("Referer", ""),
                 short_host=host,
             )
-    except Exception:
+    except Exception as exc:
+        print(f"⚠️  makrolink short resolve: {exc}")
         return None
     if not dest:
         return ("Link bulunamadı veya pasif.", 404)
     return redirect(dest, code=302)
+
+
+@app.before_request
+def tracked_domain_redirect():
+    """Bio olmayan özel domain → hedef siteye yönlendir + say.
+
+    Kısa-link host + tek segment path zaten yukarıdaki makrolink handler'da işlenir.
+    """
+    return handle_tracked_domain_redirect()
 
 
 def _run_startup():

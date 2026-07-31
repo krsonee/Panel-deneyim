@@ -2311,10 +2311,10 @@
             <form id="makrolink-create-form">
               <div class="form-row-4">
                 <div class="form-span-2"><label for="makrolink-dest">Hedef link <span class="muted">(site URL — eklediğiniz domain)</span></label>
-                  <input id="makrolink-dest" placeholder="https://ornek-domain.com/promotions" required autocomplete="off">
+                  <input id="makrolink-dest" placeholder="{% if panel.brand == 'bizzo' %}https://bizzocasino168.com/?register=affadi{% else %}https://ornek-domain.com/promotions{% endif %}" required autocomplete="off">
                 </div>
                 <div><label for="makrolink-label">Etiket</label><input id="makrolink-label" placeholder="örn. slot kampanya" required autocomplete="off"></div>
-                <div><label for="makrolink-code">Özel kod</label><input id="makrolink-code" placeholder="örn. slot-kampanya" required autocomplete="off"></div>
+                <div><label for="makrolink-code">Özel kod</label><input id="makrolink-code" placeholder="{% if panel.brand == 'bizzo' %}örn. maumut{% else %}örn. slot-kampanya{% endif %}" required autocomplete="off"></div>
               </div>
               {% if panel.brand == "bizzo" %}
               <div class="form-row-4" style="margin-top:0.5rem;">

@@ -847,6 +847,10 @@ def _row_to_dict(conn, row):
     d["short_url"] = short_url(conn, d["code"])
     d["short_urls"] = short_urls_for_code(conn, d["code"])
     d["clicks"] = int(d.get("click_count") or 0)
+    # Panel host üzerinden test (DNS/custom domain hazır olmasa da)
+    code = (d.get("code") or "").strip()
+    d["panel_url"] = f"/r/{code}" if code else ""
+    d["test_url"] = d["panel_url"]
     return d
 
 
@@ -877,17 +881,17 @@ def list_links(conn, q_text=None, limit=200):
 
 
 def get_link_by_code(conn, code, active_only=True):
-    code = (code or "").strip()
+    code = (code or "").strip().lower()
     if not _valid_code(code):
         return None
     if active_only:
         row = fetchone(
             conn,
-            "SELECT * FROM makrolink_links WHERE code = ? AND COALESCE(is_active, 1) = 1",
+            "SELECT * FROM makrolink_links WHERE lower(code) = ? AND COALESCE(is_active, 1) = 1",
             (code,),
         )
     else:
-        row = fetchone(conn, "SELECT * FROM makrolink_links WHERE code = ?", (code,))
+        row = fetchone(conn, "SELECT * FROM makrolink_links WHERE lower(code) = ?", (code,))
     return _row_to_dict(conn, row) if row else None
 
 
@@ -910,11 +914,17 @@ def create_link(
     label = (label or "").strip()[:200]
     if not label:
         raise ValueError("Etiket gerekli.")
-    code = (code or "").strip()
+    code = (code or "").strip().lower()
     if not code:
         raise ValueError("Özel kod gerekli.")
     if not _valid_code(code):
         raise ValueError("Kod geçersiz (harf/rakam/_/- , reserved değil).")
+    cfg_hosts = get_config(conn)
+    if PANEL_BRAND == "bizzo" and not (cfg_hosts.get("short_hosts") or cfg_hosts.get("public_host")):
+        raise ValueError(
+            "Önce Kısa domainler'e domain ekle ve Kaydet (örn. bizzokazan.site). "
+            "Render Custom Domain + Cloudflare DNS şart."
+        )
     affiliate_id = (affiliate_id or "").strip()[:64]
     smartico_link_id = (smartico_link_id or "").strip()[:64]
     ref_code = (ref_code or "").strip()[:128]
@@ -937,7 +947,11 @@ def create_link(
         smartico_link_id = ""
 
     revive_id = None
-    existing = fetchone(conn, "SELECT id, is_active FROM makrolink_links WHERE code = ?", (code,))
+    existing = fetchone(
+        conn,
+        "SELECT id, is_active FROM makrolink_links WHERE lower(code) = ?",
+        (code,),
+    )
     if existing:
         if int(existing["is_active"] or 0) == 1:
             raise ValueError("Bu kısa kod zaten kullanılıyor.")
@@ -1049,17 +1063,17 @@ def update_link(
         lab = row.get("label") or ""
 
     if code is not None:
-        new_code = (code or "").strip()
+        new_code = (code or "").strip().lower()
         if not new_code:
             raise ValueError("Özel kod gerekli.")
         if not _valid_code(new_code):
             raise ValueError("Kod geçersiz (harf/rakam/_/- , reserved değil).")
-        if new_code != row.get("code"):
+        if new_code != (row.get("code") or "").lower():
             other = fetchone(
                 conn,
                 """
                 SELECT id FROM makrolink_links
-                WHERE code = ? AND id != ? AND COALESCE(is_active, 1) = 1
+                WHERE lower(code) = ? AND id != ? AND COALESCE(is_active, 1) = 1
                 """,
                 (new_code, int(link_id)),
             )
