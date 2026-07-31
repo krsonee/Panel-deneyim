@@ -51,6 +51,70 @@ def _max_short_hosts():
     return int(BRAND.get("shortlink_max_hosts") or 0)
 
 
+# Bizzo DB’de eski seed’den kalan Makro short host’lar — asla göstermeyiz / kaydetmeyiz
+_BIZZO_BLOCKED_SHORT_HOSTS = frozenset({
+    "makrovip.com",
+    "makrogir.com",
+    "vipmakro.com",
+    "sada.com",
+})
+_BIZZO_BLOCKED_HOST_PREFIXES = (
+    "makrobet",
+    "makrovip",
+    "makrogir",
+    "vipmakro",
+    "makroaffi",
+)
+
+
+def _is_blocked_short_host(host):
+    """Bizzo panelinde Makro short domainlerini reddet."""
+    if PANEL_BRAND != "bizzo":
+        return False
+    h = _clean_host(host)
+    if not h:
+        return False
+    if h in _BIZZO_BLOCKED_SHORT_HOSTS:
+        return True
+    for p in _BIZZO_BLOCKED_HOST_PREFIXES:
+        if h == p or h.startswith(p + ".") or h.startswith(p):
+            return True
+    return False
+
+
+def _filter_hosts_for_brand(hosts):
+    return [h for h in (hosts or []) if h and not _is_blocked_short_host(h)]
+
+
+def purge_foreign_short_hosts(conn):
+    """Bizzo: makrovip vb. eski seed’i DB’den sil. Makro’da no-op."""
+    if PANEL_BRAND != "bizzo":
+        return False
+    changed = False
+    raw_hosts = get_setting(conn, "short_hosts", "") or ""
+    default_host = _clean_host(get_setting(conn, "public_host", "") or "")
+    hosts = _parse_host_list(raw_hosts, "")
+    if default_host and default_host not in hosts:
+        hosts.insert(0, default_host)
+    cleaned = _filter_hosts_for_brand(hosts)
+    if cleaned != hosts:
+        upsert_setting(conn, "short_hosts", "\n".join(cleaned))
+        changed = True
+    if default_host and _is_blocked_short_host(default_host):
+        upsert_setting(conn, "public_host", cleaned[0] if cleaned else "")
+        changed = True
+    elif cleaned and default_host and default_host not in cleaned:
+        upsert_setting(conn, "public_host", cleaned[0])
+        changed = True
+    aff = (get_setting(conn, "aff_base", "") or "").strip().lower()
+    if aff and ("makroaffi" in aff or "makrovip" in aff):
+        upsert_setting(conn, "aff_base", "")
+        changed = True
+    if changed:
+        conn.commit()
+    return changed
+
+
 CODE_ALPHABET = string.ascii_letters + string.digits
 CODE_LEN = 7
 
@@ -377,6 +441,12 @@ def get_config(conn, include_secrets=False):
     hosts = _parse_host_list(get_setting(conn, "short_hosts", ""), default_host or DEFAULT_PUBLIC_HOST)
     if default_host and default_host not in hosts:
         hosts.insert(0, default_host)
+    # Bizzo: eski makrovip seed’ini gizle / listeden çıkar
+    hosts = _filter_hosts_for_brand(hosts)
+    if default_host and _is_blocked_short_host(default_host):
+        default_host = hosts[0] if hosts else ""
+    elif default_host and default_host not in hosts:
+        default_host = hosts[0] if hosts else ""
     if not default_host and hosts:
         default_host = hosts[0]
 
@@ -387,6 +457,8 @@ def get_config(conn, include_secrets=False):
     if aff_base and not aff_base.startswith("http"):
         aff_base = "https://" + aff_base
     if not SMARTICO_ENABLED:
+        aff_base = ""
+    if PANEL_BRAND == "bizzo" and aff_base and ("makroaffi" in aff_base.lower() or "makrovip" in aff_base.lower()):
         aff_base = ""
 
     mid = (get_setting(conn, "ga4_measurement_id", "") or "").strip()
@@ -439,6 +511,12 @@ def save_config(
         else:
             raw = str(short_hosts)
         hosts = _parse_host_list(raw, DEFAULT_PUBLIC_HOST)
+        blocked = [h for h in hosts if _is_blocked_short_host(h)]
+        if blocked:
+            raise ValueError(
+                "Bu panelde Makro domain kullanılamaz: " + ", ".join(blocked)
+            )
+        hosts = _filter_hosts_for_brand(hosts)
         max_hosts = _max_short_hosts()
         if max_hosts and len(hosts) > max_hosts:
             raise ValueError(f"En fazla {max_hosts} kısa domain eklenebilir.")
@@ -447,19 +525,27 @@ def save_config(
         upsert_setting(conn, "short_hosts", "\n".join(hosts))
         # public_host listede yoksa ilkini varsayılan yap
         current_default = _clean_host(get_setting(conn, "public_host", "") or "")
-        if not current_default or current_default not in hosts:
+        if hosts and (not current_default or current_default not in hosts or _is_blocked_short_host(current_default)):
             upsert_setting(conn, "public_host", hosts[0])
+        elif not hosts and PANEL_BRAND == "bizzo":
+            upsert_setting(conn, "public_host", "")
 
     if public_host is not None:
         host = _clean_host(public_host) or DEFAULT_PUBLIC_HOST
+        if host and _is_blocked_short_host(host):
+            raise ValueError(f"Bu panelde Makro domain kullanılamaz: {host}")
         upsert_setting(conn, "public_host", host)
         # Varsayılanı listeye ekle
-        hosts = _parse_host_list(get_setting(conn, "short_hosts", ""), host)
-        if host not in hosts:
+        hosts = _filter_hosts_for_brand(
+            _parse_host_list(get_setting(conn, "short_hosts", ""), host)
+        )
+        if host and host not in hosts:
             hosts.insert(0, host)
             max_hosts = _max_short_hosts()
             if max_hosts and len(hosts) > max_hosts:
                 raise ValueError(f"En fazla {max_hosts} kısa domain eklenebilir.")
+            upsert_setting(conn, "short_hosts", "\n".join(hosts))
+        elif hosts != _parse_host_list(get_setting(conn, "short_hosts", ""), ""):
             upsert_setting(conn, "short_hosts", "\n".join(hosts))
 
     if public_scheme is not None:

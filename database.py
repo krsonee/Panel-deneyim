@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 import threading
 from contextlib import closing
@@ -710,6 +711,85 @@ def migrate_makrolink(conn):
                 conn,
                 "INSERT OR IGNORE INTO makrolink_settings (key, value) VALUES ('public_scheme', 'https')",
             )
+    # Bizzo: eski makrovip.com / makroaffi seed kalıntısını temizle (circular import yok)
+    if _ML_PANEL == "bizzo":
+        _bizzo_blocked = {
+            "makrovip.com",
+            "makrogir.com",
+            "vipmakro.com",
+            "sada.com",
+        }
+
+        def _bizzo_host_blocked(h):
+            h = (h or "").strip().lower()
+            if not h:
+                return False
+            if h in _bizzo_blocked:
+                return True
+            for p in ("makrobet", "makrovip", "makrogir", "vipmakro", "makroaffi"):
+                if h == p or h.startswith(p + ".") or h.startswith(p):
+                    return True
+            return False
+
+        ph = fetchone(conn, "SELECT value FROM makrolink_settings WHERE key = ?", ("public_host",))
+        sh = fetchone(conn, "SELECT value FROM makrolink_settings WHERE key = ?", ("short_hosts",))
+        aff = fetchone(conn, "SELECT value FROM makrolink_settings WHERE key = ?", ("aff_base",))
+        hosts_raw = (sh["value"] if sh else "") or ""
+        hosts = []
+        seen = set()
+        for part in re.split(r"[\s,;]+", str(hosts_raw)):
+            h = part.strip().lower().replace("https://", "").replace("http://", "").strip("/").split("/")[0]
+            if h.startswith("www."):
+                h = h[4:]
+            if not h or "." not in h or h in seen or _bizzo_host_blocked(h):
+                continue
+            seen.add(h)
+            hosts.append(h)
+        pub = ""
+        if ph and ph["value"]:
+            pub = str(ph["value"]).strip().lower().replace("https://", "").replace("http://", "").strip("/").split("/")[0]
+            if pub.startswith("www."):
+                pub = pub[4:]
+            if _bizzo_host_blocked(pub):
+                pub = hosts[0] if hosts else ""
+        if pub and pub not in hosts and not _bizzo_host_blocked(pub):
+            hosts.insert(0, pub)
+        if uses_postgres():
+            execute(
+                conn,
+                """
+                INSERT INTO makrolink_settings (key, value) VALUES ('short_hosts', ?)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """,
+                ("\n".join(hosts),),
+            )
+            execute(
+                conn,
+                """
+                INSERT INTO makrolink_settings (key, value) VALUES ('public_host', ?)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """,
+                (pub or (hosts[0] if hosts else ""),),
+            )
+        else:
+            execute(conn, "INSERT OR REPLACE INTO makrolink_settings (key, value) VALUES ('short_hosts', ?)", ("\n".join(hosts),))
+            execute(
+                conn,
+                "INSERT OR REPLACE INTO makrolink_settings (key, value) VALUES ('public_host', ?)",
+                (pub or (hosts[0] if hosts else ""),),
+            )
+        aff_val = (aff["value"] if aff else "") or ""
+        if aff_val and ("makroaffi" in aff_val.lower() or "makrovip" in aff_val.lower()):
+            if uses_postgres():
+                execute(
+                    conn,
+                    """
+                    INSERT INTO makrolink_settings (key, value) VALUES ('aff_base', '')
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                    """,
+                )
+            else:
+                execute(conn, "INSERT OR REPLACE INTO makrolink_settings (key, value) VALUES ('aff_base', '')")
     cols = _table_columns(conn, "makrolink_links")
     if cols and "target_domain" not in cols:
         execute(conn, "ALTER TABLE makrolink_links ADD COLUMN target_domain TEXT NOT NULL DEFAULT ''")
