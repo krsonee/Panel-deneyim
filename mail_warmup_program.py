@@ -53,7 +53,7 @@ TASK_CATALOG = {
     },
     "cap_apply": {
         "title": "Domain cap güncelle",
-        "hint": "Warm-up panosunda daily_cap’i bugünün hedefine çek; status warming kalsın.",
+        "hint": "İşaretleyince daily_cap otomatik bugünün hedefine çekilir. Banner’daki ‘önerilen’ ≠ gönderim kotası; kotayı bu görev / otomatik senkron yazar.",
     },
     "reply_monitor": {
         "title": "Bounce / reply izleme",
@@ -195,9 +195,63 @@ def _domain_rows(conn, domain_ids):
     return [by_id[i] for i in ids if i in by_id]
 
 
+def sync_program_caps(conn, state: dict | None = None, *, force: bool = False) -> dict:
+    """Aktif program domainlerinin daily_cap’ini bugünün planına çek.
+
+    Banner ‘~410’ öneri; göndermeyi engelleyen asıl kapı domain.daily_cap.
+    Cap eski günde kalırsa (örn. 250) kalan mailler skipped olur — her gün 1 kez senkron.
+    """
+    st = state if state is not None else load_state(conn)
+    if not st.get("active") or not (st.get("domain_ids") or []):
+        return {"updated": 0, "skipped": True}
+    today = _today_str()
+    if not force and (st.get("last_cap_sync_date") or "") == today:
+        return {"updated": 0, "skipped": True, "daily_cap": None}
+    day_n = compute_day_number(st, today)
+    plan = day_plan(day_n)
+    cap = int(plan["daily_cap_suggest"])
+    updated = 0
+    for did in st.get("domain_ids") or []:
+        try:
+            execute(
+                conn,
+                """
+                UPDATE mail_domains
+                SET daily_cap = ?,
+                    warm_day = ?,
+                    warm_status = CASE
+                        WHEN COALESCE(warm_status, '') IN ('burned', 'paused') THEN warm_status
+                        WHEN ? >= 30 THEN 'warm'
+                        ELSE 'warming'
+                    END
+                WHERE id = ?
+                """,
+                (cap, int(day_n), int(day_n), int(did)),
+            )
+            updated += 1
+        except Exception:
+            continue
+    st["last_cap_sync_date"] = today
+    save_state(conn, st)
+    return {
+        "updated": updated,
+        "skipped": False,
+        "daily_cap": cap,
+        "day": day_n,
+        "per_domain_target": int(plan["per_domain_target"]),
+    }
+
+
 def program_snapshot(conn) -> dict:
     st = load_state(conn)
     today = _today_str()
+    # Cap ile program hedefini aynı güne kilitle (yoksa 410 öner / 250 kes)
+    if st.get("active"):
+        try:
+            sync_program_caps(conn, st, force=False)
+            st = load_state(conn)
+        except Exception as exc:
+            print(f"⚠️  warmup cap sync: {exc}")
     day_n = compute_day_number(st, today)
     plan = day_plan(day_n)
     done_map = st.get("completions", {}).get(today) or {}
@@ -232,6 +286,19 @@ def program_snapshot(conn) -> dict:
                 break
 
     incomplete = bool(st.get("active")) and not all_done
+    caps = [int(d.get("daily_cap") or 0) for d in domains if d.get("daily_cap") is not None]
+    min_cap = min(caps) if caps else 0
+    target = int(plan["per_domain_target"])
+    suggest = int(plan["daily_cap_suggest"])
+    banner_text = ""
+    if incomplete:
+        banner_text = (
+            f"Isıtma Günü {day_n}/{TOTAL_DAYS}: "
+            f"{sum(1 for t in tasks if not t['done'])} görev bekliyor · "
+            f"önerilen gönderim ~{target}/domain · günlük cap {min_cap or suggest}"
+        )
+        if min_cap and min_cap < target:
+            banner_text += f" ⚠️ cap hedefin altında (en az {target} olmalı)"
     return {
         "today": today,
         "active": bool(st.get("active")),
@@ -244,13 +311,15 @@ def program_snapshot(conn) -> dict:
         "domains": domains,
         "suggested_domains": suggested,
         "notes": st.get("notes") or "",
+        "cap_reality": {
+            "min_daily_cap": min_cap,
+            "per_domain_target": target,
+            "daily_cap_suggest": suggest,
+            "aligned": (not min_cap) or min_cap >= target,
+        },
         "banner": {
             "show": incomplete,
-            "text": (
-                f"Isıtma Günü {day_n}/{TOTAL_DAYS}: "
-                f"{sum(1 for t in tasks if not t['done'])} görev bekliyor · "
-                f"domain başı ~{plan['per_domain_target']} mail"
-            ) if incomplete else "",
+            "text": banner_text,
         },
     }
 
@@ -299,26 +368,17 @@ def set_task(conn, task_key: str, done: bool, day_date: str | None = None) -> di
     comps = st.setdefault("completions", {})
     day_map = comps.setdefault(today, {})
     day_map[task_key] = bool(done)
-    # Tüm görevler bittiyse cap sync
+    save_state(conn, st)
+    # «Domain cap güncelle» işaretlenince veya günün tüm görevleri bitince cap’i plana çek
     snap_day = compute_day_number(st, today)
     plan = day_plan(snap_day)
     keys = [t["key"] for t in plan["tasks"]]
-    if keys and all(day_map.get(k) for k in keys):
-        for did in st.get("domain_ids") or []:
-            try:
-                execute(
-                    conn,
-                    """
-                    UPDATE mail_domains
-                    SET daily_cap = ?, warm_day = ?, warm_status = CASE
-                        WHEN ? >= 30 THEN 'warm' ELSE 'warming' END
-                    WHERE id = ?
-                    """,
-                    (int(plan["daily_cap_suggest"]), snap_day, snap_day, int(did)),
-                )
-            except Exception:
-                pass
-    save_state(conn, st)
+    all_done = bool(keys) and all(day_map.get(k) for k in keys)
+    if done and (task_key == "cap_apply" or all_done):
+        try:
+            sync_program_caps(conn, st, force=True)
+        except Exception as exc:
+            print(f"⚠️  warmup cap_apply sync: {exc}")
     return program_snapshot(conn)
 
 

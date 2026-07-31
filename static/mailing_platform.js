@@ -444,9 +444,13 @@
       } else if (program.all_done_today) {
         statusEl.textContent = "Bugünün görevleri tamam · yarın 00:00 (Türkiye) sonrası yeni gün açılır.";
       } else {
+        var tgt = (program.plan && program.plan.per_domain_target) || "—";
+        var sug = (program.plan && program.plan.daily_cap_suggest) || "—";
+        var real = program.cap_reality && program.cap_reality.min_daily_cap;
         statusEl.textContent =
           "Aktif · Gün " + program.day + "/" + program.total_days +
-          " · domain başı ~" + (program.plan && program.plan.per_domain_target) + " mail";
+          " · önerilen ~" + tgt + "/domain · daily_cap hedef " + sug +
+          (real != null ? (" · şu an min cap " + real) : "");
       }
     }
     if (setup) setup.hidden = !!program.active;
@@ -500,10 +504,13 @@
     if (dayEl) dayEl.textContent = "Gün " + (program.day || "—") + " / " + (program.total_days || 30);
     if (titleEl) titleEl.textContent = plan.title || "—";
     if (targetsEl) {
+      var realCap = program.cap_reality && program.cap_reality.min_daily_cap;
       targetsEl.textContent =
-        "Domain başı ~" + (plan.per_domain_target || "—") +
+        "Önerilen gönderim ~" + (plan.per_domain_target || "—") + "/domain" +
         " · 5 domain toplam ~" + (plan.total_target_5 || "—") +
-        " · önerilen daily_cap " + (plan.daily_cap_suggest || "—");
+        " · daily_cap hedef " + (plan.daily_cap_suggest || "—") +
+        (realCap != null ? (" · şu an min cap " + realCap) : "") +
+        " — gönderimi kesen sayı daily_cap’tir, banner önerisi değil";
     }
     if (progEl) progEl.textContent = doneCount + "/" + tasks.length;
     if (domainsEl) {
