@@ -2,8 +2,9 @@
 
 State: mail_settings.weekly_maintenance_v1 (JSON)
 - Operatör checklist (manuel tik)
-- Otomatik: domain cap sync, ısıtma soft-resume (pasiften sonra)
+- Otomatik: son gönderime hizalama + domain cap sync
 Deploy/startup’ta Pazar ise haftada 1 kez auto-run.
+Force run herhangi bir günde çalışır.
 """
 
 from __future__ import annotations
@@ -17,8 +18,6 @@ except ImportError:  # pragma: no cover
     ZoneInfo = None  # type: ignore
 
 from database import (
-    execute,
-    fetchall,
     get_mail_setting,
     upsert_mail_setting,
 )
@@ -36,8 +35,8 @@ WEEKLY_TASKS = [
     },
     {
         "key": "warmup_catchup",
-        "title": "Isıtma catch-up",
-        "hint": "Pasiften sonra programı yumuşak devam ettir; hacmi birden patlatma.",
+        "title": "Isıtma catch-up (son gönderim)",
+        "hint": "Pasif/hasta günlerinden sonra programı son gerçek mail gününe hizala; cap şişmesin.",
         "auto": True,
     },
     {
@@ -129,92 +128,76 @@ def save_state(conn, state: dict) -> None:
 
 
 def _warmup_gap_days(conn) -> int:
-    """Son ısıtma görevi / run’dan bu yana gün (yoksa started_on’a göre)."""
+    """Son gerçek bulk gönderimden bu yana gün."""
     try:
-        from mail_warmup_program import load_state as wu_load, _today_str as wu_today
+        from mail_warmup_program import activity_gap_days
+        return int(activity_gap_days(conn) or 0)
     except Exception:
         return 0
-    st = wu_load(conn)
-    today = date.fromisoformat(wu_today())
-    # En son completion tarihi
-    last = None
-    for day_s in (st.get("completions") or {}):
-        try:
-            dd = date.fromisoformat(str(day_s)[:10])
-        except Exception:
-            continue
-        if last is None or dd > last:
-            last = dd
-    if last is None and st.get("started_on"):
-        try:
-            last = date.fromisoformat(str(st["started_on"])[:10])
-        except Exception:
-            last = None
-    if last is None:
-        return 0
-    return max(0, (today - last).days)
 
 
 def _sync_domain_caps(conn, *, soft: bool = False) -> dict:
-    """Isıtma programı domainlerinin daily_cap’ini plana çek."""
+    """Isıtma programı domainlerinin daily_cap’ini plana çek.
+
+    soft=True (haftalık bakım / pasif dönüş): son gönderim gününe hizala,
+    takvim gününe göre şişmiş cap’i geri al. Eski soft_day=4/5 hack’i kaldırıldı.
+    """
     from mail_warmup_program import (
+        activity_gap_days,
         compute_day_number,
         day_plan,
         load_state as wu_load,
+        realign_to_last_send,
         save_state as wu_save,
+        sync_program_caps,
     )
 
     wu = wu_load(conn)
+    gap = activity_gap_days(conn, wu)
     day_n = compute_day_number(wu)
-    gap = _warmup_gap_days(conn)
-    effective_day = day_n
     note = ""
-    if soft or gap >= 2:
-        # Pasiften sonra hacmi yumuşat — erken banda geri çek
-        soft_day = min(day_n, 4 if gap >= 4 else 5)
-        if soft_day < day_n:
-            effective_day = soft_day
-            wu["day_override"] = soft_day
-            note = f"pasif gap={gap}g → soft day {soft_day} (takvim günü {day_n})"
-            wu_save(conn, wu)
-    plan = day_plan(effective_day)
-    cap = int(plan["daily_cap_suggest"])
-    updated = 0
-    ids = wu.get("domain_ids") or []
-    for did in ids:
+    realign_result = None
+    effective_day = day_n
+
+    if soft and wu.get("started_on") and (wu.get("domain_ids") or []):
+        # Gap olsun olmasın bakımda son gönderime kilitle (takvim şişmesini düzelt)
         try:
-            execute(
-                conn,
-                """
-                UPDATE mail_domains
-                SET daily_cap = ?,
-                    warm_day = ?,
-                    warm_status = CASE
-                        WHEN warm_status IN ('burned', 'paused') THEN warm_status
-                        WHEN ? >= 30 THEN 'warm'
-                        ELSE 'warming'
-                    END
-                WHERE id = ?
-                """,
-                (cap, int(effective_day), int(effective_day), int(did)),
+            realign_result = realign_to_last_send(conn, advance=False)
+            effective_day = int(realign_result.get("resume_day") or day_n)
+            note = realign_result.get("note") or (
+                f"son gönderime hizalandı → day {effective_day} (gap {gap}g)"
             )
-            updated += 1
-        except Exception:
-            continue
-    # Program duraklatılmışsa Pazar bakımında soft resume
+            wu = wu_load(conn)
+        except Exception as exc:
+            note = f"realign atlandı: {exc}"
+            print(f"⚠️  weekly realign: {exc}")
+
+    sync = sync_program_caps(conn, wu, force=True)
+    plan = day_plan(compute_day_number(wu_load(conn)))
+    cap = int(sync.get("daily_cap") or plan["daily_cap_suggest"])
+
+    # Program duraklatılmışsa bakımda soft resume
     resumed = False
-    if ids and not wu.get("active") and wu.get("started_on"):
+    wu = wu_load(conn)
+    if (wu.get("domain_ids") or []) and not wu.get("active") and wu.get("started_on"):
         wu["active"] = True
         wu_save(conn, wu)
         resumed = True
+        try:
+            sync_program_caps(conn, wu, force=True)
+        except Exception:
+            pass
+
     return {
-        "domains_updated": updated,
+        "domains_updated": int(sync.get("updated") or 0),
         "daily_cap": cap,
         "effective_day": effective_day,
         "calendar_day": day_n,
         "gap_days": gap,
         "soft_note": note,
         "resumed": resumed,
+        "realign": realign_result,
+        "last_send_date": (realign_result or {}).get("last_send_date"),
     }
 
 
@@ -228,20 +211,22 @@ def run_weekly_maintenance(conn, *, force: bool = False) -> dict:
         return {
             "ok": True,
             "skipped": True,
-            "reason": "Bu Pazar haftası bakım zaten çalıştı",
+            "reason": "Bu Pazar haftası bakım zaten çalıştı — tekrar için force=true",
             "week_key": week,
             "snapshot": snapshot(conn),
         }
 
     actions = []
-    # 1) Cap sync + catch-up
+    # 1) Son gönderime hizala + cap sync
     sync = _sync_domain_caps(conn, soft=True)
     actions.append({"action": "cap_sync", "result": sync})
     actions.append({"action": "warmup_catchup", "result": {
         "gap_days": sync.get("gap_days"),
         "effective_day": sync.get("effective_day"),
         "resumed": sync.get("resumed"),
+        "last_send_date": sync.get("last_send_date"),
         "note": sync.get("soft_note") or "ok",
+        "realign": sync.get("realign"),
     }})
 
     # Auto task’leri bu hafta tamamlandı say
@@ -274,14 +259,30 @@ def run_weekly_maintenance(conn, *, force: bool = False) -> dict:
 
 
 def ensure_sunday_maintenance(conn) -> dict | None:
-    """Startup: sadece Pazar + bu hafta henüz koşmadıysa çalıştır."""
-    if not is_sunday():
-        return None
+    """Startup: Pazar ise haftalık bakım; değilse gap ≥ 2 ise catch-up realign."""
     try:
-        return run_weekly_maintenance(conn, force=False)
+        if is_sunday():
+            return run_weekly_maintenance(conn, force=False)
     except Exception as exc:
         print(f"⚠️  weekly maintenance: {exc}")
         return {"ok": False, "error": str(exc)}
+
+    # Hafta içi: hasta/pasif gap varsa hizala (Pazar bekleme)
+    try:
+        from mail_warmup_program import activity_gap_days, maybe_auto_realign_after_gap
+
+        gap = activity_gap_days(conn)
+        if gap >= 2:
+            result = maybe_auto_realign_after_gap(conn)
+            if result:
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+                return {"ok": True, "weekday_catchup": True, "gap_days": gap, "result": result}
+    except Exception as exc:
+        print(f"⚠️  weekday warmup catchup: {exc}")
+    return None
 
 
 def set_weekly_task(conn, task_key: str, done: bool) -> dict:
@@ -316,12 +317,13 @@ def snapshot(conn) -> dict:
     run = (st.get("runs") or {}).get(week)
     gap = _warmup_gap_days(conn)
     sunday = is_sunday(today)
-    show_banner = sunday and pending > 0
+    # Banner: Pazar bekleyen iş VEYA uzun gap (hafta içi catch-up hatırlatması)
+    show_banner = (sunday and pending > 0) or (gap >= 2 and pending > 0)
     return {
         "today": today.isoformat(),
         "week_key": week,
         "is_sunday": sunday,
-        "schedule": "Her Pazar (Europe/Istanbul)",
+        "schedule": "Her Pazar (Europe/Istanbul) · gap≥2 günde otomatik catch-up",
         "tasks": tasks,
         "pending": pending,
         "all_done": pending == 0,
@@ -333,8 +335,10 @@ def snapshot(conn) -> dict:
             "show": show_banner,
             "text": (
                 f"Pazar bakımı: {pending} görev bekliyor"
-                + (f" · ısıtma gap {gap}g" if gap >= 2 else "")
-            ),
+                if sunday
+                else f"Haftalık bakım: {pending} görev · ısıtma gap {gap}g — «Bakımı çalıştır»"
+            )
+            + (f" · ısıtma gap {gap}g" if sunday and gap >= 2 else ""),
         },
         "notes": st.get("notes") or "",
     }

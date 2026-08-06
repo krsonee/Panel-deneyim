@@ -447,10 +447,21 @@
         var tgt = (program.plan && program.plan.per_domain_target) || "—";
         var sug = (program.plan && program.plan.daily_cap_suggest) || "—";
         var real = program.cap_reality && program.cap_reality.min_daily_cap;
+        var gap = program.activity_gap_days || 0;
+        var lastSend = program.last_send_date || "—";
         statusEl.textContent =
           "Aktif · Gün " + program.day + "/" + program.total_days +
           " · önerilen ~" + tgt + "/domain · daily_cap hedef " + sug +
-          (real != null ? (" · şu an min cap " + real) : "");
+          (real != null ? (" · şu an min cap " + real) : "") +
+          " · son gönderim " + lastSend +
+          (gap >= 2 ? (" · gap " + gap + "g (hizalandıysa bugün kaldığın günden devam)") : "");
+      }
+      if (program.realign_note) {
+        statusEl.textContent += " · " + program.realign_note;
+      }
+      if (program.auto_realign && program.auto_realign.ok) {
+        statusEl.textContent +=
+          " · otomatik hizalama: gün " + (program.auto_realign.resume_day || "?");
       }
     }
     if (setup) setup.hidden = !!program.active;
@@ -660,9 +671,12 @@
           } else {
             var acts = res.data.actions || [];
             var sync = (acts[0] && acts[0].result) || {};
+            var catchup = (acts[1] && acts[1].result) || {};
             alert(
               "Bakım tamam · cap=" + (sync.daily_cap || "—") +
-              " · gün=" + (sync.effective_day || "—") +
+              " · program günü=" + (sync.effective_day || catchup.effective_day || "—") +
+              " · son gönderim=" + (catchup.last_send_date || sync.last_send_date || "—") +
+              " · gap=" + (sync.gap_days != null ? sync.gap_days : "—") + "g" +
               (sync.resumed ? " · program devam ettirildi" : "")
             );
           }
@@ -744,6 +758,36 @@
             if (res.ok) renderWarmupProgram(res.data.program);
             else alert((res.data && res.data.error) || "Devam edilemedi");
           });
+      });
+    }
+    var realignBtn = document.getElementById("mm-wu-realign");
+    if (realignBtn) {
+      realignBtn.addEventListener("click", function () {
+        if (!confirm(
+          "Programı son gerçek gönderim gününe hizala?\n\n" +
+          "Takvim «her gün attın» diye ileri sarmışsa geri çeker; " +
+          "daily_cap / warm_day o güne göre ayarlanır."
+        )) return;
+        api("/api/platform/warmup-program/realign-last-send", {
+          method: "POST",
+          body: { advance: false }
+        }).then(function (res) {
+          if (!res.ok) {
+            alert((res.data && res.data.error) || "Hizalanamadı");
+            return;
+          }
+          var r = res.data.realign || {};
+          alert(
+            "Hizalandı · program günü " + (r.resume_day || "?") +
+            " · son gönderim " + (r.last_send_date || "—") +
+            " · gap " + (r.gap_days != null ? r.gap_days : "—") + "g" +
+            " · daily_cap " + (r.daily_cap || "—") +
+            " · önce takvim günü " + (r.calendar_day_before || "—") + " idi"
+          );
+          if (res.data.program) renderWarmupProgram(res.data.program);
+          else refreshWarmupProgram();
+          refreshDomains();
+        });
       });
     }
     var bannerGo = document.getElementById("mm-warmup-banner-go");

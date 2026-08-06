@@ -6,7 +6,7 @@ Takvim günü bazlı checklist; worker warm_day tick'inden bağımsız.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 try:
     from zoneinfo import ZoneInfo
@@ -16,6 +16,7 @@ except ImportError:  # pragma: no cover
 from database import (
     execute,
     fetchall,
+    fetchone,
     get_mail_setting,
     upsert_mail_setting,
 )
@@ -179,6 +180,221 @@ def compute_day_number(state: dict, today: str | None = None) -> int:
         return 1
 
 
+def _parse_op_date(value) -> date | None:
+    """sent_at / ISO / 'YYYY-MM-DD …' → operatör (TR) tarihi."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(OP_TZ).date()
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+            # Önce tarih kısmı
+            try:
+                return date.fromisoformat(text[:10])
+            except Exception:
+                pass
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        if " " in text and "T" not in text:
+            text = text.replace(" ", "T", 1)
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(OP_TZ).date()
+    except Exception:
+        return None
+
+
+def program_day_on_date(started_on: str, on_date: str | date) -> int:
+    """started_on → on_date arası program günü (1..30). day_override yok sayılır."""
+    try:
+        d0 = date.fromisoformat(str(started_on)[:10])
+        if isinstance(on_date, date):
+            d1 = on_date
+        else:
+            d1 = date.fromisoformat(str(on_date)[:10])
+        return max(1, min(TOTAL_DAYS, (d1 - d0).days + 1))
+    except Exception:
+        return 1
+
+
+def last_program_send_info(conn, domain_ids=None) -> dict:
+    """Program domainlerinden son başarılı bulk gönderim (TR günü)."""
+    ids = []
+    for x in (domain_ids or []):
+        try:
+            ids.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    row = None
+    try:
+        if ids:
+            ph = ",".join(["?"] * len(ids))
+            row = fetchone(
+                conn,
+                f"""
+                SELECT MAX(sent_at) AS last_sent, MAX(created_at) AS last_created
+                FROM mail_sends
+                WHERE status IN ('sent', 'simulated')
+                  AND domain_id IN ({ph})
+                """,
+                tuple(ids),
+            )
+        else:
+            row = fetchone(
+                conn,
+                """
+                SELECT MAX(sent_at) AS last_sent, MAX(created_at) AS last_created
+                FROM mail_sends
+                WHERE status IN ('sent', 'simulated')
+                """,
+            )
+    except Exception as exc:
+        print(f"⚠️  last_program_send_info: {exc}")
+        row = None
+    raw = None
+    if row:
+        try:
+            d = dict(row)
+        except Exception:
+            d = row
+        try:
+            raw = d.get("last_sent") or d.get("last_created")
+        except Exception:
+            try:
+                raw = row["last_sent"] or row["last_created"]
+            except Exception:
+                raw = None
+    last_d = _parse_op_date(raw)
+    return {
+        "last_send_at": str(raw) if raw else None,
+        "last_send_date": last_d.isoformat() if last_d else None,
+        "domain_ids": ids,
+    }
+
+
+def activity_gap_days(conn, state: dict | None = None) -> int:
+    """Son bulk gönderimden (yoksa son checklist) bugüne gün farkı."""
+    st = state if state is not None else load_state(conn)
+    today = date.fromisoformat(_today_str())
+    info = last_program_send_info(conn, st.get("domain_ids") or [])
+    last = None
+    if info.get("last_send_date"):
+        last = date.fromisoformat(info["last_send_date"])
+    if last is None:
+        for day_s in (st.get("completions") or {}):
+            try:
+                dd = date.fromisoformat(str(day_s)[:10])
+            except Exception:
+                continue
+            if last is None or dd > last:
+                last = dd
+    if last is None and st.get("started_on"):
+        try:
+            last = date.fromisoformat(str(st["started_on"])[:10])
+        except Exception:
+            last = None
+    if last is None:
+        return 0
+    return max(0, (today - last).days)
+
+
+def realign_to_last_send(conn, *, advance: bool = False) -> dict:
+    """Pasif/hasta günlerinden sonra: son gerçek gönderim gününe hizala.
+
+    Takvim «her gün yaptın» diye gün 16’ya zıplamasın; son mail günündeki
+    program gününün cap/hedefini bugüne yazar (started_on re-anchor).
+    """
+    st = load_state(conn)
+    if not st.get("started_on") or not (st.get("domain_ids") or []):
+        raise ValueError("Hizalanacak program yok — önce ısıtma programını başlat.")
+
+    origin = str(st.get("origin_started_on") or st.get("started_on"))[:10]
+    st["origin_started_on"] = origin
+    today = date.fromisoformat(_today_str())
+    info = last_program_send_info(conn, st.get("domain_ids") or [])
+    last_send_date = info.get("last_send_date")
+
+    if last_send_date:
+        last_d = date.fromisoformat(last_send_date)
+        resume_day = program_day_on_date(origin, last_d)
+        gap = max(0, (today - last_d).days)
+        # Tek gün ara + advance → ertesi programa geç; uzun gap’te aynı günde kal (hacim şişmesin)
+        if advance and gap == 1:
+            resume_day = min(TOTAL_DAYS, resume_day + 1)
+    else:
+        # Hiç send yok — domain warm_day / checklist’ten tahmin
+        gap = activity_gap_days(conn, st)
+        resume_day = 1
+        try:
+            rows = _domain_rows(conn, st.get("domain_ids") or [])
+            wd = [int(r.get("warm_day") or 0) for r in rows]
+            if wd:
+                resume_day = max(1, min(TOTAL_DAYS, max(wd)))
+        except Exception:
+            pass
+        last_send_date = None
+
+    resume_day = max(1, min(TOTAL_DAYS, int(resume_day)))
+    new_started = today - timedelta(days=resume_day - 1)
+    calendar_day_before = compute_day_number(
+        {**st, "day_override": None, "active": True}, today.isoformat()
+    )
+
+    st["started_on"] = new_started.isoformat()
+    st["day_override"] = None
+    st["active"] = True
+    st["last_realign_date"] = today.isoformat()
+    st["last_cap_sync_date"] = None  # cap’i zorla yeniden yaz
+    st["realign_note"] = (
+        f"last_send={last_send_date or 'yok'} → day {resume_day} "
+        f"(takvim {calendar_day_before} idi) · gap={gap}g · started_on→{st['started_on']}"
+    )
+    save_state(conn, st)
+
+    sync = sync_program_caps(conn, st, force=True)
+    plan = day_plan(resume_day)
+    return {
+        "ok": True,
+        "resume_day": resume_day,
+        "last_send_date": last_send_date,
+        "gap_days": gap,
+        "calendar_day_before": calendar_day_before,
+        "started_on": st["started_on"],
+        "origin_started_on": origin,
+        "per_domain_target": plan["per_domain_target"],
+        "daily_cap": sync.get("daily_cap") or plan["daily_cap_suggest"],
+        "domains_updated": sync.get("updated") or 0,
+        "note": st["realign_note"],
+    }
+
+
+def maybe_auto_realign_after_gap(conn) -> dict | None:
+    """Gap ≥ 2 gün ise günde 1 kez son gönderime hizala (hasta/pasif dönüşü)."""
+    st = load_state(conn)
+    if not st.get("active") or not st.get("started_on"):
+        return None
+    today = _today_str()
+    if (st.get("last_realign_date") or "") == today:
+        return None
+    gap = activity_gap_days(conn, st)
+    if gap < 2:
+        return None
+    try:
+        result = realign_to_last_send(conn, advance=False)
+        result["auto"] = True
+        return result
+    except Exception as exc:
+        print(f"⚠️  auto realign: {exc}")
+        return {"ok": False, "error": str(exc)}
+
+
 def _domain_rows(conn, domain_ids):
     if not domain_ids:
         return []
@@ -245,8 +461,14 @@ def sync_program_caps(conn, state: dict | None = None, *, force: bool = False) -
 def program_snapshot(conn) -> dict:
     st = load_state(conn)
     today = _today_str()
-    # Cap ile program hedefini aynı güne kilitle (yoksa 410 öner / 250 kes)
+    auto_realign = None
     if st.get("active"):
+        try:
+            auto_realign = maybe_auto_realign_after_gap(conn)
+            st = load_state(conn)
+        except Exception as exc:
+            print(f"⚠️  warmup auto realign: {exc}")
+        # Cap ile program hedefini aynı güne kilitle (yoksa 410 öner / 250 kes)
         try:
             sync_program_caps(conn, st, force=False)
             st = load_state(conn)
@@ -290,6 +512,8 @@ def program_snapshot(conn) -> dict:
     min_cap = min(caps) if caps else 0
     target = int(plan["per_domain_target"])
     suggest = int(plan["daily_cap_suggest"])
+    send_info = last_program_send_info(conn, st.get("domain_ids") or [])
+    gap = activity_gap_days(conn, st)
     banner_text = ""
     if incomplete:
         banner_text = (
@@ -299,10 +523,13 @@ def program_snapshot(conn) -> dict:
         )
         if min_cap and min_cap < target:
             banner_text += f" ⚠️ cap hedefin altında (en az {target} olmalı)"
+        if gap >= 2:
+            banner_text += f" · son gönderim gap {gap}g"
     return {
         "today": today,
         "active": bool(st.get("active")),
         "started_on": st.get("started_on"),
+        "origin_started_on": st.get("origin_started_on"),
         "day": day_n,
         "total_days": TOTAL_DAYS,
         "plan": {**plan, "tasks": tasks},
@@ -311,6 +538,10 @@ def program_snapshot(conn) -> dict:
         "domains": domains,
         "suggested_domains": suggested,
         "notes": st.get("notes") or "",
+        "realign_note": st.get("realign_note") or "",
+        "last_send_date": send_info.get("last_send_date"),
+        "activity_gap_days": gap,
+        "auto_realign": auto_realign,
         "cap_reality": {
             "min_daily_cap": min_cap,
             "per_domain_target": target,

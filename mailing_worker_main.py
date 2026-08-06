@@ -25,11 +25,26 @@ from mail_tenant import ensure_tenant_schema
 
 
 def _tick_warm_domains(conn):
-    """Takvim günü başına 1 kez warm_day / cap ilerlet (eski: her 25 sn — yanlıştı)."""
+    """Takvim günü başına 1 kez warm_day / cap ilerlet.
+
+    Aktif 30-gün ısıtma programı varken ATLA — program + son-gönderim hizalaması
+    cap’i yönetir; worker her gece şişirmesin (hasta/pasif günlerde patlama).
+    """
     today = datetime.now(timezone.utc).date().isoformat()
     last = (get_mail_setting(conn, "warm_tick_date", "") or "").strip()
     if last == today:
         return
+    try:
+        from mail_warmup_program import load_state as wu_load, maybe_auto_realign_after_gap
+
+        wu = wu_load(conn)
+        if wu.get("active") and (wu.get("domain_ids") or []):
+            maybe_auto_realign_after_gap(conn)
+            upsert_mail_setting(conn, "warm_tick_date", today)
+            return
+    except Exception as exc:
+        print(f"⚠️  warm tick program gate: {exc}")
+
     rows = fetchall(
         conn,
         """
@@ -68,6 +83,13 @@ def main():
             ensure_mail_click_links_table(conn)
         except Exception as schema_exc:
             print(f"⚠️  click links schema: {schema_exc}")
+        try:
+            from mail_weekly_maintenance import ensure_sunday_maintenance
+            _wm = ensure_sunday_maintenance(conn)
+            if _wm:
+                print(f"✉️  weekly/catchup maintenance: {_wm}")
+        except Exception as wm_exc:
+            print(f"⚠️  weekly maintenance startup: {wm_exc}")
         conn.commit()
 
     from mail_campaign_worker import (

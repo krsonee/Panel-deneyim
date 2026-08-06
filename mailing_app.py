@@ -665,6 +665,26 @@ def platform_warmup_program_patch():
     return jsonify({"ok": True, "program": snap})
 
 
+@app.post("/api/platform/warmup-program/realign-last-send")
+@require_superadmin
+def platform_warmup_program_realign():
+    """Pasif günlerden sonra programı son gerçek gönderim gününe hizala."""
+    from mail_warmup_program import program_snapshot, realign_to_last_send
+
+    data = request.get_json(silent=True) or {}
+    advance = bool(data.get("advance"))
+    try:
+        with closing(get_db()) as conn:
+            result = realign_to_last_send(conn, advance=advance)
+            snap = program_snapshot(conn)
+            conn.commit()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Hizalanamadı: {exc}"}), 500
+    return jsonify({"ok": True, "realign": result, "program": snap})
+
+
 @app.get("/api/platform/weekly-maintenance")
 @require_superadmin
 def platform_weekly_maintenance_get():
@@ -789,6 +809,13 @@ def _startup():
         init_mailing_schema(conn)
         ensure_tenant_schema(conn)
         migrate_mail_campaigns_pro(conn)
+        try:
+            from mail_weekly_maintenance import ensure_sunday_maintenance
+            _wm = ensure_sunday_maintenance(conn)
+            if _wm:
+                print(f"✉️  weekly/catchup maintenance: {_wm}")
+        except Exception as wm_exc:
+            print(f"⚠️  weekly maintenance startup: {wm_exc}")
         conn.commit()
     init_mail_tenant_layer()
     _register_mailing()
