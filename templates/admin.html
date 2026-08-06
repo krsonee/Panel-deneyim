@@ -2262,10 +2262,15 @@
                 </div>
                 <div style="align-self:end"><button type="submit" class="btn btn-primary">Kaydet</button></div>
               </div>
+              {% if panel.brand == "bizzo" %}
+              {# Bizzo: domainler chip manager'dan; textarea gizli senkron #}
+              <textarea id="makrolink-hosts" rows="3" style="display:none;" aria-hidden="true"></textarea>
+              {% else %}
               <div style="margin-top:0.65rem;">
                 <label for="makrolink-hosts">Kısa domain listesi <span class="muted">(satır veya virgül)</span></label>
                 <textarea id="makrolink-hosts" rows="3" placeholder="{{ panel.shortlink_host_placeholder }}" style="width:100%;"></textarea>
               </div>
+              {% endif %}
               <div style="margin-top:0.65rem;">
                 <label for="makrolink-online-group">Canlı casino domain grubu <span class="muted">(online takip — max 150)</span></label>
                 <textarea id="makrolink-online-group" rows="2" placeholder="ornek804-820  veya  domain1.com, domain2.com" style="width:100%;"></textarea>
@@ -2300,6 +2305,9 @@
                 <span class="muted" id="makrolink-hosts-count" style="font-size:0.72rem;"></span>
               </div>
               <div id="makrolink-host-chips" style="display:flex;flex-wrap:wrap;gap:0.35rem;min-height:1.6rem;margin-bottom:0.5rem;"></div>
+              <div id="makrolink-hosts-empty-warn" style="display:none;margin:0 0 0.5rem;padding:0.5rem 0.65rem;border:1px solid rgba(245,158,11,0.4);border-radius:8px;background:rgba(245,158,11,0.1);font-size:0.78rem;line-height:1.4;">
+                Kısa domain yok — önce domain ekleyip <strong>Kaydet</strong>. Yoksa özel domain yönlendirmez (panel <code>/r/kod</code> yine çalışır).
+              </div>
               <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
                 <input id="makrolink-host-add-input" placeholder="{{ panel.shortlink_host_placeholder }}" autocomplete="off" style="min-width:160px;flex:1;">
                 <button type="button" class="btn btn-sm" id="btn-makrolink-host-add">Domain ekle</button>
@@ -5156,7 +5164,7 @@
         var category = (document.getElementById("makrolink-edit-category") || {}).value || "";
         if (!label) { alert("Etiket gerekli."); return; }
         if (!code) { alert("Özel kod gerekli."); return; }
-        if (!dest) { alert("Hedef link gerekli (Smartico veya site URL)."); return; }
+        if (!dest) { alert("Hedef link gerekli (https://…)."); return; }
         var btn = document.getElementById("makrolink-edit-save");
         if (btn) { btn.disabled = true; btn.textContent = "Kaydediliyor…"; }
         fetch(API + "/api/makrolink/links/" + id, {
@@ -5226,11 +5234,13 @@
       function makrolinkRenderHostChips() {
         var box = document.getElementById("makrolink-host-chips");
         var countEl = document.getElementById("makrolink-hosts-count");
+        var warnEl = document.getElementById("makrolink-hosts-empty-warn");
         if (countEl) {
           countEl.textContent = MAKROLINK_MAX_HOSTS
             ? (makrolinkShortHosts.length + " / " + MAKROLINK_MAX_HOSTS)
             : (makrolinkShortHosts.length + " domain");
         }
+        if (warnEl) warnEl.style.display = makrolinkShortHosts.length ? "none" : "block";
         if (!box) return;
         if (!makrolinkShortHosts.length) {
           box.innerHTML = '<span class="muted" style="font-size:0.78rem;">Henüz kısa domain yok — aşağıdan ekle.</span>';
@@ -6332,7 +6342,7 @@
 
       bindOptional("makrolink-config-form", "submit", function(e) {
         e.preventDefault();
-        if (PANEL_BRAND === "bizzo" && makrolinkShortHosts.length) {
+        if (PANEL_BRAND === "bizzo") {
           makrolinkSyncHostsTextarea();
         }
         var cfgBody = {
@@ -6473,7 +6483,7 @@
         var label = document.getElementById("makrolink-label").value.trim();
         var code = document.getElementById("makrolink-code").value.trim();
         var category = ((document.getElementById("makrolink-category") || {}).value || "").trim();
-        if (!dest) { alert("Hedef link gerekli (Smartico veya site URL)."); return; }
+        if (!dest) { alert("Hedef link gerekli (https://…)."); return; }
         if (!label) { alert("Etiket gerekli."); return; }
         if (!code) { alert("Özel kod gerekli."); return; }
         if (!category) { alert("Kategori seç."); return; }

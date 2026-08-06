@@ -796,6 +796,48 @@ def migrate_makrolink(conn):
         cols = _table_columns(conn, "makrolink_links")
     if cols and "category" not in cols:
         execute(conn, "ALTER TABLE makrolink_links ADD COLUMN category TEXT NOT NULL DEFAULT ''")
+    # Kısa kodları lowercase normalize et (case-insensitive eşsizlik)
+    try:
+        rows = fetchall(conn, "SELECT id, code FROM makrolink_links ORDER BY id")
+        owned = {}
+        planned = []  # (id, new_code, deactivate)
+        for row in rows or []:
+            cid = int(row["id"])
+            code = (row["code"] or "").strip()
+            low = code.lower()
+            if not low:
+                continue
+            if low not in owned:
+                owned[low] = cid
+                if code != low:
+                    planned.append((cid, low, False))
+            else:
+                suffix = "__d" + str(cid)
+                new_code = (low[: max(1, 32 - len(suffix))] + suffix)[:32]
+                # reserved collision — ekstra id ekle
+                n = 0
+                while new_code in owned or any(p[1] == new_code for p in planned):
+                    n += 1
+                    suffix = "__d" + str(cid) + ("x" * n)
+                    new_code = (low[: max(1, 32 - len(suffix))] + suffix)[:32]
+                planned.append((cid, new_code, True))
+                owned[new_code] = cid
+        for cid, new_code, deactivate in planned:
+            if deactivate:
+                execute(
+                    conn,
+                    "UPDATE makrolink_links SET code = ?, is_active = 0 WHERE id = ?",
+                    (new_code, cid),
+                )
+            else:
+                execute(conn, "UPDATE makrolink_links SET code = ? WHERE id = ?", (new_code, cid))
+        if uses_postgres():
+            execute(
+                conn,
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_makrolink_links_code_lower ON makrolink_links (lower(code))",
+            )
+    except Exception as exc:
+        print(f"⚠️  makrolink code lowercase migrate: {exc}")
     conn.commit()
 
 

@@ -531,22 +531,31 @@ def save_config(
             upsert_setting(conn, "public_host", "")
 
     if public_host is not None:
-        host = _clean_host(public_host) or DEFAULT_PUBLIC_HOST
+        host = _clean_host(public_host) or _clean_host(DEFAULT_PUBLIC_HOST)
+        hosts_now = _filter_hosts_for_brand(
+            _parse_host_list(get_setting(conn, "short_hosts", ""), "")
+        )
+        # Boş public_host + dolu short_hosts → ilk host'u koru (kazara silme)
+        if not host:
+            if hosts_now:
+                host = hosts_now[0]
+            else:
+                upsert_setting(conn, "public_host", "")
+                host = ""
         if host and _is_blocked_short_host(host):
             raise ValueError(f"Bu panelde Makro domain kullanılamaz: {host}")
-        upsert_setting(conn, "public_host", host)
-        # Varsayılanı listeye ekle
-        hosts = _filter_hosts_for_brand(
-            _parse_host_list(get_setting(conn, "short_hosts", ""), host)
-        )
-        if host and host not in hosts:
-            hosts.insert(0, host)
-            max_hosts = _max_short_hosts()
-            if max_hosts and len(hosts) > max_hosts:
-                raise ValueError(f"En fazla {max_hosts} kısa domain eklenebilir.")
-            upsert_setting(conn, "short_hosts", "\n".join(hosts))
-        elif hosts != _parse_host_list(get_setting(conn, "short_hosts", ""), ""):
-            upsert_setting(conn, "short_hosts", "\n".join(hosts))
+        if host:
+            upsert_setting(conn, "public_host", host)
+            # Varsayılanı listeye ekle
+            hosts = list(hosts_now)
+            if host not in hosts:
+                hosts.insert(0, host)
+                max_hosts = _max_short_hosts()
+                if max_hosts and len(hosts) > max_hosts:
+                    raise ValueError(f"En fazla {max_hosts} kısa domain eklenebilir.")
+                upsert_setting(conn, "short_hosts", "\n".join(hosts))
+            elif hosts != _parse_host_list(get_setting(conn, "short_hosts", ""), ""):
+                upsert_setting(conn, "short_hosts", "\n".join(hosts))
 
     if public_scheme is not None:
         scheme = (public_scheme or "https").strip().lower()
@@ -967,13 +976,13 @@ def create_link(
             conn,
             """
             UPDATE makrolink_links
-            SET destination_url = ?, label = ?, affiliate_id = ?, smartico_link_id = ?,
+            SET code = ?, destination_url = ?, label = ?, affiliate_id = ?, smartico_link_id = ?,
                 ref_code = ?, click_count = 0, is_active = 1, created_by = ?,
                 created_at = ?, updated_at = ?, target_domain = ?, category = ?
             WHERE id = ?
             """,
             (
-                destination_url, label, affiliate_id, smartico_link_id, ref_code,
+                code, destination_url, label, affiliate_id, smartico_link_id, ref_code,
                 created_by, now, now, target_domain, category, revive_id,
             ),
         )
