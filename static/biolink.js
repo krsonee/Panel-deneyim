@@ -8,7 +8,7 @@
   var blHeadingStyles = [];
   var blComposerHeadingStyle = "classic";
   var blTypes = [];
-  var blAssets = { logos: [], banners: [], default_logo: "/static/biolink/logo/logo-400.png", default_banner: "/static/biolink/banners/banner-468x60.gif" };
+  var blAssets = { logos: [], banners: [], default_logo: "/static/biolink/logo/logo-400.png", default_banner: "" };
   var blCurrentPage = null;
   var blComposerType = "link";
   var blEmojiTarget = null;
