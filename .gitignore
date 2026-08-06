@@ -15,3 +15,7 @@ work/
 
 # Local template previews (not deployed)
 previews/
+
+# Yerel kişi/Excel dump'ları — repo ve deploy'a girmez
+*.xlsx
+bizzo_kisiler.xlsx
