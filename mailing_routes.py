@@ -919,13 +919,19 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
 
 
 # «Önceden mail atılmışları hariç tut» — bu etiketler / önekler muaf (test QA).
-_EXCLUDE_SENT_EXEMPT_EXACT = frozenset({"test", "qa", "sandbox", "deneme"})
+_EXCLUDE_SENT_EXEMPT_EXACT = frozenset({
+    "test", "qa", "sandbox", "deneme",
+    "tolgatest", "tolga test", "tolga-test", "tolga_test",
+})
 _EXCLUDE_SENT_EXEMPT_PREFIXES = (
     "test-", "test_", "test:", "test/", "test ",
     "qa-", "qa_", "qa:", "qa/", "qa ",
     "sandbox-", "sandbox_", "sandbox:", "sandbox/", "sandbox ",
     "deneme-", "deneme_", "deneme:", "deneme/", "deneme ",
+    "tolgatest", "tolga test", "tolga-test", "tolga_test", "tolga-",
 )
+# İsim içinde geçen sabit parçalar (örn. «tolgatest2», «xx-tolgatest»)
+_EXCLUDE_SENT_EXEMPT_CONTAINS = ("tolgatest",)
 
 
 def _load_exclude_sent_exempt_custom(conn=None):
@@ -944,15 +950,19 @@ def _tag_is_exclude_sent_exempt(tag, custom_exempt=None):
     t = (tag or "").strip()
     if not t:
         return False
-    tl = t.lower()
-    if tl in _EXCLUDE_SENT_EXEMPT_EXACT:
+    tl = t.lower().replace(" ", "")  # «tolga test» / «TolgaTest»
+    tl_raw = t.lower()
+    if tl_raw in _EXCLUDE_SENT_EXEMPT_EXACT or tl in {x.replace(" ", "") for x in _EXCLUDE_SENT_EXEMPT_EXACT}:
         return True
     for c in (custom_exempt or []):
         c = (c or "").strip()
-        if c and (t == c or tl == c.lower()):
+        if c and (t == c or tl_raw == c.lower() or tl == c.lower().replace(" ", "")):
             return True
     for prefix in _EXCLUDE_SENT_EXEMPT_PREFIXES:
-        if tl.startswith(prefix):
+        if tl_raw.startswith(prefix) or tl.startswith(prefix.replace(" ", "")):
+            return True
+    for needle in _EXCLUDE_SENT_EXEMPT_CONTAINS:
+        if needle in tl_raw or needle in tl:
             return True
     return False
 
@@ -979,6 +989,10 @@ def _contact_has_exclude_exempt_tag_sql(custom_exempt=None):
         # JSON elemanı önek ile başlar: ..."test-foo"...
         parts.append("tags LIKE ? ESCAPE '\\'")
         params.append(f'%"{_like_literal(prefix)}%')
+    for needle in _EXCLUDE_SENT_EXEMPT_CONTAINS:
+        # ..."…tolgatest…"… — JSON içinde geçsin yeter
+        parts.append("LOWER(tags) LIKE ? ESCAPE '\\'")
+        params.append(f"%{_like_literal(needle)}%")
     if not parts:
         return "1=0", ()
     return "(" + " OR ".join(parts) + ")", tuple(params)
