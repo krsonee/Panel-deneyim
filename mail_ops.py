@@ -316,9 +316,11 @@ def record_open(conn, send_id):
 
 
 def inject_ops_footer(conn, body, *, send_id, contact_id=None, email="", as_html=True):
-    """Open pixel (+ gizli unsub URL header için). Görünür 'Abonelikten çık' yok.
+    """Open pixel + List-Unsubscribe URL + şablon bozmayan discreete unsub.
 
-    Dönüş: (body, unsub_url) — unsub_url yalnızca List-Unsubscribe header'ına gider.
+    Şablon HTML'ine dokunulmaz — gönderim anında en alta eklenir.
+    display:none / 0px / beyaz-üzerine-beyaz YOK; 9px soluk metin.
+    Dönüş: (body, unsub_url) — unsub_url ayrıca List-Unsubscribe header'ına gider.
     """
     import re
 
@@ -327,19 +329,31 @@ def inject_ops_footer(conn, body, *, send_id, contact_id=None, email="", as_html
     token = make_unsub_token(conn, email=email, contact_id=contact_id, send_id=send_id)
     uurl = unsub_url(token)
     opixel = open_url(send_id, conn)
+    href = html_lib.escape(uurl, quote=True)
     if as_html:
-        # Sadece görünmez open pixel — mail gövdesinde unsub linki yok
-        footer = (
+        if 'data-mm-ops-unsub="1"' in body or "data-mm-ops-unsub='1'" in body:
+            return body, uurl
+        pixel = (
             f'<img src="{html_lib.escape(opixel, quote=True)}" width="1" height="1" alt="" '
             'style="display:block;width:1px;height:1px;border:0;" />'
         )
+        discreet = (
+            '<div data-mm-ops-unsub="1" style="margin:18px 0 0;padding:0;text-align:center;'
+            'font-family:Arial,Helvetica,sans-serif;line-height:1.2;">'
+            f'<a href="{href}" target="_blank" rel="noopener noreferrer" '
+            'style="color:#9ca3af;font-size:9px;font-weight:400;text-decoration:underline;'
+            'letter-spacing:0;">Abonelikten çık</a>'
+            "</div>"
+        )
+        footer = discreet + pixel
         if re.search(r"(?i)</body>", body):
             body = re.sub(r"(?i)</body>", footer + "</body>", body, count=1)
         else:
             body = body + footer
         return body, uurl
-    # Plain text: görünür unsub satırı yok
-    return body, uurl
+    if "Abonelikten çık:" in (body or ""):
+        return body, uurl
+    return (body or "") + f"\n\nAbonelikten çık: {uurl}\n", uurl
 
 
 def list_unsubscribe_headers(unsub_http_url):
