@@ -1340,6 +1340,12 @@ def _attach_campaign_recipients(
     """Etiket / seçili ID / elle e-posta ile kampanya alıcılarını ekler.
 
     tag_filter + contact_ids birlikte gelirse birleşim (OR): tam etiketler ∪ manuel seçimler.
+
+    max_recipients kesiminde sıra:
+      1) elle / seçili ID
+      2) test-muaf etiketler (Tolga Test, test, qa…) — tam kapsama
+      3) diğer etiketler (ORDER BY id ASC)
+    Böylece büyük Davet/mail_mx_ok havuzu test adreslerini ezmez.
     """
     contact_ids = list(contact_ids or [])
     emails = list(emails or [])
@@ -1363,6 +1369,16 @@ def _attach_campaign_recipients(
             seen.add(cid)
             merged.append(cid)
 
+    def _ids_for_tags(tag_list):
+        if not tag_list:
+            return []
+        where_sql, params = _campaign_selection_where(
+            tag_list, exclude_previously_sent, only_verified=only_verified,
+            custom_exempt=custom_exempt,
+        )
+        sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
+        return [r["id"] for r in fetchall(conn, sql, tuple(params))]
+
     custom_exempt = _load_exclude_sent_exempt_custom(conn)
 
     if contact_ids:
@@ -1375,14 +1391,15 @@ def _attach_campaign_recipients(
 
     tags = _parse_tag_filter_list(tag_filter)
     if tags:
-        where_sql, params = _campaign_selection_where(
-            tag_filter, exclude_previously_sent, only_verified=only_verified,
-            custom_exempt=custom_exempt,
-        )
-        sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
-        # Limit birleşimde sonda uygulanır — önce tam etiket + seçimleri topla
-        tag_ids = [r["id"] for r in fetchall(conn, sql, tuple(params))]
-        _push(tag_ids)
+        exempt_tags = [t for t in tags if _tag_is_exclude_sent_exempt(t, custom_exempt)]
+        non_exempt_tags = [t for t in tags if not _tag_is_exclude_sent_exempt(t, custom_exempt)]
+        # Önce muaf/test etiketleri — max_recipients bunları kesmesin
+        if exempt_tags:
+            _push(_ids_for_tags(exempt_tags))
+        if non_exempt_tags:
+            _push(_ids_for_tags(non_exempt_tags))
+        elif not exempt_tags:
+            _push(_ids_for_tags(tags))
 
     if not tags and not contact_ids and not emails:
         raise ValueError(
@@ -4705,6 +4722,17 @@ def create_mailing_blueprint(permission_required):
         exempt_selected = [
             t for t in tags_list if _tag_is_exclude_sent_exempt(t, custom_exempt)
         ]
+        # Muaf/test etiketlerinin garanti edilecek tahmini sayısı (breakdown)
+        priority_count = 0
+        for row in tag_breakdown:
+            if row.get("exclude_sent_exempt"):
+                try:
+                    priority_count += int(row.get("count") or 0)
+                except (TypeError, ValueError):
+                    pass
+        priority_truncated = bool(
+            max_recipients and priority_count and priority_count > int(max_recipients)
+        )
         return jsonify({
             "matching_count": total,
             "will_attach": will_attach,
@@ -4714,6 +4742,8 @@ def create_mailing_blueprint(permission_required):
             "tag_filters": tags_list,
             "tag_breakdown": tag_breakdown,
             "exclude_sent_exempt_tags": exempt_selected,
+            "priority_guaranteed": min(priority_count, will_attach) if exempt_selected else 0,
+            "priority_truncated": priority_truncated,
             "manual_selected": mixed_selected if recipient_mode == "tag" else (
                 len(contact_ids) if recipient_mode == "selected" else 0
             ),

@@ -4304,7 +4304,14 @@
           }
           if (exemptTags.length) {
             html += '<br><span class="muted">Önceden gönderilmiş filtresinden muaf: ' +
-              exemptTags.map(function (t) { return esc(t); }).join(", ") + "</span>";
+              exemptTags.map(function (t) { return esc(t); }).join(", ") +
+              " · limit dolsa bile bu etiketler önce eklenir</span>";
+            if (res.data.priority_guaranteed) {
+              html += ' <span class="muted">(~' + fmtNum(res.data.priority_guaranteed) + " kişi öncelikli)</span>";
+            }
+            if (res.data.priority_truncated) {
+              html += '<br><span style="color:var(--amber,#d97706)">Uyarı: max alıcı, test etiketinden küçük — test adresleri de kısılacak.</span>';
+            }
           } else if (!breakdown.length && tags.length) {
             html += " · etiket: " + esc(tags.join(", "));
           }
