@@ -114,13 +114,40 @@
 
   function mmStatusBadge(status) {
     var s = String(status || "").toLowerCase();
+    var label = status || "—";
     var cls = "mm-badge-muted";
-    if (s === "active" || s === "warm" || s === "done" || s === "sent" || s === "simulated" || s === "ok" || s === "valid" || s === "tamam") cls = "mm-badge-ok";
-    else if (s === "cold") cls = "mm-badge-info";
-    else if (s === "pending" || s === "queued" || s === "scheduled" || s === "draft" || s === "warming" || s === "sending") cls = "mm-badge-warn";
+    if (s === "simulated") {
+      cls = "mm-badge-warn";
+      label = "Simüle (SMTP yok)";
+    } else if (s === "active" || s === "warm" || s === "done" || s === "sent" || s === "ok" || s === "valid" || s === "tamam") {
+      cls = "mm-badge-ok";
+    } else if (s === "cold") cls = "mm-badge-info";
+    else if (s === "pending" || s === "queued" || s === "scheduled" || s === "draft" || s === "warming" || s === "sending" || s === "skipped") cls = "mm-badge-warn";
     else if (s === "error" || s === "failed" || s === "burned" || s === "suspended" || s === "invalid" || s === "unconfigured" || s === "cancelled") cls = "mm-badge-danger";
     else if (s === "paused") cls = "mm-badge-muted";
-    return '<span class="mm-badge ' + cls + '">' + esc(status || "—") + "</span>";
+    return '<span class="mm-badge ' + cls + '">' + esc(label) + "</span>";
+  }
+
+  function mailShowDeliveryAlert(health, providerMode) {
+    var box = document.getElementById("mail-delivery-alert");
+    var text = document.getElementById("mail-delivery-alert-text");
+    if (!box || !text) return;
+    var h = health || {};
+    var mode = (providerMode || h.provider_mode || "").toLowerCase();
+    var show = false;
+    var msg = "";
+    if (mode !== "smtp" || h.verdict === "stub_mode") {
+      show = true;
+      msg = "⚠️ STUB MOD — mailler kutuya gitmiyor, panel sadece simüle ediyor. Ayarlar → SMTP / DirectMail.";
+    } else if (h.verdict === "simulated_only" || h.verdict === "all_failed" || h.verdict === "no_recent_sends") {
+      show = true;
+      msg = "⚠️ " + (h.message || "Son günlerde gerçek SMTP gönderimi yok.");
+    } else if (h.message && !h.ok) {
+      show = true;
+      msg = "⚠️ " + h.message;
+    }
+    box.hidden = !show;
+    if (show) text.textContent = msg;
   }
 
   function mmMsgIdCell(id) {
@@ -1143,8 +1170,13 @@
       if (k.suppressed) sub += " · sup " + fmtNum(k.suppressed);
       setText("mail-kpi-contacts-sub", sub);
       setText("mail-kpi-campaigns", fmtNum(k.campaigns));
-      setText("mail-kpi-sent", fmtNum(k.sends_delivered));
-      setText("mail-kpi-sent-sub", "kuyruk " + fmtNum(k.sends_queued || 0) + " · fail " + fmtNum(k.sends_failed || 0));
+      setText("mail-kpi-sent", fmtNum(k.sends_real != null ? k.sends_real : k.sends_delivered));
+      setText(
+        "mail-kpi-sent-sub",
+        "simüle " + fmtNum(k.sends_simulated || 0) +
+          " · kuyruk " + fmtNum(k.sends_queued || 0) +
+          " · fail " + fmtNum(k.sends_failed || 0)
+      );
       setText("mail-kpi-ivr", fmtNum(k.ivr_events));
       var cur = k.sc_currency || "";
       setText("mail-kpi-sc-reg", fmtNum(k.sc_register));
@@ -1168,6 +1200,7 @@
       mailDomains = res.data.domains || [];
       renderDomainChips(mailDomains);
       updateProviderPill(res.data.provider_mode);
+      mailShowDeliveryAlert(res.data.delivery_health, res.data.provider_mode);
     });
   }
 
@@ -3001,15 +3034,23 @@
               ? '<div class="muted" style="font-size:0.68rem;color:#fca5a5;max-width:220px;">' +
                 esc(errLine.slice(0, 180)) + "</div>"
               : "";
+            if (c.delivery_kind === "simulated") {
+              warn += ' <span style="color:#fbbf24;font-size:0.72rem;" title="SMTP yok — kutu boş kalır">sadece simüle</span>';
+            } else if (c.delivery_kind === "mixed") {
+              warn += ' <span style="color:#fbbf24;font-size:0.72rem;">kısmen simüle</span>';
+            }
+            var delivCell = fmtNum(c.delivered_real != null ? c.delivered_real : c.delivered);
+            if (c.delivered_simulated) {
+              delivCell += ' <span class="muted" style="font-size:0.72rem;">+sim ' + fmtNum(c.delivered_simulated) + "</span>";
+            }
+            if (c.unique_delivered != null && c.unique_delivered !== c.delivered) {
+              delivCell += ' <span class="muted">(' + fmtNum(c.unique_delivered) + " tekil)</span>";
+            }
             return "<tr>" +
               "<td>" + esc(c.name) + warn + errHtml + "</td>" +
               "<td>" + mmStatusBadge(mailCampStatusLabel(c.status)) + "</td>" +
               "<td>" + fmtNum(c.recipient_count != null ? c.recipient_count : c.total_count) + "</td>" +
-              "<td>" + fmtNum(c.delivered) +
-                (c.unique_delivered != null && c.unique_delivered !== c.delivered
-                  ? (' <span class="muted">(' + fmtNum(c.unique_delivered) + " tekil)</span>")
-                  : "") +
-              "</td>" +
+              "<td>" + delivCell + "</td>" +
               "<td>" + fmtNum(c.clicked) + "</td>" +
               "<td>" + esc(String(c.open_rate)) + "%</td>" +
               "<td>" + esc(String(c.click_rate)) + "%</td>" +
@@ -4114,6 +4155,14 @@
     if (campForm) {
       campForm.addEventListener("submit", function (e) {
         e.preventDefault();
+        var pill = document.getElementById("mail-provider-pill");
+        var pillTxt = pill ? String(pill.textContent || "").toLowerCase() : "";
+        if (pillTxt.indexOf("stub") >= 0) {
+          if (!confirm(
+            "Sağlayıcı STUB modunda — mailler gerçek SMTP’ye çıkmaz, sadece simüle edilir.\n\n" +
+            "Yine de kampanyayı oluşturmak istiyor musun? (Gerçek gönderim için Ayarlar → SMTP)"
+          )) return;
+        }
         var body = mailCampSelectionPayload();
         body.name = document.getElementById("mail-camp-name").value.trim();
         body.template_id = Number(document.getElementById("mail-camp-tpl").value);
@@ -4292,6 +4341,9 @@
     bindClick("mail-ivr-refresh", mailLoadIvr);
     bindClick("mail-rep-refresh", mailLoadReports);
     bindClick("mail-rep-analytics-refresh", mailLoadReports);
+    bindClick("mail-delivery-alert-go", function () {
+      switchMailTab("settings");
+    });
     bindClick("mail-camp-detail-close", mailCloseCampDetailModal);
     var campDetailModal = document.getElementById("mail-camp-detail-modal");
     if (campDetailModal) {

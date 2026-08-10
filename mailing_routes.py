@@ -2565,6 +2565,129 @@ def _purge_all_mail_contacts_once():
         return -1
 
 
+def _delivery_health_snapshot(conn):
+    """Gerçek SMTP mi, stub/simüle mi — son 7 gün özeti (şifre yazmaz)."""
+    provider = (get_mail_setting(conn, "provider_mode", "stub") or "stub").strip().lower()
+    smtp_host = (get_mail_setting(conn, "smtp_host", "") or "").strip()
+    smtp_user = (get_mail_setting(conn, "smtp_user", "") or "").strip()
+    has_settings_pw = bool((get_mail_setting(conn, "smtp_password", "") or "").strip())
+    from datetime import timedelta
+    since = (utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def _count(status=None, stub_msgid=False):
+        clauses = ["CAST(created_at AS TEXT) >= ?"]
+        params = [since]
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if stub_msgid:
+            clauses.append("provider_msg_id LIKE 'stub-%'")
+        try:
+            return int(scalar(
+                conn,
+                f"SELECT COUNT(*) FROM mail_sends WHERE {' AND '.join(clauses)}",
+                tuple(params),
+            ) or 0)
+        except Exception:
+            return 0
+
+    real_7 = _count("sent")
+    sim_7 = _count("simulated")
+    fail_7 = _count("failed")
+    skip_7 = _count("skipped")
+    queued_7 = _count("queued")
+    stub_msgid_7 = _count(stub_msgid=True)
+    samples = []
+    try:
+        rows = fetchall(
+            conn,
+            """
+            SELECT id, to_email, status, provider_msg_id, error, created_at, channel
+            FROM mail_sends
+            ORDER BY id DESC LIMIT 12
+            """,
+        ) or []
+        for r in rows:
+            d = dict(r) if not isinstance(r, dict) else r
+            mid = (d.get("provider_msg_id") or "").strip()
+            samples.append({
+                "id": d.get("id"),
+                "to_email": d.get("to_email"),
+                "status": d.get("status"),
+                "channel": d.get("channel"),
+                "created_at": d.get("created_at"),
+                "error": ((d.get("error") or "")[:160] or None),
+                "msgid_kind": (
+                    "stub" if mid.startswith("stub-")
+                    else ("real" if mid else "empty")
+                ),
+                "has_msgid": bool(mid),
+            })
+    except Exception as exc:
+        samples = [{"error": str(exc)[:120]}]
+
+    domains_pw = 0
+    domains_total = 0
+    try:
+        domains_total = int(scalar(conn, "SELECT COUNT(*) FROM mail_domains") or 0)
+        domains_pw = int(scalar(
+            conn,
+            """
+            SELECT COUNT(*) FROM mail_domains
+            WHERE (COALESCE(smtp_password,'') != '' OR COALESCE(smtp_password_enc,'') != '')
+            """,
+        ) or 0)
+    except Exception:
+        pass
+
+    is_stub = provider != "smtp"
+    ghost = (not is_stub) and sim_7 > 0 and real_7 == 0
+    ok = (not is_stub) and real_7 > 0 and not ghost
+    if is_stub:
+        verdict = "stub_mode"
+        message = (
+            "Sağlayıcı STUB — kampanyalar simüle edilir, gerçek SMTP’ye çıkılmaz. "
+            "Ayarlar → Gönderim sağlayıcı → SMTP / DirectMail."
+        )
+    elif real_7 == 0 and (sim_7 > 0 or stub_msgid_7 > 0):
+        verdict = "simulated_only"
+        message = (
+            f"Son 7 günde gerçek sent yok; simüle={sim_7}. "
+            "Panel ‘iletilen’ göstermiş olabilir ama kutu boş kalır."
+        )
+    elif real_7 == 0 and fail_7 > 0:
+        verdict = "all_failed"
+        message = f"Son 7 günde {fail_7} fail, 0 gerçek gönderim — SMTP/şifre/domain kontrol et."
+    elif real_7 == 0:
+        verdict = "no_recent_sends"
+        message = "Son 7 günde başarılı gönderim kaydı yok."
+    else:
+        verdict = "smtp_ok"
+        message = f"Son 7 günde {real_7} gerçek SMTP gönderim kaydı var."
+
+    return {
+        "provider_mode": provider,
+        "smtp_configured": bool(smtp_host and (has_settings_pw or domains_pw)),
+        "smtp_host_set": bool(smtp_host),
+        "smtp_user_set": bool(smtp_user),
+        "settings_password_set": has_settings_pw,
+        "domains_with_password": domains_pw,
+        "domains_total": domains_total,
+        "last_7d": {
+            "sent": real_7,
+            "simulated": sim_7,
+            "failed": fail_7,
+            "skipped": skip_7,
+            "queued": queued_7,
+            "stub_msgid": stub_msgid_7,
+        },
+        "ok": ok,
+        "verdict": verdict,
+        "message": message,
+        "samples": samples,
+    }
+
+
 def create_mailing_blueprint(permission_required):
     from mail_campaign_worker import ensure_campaign_scheduler
     from mail_crm import ensure_mail_crm_schema
@@ -2702,6 +2825,8 @@ def create_mailing_blueprint(permission_required):
         return decorator
 
     # ── Dashboard ──────────────────────────────────────────────
+    # (delivery health helper is module-level — see _delivery_health_snapshot)
+
     @bp.route("/dashboard", methods=["GET"])
     @mail_perm(*MAIL_DASH)
     def dashboard():
@@ -2723,11 +2848,17 @@ def create_mailing_blueprint(permission_required):
                     sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends") or 0
             else:
                 sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends") or 0
-            sends_sim = int(scalar(
-                conn, "SELECT COUNT(*) FROM mail_sends WHERE status IN ('sent','simulated')"
+            sends_real = int(scalar(
+                conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'sent'"
             ) or 0)
+            sends_simulated = int(scalar(
+                conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'simulated'"
+            ) or 0)
+            sends_sim = sends_real + sends_simulated
             sends_queued = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'queued'") or 0)
             sends_failed = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'failed'") or 0)
+            # Son 7 gün — boş/stub çalışıyor muyuz?
+            delivery_health = _delivery_health_snapshot(conn)
             opened = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE opened_at IS NOT NULL") or 0)
             clicked = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE clicked_at IS NOT NULL") or 0)
             try:
@@ -2776,6 +2907,8 @@ def create_mailing_blueprint(permission_required):
                 "campaigns": campaigns,
                 "sends_total": sends_total,
                 "sends_delivered": sends_sim,
+                "sends_real": sends_real,
+                "sends_simulated": sends_simulated,
                 "sends_queued": sends_queued,
                 "sends_failed": sends_failed,
                 "opened": opened,
@@ -2793,12 +2926,21 @@ def create_mailing_blueprint(permission_required):
             "smartico": sc,
             "domains": domains,
             "provider_mode": provider,
+            "delivery_health": delivery_health,
             "note": (
                 "SMTP (DirectMail) aktif — domainler gönderime hazır."
                 if (provider or "").strip().lower() == "smtp"
-                else "Stub modunda — Ayarlar'dan SMTP'ye geçince gerçek mail gider."
+                else "⚠️ STUB MOD — mailler gerçek gitmiyor; panel simüle ediyor. Ayarlar → SMTP."
             ),
         })
+
+    @bp.route("/delivery-health", methods=["GET"])
+    @mail_perm(*MAIL_DASH, *MAIL_REP)
+    def delivery_health():
+        """Son gönderimlerin gerçek SMTP mi yoksa stub/simüle mi olduğunu özetler."""
+        with closing(get_db()) as conn:
+            snap = _delivery_health_snapshot(conn)
+        return jsonify(snap)
 
     # ── Contacts / CRM ─────────────────────────────────────────
     @bp.route("/contacts/stats", methods=["GET"])

@@ -427,7 +427,11 @@ def campaign_analytics(conn, campaign_id=None):
             (SELECT COUNT(*) FROM mail_sends s
              WHERE s.campaign_id = c.id AND s.clicked_at IS NOT NULL) AS clicked,
             (SELECT COUNT(*) FROM mail_sends s
-             WHERE s.campaign_id = c.id AND s.status IN ('sent','simulated')) AS delivered
+             WHERE s.campaign_id = c.id AND s.status IN ('sent','simulated')) AS delivered,
+            (SELECT COUNT(*) FROM mail_sends s
+             WHERE s.campaign_id = c.id AND s.status = 'sent') AS delivered_real,
+            (SELECT COUNT(*) FROM mail_sends s
+             WHERE s.campaign_id = c.id AND s.status = 'simulated') AS delivered_simulated
         FROM mail_campaigns c
         {where}
         ORDER BY c.id DESC
@@ -439,6 +443,16 @@ def campaign_analytics(conn, campaign_id=None):
     out = []
     for r in rows or []:
         d = dict(r)
+        real_n = int(d.get("delivered_real") or 0)
+        sim_n = int(d.get("delivered_simulated") or 0)
+        if real_n and sim_n:
+            d["delivery_kind"] = "mixed"
+        elif real_n:
+            d["delivery_kind"] = "real"
+        elif sim_n:
+            d["delivery_kind"] = "simulated"
+        else:
+            d["delivery_kind"] = "none"
         # Tıklama: mail_sends.clicked_at ∪ mail_click_links (eski / yeni)
         clicked = int(d.get("clicked") or 0)
         try:

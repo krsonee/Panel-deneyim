@@ -26,10 +26,14 @@
 
   <!-- Özet -->
   <div class="acc-pane active" id="mail-pane-dashboard" data-mail-pane="dashboard">
+    <div id="mail-delivery-alert" class="mm-warmup-banner" hidden style="margin-bottom:0.85rem;">
+      <span id="mail-delivery-alert-text">Gönderim sağlığı kontrol ediliyor…</span>
+      <button type="button" class="btn btn-sm btn-primary" id="mail-delivery-alert-go">Ayarlar</button>
+    </div>
     <section class="kpi-grid acc-kpi-grid">
       <div class="kpi"><div class="val" id="mail-kpi-contacts">—</div><div class="lbl">Kontak</div><div class="sub muted" id="mail-kpi-contacts-sub"></div></div>
       <div class="kpi cyan"><div class="val" id="mail-kpi-campaigns">—</div><div class="lbl">Kampanya</div></div>
-      <div class="kpi green"><div class="val" id="mail-kpi-sent">—</div><div class="lbl">İletilen / Simüle</div><div class="sub muted" id="mail-kpi-sent-sub"></div></div>
+      <div class="kpi green"><div class="val" id="mail-kpi-sent">—</div><div class="lbl">Gerçek SMTP</div><div class="sub muted" id="mail-kpi-sent-sub"></div></div>
       <div class="kpi amber"><div class="val" id="mail-kpi-ivr">—</div><div class="lbl">IVR Olayı</div></div>
     </section>
     <section class="kpi-grid acc-kpi-grid" style="margin-top:0;">
