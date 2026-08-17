@@ -25,6 +25,10 @@ SETTING_KEY = "warmup_program_v1"
 TOTAL_DAYS = 30
 # Operatör günü: Türkiye gece yarısı (00:00) sonrası yeni checklist
 OP_TZ = ZoneInfo("Europe/Istanbul") if ZoneInfo else timezone.utc
+# Test/ Tolga Test gibi 3–5’lik denemeler «son bulk günü» sayılmasın
+MIN_WARMUP_DAY_VOLUME = 25
+# Gap ≥ bu kadar gün → resume gününü yumuşat (hacim şişmesin)
+GAP_SOFT_MIN_DAYS = 5
 
 # Görev kataloğu (UI + API)
 TASK_CATALOG = {
@@ -224,14 +228,27 @@ def program_day_on_date(started_on: str, on_date: str | date) -> int:
         return 1
 
 
-def last_program_send_info(conn, domain_ids=None) -> dict:
-    """Program domainlerinden son başarılı bulk gönderim (TR günü)."""
+def _send_day_expr(column: str = "COALESCE(sent_at, created_at)") -> str:
+    """SQL: gönderim anını takvim gününe (YYYY-MM-DD) çevir — PG + SQLite ISO text."""
+    # Prod ISO string veya timestamptz; substr her iki tarafta da güvenli
+    return f"substr(CAST({column} AS TEXT), 1, 10)"
+
+
+def last_program_send_info(conn, domain_ids=None, *, min_volume: int | None = None) -> dict:
+    """Program domainlerinden son *anlamlı* bulk günü (TR).
+
+    3’lük Tolga Test gibi mikro gönderimler gap/realign’i bozmasın diye
+    günde en az MIN_WARMUP_DAY_VOLUME başarılı send gerekir.
+    """
     ids = []
     for x in (domain_ids or []):
         try:
             ids.append(int(x))
         except (TypeError, ValueError):
             continue
+    min_vol = int(min_volume if min_volume is not None else MIN_WARMUP_DAY_VOLUME)
+    min_vol = max(1, min_vol)
+    day_expr = _send_day_expr()
     row = None
     try:
         if ids:
@@ -239,25 +256,67 @@ def last_program_send_info(conn, domain_ids=None) -> dict:
             row = fetchone(
                 conn,
                 f"""
-                SELECT MAX(sent_at) AS last_sent, MAX(created_at) AS last_created
-                FROM mail_sends
-                WHERE status IN ('sent', 'simulated')
-                  AND domain_id IN ({ph})
+                SELECT send_day, cnt FROM (
+                    SELECT {day_expr} AS send_day, COUNT(*) AS cnt
+                    FROM mail_sends
+                    WHERE status IN ('sent', 'simulated')
+                      AND domain_id IN ({ph})
+                    GROUP BY 1
+                ) t
+                WHERE cnt >= ?
+                ORDER BY send_day DESC
+                LIMIT 1
                 """,
-                tuple(ids),
+                tuple(ids) + (min_vol,),
             )
         else:
             row = fetchone(
                 conn,
-                """
-                SELECT MAX(sent_at) AS last_sent, MAX(created_at) AS last_created
-                FROM mail_sends
-                WHERE status IN ('sent', 'simulated')
+                f"""
+                SELECT send_day, cnt FROM (
+                    SELECT {day_expr} AS send_day, COUNT(*) AS cnt
+                    FROM mail_sends
+                    WHERE status IN ('sent', 'simulated')
+                    GROUP BY 1
+                ) t
+                WHERE cnt >= ?
+                ORDER BY send_day DESC
+                LIMIT 1
                 """,
+                (min_vol,),
             )
     except Exception as exc:
-        print(f"⚠️  last_program_send_info: {exc}")
+        print(f"⚠️  last_program_send_info volume: {exc}")
         row = None
+        # Fallback: herhangi bir son send (eski davranış)
+        try:
+            if ids:
+                ph = ",".join(["?"] * len(ids))
+                row = fetchone(
+                    conn,
+                    f"""
+                    SELECT MAX(sent_at) AS last_sent, MAX(created_at) AS last_created
+                    FROM mail_sends
+                    WHERE status IN ('sent', 'simulated')
+                      AND domain_id IN ({ph})
+                    """,
+                    tuple(ids),
+                )
+            else:
+                row = fetchone(
+                    conn,
+                    """
+                    SELECT MAX(sent_at) AS last_sent, MAX(created_at) AS last_created
+                    FROM mail_sends
+                    WHERE status IN ('sent', 'simulated')
+                    """,
+                )
+        except Exception as exc2:
+            print(f"⚠️  last_program_send_info fallback: {exc2}")
+            row = None
+
+    last_d = None
+    day_count = None
     raw = None
     if row:
         try:
@@ -265,18 +324,42 @@ def last_program_send_info(conn, domain_ids=None) -> dict:
         except Exception:
             d = row
         try:
-            raw = d.get("last_sent") or d.get("last_created")
+            if d.get("send_day") is not None:
+                last_d = _parse_op_date(d.get("send_day"))
+                try:
+                    day_count = int(d.get("cnt") or 0)
+                except (TypeError, ValueError):
+                    day_count = None
+            else:
+                raw = d.get("last_sent") or d.get("last_created")
+                last_d = _parse_op_date(raw)
         except Exception:
             try:
                 raw = row["last_sent"] or row["last_created"]
+                last_d = _parse_op_date(raw)
             except Exception:
-                raw = None
-    last_d = _parse_op_date(raw)
+                pass
     return {
-        "last_send_at": str(raw) if raw else None,
+        "last_send_at": str(raw) if raw else (last_d.isoformat() if last_d else None),
         "last_send_date": last_d.isoformat() if last_d else None,
+        "last_send_day_count": day_count,
+        "min_volume": min_vol,
         "domain_ids": ids,
     }
+
+
+def gap_soft_resume_day(resume_day: int, gap_days: int) -> int:
+    """Uzun sessizlikten dönüşte program gününü geri çek (itibar koruma).
+
+    gap 5–6 → −2 … gap 14+ → −7 (min gün 5). Takvim şişmesi zaten
+    realign ile kesilir; bu ek olarak «10 gün sessiz → yine 1100/domain» riskini keser.
+    """
+    d = max(1, min(TOTAL_DAYS, int(resume_day or 1)))
+    gap = max(0, int(gap_days or 0))
+    if gap < GAP_SOFT_MIN_DAYS:
+        return d
+    penalty = min(10, max(2, gap // 2))
+    return max(5, d - penalty)
 
 
 def activity_gap_days(conn, state: dict | None = None) -> int:
@@ -310,6 +393,7 @@ def realign_to_last_send(conn, *, advance: bool = False) -> dict:
 
     Takvim «her gün yaptın» diye gün 16’ya zıplamasın; son mail günündeki
     program gününün cap/hedefini bugüne yazar (started_on re-anchor).
+    Uzun gap’te soft rollback ile hacmi düşürür.
     """
     st = load_state(conn)
     if not st.get("started_on") or not (st.get("domain_ids") or []):
@@ -320,27 +404,29 @@ def realign_to_last_send(conn, *, advance: bool = False) -> dict:
     today = date.fromisoformat(_today_str())
     info = last_program_send_info(conn, st.get("domain_ids") or [])
     last_send_date = info.get("last_send_date")
+    raw_resume = 1
 
     if last_send_date:
         last_d = date.fromisoformat(last_send_date)
-        resume_day = program_day_on_date(origin, last_d)
+        raw_resume = program_day_on_date(origin, last_d)
         gap = max(0, (today - last_d).days)
-        # Tek gün ara + advance → ertesi programa geç; uzun gap’te aynı günde kal (hacim şişmesin)
+        # Tek gün ara + advance → ertesi programa geç; uzun gap’te soft rollback
         if advance and gap == 1:
-            resume_day = min(TOTAL_DAYS, resume_day + 1)
+            raw_resume = min(TOTAL_DAYS, raw_resume + 1)
     else:
-        # Hiç send yok — domain warm_day / checklist’ten tahmin
+        # Hiç anlamlı send yok — domain warm_day / checklist’ten tahmin
         gap = activity_gap_days(conn, st)
-        resume_day = 1
+        raw_resume = 1
         try:
             rows = _domain_rows(conn, st.get("domain_ids") or [])
             wd = [int(r.get("warm_day") or 0) for r in rows]
             if wd:
-                resume_day = max(1, min(TOTAL_DAYS, max(wd)))
+                raw_resume = max(1, min(TOTAL_DAYS, max(wd)))
         except Exception:
             pass
         last_send_date = None
 
+    resume_day = gap_soft_resume_day(raw_resume, gap)
     resume_day = max(1, min(TOTAL_DAYS, int(resume_day)))
     new_started = today - timedelta(days=resume_day - 1)
     calendar_day_before = compute_day_number(
@@ -352,9 +438,14 @@ def realign_to_last_send(conn, *, advance: bool = False) -> dict:
     st["active"] = True
     st["last_realign_date"] = today.isoformat()
     st["last_cap_sync_date"] = None  # cap’i zorla yeniden yaz
+    soft_bit = ""
+    if resume_day != raw_resume:
+        soft_bit = f" · soft {raw_resume}→{resume_day} (gap {gap}g)"
     st["realign_note"] = (
-        f"last_send={last_send_date or 'yok'} → day {resume_day} "
-        f"(takvim {calendar_day_before} idi) · gap={gap}g · started_on→{st['started_on']}"
+        f"last_bulk={last_send_date or 'yok'} (n≥{info.get('min_volume') or MIN_WARMUP_DAY_VOLUME}"
+        f"{', cnt=' + str(info.get('last_send_day_count')) if info.get('last_send_day_count') else ''})"
+        f" → day {resume_day} (takvim {calendar_day_before} idi) · gap={gap}g"
+        f"{soft_bit} · started_on→{st['started_on']}"
     )
     save_state(conn, st)
 
@@ -363,13 +454,16 @@ def realign_to_last_send(conn, *, advance: bool = False) -> dict:
     return {
         "ok": True,
         "resume_day": resume_day,
+        "raw_resume_day": raw_resume,
         "last_send_date": last_send_date,
+        "last_send_day_count": info.get("last_send_day_count"),
         "gap_days": gap,
         "calendar_day_before": calendar_day_before,
         "started_on": st["started_on"],
         "origin_started_on": origin,
         "per_domain_target": plan["per_domain_target"],
         "daily_cap": sync.get("daily_cap") or plan["daily_cap_suggest"],
+        "hourly_cap": sync.get("hourly_cap"),
         "domains_updated": sync.get("updated") or 0,
         "note": st["realign_note"],
     }
@@ -416,6 +510,7 @@ def sync_program_caps(conn, state: dict | None = None, *, force: bool = False) -
 
     Banner ‘~410’ öneri; göndermeyi engelleyen asıl kapı domain.daily_cap.
     Cap eski günde kalırsa (örn. 250) kalan mailler skipped olur — her gün 1 kez senkron.
+    hourly_cap ≈ daily/20 (en az 30, en fazla 200) — gün boyu yayılım.
     """
     st = state if state is not None else load_state(conn)
     if not st.get("active") or not (st.get("domain_ids") or []):
@@ -426,6 +521,7 @@ def sync_program_caps(conn, state: dict | None = None, *, force: bool = False) -
     day_n = compute_day_number(st, today)
     plan = day_plan(day_n)
     cap = int(plan["daily_cap_suggest"])
+    hourly = max(30, min(200, (cap + 19) // 20))
     updated = 0
     for did in st.get("domain_ids") or []:
         try:
@@ -434,6 +530,7 @@ def sync_program_caps(conn, state: dict | None = None, *, force: bool = False) -
                 """
                 UPDATE mail_domains
                 SET daily_cap = ?,
+                    hourly_cap = ?,
                     warm_day = ?,
                     warm_status = CASE
                         WHEN COALESCE(warm_status, '') IN ('burned', 'paused') THEN warm_status
@@ -442,7 +539,7 @@ def sync_program_caps(conn, state: dict | None = None, *, force: bool = False) -
                     END
                 WHERE id = ?
                 """,
-                (cap, int(day_n), int(day_n), int(did)),
+                (cap, hourly, int(day_n), int(day_n), int(did)),
             )
             updated += 1
         except Exception:
@@ -453,6 +550,7 @@ def sync_program_caps(conn, state: dict | None = None, *, force: bool = False) -
         "updated": updated,
         "skipped": False,
         "daily_cap": cap,
+        "hourly_cap": hourly,
         "day": day_n,
         "per_domain_target": int(plan["per_domain_target"]),
     }

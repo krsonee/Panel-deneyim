@@ -217,7 +217,7 @@ def run_weekly_maintenance(conn, *, force: bool = False) -> dict:
         }
 
     actions = []
-    # 1) Son gönderime hizala + cap sync
+    # 1) Son anlamlı bulk’a hizala + soft gap rollback + cap/hourly sync
     sync = _sync_domain_caps(conn, soft=True)
     actions.append({"action": "cap_sync", "result": sync})
     actions.append({"action": "warmup_catchup", "result": {
@@ -229,12 +229,41 @@ def run_weekly_maintenance(conn, *, force: bool = False) -> dict:
         "realign": sync.get("realign"),
     }})
 
+    # 2) Domain sağlık taraması (bounce/fail spike → pause)
+    health_rows = []
+    try:
+        from mail_domain_health import review_all_active_domains
+        health_rows = review_all_active_domains(conn) or []
+        actions.append({
+            "action": "domain_health",
+            "result": {
+                "reviewed": len(health_rows),
+                "paused": [r for r in health_rows if r.get("paused")],
+                "samples": [
+                    {
+                        "domain": r.get("domain"),
+                        "total": r.get("total"),
+                        "bounce_rate": r.get("bounce_rate"),
+                        "fail_rate": r.get("fail_rate"),
+                        "should_pause": r.get("should_pause"),
+                    }
+                    for r in health_rows[:8]
+                ],
+            },
+        })
+    except Exception as exc:
+        actions.append({"action": "domain_health", "result": {"ok": False, "error": str(exc)}})
+        print(f"⚠️  weekly domain health: {exc}")
+
     # Auto task’leri bu hafta tamamlandı say
     comps = st.setdefault("completions", {})
     week_map = comps.setdefault(week, {})
     for t in WEEKLY_TASKS:
         if t.get("auto"):
             week_map[t["key"]] = True
+    # Bounce review: tarama yapıldıysa operatör tik’i de kapat
+    if health_rows is not None:
+        week_map["bounce_review"] = True
 
     st["runs"][week] = {
         "ran_at": _now().isoformat(),
