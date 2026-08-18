@@ -1252,9 +1252,94 @@ def preset_steril_ayricaliklar() -> dict:
     }
 
 
+def preset_gorselsiz_ayricaliklar() -> dict:
+    """MakroVip Club davet — aynı vurgu, promo hero görseli yok (sadece metin/kart)."""
+    vip_items = [
+        (
+            "Makro VIP Club & Ödüller",
+            "Seviye atladıkça nakit ödül, prim ve VIP kasa ayrıcalıkları hesabında açılır.",
+        ),
+        (
+            "Prim",
+            "Seviye atla; 7 gün boyunca her gün nakit prim ödülünün tadını çıkar.",
+        ),
+        (
+            "Makro Manager",
+            "Manager döneminde rolling hedeflerini tamamla; ekstra prim ve ödül havuzundan payını al.",
+        ),
+    ]
+    event_items = [
+        (
+            "Yarışlar",
+            "Makrobet yarış ve turnuva sıralamasına gir; ödül havuzundan payını kap.",
+        ),
+        (
+            "Bilet Etkinliği",
+            "100.000 ₺ ödüllü bilet etkinliğinde oynadıkça bilet biriktir, çekilişe katıl.",
+        ),
+    ]
+    body = (
+        f'<tr><td align="center" style="padding:6px 20px 10px;">{badge("ÖZEL DAVET", glow=True)}</td></tr>'
+        + eyebrow("MakroVip Club’a Davet")
+        + headline("{{name}}, seni Makrobet’in özel dünyası bekliyor", size=23)
+        + lead(
+            "Hızlı çekim, 3.000 TL deneme kasası, %100 kayıp güvencesi, VIP ödülleri "
+            "ve haftalık etkinlikler — hepsi tek davette.",
+            size=15,
+            emphasize=True,
+        )
+        + feature_box(
+            kicker="★ Hızlı çekim ★",
+            big="5 DK",
+            subtitle="NET ÇEKİM",
+            note="Kazancın net işlenir; çekim talebin dakikalar içinde sonuçlanır — bekletmeden hesabında.",
+        )
+        + feature_box_3000()
+        + feature_box(
+            kicker="★ Güvence ★",
+            big="%100",
+            subtitle="KAYIP BONUSU",
+            note="Yatırım senden, güvence Makrobet’ten — kaybın kadar bakiye yeniden tanımlanır.",
+        )
+        + section_label("VIP · Prim · Manager")
+        + promo_cards(vip_items, highlight_first=1, pad_y=13)
+        + section_label("Etkinlikler")
+        + promo_cards(event_items, pad_y=12)
+        + lead(
+            "Tek tıkla kaydını tamamla; hızlı çekim, deneme kasası ve VIP avantajları "
+            "hesabında seni bekler.",
+            size=14,
+        )
+        + cta_row("Daveti Aç · Hemen Kayıt Ol", wide=True, font_px=16, pad="16px 36px", glow=True, gradient=True)
+    )
+    return {
+        "name": "2026 · Görselsiz · Ayrıcalıklar",
+        "subject": "{{name}}, MakroVip Club’a davet — hızlı çekim · 3.000 TL · %100 kayıp",
+        "html_body": shell(
+            title="MakroVip Club’a Davet",
+            preheader="Hızlı çekim · 3.000 TL deneme · %100 kayıp · VIP · Yarışlar · Bilet",
+            body_rows=body,
+        ),
+        "text_body": (
+            "Merhaba {{name}},\n\n"
+            "MakroVip Club’a davet:\n"
+            "• Hızlı çekim — talebin dakikalar içinde\n"
+            "• 3.000 TL deneme kasası\n"
+            "• %100 kayıp bonusu\n"
+            "• Makro VIP Club & ödüller\n"
+            "• Prim\n"
+            "• Makro Manager\n"
+            "• Yarışlar\n"
+            "• Bilet etkinliği\n\n"
+            f"Hemen kayıt: {AFF}\n"
+        ),
+    }
+
+
 PRESET_BUILDERS = (
     preset_davet_deneme_kayip,
     preset_steril_ayricaliklar,
+    preset_gorselsiz_ayricaliklar,
     preset_davet_test,
     preset_davet_mailing,
     preset_pasif_uye,

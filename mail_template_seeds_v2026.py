@@ -18,6 +18,7 @@ from database import (
 from mail_template_engine_makrobet import (
     build_all_presets,
     preset_davet_deneme_kayip,
+    preset_gorselsiz_ayricaliklar,
     preset_steril_ayricaliklar,
 )
 
@@ -27,6 +28,7 @@ TEMPLATES = build_all_presets()
 
 DAVET_DENEME_KAYIP_NAME = "2026 · Davet · Deneme + %100 Kayıp"
 STERIL_AYRICALIKLAR_NAME = "2026 · Steril · Ayrıcalıklar"
+GORSELSIZ_AYRICALIKLAR_NAME = "2026 · Görselsiz · Ayrıcalıklar"
 
 
 def _upsert_template(conn, item: dict, *, overwrite: bool) -> str:
@@ -97,6 +99,22 @@ def seed_steril_ayricaliklar_template(conn, overwrite=True):
     return {
         "ok": True,
         "name": STERIL_AYRICALIKLAR_NAME,
+        "added": 1 if action == "added" else 0,
+        "updated": 1 if action == "updated" else 0,
+        "action": action,
+    }
+
+
+def seed_gorselsiz_ayricaliklar_template(conn, overwrite=True):
+    """Görselsiz davet şablonu — wipe skip açıkken de eklenebilir."""
+    action = _upsert_template(conn, preset_gorselsiz_ayricaliklar(), overwrite=overwrite)
+    try:
+        conn.commit()
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "name": GORSELSIZ_AYRICALIKLAR_NAME,
         "added": 1 if action == "added" else 0,
         "updated": 1 if action == "updated" else 0,
         "action": action,
