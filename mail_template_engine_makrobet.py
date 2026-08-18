@@ -1168,15 +1168,15 @@ def preset_etkinlik_tanitim() -> dict:
 
 
 def preset_steril_ayricaliklar() -> dict:
-    """MakroVip Club davet — promosyon harmanı + hızlı çekim."""
+    """MakroVip Club davet — çekim önde, promosyon sayfası harmanı."""
     vip_items = [
         (
-            "VIP Club & Ödüller",
-            "Seviye ilerledikçe özel prim, öncelikli destek ve VIP’e özel kampanyalar hesabında açılır.",
+            "Makro VIP Club & Ödüller",
+            "Seviye atladıkça nakit ödül, prim ve VIP kasa ayrıcalıkları hesabında açılır.",
         ),
         (
-            "Prim Ödülü",
-            "Aktif prim / çevrim dönemlerinde yatırıma ekstra getiri — bakiyeni daha verimli büyüt.",
+            "Prim",
+            "Seviye atla; 7 gün boyunca her gün nakit prim ödülünün tadını çıkar.",
         ),
         (
             "Makro Manager",
@@ -1185,16 +1185,12 @@ def preset_steril_ayricaliklar() -> dict:
     ]
     event_items = [
         (
-            "Amusnet Race",
-            "Haftalık yarış sıralamasına gir; ödül havuzundan payını kap.",
+            "Yarışlar",
+            "Makrobet yarış ve turnuva sıralamasına gir; ödül havuzundan payını kap.",
         ),
         (
             "Bilet Etkinliği",
-            "Oynadıkça bilet biriktir — çekiliş ve etkinlik ödüllerine katıl.",
-        ),
-        (
-            "Hızlı Çekim",
-            "Kazancın net işlenir; talepler dakikalar içinde sonuçlanır — elit deneyimin parçası.",
+            "100.000 ₺ ödüllü bilet etkinliğinde oynadıkça bilet biriktir, çekilişe katıl.",
         ),
     ]
     body = (
@@ -1202,9 +1198,16 @@ def preset_steril_ayricaliklar() -> dict:
         + eyebrow("MakroVip Club’a Davet")
         + headline("{{name}}, seni Makrobet’in özel dünyası bekliyor", size=23)
         + lead(
-            "Deneme kasası, kayıp güvencesi, VIP ödülleri ve haftalık etkinlikler — hepsi tek davette.",
+            "Hızlı çekim, 3.000 TL deneme kasası, %100 kayıp güvencesi, VIP ödülleri "
+            "ve haftalık etkinlikler — hepsi tek davette.",
             size=15,
             emphasize=True,
+        )
+        + feature_box(
+            kicker="★ Hızlı çekim ★",
+            big="5 DK",
+            subtitle="NET ÇEKİM",
+            note="Kazancın net işlenir; çekim talebin dakikalar içinde sonuçlanır — bekletmeden hesabında.",
         )
         + feature_box_3000()
         + hero_image(IMG_KAYIP, "%100 Kayıp Bonusu", soft=True, glow=True)
@@ -1216,10 +1219,10 @@ def preset_steril_ayricaliklar() -> dict:
         )
         + section_label("VIP · Prim · Manager")
         + promo_cards(vip_items, highlight_first=1, pad_y=13)
-        + section_label("Etkinlikler & çekim")
+        + section_label("Etkinlikler")
         + promo_cards(event_items, pad_y=12)
         + lead(
-            "Tek tıkla kaydını tamamla; deneme kasası, kayıp bonusu ve VIP avantajları "
+            "Tek tıkla kaydını tamamla; hızlı çekim, deneme kasası ve VIP avantajları "
             "hesabında seni bekler.",
             size=14,
         )
@@ -1227,23 +1230,23 @@ def preset_steril_ayricaliklar() -> dict:
     )
     return {
         "name": "2026 · Steril · Ayrıcalıklar",
-        "subject": "{{name}}, MakroVip Club’a davet — 3.000 TL deneme · %100 kayıp",
+        "subject": "{{name}}, MakroVip Club’a davet — hızlı çekim · 3.000 TL · %100 kayıp",
         "html_body": shell(
             title="MakroVip Club’a Davet",
-            preheader="MakroVip Club daveti · 3.000 TL deneme · %100 kayıp · VIP · etkinlikler",
+            preheader="Hızlı çekim · 3.000 TL deneme · %100 kayıp · VIP · Yarışlar · Bilet",
             body_rows=body,
         ),
         "text_body": (
             "Merhaba {{name}},\n\n"
             "MakroVip Club’a davet:\n"
+            "• Hızlı çekim — talebin dakikalar içinde\n"
             "• 3.000 TL deneme kasası\n"
             "• %100 kayıp bonusu\n"
-            "• VIP Club & ödüller\n"
-            "• Prim ödülü\n"
+            "• Makro VIP Club & ödüller\n"
+            "• Prim\n"
             "• Makro Manager\n"
-            "• Amusnet Race\n"
-            "• Bilet etkinliği\n"
-            "• Hızlı çekim\n\n"
+            "• Yarışlar\n"
+            "• Bilet etkinliği\n\n"
             f"Hemen kayıt: {AFF}\n"
         ),
     }
