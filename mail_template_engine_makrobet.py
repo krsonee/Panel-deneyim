@@ -1168,7 +1168,7 @@ def preset_etkinlik_tanitim() -> dict:
 
 
 def preset_steril_ayricaliklar() -> dict:
-    """Elite davet — lacivert+altın, promosyon harmanı + hızlı çekim (neon/Betroz yok)."""
+    """MakroVip Club davet — promosyon harmanı + hızlı çekim."""
     vip_items = [
         (
             "VIP Club & Ödüller",
@@ -1199,11 +1199,10 @@ def preset_steril_ayricaliklar() -> dict:
     ]
     body = (
         f'<tr><td align="center" style="padding:6px 20px 10px;">{badge("ÖZEL DAVET", glow=True)}</td></tr>'
-        + eyebrow("Makrobet Elite Davet")
+        + eyebrow("MakroVip Club’a Davet")
         + headline("{{name}}, seni Makrobet’in özel dünyası bekliyor", size=23)
         + lead(
-            "Lacivert &amp; altın standartta bir davet: deneme kasası, kayıp güvencesi, "
-            "VIP ödülleri ve haftalık etkinlikler — hepsi tek davette.",
+            "Deneme kasası, kayıp güvencesi, VIP ödülleri ve haftalık etkinlikler — hepsi tek davette.",
             size=15,
             emphasize=True,
         )
@@ -1228,15 +1227,15 @@ def preset_steril_ayricaliklar() -> dict:
     )
     return {
         "name": "2026 · Steril · Ayrıcalıklar",
-        "subject": "{{name}}, 3.000 TL deneme · %100 kayıp · VIP ve etkinlik daveti",
+        "subject": "{{name}}, MakroVip Club’a davet — 3.000 TL deneme · %100 kayıp",
         "html_body": shell(
-            title="Makrobet Elite Davet",
-            preheader="3.000 TL deneme · %100 kayıp · VIP · Race · Bilet · Manager · hızlı çekim",
+            title="MakroVip Club’a Davet",
+            preheader="MakroVip Club daveti · 3.000 TL deneme · %100 kayıp · VIP · etkinlikler",
             body_rows=body,
         ),
         "text_body": (
             "Merhaba {{name}},\n\n"
-            "Makrobet özel davet:\n"
+            "MakroVip Club’a davet:\n"
             "• 3.000 TL deneme kasası\n"
             "• %100 kayıp bonusu\n"
             "• VIP Club & ödüller\n"
