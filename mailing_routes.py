@@ -4202,6 +4202,23 @@ def create_mailing_blueprint(permission_required):
             msg = f"{result.get('name')} zaten mevcut"
         return jsonify({**result, "message": msg})
 
+    @bp.route("/templates/seed-steril-ayricaliklar", methods=["POST"])
+    @mail_perm(*MAIL_TPL)
+    def seed_steril_ayricaliklar_route():
+        """Steril Makro özellik şablonu (Betroz tarzı kart grid, wipe skip açıkken de)."""
+        from mail_template_seeds_v2026 import seed_steril_ayricaliklar_template
+
+        with closing(get_db()) as conn:
+            result = seed_steril_ayricaliklar_template(conn, overwrite=True)
+        action = result.get("action") or "kept"
+        if action == "added":
+            msg = f"{result.get('name')} eklendi"
+        elif action == "updated":
+            msg = f"{result.get('name')} güncellendi"
+        else:
+            msg = f"{result.get('name')} zaten mevcut"
+        return jsonify({**result, "message": msg})
+
     @bp.route("/templates", methods=["POST"])
     @mail_perm(*MAIL_TPL)
     def create_template():

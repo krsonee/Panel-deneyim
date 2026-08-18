@@ -393,6 +393,164 @@ def footer_legal() -> str:
           </tr>"""
 
 
+# ── Sterile (Betroz-style) layout — navy + gold, no promo images ───────────
+ACCENT_TEAL = "#2dd4bf"
+ACCENT_GREEN = "#4ade80"
+ACCENT_BLUE = "#60a5fa"
+ACCENT_VIOLET = "#a78bfa"
+STERILE_CARD = "#0c1a36"
+STERILE_HERO = "#0a1834"
+
+
+def _sterile_login_pill(label: str = "GİRİŞ YAP") -> str:
+    return (
+        f'<a href="{CTA}" target="_blank" rel="noopener" '
+        f'style="display:inline-block;background-color:{GOLD};color:{CTA_INK};'
+        f"font-family:{FONT};font-size:12px;font-weight:800;letter-spacing:0.06em;"
+        f'text-decoration:none;padding:10px 18px;border-radius:999px;">{label}</a>'
+    )
+
+
+def _sterile_header() -> str:
+    return f"""
+          <tr>
+            <td style="padding:18px 20px 8px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="left" valign="middle" style="padding:0;">
+                    <a href="{CTA}" target="_blank" rel="noopener" style="text-decoration:none;border:0;">
+                      <img src="{LOGO}" alt="Makrobet" width="148" border="0"
+                        style="display:block;border:0;outline:none;background-color:{BG};
+                        max-width:148px;width:148px;height:auto;">
+                    </a>
+                  </td>
+                  <td align="right" valign="middle" style="padding:0;">
+                    {_sterile_login_pill()}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>"""
+
+
+def _sterile_tag(text: str) -> str:
+    return f"""
+          <tr>
+            <td align="center" style="padding:10px 20px 12px;">
+              <span style="display:inline-block;border:1px solid {GOLD};color:{GOLD};
+                font-family:{FONT};font-size:11px;font-weight:800;letter-spacing:0.12em;
+                text-transform:uppercase;padding:7px 14px;border-radius:8px;">{text}</span>
+            </td>
+          </tr>"""
+
+
+def _sterile_stat(label: str, color: str) -> str:
+    return f"""
+                  <td width="33%" align="center" valign="top" style="padding:6px 4px;">
+                    <div style="font-family:{FONT};font-size:11px;font-weight:800;letter-spacing:0.04em;
+                      text-transform:uppercase;color:{color};line-height:1.35;">{label}</div>
+                  </td>"""
+
+
+def _sterile_glow_card(
+    title: str,
+    subtitle: str,
+    accent: str,
+    *,
+    tag: str | None = None,
+    pad: str = "18px 16px",
+) -> str:
+    tag_html = ""
+    if tag:
+        tag_html = (
+            f'<div style="font-family:{FONT};font-size:10px;font-weight:800;letter-spacing:0.1em;'
+            f'text-transform:uppercase;color:{accent};margin-bottom:8px;">{tag}</div>'
+        )
+    return f"""
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                bgcolor="{STERILE_CARD}"
+                style="width:100%;background-color:{STERILE_CARD};border:1px solid {accent};
+                border-radius:14px;box-shadow:0 0 0 1px rgba(255,204,0,0.04),0 0 18px rgba(0,0,0,0.35);">
+                <tr>
+                  <td style="padding:{pad};">
+                    <div style="width:36px;height:3px;background-color:{accent};border-radius:2px;
+                      font-size:0;line-height:0;margin-bottom:12px;">&nbsp;</div>
+                    {tag_html}
+                    <div style="font-family:{FONT};font-size:15px;font-weight:800;color:{TEXT};
+                      line-height:1.35;letter-spacing:0.02em;">{title}</div>
+                    <div style="font-family:{FONT};font-size:12px;font-weight:600;color:{MUTED};
+                      line-height:1.5;margin-top:8px;">{subtitle}</div>
+                  </td>
+                </tr>
+              </table>"""
+
+
+def _sterile_two_col(left_html: str, right_html: str) -> str:
+    return f"""
+          <tr>
+            <td style="padding:0 16px 10px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td width="50%" valign="top" style="padding:0 5px 0 0;">{left_html}</td>
+                  <td width="50%" valign="top" style="padding:0 0 0 5px;">{right_html}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>"""
+
+
+def shell_sterile(*, title: str, body_rows: str, preheader: str = "") -> str:
+    """Logo + GİRİŞ YAP header; görselsiz steril kart grid."""
+    pre = (
+        f'<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;'
+        f'opacity:0;overflow:hidden;mso-hide:all;">{preheader}&nbsp;&#847;&nbsp;&#847;</div>'
+        if preheader
+        else ""
+    )
+    return f"""<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="x-apple-disable-message-reformatting">
+  <meta name="color-scheme" content="dark">
+  <title>{title}</title>
+  <!--[if mso]>
+  <style>table,td{{font-family:Arial,sans-serif !important;}}</style>
+  <![endif]-->
+  <style type="text/css">
+    body,table,td,a{{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}}
+    table,td{{mso-table-lspace:0pt;mso-table-rspace:0pt;border-collapse:collapse;}}
+    img{{-ms-interpolation-mode:bicubic;border:0;outline:none;text-decoration:none;display:block;}}
+    body{{margin:0 !important;padding:0 !important;width:100% !important;background:{INK};}}
+    a[x-apple-data-detectors]{{color:inherit !important;text-decoration:none !important;}}
+    @media only screen and (max-width:620px){{
+      .mb-shell{{width:100% !important;}}
+      .mb-stack{{display:block !important;width:100% !important;}}
+    }}
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:{INK};font-family:{FONT};">
+  {pre}
+  {notice_spam()}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="{INK}" style="background-color:{INK};">
+    <tr>
+      <td align="center" style="padding:8px 10px 32px;">
+        <table role="presentation" class="mb-shell" width="{MAX_W}" cellpadding="0" cellspacing="0" border="0"
+          bgcolor="{BG}"
+          style="width:100%;max-width:{MAX_W}px;background-color:{BG};border:1px solid {BORDER};border-radius:18px;">
+          {_sterile_header()}
+          {body_rows}
+          {footer_legal()}
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+
 def shell(*, title: str, body_rows: str, preheader: str = "") -> str:
     pre = (
         f'<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;'
@@ -1009,8 +1167,178 @@ def preset_etkinlik_tanitim() -> dict:
     }
 
 
+def preset_steril_ayricaliklar() -> dict:
+    """Görselsiz steril özellik maili — Betroz kart düzeni, Makrobet lacivert+altın."""
+    hero = f"""
+          <tr>
+            <td style="padding:4px 16px 8px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                bgcolor="{STERILE_HERO}"
+                style="width:100%;background-color:{STERILE_HERO};border:1px solid {BORDER};
+                border-radius:16px;">
+                {_sterile_tag("OYUNUN KURALLARINI SEN YAZ")}
+                <tr>
+                  <td align="center" style="padding:4px 18px 8px;font-family:{FONT};font-size:26px;
+                    line-height:1.25;font-weight:900;color:{TEXT};letter-spacing:0.01em;">
+                    MAKROBET'TE<br>
+                    <span style="color:{GOLD};">HIZLI ÇEKİM · GÜÇLÜ ORAN</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding:0 22px 16px;font-family:{FONT};font-size:13px;
+                    line-height:1.55;color:{MUTED};">
+                    Merhaba {{{{name}}}} — çekimden orana, canlı masadan VIP’e her şey net.
+                    Görüntü kirliliği yok; sadece hesabına yansıyan avantaj.
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:0 12px 16px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      bgcolor="#0e1f3f" style="background-color:#0e1f3f;border-radius:12px;border:1px solid {BORDER};">
+                      <tr>
+                        {_sterile_stat("HIZLI ÇEKİM", ACCENT_GREEN)}
+                        {_sterile_stat("5 DK İŞLEM", ACCENT_TEAL)}
+                        {_sterile_stat("HER GÜN ÖZEL ORAN", ACCENT_VIOLET)}
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>"""
+
+    section_head = f"""
+          <tr>
+            <td align="center" style="padding:18px 20px 4px;font-family:{FONT};font-size:13px;
+              font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:{GOLD};">
+              MAKROBET AYRICALIKLARI
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:0 20px 14px;font-family:{FONT};font-size:18px;
+              font-weight:800;color:{TEXT};line-height:1.35;">
+              Limitleri birlikte kaldıralım.
+            </td>
+          </tr>"""
+
+    full_card = f"""
+          <tr>
+            <td style="padding:0 16px 10px;">
+              {_sterile_glow_card(
+                  "MAKROBET'TE ÇEKİM NET VE HIZLI",
+                  "Kazancının tamamını bekletmeden hesabına al — süreç şeffaf, takip kolay.",
+                  GOLD,
+                  tag="ÖZGÜR ÇEKİM",
+              )}
+            </td>
+          </tr>"""
+
+    row1 = _sterile_two_col(
+        _sterile_glow_card(
+            "SPOR'DA GÜÇLÜ HATLAR",
+            "Prematch ve canlıda net oranlar · sınırsız heyecan.",
+            ACCENT_TEAL,
+        ),
+        _sterile_glow_card(
+            "İDDİA EDİYORUZ!",
+            "Çekimler dakikalar içinde işlenir — hesabında görürsün.",
+            GOLD,
+        ),
+    )
+    row2 = _sterile_two_col(
+        _sterile_glow_card(
+            "CANLI MASALARDA LİMİTSİZ HEYECAN",
+            "Dilediğin sağlayıcıda oyna — seçim sende.",
+            ACCENT_VIOLET,
+        ),
+        _sterile_glow_card(
+            "İDDİA EDİYORUZ!",
+            "En yüksek kazanç oranları bizde — her gün özel hat.",
+            ACCENT_GREEN,
+        ),
+    )
+
+    bar_365 = f"""
+          <tr>
+            <td style="padding:4px 16px 12px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                bgcolor="{STERILE_CARD}"
+                style="width:100%;background-color:{STERILE_CARD};border:1px solid {ACCENT_BLUE};
+                border-radius:14px;">
+                <tr>
+                  <td width="62%" valign="middle" style="padding:16px 14px 16px 16px;">
+                    <div style="width:36px;height:3px;background-color:{ACCENT_TEAL};border-radius:2px;
+                      font-size:0;line-height:0;margin-bottom:10px;">&nbsp;</div>
+                    <div style="font-family:{FONT};font-size:14px;font-weight:800;color:{TEXT};">
+                      HER GÜN ÖZEL ORAN
+                    </div>
+                    <div style="font-family:{FONT};font-size:12px;font-weight:600;color:{MUTED};margin-top:6px;">
+                      HER GÜN GERÇEK KAZANÇ!
+                    </div>
+                  </td>
+                  <td width="38%" align="right" valign="middle" style="padding:16px 16px 16px 8px;">
+                    <div style="font-family:{FONT};font-size:28px;font-weight:900;color:{ACCENT_BLUE};
+                      letter-spacing:0.02em;line-height:1;">365 GÜN</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>"""
+
+    cta_block = f"""
+          <tr>
+            <td style="padding:6px 16px 18px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                bgcolor="{GOLD}"
+                style="width:100%;background-color:{GOLD};
+                background:linear-gradient(135deg,#ffe066 0%,#ffcc00 40%,#e6a800 100%);
+                border-radius:16px;">
+                <tr>
+                  <td align="center" style="padding:26px 20px 12px;font-family:{FONT};font-size:18px;
+                    font-weight:900;color:{CTA_INK};line-height:1.35;letter-spacing:0.02em;">
+                    SON SÖZÜ BİZ SÖYLEYELİM<br>
+                    İDDİA EDİYORUZ…<br>
+                    BİZDEN DAHA NETİNİ HİÇ GÖRMEDİNİZ!
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding:8px 20px 24px;">
+                    <a href="{CTA}" target="_blank" rel="noopener"
+                      style="display:inline-block;background-color:{INK};color:{GOLD};
+                      font-family:{FONT};font-size:13px;font-weight:800;letter-spacing:0.06em;
+                      text-decoration:none;padding:14px 28px;border-radius:999px;">
+                      MAKROBET'E GİRİŞ YAP →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>"""
+
+    body = hero + section_head + full_card + row1 + row2 + bar_365 + cta_block
+    return {
+        "name": "2026 · Steril · Ayrıcalıklar",
+        "subject": "{{name}}, Makrobet'te hızlı çekim · güçlü oran · net oyun",
+        "html_body": shell_sterile(
+            title="Makrobet Ayrıcalıkları",
+            preheader="Hızlı çekim · güçlü oran · VIP avantaj — görüntü kirliliği yok",
+            body_rows=body,
+        ),
+        "text_body": (
+            "Merhaba {{name}},\n\n"
+            "Makrobet ayrıcalıkları:\n"
+            "• Hızlı çekim — talebin dakikalar içinde işlenir\n"
+            "• Güçlü oranlar — her gün özel hat\n"
+            "• Canlı masalar — dilediğin sağlayıcıda oyna\n"
+            "• VIP avantaj — net, sade, hesapta görünen fayda\n\n"
+            f"Giriş: {AFF}\n"
+        ),
+    }
+
+
 PRESET_BUILDERS = (
     preset_davet_deneme_kayip,
+    preset_steril_ayricaliklar,
     preset_davet_test,
     preset_davet_mailing,
     preset_pasif_uye,
