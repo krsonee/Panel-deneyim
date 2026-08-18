@@ -4374,7 +4374,7 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/campaigns", methods=["GET"])
     @mail_perm(*MAIL_CAMP)
     def list_campaigns():
-        from mail_campaign_worker import is_campaign_running
+        from mail_campaign_worker import is_campaign_running, reconcile_campaign_counts
 
         with closing(get_db()) as conn:
             try:
@@ -4390,6 +4390,7 @@ def create_mailing_blueprint(permission_required):
                 ))
             else:
                 rows = _rows(fetchall(conn, "SELECT * FROM mail_campaigns ORDER BY id DESC LIMIT 100"))
+            repaired = False
             for r in rows:
                 r["recipient_count"] = r.get("total_count") or scalar(
                     conn,
@@ -4402,8 +4403,37 @@ def create_mailing_blueprint(permission_required):
                     (r["id"],),
                 ) or 0
                 r["is_running"] = is_campaign_running(r["id"])
+                # Biten kampanyada sayaç alıcıdan geride kaldıysa düzelt (eski race bug)
+                try:
+                    processed = (
+                        int(r.get("sent_count") or 0)
+                        + int(r.get("failed_count") or 0)
+                        + int(r.get("skipped_count") or 0)
+                    )
+                    total = int(r.get("total_count") or r.get("recipient_count") or 0)
+                    if (
+                        r.get("status") in ("done", "cancelled", "error", "paused")
+                        and total > 0
+                        and processed < total
+                        and int(r.get("pending_count") or 0) == 0
+                    ):
+                        fixed = reconcile_campaign_counts(conn, r["id"])
+                        r["sent_count"] = fixed["sent"]
+                        r["failed_count"] = fixed["failed"]
+                        r["skipped_count"] = fixed["skipped"]
+                        if fixed.get("total"):
+                            r["total_count"] = fixed["total"]
+                            r["recipient_count"] = fixed["total"]
+                        repaired = True
+                except Exception:
+                    safe_rollback(conn)
                 # Çift gönderim riski: panel refresh’te web process’inden start YOK.
                 # Sadece mikromail-worker resume eder.
+            if repaired:
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
         return jsonify({"campaigns": rows})
 
     @bp.route("/campaigns", methods=["POST"])

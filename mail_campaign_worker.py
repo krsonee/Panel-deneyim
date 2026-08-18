@@ -158,6 +158,65 @@ def _already_delivered_contact(conn, campaign_id, contact_id) -> bool:
     return int(n or 0) > 0
 
 
+def reconcile_campaign_counts(conn, campaign_id) -> dict:
+    """Alıcı satırlarından sent/failed/skipped sayaçlarını yeniden yaz.
+
+    Çoklu worker (web+mikromail-worker) mutlak sayaç yazınca birbirini ezerdi;
+    bitişte ve listede gerçeği recipient status’tan alırız.
+    """
+    cid = int(campaign_id)
+    rows = fetchall(
+        conn,
+        """
+        SELECT status, COUNT(*) AS cnt
+        FROM mail_campaign_recipients
+        WHERE campaign_id = ?
+        GROUP BY status
+        """,
+        (cid,),
+    ) or []
+    by = {(r["status"] or "").strip().lower(): int(r["cnt"] or 0) for r in rows}
+    sent = by.get("sent", 0) + by.get("simulated", 0) + by.get("queued", 0)
+    failed = by.get("failed", 0)
+    skipped = by.get("skipped", 0)
+    pending = by.get("pending", 0) + by.get("sending", 0)
+    total = sum(by.values())
+    execute(
+        conn,
+        """
+        UPDATE mail_campaigns
+        SET sent_count = ?, failed_count = ?, skipped_count = ?,
+            total_count = CASE WHEN ? > 0 THEN ? ELSE total_count END,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (sent, failed, skipped, total, total, iso(utcnow()), cid),
+    )
+    return {
+        "sent": sent,
+        "failed": failed,
+        "skipped": skipped,
+        "pending": pending,
+        "total": total,
+    }
+
+
+def _bump_campaign_counter(conn, campaign_id, *, sent=0, failed=0, skipped=0):
+    """Atomik +1 — concurrent worker mutlak overwrite etmesin."""
+    execute(
+        conn,
+        """
+        UPDATE mail_campaigns
+        SET sent_count = sent_count + ?,
+            failed_count = failed_count + ?,
+            skipped_count = skipped_count + ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (int(sent), int(failed), int(skipped), iso(utcnow()), int(campaign_id)),
+    )
+
+
 def ensure_campaign_scheduler():
     """Zamanlanmış kampanyaları periyodik başlatır."""
     global _scheduler_started
@@ -414,9 +473,9 @@ def _process_campaign(campaign_id):
         delay = (60.0 / rate) if rate and rate > 0 else 0.0
 
         batch_size = 40
-        sent_count = int(camp.get("sent_count") or 0)
-        failed_count = int(camp.get("failed_count") or 0)
-        skipped_count = int(camp.get("skipped_count") or 0)
+        # Sayaçlar DB’de atomik; local sadece log için
+        counts = reconcile_campaign_counts(conn, campaign_id)
+        conn.commit()
 
         # Domain bazlı hız (varsa kampanya hızından düşük olan uygulanır)
         try:
@@ -430,28 +489,20 @@ def _process_campaign(campaign_id):
 
         while True:
             if _campaign_cancelled(conn, campaign_id):
+                counts = reconcile_campaign_counts(conn, campaign_id)
                 execute(
                     conn,
                     """
                     UPDATE mail_campaigns
-                    SET status = 'cancelled', finished_at = ?, updated_at = ?,
-                        sent_count = ?, failed_count = ?, skipped_count = ?
+                    SET status = 'cancelled', finished_at = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (iso(utcnow()), iso(utcnow()), sent_count, failed_count, skipped_count, campaign_id),
+                    (iso(utcnow()), iso(utcnow()), campaign_id),
                 )
                 conn.commit()
                 return
             if _campaign_paused(conn, campaign_id):
-                execute(
-                    conn,
-                    """
-                    UPDATE mail_campaigns
-                    SET sent_count = ?, failed_count = ?, skipped_count = ?, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (sent_count, failed_count, skipped_count, iso(utcnow()), campaign_id),
-                )
+                reconcile_campaign_counts(conn, campaign_id)
                 conn.commit()
                 return
 
@@ -484,7 +535,7 @@ def _process_campaign(campaign_id):
                         "UPDATE mail_campaign_recipients SET status = 'skipped' WHERE id = ?",
                         (rec["recipient_id"],),
                     )
-                    skipped_count += 1
+                    _bump_campaign_counter(conn, campaign_id, skipped=1)
                     conn.commit()
                     continue
                 if rec.get("unsubscribed"):
@@ -493,7 +544,7 @@ def _process_campaign(campaign_id):
                         "UPDATE mail_campaign_recipients SET status = 'skipped' WHERE id = ?",
                         (rec["recipient_id"],),
                     )
-                    skipped_count += 1
+                    _bump_campaign_counter(conn, campaign_id, skipped=1)
                     conn.commit()
                     continue
 
@@ -529,8 +580,8 @@ def _process_campaign(campaign_id):
                         "UPDATE mail_campaign_recipients SET status = ?, send_id = ? WHERE id = ?",
                         (recip_status, send_id, rec["recipient_id"]),
                     )
-                    if status in ("simulated", "sent"):
-                        sent_count += 1
+                    if status in ("simulated", "sent", "queued"):
+                        _bump_campaign_counter(conn, campaign_id, sent=1)
                         try:
                             from mail_tenant import bump_usage
                             tid = camp.get("tenant_id")
@@ -539,9 +590,9 @@ def _process_campaign(campaign_id):
                         except Exception:
                             safe_rollback(conn)
                     elif status == "skipped":
-                        skipped_count += 1
-                    elif status == "failed":
-                        failed_count += 1
+                        _bump_campaign_counter(conn, campaign_id, skipped=1)
+                    else:
+                        _bump_campaign_counter(conn, campaign_id, failed=1)
                         try:
                             from mail_tenant import bump_usage
                             tid = camp.get("tenant_id")
@@ -549,45 +600,26 @@ def _process_campaign(campaign_id):
                                 bump_usage(conn, int(tid), failed=1)
                         except Exception:
                             safe_rollback(conn)
-                    else:
-                        failed_count += 1
 
-                    execute(
-                        conn,
-                        """
-                        UPDATE mail_campaigns
-                        SET sent_count = ?, failed_count = ?, skipped_count = ?, updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (sent_count, failed_count, skipped_count, now, campaign_id),
-                    )
                     conn.commit()
                 except Exception as recip_exc:
                     print(f"⚠️  campaign #{campaign_id} recipient {rec.get('recipient_id')}: {recip_exc}")
                     safe_rollback(conn)
-                    failed_count += 1
                     try:
                         execute(
                             conn,
                             "UPDATE mail_campaign_recipients SET status = 'failed' WHERE id = ?",
                             (rec["recipient_id"],),
                         )
+                        _bump_campaign_counter(conn, campaign_id, failed=1)
                         execute(
                             conn,
                             """
                             UPDATE mail_campaigns
-                            SET sent_count = ?, failed_count = ?, skipped_count = ?,
-                                error = ?, updated_at = ?
+                            SET error = ?, updated_at = ?
                             WHERE id = ?
                             """,
-                            (
-                                sent_count,
-                                failed_count,
-                                skipped_count,
-                                str(recip_exc)[:400],
-                                iso(utcnow()),
-                                campaign_id,
-                            ),
+                            (str(recip_exc)[:400], iso(utcnow()), campaign_id),
                         )
                         conn.commit()
                     except Exception:
@@ -596,40 +628,37 @@ def _process_campaign(campaign_id):
                     time.sleep(delay)
 
             if _campaign_cancelled(conn, campaign_id):
+                reconcile_campaign_counts(conn, campaign_id)
                 execute(
                     conn,
                     """
                     UPDATE mail_campaigns
-                    SET status = 'cancelled', finished_at = ?, updated_at = ?,
-                        sent_count = ?, failed_count = ?, skipped_count = ?
+                    SET status = 'cancelled', finished_at = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (iso(utcnow()), iso(utcnow()), sent_count, failed_count, skipped_count, campaign_id),
+                    (iso(utcnow()), iso(utcnow()), campaign_id),
                 )
                 conn.commit()
                 return
             if _campaign_paused(conn, campaign_id):
-                execute(
-                    conn,
-                    """
-                    UPDATE mail_campaigns
-                    SET sent_count = ?, failed_count = ?, skipped_count = ?, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (sent_count, failed_count, skipped_count, iso(utcnow()), campaign_id),
-                )
+                reconcile_campaign_counts(conn, campaign_id)
                 conn.commit()
                 return
 
         now = iso(utcnow())
+        counts = reconcile_campaign_counts(conn, campaign_id)
         execute(
             conn,
             """
             UPDATE mail_campaigns
-            SET status = 'done', finished_at = ?, updated_at = ?,
-                sent_count = ?, failed_count = ?, skipped_count = ?, error = ''
+            SET status = 'done', finished_at = ?, updated_at = ?, error = ''
             WHERE id = ?
             """,
-            (now, now, sent_count, failed_count, skipped_count, campaign_id),
+            (now, now, campaign_id),
         )
         conn.commit()
+        print(
+            f"✉️  campaign #{campaign_id} done "
+            f"sent={counts.get('sent')} failed={counts.get('failed')} "
+            f"skipped={counts.get('skipped')} total={counts.get('total')}"
+        )

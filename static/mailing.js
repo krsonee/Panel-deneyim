@@ -2758,12 +2758,18 @@
     var sent = Number(c.sent_count || 0);
     var failed = Number(c.failed_count || 0);
     var skipped = Number(c.skipped_count || 0);
+    var pending = Number(c.pending_count || 0);
     var done = sent + failed + skipped;
+    // Biten / pending yoksa barı gerçek işlenen orana kilitle (eski sayaç bug’ına karşı)
+    if ((c.status === "done" || c.status === "cancelled") && pending <= 0 && total > 0 && done < total) {
+      done = total;
+    }
     var pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : (c.status === "done" ? 100 : 0);
     return '<div class="mail-camp-progress">' +
       '<div class="mail-camp-progress-bar"><div class="mail-camp-progress-fill" style="width:' + pct + '%"></div></div>' +
       '<div class="mail-camp-progress-meta">' + fmtNum(sent) + " gönderildi" +
         (failed ? (" · " + fmtNum(failed) + " hata") : "") +
+        (skipped ? (" · " + fmtNum(skipped) + " atlandı") : "") +
         (total ? (" / " + fmtNum(total)) : "") +
         " · %" + pct +
       "</div></div>";
