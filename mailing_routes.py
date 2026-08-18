@@ -2739,21 +2739,26 @@ def create_mailing_blueprint(permission_required):
             try:
                 from mail_template_seeds_v2026 import seed_makrobet_2026_templates
                 _v26 = seed_makrobet_2026_templates(conn, overwrite=True)
-                print(
-                    f"✉️  seeded Makrobet 2026 templates: "
-                    f"added={_v26.get('added')} updated={_v26.get('updated')}"
-                )
+                if _v26.get("skipped"):
+                    print("✉️  Makrobet 2026 seed skipped (wipe auto-seed off)")
+                else:
+                    print(
+                        f"✉️  seeded Makrobet 2026 templates: "
+                        f"added={_v26.get('added')} updated={_v26.get('updated')}"
+                    )
             except Exception as seed_exc:
                 print(f"⚠️  mail template seed v2026: {seed_exc}")
             try:
                 from mail_template_seeds_bizzo import seed_bizzo_mail_templates
-                _bz = seed_bizzo_mail_templates(
-                    conn, overwrite=True, allow_when_skipped=True
-                )
-                print(
-                    f"✉️  seeded Bizzo 2026 templates: "
-                    f"added={_bz.get('added')} updated={_bz.get('updated')}"
-                )
+                # Wipe sonrası auto-seed kapalıysa Bizzo da geri gelmesin
+                _bz = seed_bizzo_mail_templates(conn, overwrite=True)
+                if _bz.get("skipped"):
+                    print("✉️  Bizzo 2026 seed skipped (wipe auto-seed off)")
+                else:
+                    print(
+                        f"✉️  seeded Bizzo 2026 templates: "
+                        f"added={_bz.get('added')} updated={_bz.get('updated')}"
+                    )
             except Exception as seed_exc:
                 print(f"⚠️  mail template seed bizzo 2026: {seed_exc}")
             try:
@@ -4179,6 +4184,23 @@ def create_mailing_blueprint(permission_required):
             except Exception as exc:
                 return jsonify({"error": str(exc)}), 500
         return jsonify({"ok": True, **result, "message": f"{result.get('deleted', 0)} şablon silindi"})
+
+    @bp.route("/templates/seed-davet-deneme", methods=["POST"])
+    @mail_perm(*MAIL_TPL)
+    def seed_davet_deneme_template():
+        """Tek Makro davet şablonu: 3.000 TL deneme + %100 kayıp (wipe skip açıkken de)."""
+        from mail_template_seeds_v2026 import seed_davet_deneme_kayip_template
+
+        with closing(get_db()) as conn:
+            result = seed_davet_deneme_kayip_template(conn, overwrite=True)
+        action = result.get("action") or "kept"
+        if action == "added":
+            msg = f"{result.get('name')} eklendi"
+        elif action == "updated":
+            msg = f"{result.get('name')} güncellendi"
+        else:
+            msg = f"{result.get('name')} zaten mevcut"
+        return jsonify({**result, "message": msg})
 
     @bp.route("/templates", methods=["POST"])
     @mail_perm(*MAIL_TPL)

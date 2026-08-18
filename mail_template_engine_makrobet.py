@@ -449,6 +449,64 @@ def shell(*, title: str, body_rows: str, preheader: str = "") -> str:
 
 
 # ── Presets (coherent copy, no tag pills, single bottom CTA) ───────────────
+def preset_davet_deneme_kayip() -> dict:
+    """Davet mailing — 3.000 TL deneme kasası + %100 kayıp (promosyonlar sayfası)."""
+    body = (
+        f'<tr><td align="center" style="padding:6px 20px 10px;">{badge("ÖZEL DAVET", glow=True)}</td></tr>'
+        + eyebrow("Makrobet’e özel giriş")
+        + headline("Merhaba {{name}}, seni 3.000 TL deneme kasası bekliyor", size=24)
+        + lead(
+            "Kayıt ol, deneme bakiyeni aç. İlk yatırımında da "
+            "<strong style=\"color:#ffcc00;\">%100 kayıp güvencesi</strong> yanında.",
+            size=15,
+            emphasize=True,
+        )
+        + feature_box_3000()
+        + hero_image(IMG_KAYIP, "%100 Kayıp Bonusu", soft=True, glow=True)
+        + feature_box(
+            kicker="★ Sıfır risk ★",
+            big="%100",
+            subtitle="KAYIP BONUSU",
+            note="Yatırım senden, güvence Makrobet’ten — kaybın kadar bakiye yeniden tanımlanır.",
+        )
+        + section_label("Neden şimdi?")
+        + promo_cards(
+            [
+                (
+                    "3.000 TL Deneme Kasası",
+                    "Yeni üyelikte başlangıç bakiyen hesabına tanımlanır; hemen oynamaya başla.",
+                ),
+                (
+                    "%100 Kayıp Bonusu",
+                    "İlk adımlarını güvenceye al — yatırımın kayba dönerse aynı tutar geri gelir.",
+                ),
+                (
+                    "VIP Club & Güncel Promosyonlar",
+                    "Kayıt sonrası Gün Sonu Kasası, Makro Görev ve VIP avantajları da açılır.",
+                ),
+            ],
+            pad_y=12,
+        )
+        + cta_row("Daveti Aç · Hemen Kayıt Ol", wide=True, font_px=16, pad="16px 36px", glow=True)
+    )
+    return {
+        "name": "2026 · Davet · Deneme + %100 Kayıp",
+        "subject": "{{name}}, 3.000 TL deneme kasası + %100 kayıp güvencesi seni bekliyor",
+        "html_body": shell(
+            title="Makrobet Özel Davet",
+            preheader="3.000 TL deneme kasası · %100 kayıp bonusu · Hemen kayıt ol",
+            body_rows=body,
+        ),
+        "text_body": (
+            "Merhaba {{name}},\n\n"
+            "Makrobet özel davet:\n"
+            "• 3.000 TL deneme kasası — kayıt sonrası hesabına tanımlanır\n"
+            "• %100 kayıp bonusu — yatırım senden, güvence Makrobet’ten\n\n"
+            f"Hemen kayıt ol: {AFF}\n"
+        ),
+    }
+
+
 def preset_davet_test() -> dict:
     items = [
         (
@@ -952,6 +1010,7 @@ def preset_etkinlik_tanitim() -> dict:
 
 
 PRESET_BUILDERS = (
+    preset_davet_deneme_kayip,
     preset_davet_test,
     preset_davet_mailing,
     preset_pasif_uye,

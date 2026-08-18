@@ -28,7 +28,7 @@ def seed_bizzo_mail_templates(
     overwrite=False,
     allow_when_skipped=False,
 ):
-    """Seed Bizzo templates. Startup’ta overwrite=True + allow_when_skipped=True kullan."""
+    """Seed Bizzo templates. Wipe sonrası auto-seed kapalıysa atlanır (allow_when_skipped ile açılır)."""
     _ = force_missing
     if not allow_when_skipped:
         try:
