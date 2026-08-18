@@ -1168,170 +1168,84 @@ def preset_etkinlik_tanitim() -> dict:
 
 
 def preset_steril_ayricaliklar() -> dict:
-    """Görselsiz steril özellik maili — Betroz kart düzeni, Makrobet lacivert+altın."""
-    hero = f"""
-          <tr>
-            <td style="padding:4px 16px 8px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                bgcolor="{STERILE_HERO}"
-                style="width:100%;background-color:{STERILE_HERO};border:1px solid {BORDER};
-                border-radius:16px;">
-                {_sterile_tag("OYUNUN KURALLARINI SEN YAZ")}
-                <tr>
-                  <td align="center" style="padding:4px 18px 8px;font-family:{FONT};font-size:26px;
-                    line-height:1.25;font-weight:900;color:{TEXT};letter-spacing:0.01em;">
-                    MAKROBET'TE<br>
-                    <span style="color:{GOLD};">HIZLI ÇEKİM · GÜÇLÜ ORAN</span>
-                  </td>
-                </tr>
-                <tr>
-                  <td align="center" style="padding:0 22px 16px;font-family:{FONT};font-size:13px;
-                    line-height:1.55;color:{MUTED};">
-                    Merhaba {{{{name}}}} — çekimden orana, canlı masadan VIP’e her şey net.
-                    Görüntü kirliliği yok; sadece hesabına yansıyan avantaj.
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:0 12px 16px;">
-                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                      bgcolor="#0e1f3f" style="background-color:#0e1f3f;border-radius:12px;border:1px solid {BORDER};">
-                      <tr>
-                        {_sterile_stat("HIZLI ÇEKİM", ACCENT_GREEN)}
-                        {_sterile_stat("5 DK İŞLEM", ACCENT_TEAL)}
-                        {_sterile_stat("HER GÜN ÖZEL ORAN", ACCENT_VIOLET)}
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>"""
-
-    section_head = f"""
-          <tr>
-            <td align="center" style="padding:18px 20px 4px;font-family:{FONT};font-size:13px;
-              font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:{GOLD};">
-              MAKROBET AYRICALIKLARI
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding:0 20px 14px;font-family:{FONT};font-size:18px;
-              font-weight:800;color:{TEXT};line-height:1.35;">
-              Limitleri birlikte kaldıralım.
-            </td>
-          </tr>"""
-
-    full_card = f"""
-          <tr>
-            <td style="padding:0 16px 10px;">
-              {_sterile_glow_card(
-                  "MAKROBET'TE ÇEKİM NET VE HIZLI",
-                  "Kazancının tamamını bekletmeden hesabına al — süreç şeffaf, takip kolay.",
-                  GOLD,
-                  tag="ÖZGÜR ÇEKİM",
-              )}
-            </td>
-          </tr>"""
-
-    row1 = _sterile_two_col(
-        _sterile_glow_card(
-            "SPOR'DA GÜÇLÜ HATLAR",
-            "Prematch ve canlıda net oranlar · sınırsız heyecan.",
-            ACCENT_TEAL,
+    """Elite davet — lacivert+altın, promosyon harmanı + hızlı çekim (neon/Betroz yok)."""
+    vip_items = [
+        (
+            "VIP Club & Ödüller",
+            "Seviye ilerledikçe özel prim, öncelikli destek ve VIP’e özel kampanyalar hesabında açılır.",
         ),
-        _sterile_glow_card(
-            "İDDİA EDİYORUZ!",
-            "Çekimler dakikalar içinde işlenir — hesabında görürsün.",
-            GOLD,
+        (
+            "Prim Ödülü",
+            "Aktif prim / çevrim dönemlerinde yatırıma ekstra getiri — bakiyeni daha verimli büyüt.",
         ),
+        (
+            "Makro Manager",
+            "Manager döneminde rolling hedeflerini tamamla; ekstra prim ve ödül havuzundan payını al.",
+        ),
+    ]
+    event_items = [
+        (
+            "Amusnet Race",
+            "Haftalık yarış sıralamasına gir; ödül havuzundan payını kap.",
+        ),
+        (
+            "Bilet Etkinliği",
+            "Oynadıkça bilet biriktir — çekiliş ve etkinlik ödüllerine katıl.",
+        ),
+        (
+            "Hızlı Çekim",
+            "Kazancın net işlenir; talepler dakikalar içinde sonuçlanır — elit deneyimin parçası.",
+        ),
+    ]
+    body = (
+        f'<tr><td align="center" style="padding:6px 20px 10px;">{badge("ÖZEL DAVET", glow=True)}</td></tr>'
+        + eyebrow("Makrobet Elite Davet")
+        + headline("{{name}}, seni Makrobet’in özel dünyası bekliyor", size=23)
+        + lead(
+            "Lacivert &amp; altın standartta bir davet: deneme kasası, kayıp güvencesi, "
+            "VIP ödülleri ve haftalık etkinlikler — hepsi tek davette.",
+            size=15,
+            emphasize=True,
+        )
+        + feature_box_3000()
+        + hero_image(IMG_KAYIP, "%100 Kayıp Bonusu", soft=True, glow=True)
+        + feature_box(
+            kicker="★ Güvence ★",
+            big="%100",
+            subtitle="KAYIP BONUSU",
+            note="Yatırım senden, güvence Makrobet’ten — kaybın kadar bakiye yeniden tanımlanır.",
+        )
+        + section_label("VIP · Prim · Manager")
+        + promo_cards(vip_items, highlight_first=1, pad_y=13)
+        + section_label("Etkinlikler & çekim")
+        + promo_cards(event_items, pad_y=12)
+        + lead(
+            "Tek tıkla kaydını tamamla; deneme kasası, kayıp bonusu ve VIP avantajları "
+            "hesabında seni bekler.",
+            size=14,
+        )
+        + cta_row("Daveti Aç · Hemen Kayıt Ol", wide=True, font_px=16, pad="16px 36px", glow=True, gradient=True)
     )
-    row2 = _sterile_two_col(
-        _sterile_glow_card(
-            "CANLI MASALARDA LİMİTSİZ HEYECAN",
-            "Dilediğin sağlayıcıda oyna — seçim sende.",
-            ACCENT_VIOLET,
-        ),
-        _sterile_glow_card(
-            "İDDİA EDİYORUZ!",
-            "En yüksek kazanç oranları bizde — her gün özel hat.",
-            ACCENT_GREEN,
-        ),
-    )
-
-    bar_365 = f"""
-          <tr>
-            <td style="padding:4px 16px 12px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                bgcolor="{STERILE_CARD}"
-                style="width:100%;background-color:{STERILE_CARD};border:1px solid {ACCENT_BLUE};
-                border-radius:14px;">
-                <tr>
-                  <td width="62%" valign="middle" style="padding:16px 14px 16px 16px;">
-                    <div style="width:36px;height:3px;background-color:{ACCENT_TEAL};border-radius:2px;
-                      font-size:0;line-height:0;margin-bottom:10px;">&nbsp;</div>
-                    <div style="font-family:{FONT};font-size:14px;font-weight:800;color:{TEXT};">
-                      HER GÜN ÖZEL ORAN
-                    </div>
-                    <div style="font-family:{FONT};font-size:12px;font-weight:600;color:{MUTED};margin-top:6px;">
-                      HER GÜN GERÇEK KAZANÇ!
-                    </div>
-                  </td>
-                  <td width="38%" align="right" valign="middle" style="padding:16px 16px 16px 8px;">
-                    <div style="font-family:{FONT};font-size:28px;font-weight:900;color:{ACCENT_BLUE};
-                      letter-spacing:0.02em;line-height:1;">365 GÜN</div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>"""
-
-    cta_block = f"""
-          <tr>
-            <td style="padding:6px 16px 18px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                bgcolor="{GOLD}"
-                style="width:100%;background-color:{GOLD};
-                background:linear-gradient(135deg,#ffe066 0%,#ffcc00 40%,#e6a800 100%);
-                border-radius:16px;">
-                <tr>
-                  <td align="center" style="padding:26px 20px 12px;font-family:{FONT};font-size:18px;
-                    font-weight:900;color:{CTA_INK};line-height:1.35;letter-spacing:0.02em;">
-                    SON SÖZÜ BİZ SÖYLEYELİM<br>
-                    İDDİA EDİYORUZ…<br>
-                    BİZDEN DAHA NETİNİ HİÇ GÖRMEDİNİZ!
-                  </td>
-                </tr>
-                <tr>
-                  <td align="center" style="padding:8px 20px 24px;">
-                    <a href="{CTA}" target="_blank" rel="noopener"
-                      style="display:inline-block;background-color:{INK};color:{GOLD};
-                      font-family:{FONT};font-size:13px;font-weight:800;letter-spacing:0.06em;
-                      text-decoration:none;padding:14px 28px;border-radius:999px;">
-                      MAKROBET'E GİRİŞ YAP →
-                    </a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>"""
-
-    body = hero + section_head + full_card + row1 + row2 + bar_365 + cta_block
     return {
         "name": "2026 · Steril · Ayrıcalıklar",
-        "subject": "{{name}}, Makrobet'te hızlı çekim · güçlü oran · net oyun",
-        "html_body": shell_sterile(
-            title="Makrobet Ayrıcalıkları",
-            preheader="Hızlı çekim · güçlü oran · VIP avantaj — görüntü kirliliği yok",
+        "subject": "{{name}}, 3.000 TL deneme · %100 kayıp · VIP ve etkinlik daveti",
+        "html_body": shell(
+            title="Makrobet Elite Davet",
+            preheader="3.000 TL deneme · %100 kayıp · VIP · Race · Bilet · Manager · hızlı çekim",
             body_rows=body,
         ),
         "text_body": (
             "Merhaba {{name}},\n\n"
-            "Makrobet ayrıcalıkları:\n"
-            "• Hızlı çekim — talebin dakikalar içinde işlenir\n"
-            "• Güçlü oranlar — her gün özel hat\n"
-            "• Canlı masalar — dilediğin sağlayıcıda oyna\n"
-            "• VIP avantaj — net, sade, hesapta görünen fayda\n\n"
-            f"Giriş: {AFF}\n"
+            "Makrobet özel davet:\n"
+            "• 3.000 TL deneme kasası\n"
+            "• %100 kayıp bonusu\n"
+            "• VIP Club & ödüller\n"
+            "• Prim ödülü\n"
+            "• Makro Manager\n"
+            "• Amusnet Race\n"
+            "• Bilet etkinliği\n"
+            "• Hızlı çekim\n\n"
+            f"Hemen kayıt: {AFF}\n"
         ),
     }
 
