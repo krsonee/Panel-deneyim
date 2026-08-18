@@ -73,29 +73,65 @@ def badge(label: str) -> str:
     )
 
 
-def cta_button(label: str) -> str:
+def cta_button(label: str, *, wide: bool = False, font_px: int = 15) -> str:
     """Pill CTA — orange gradient + solid fallback for Outlook."""
+    pad = "16px 22px" if wide else "15px 30px"
+    wrap = (
+        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" '
+        f'style="width:100%;border-collapse:collapse;">'
+        if wide
+        else '<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">'
+    )
+    link_display = "block" if wide else "inline-block"
     return f"""
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
+{wrap}
   <tr>
     <td align="center" bgcolor="{ORANGE}"
       style="background-color:{ORANGE};background-image:linear-gradient(90deg,{ORANGE},{ORANGE_DEEP});
       border-radius:99px;mso-padding-alt:0;">
       <a href="{CTA}" target="_blank" rel="noopener"
-        style="display:inline-block;background-color:{ORANGE};
+        style="display:{link_display};box-sizing:border-box;background-color:{ORANGE};
         background-image:linear-gradient(90deg,{ORANGE},{ORANGE_DEEP});
-        color:{CTA_INK};font-family:{FONT};font-size:15px;font-weight:800;line-height:1.2;
-        text-decoration:none;padding:15px 30px;border-radius:99px;">{label}</a>
+        color:{CTA_INK};font-family:{FONT};font-size:{font_px}px;font-weight:800;line-height:1.2;
+        text-decoration:none;padding:{pad};border-radius:99px;text-align:center;">{label}</a>
     </td>
   </tr>
 </table>"""
 
 
-def cta_row(label: str) -> str:
+def cta_row(label: str, *, wide: bool = False, font_px: int = 15) -> str:
     return f"""
           <tr>
             <td align="center" style="padding:6px 20px 16px;">
-              {cta_button(label)}
+              {cta_button(label, wide=wide, font_px=font_px)}
+            </td>
+          </tr>"""
+
+
+def feature_punch(*, kicker: str, big: str, title: str, note: str) -> str:
+    """High-impact orange-border punch card — deposit-forward."""
+    return f"""
+          <tr>
+            <td style="padding:4px 18px 12px;">
+              <a href="{CTA}" target="_blank" rel="noopener" style="text-decoration:none;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                  bgcolor="{ROW}"
+                  style="background-color:{ROW};border:2px solid {ORANGE};border-radius:16px;
+                  box-shadow:0 0 24px rgba(255,153,0,0.28);">
+                  <tr>
+                    <td align="center" style="padding:22px 16px;">
+                      <div style="font-family:{FONT};font-size:11px;font-weight:800;color:{ORANGE};
+                        letter-spacing:0.12em;text-transform:uppercase;">{kicker}</div>
+                      <div style="font-family:{FONT};font-size:40px;font-weight:900;color:{NEON};
+                        line-height:1;margin-top:8px;">{big}</div>
+                      <div style="font-family:{FONT};font-size:16px;font-weight:800;color:{TEXT};
+                        margin-top:10px;">{title}</div>
+                      <div style="font-family:{FONT};font-size:13px;line-height:1.5;color:{MUTED};
+                        margin-top:8px;">{note}</div>
+                    </td>
+                  </tr>
+                </table>
+              </a>
             </td>
           </tr>"""
 
@@ -521,7 +557,79 @@ def preset_davet_deneme() -> dict:
     )
 
 
+def preset_davet_1x_sinirsiz() -> dict:
+    """Davet — 1x/çevrimsiz + sınırsız çekim bonusları önde; yatırım CTA (girbize)."""
+    items = [
+        (
+            "Çevrimsiz %100 Yatır · Katla · Çek",
+            "Pragmatic / EGT / Amusnet’te yatır, katla, çek — kripto %30 / havale %15 kayıp desteği.",
+        ),
+        (
+            "İlk 5 Yatırıma %100 Sınırsız Slot",
+            "Her yatırımda anında %100 · sadece 2x çevrim · sıfır çekim limiti.",
+        ),
+        (
+            "%100 Pragmatic Play Nakit",
+            "50.000₺’ye kadar %100 nakit · 2x çevrim · kazancını kesintisiz çek.",
+        ),
+        (
+            "%100 Anlık İade",
+            "50.000₺’ye varan instant cash back — kaybetmek yok, yeniden yükle.",
+        ),
+        (
+            "15 Dakikada Çekim Garantisi",
+            "Geciken çekimde tutarın %15’i nakit jest — hız Bizzo’da.",
+        ),
+        (
+            "3 Yatır · 4. Hediye",
+            "Üç yatırım yap, dördüncü yatırım Bizzo’dan sana hediye.",
+        ),
+    ]
+    body = (
+        f'<tr><td align="center" style="padding:4px 20px 10px;">{badge("ÖZEL DAVET · SINIRSIZ")}</td></tr>'
+        + eyebrow("Bizzo Casino’ya davet")
+        + headline("{{name}}, 1x Çevrim · Sınırsız Çekim — Yatır, Katla, Çek!")
+        + feature_punch(
+            kicker="★ Çılgın paket ★",
+            big="1x",
+            title="ÇEVRİM · SINIRSIZ ÇEKİM · %100",
+            note="Çevrimsiz yatır-katla-çek + düşük çevrimli sınırsız çekim bonusları — tek tıkla hesabında.",
+        )
+        + cta_row("Sınırsız Bonusu Kap — Yatır", wide=True, font_px=16)
+        + hero_glow(
+            "%100",
+            "Yatır · Katla · Çek — Çekim Limiti Yok",
+            "İlk 5 yatırıma kadar her yüklemede %100 · 2x çevrim · kazancın senin",
+        )
+        + lead(
+            "Merhaba <strong style='color:#ffffff;'>{{name}}</strong> — özel davetlisin. "
+            "Düşük çevrim, sınırsız çekim, anında bonus: yatırımla paketler açılır."
+        )
+        + promo_cards(items)
+        + cta_row("Anında Yatırım Yap", wide=True, font_px=16)
+    )
+    return _pack(
+        name="Bizzo · 2026 · Davet · 1x Sınırsız",
+        subject="{{name}}, Bizzo davet — 1x çevrim · sınırsız çekim · %100 yatır katla çek",
+        title="Bizzo Davet 1x Sınırsız",
+        preheader="1x çevrim · sınırsız çekim · %100 yatır katla çek · 15 dk çekim",
+        body=body,
+        text=(
+            "Merhaba {{name}},\n\n"
+            "Bizzo Casino özel davet:\n"
+            "• 1x çevrim · sınırsız çekim\n"
+            "• Çevrimsiz %100 yatır · katla · çek\n"
+            "• İlk 5 yatırıma %100 sınırsız slot (2x)\n"
+            "• %100 Pragmatic nakit\n"
+            "• %100 anlık iade\n"
+            "• 15 dakikada çekim garantisi\n\n"
+            f"Anında yatırım: {AFF}\n"
+        ),
+    )
+
+
 PRESET_BUILDERS = (
+    preset_davet_1x_sinirsiz,
     preset_davet_deneme,
     preset_ilk_yatirim,
     preset_slot_hosgeldin,

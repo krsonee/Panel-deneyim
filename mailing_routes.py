@@ -4236,6 +4236,23 @@ def create_mailing_blueprint(permission_required):
             msg = f"{result.get('name')} zaten mevcut"
         return jsonify({**result, "message": msg})
 
+    @bp.route("/templates/seed-bizzo-davet-1x", methods=["POST"])
+    @mail_perm(*MAIL_TPL)
+    def seed_bizzo_davet_1x_route():
+        """Bizzo davet: 1x / sınırsız çekim (wipe skip açıkken de)."""
+        from mail_template_seeds_bizzo import seed_bizzo_davet_1x_sinirsiz_template
+
+        with closing(get_db()) as conn:
+            result = seed_bizzo_davet_1x_sinirsiz_template(conn, overwrite=True)
+        action = result.get("action") or "kept"
+        if action == "added":
+            msg = f"{result.get('name')} eklendi"
+        elif action == "updated":
+            msg = f"{result.get('name')} güncellendi"
+        else:
+            msg = f"{result.get('name')} zaten mevcut"
+        return jsonify({**result, "message": msg})
+
     @bp.route("/templates", methods=["POST"])
     @mail_perm(*MAIL_TPL)
     def create_template():

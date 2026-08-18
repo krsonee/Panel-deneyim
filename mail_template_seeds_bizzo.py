@@ -15,11 +15,70 @@ from database import (
     upsert_mail_setting,
     utcnow,
 )
-from mail_template_engine_bizzo import build_all_presets
+from mail_template_engine_bizzo import build_all_presets, preset_davet_1x_sinirsiz
 
 SEED_FLAG = "seeded_bizzo_templates_v2026e"
 
 TEMPLATES = build_all_presets()
+
+DAVET_1X_SINIRSIZ_NAME = "Bizzo · 2026 · Davet · 1x Sınırsız"
+
+
+def _upsert_one(conn, item: dict, *, overwrite: bool) -> str:
+    now = iso(utcnow())
+    name = item["name"]
+    exists = fetchone(conn, "SELECT id FROM mail_templates WHERE name = ?", (name,))
+    if exists:
+        if not overwrite:
+            return "kept"
+        execute(
+            conn,
+            """
+            UPDATE mail_templates
+            SET subject = ?, html_body = ?, text_body = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                item["subject"],
+                item.get("html_body") or "",
+                item.get("text_body") or "",
+                now,
+                exists["id"],
+            ),
+        )
+        return "updated"
+    insert_returning_id(
+        conn,
+        """
+        INSERT INTO mail_templates (name, subject, html_body, text_body, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            name,
+            item["subject"],
+            item.get("html_body") or "",
+            item.get("text_body") or "",
+            now,
+            now,
+        ),
+    )
+    return "added"
+
+
+def seed_bizzo_davet_1x_sinirsiz_template(conn, overwrite=True):
+    """Tek Bizzo davet şablonu — wipe skip açıkken de eklenebilir."""
+    action = _upsert_one(conn, preset_davet_1x_sinirsiz(), overwrite=overwrite)
+    try:
+        conn.commit()
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "name": DAVET_1X_SINIRSIZ_NAME,
+        "added": 1 if action == "added" else 0,
+        "updated": 1 if action == "updated" else 0,
+        "action": action,
+    }
 
 
 def seed_bizzo_mail_templates(
