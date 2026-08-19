@@ -601,11 +601,31 @@
 
   <!-- Kampanyalar -->
   <div class="acc-pane" id="mail-pane-campaigns" data-mail-pane="campaigns" hidden>
+    <section class="card" style="margin-bottom:1rem;" id="mail-quota-card">
+      <div class="card-head">
+        <span class="mm-label-row" style="margin:0;">
+          Alibaba günlük kota
+          <span class="mm-tip" tabindex="0" data-tip="Hesap bazlı (tüm domainler). Kalan yetersizse kampanya başlamaz. Yenilenme UTC 00:00.">?</span>
+        </span>
+        <button type="button" class="btn btn-sm btn-secondary" id="mail-quota-refresh">Yenile</button>
+      </div>
+      <div class="card-body">
+        <div id="mail-quota-meter" class="mail-quota-meter">
+          <div class="mail-quota-bar"><div class="mail-quota-fill" id="mail-quota-fill" style="width:0%"></div></div>
+          <div class="mail-quota-meta">
+            <strong id="mail-quota-remaining">—</strong>
+            <span class="muted" id="mail-quota-used">kullanılan — / —</span>
+            <span class="muted" id="mail-quota-renew">yenilenme: —</span>
+          </div>
+        </div>
+        <p class="hint" id="mail-quota-hint" style="margin:0.5rem 0 0;">Kampanya alıcı sayısı kalan kotayı aşarsa gönderim başlamaz.</p>
+      </div>
+    </section>
     <section class="card" style="margin-bottom:1rem;">
       <div class="card-head">
         <span class="mm-label-row" style="margin:0;">
           Yeni toplu kampanya
-          <span class="mm-tip" tabindex="0" data-tip="Hemen gönder = oluştur + kuyruk. Zamanla = seçilen saatte gider. Mod smtp ise gerçek mail; stub ise simülasyon.">?</span>
+          <span class="mm-tip" tabindex="0" data-tip="Hemen gönder = oluştur + kuyruk. Zamanla = seçilen saatte gider. Domain listesi Eski / Yeni gruplu.">?</span>
         </span>
       </div>
       <div class="card-body">

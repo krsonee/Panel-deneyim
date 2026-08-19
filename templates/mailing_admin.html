@@ -6,7 +6,7 @@
   <title>Mikromail</title>
   <meta name="theme-color" content="#090D16">
   <link rel="stylesheet" href="/static/mailing_shell.css?v=20260722mm11">
-  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260722mm15">
+  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260819mm16">
   <style>
     :root { --accent: #38bdf8; --accent-soft: rgba(56,189,248,0.14); --accent-ink: #041018; }
     #module-mailing-panel { display:block !important; }
@@ -144,6 +144,39 @@
         {% if is_superadmin %}
         <div id="mm-view-platform" hidden>
           <div class="mm-plat-pane active" id="mm-plat-tenants" data-mm-plat="tenants">
+            <section class="card" style="margin-bottom:1rem;" id="mm-account-quota-card">
+              <div class="card-head">
+                <span class="mm-label-row" style="margin:0;">
+                  Alibaba hesap günlük kotası
+                  <span class="mm-tip" tabindex="0" data-tip="DirectMail Main Account günlük limiti. Tüm domainler ortak. Kampanya bu limiti aşamaz.">?</span>
+                </span>
+                <button type="button" class="btn btn-sm btn-secondary" id="mm-aq-refresh">Yenile</button>
+              </div>
+              <div class="card-body">
+                <div class="mail-quota-meter" style="margin-bottom:0.75rem;">
+                  <div class="mail-quota-bar"><div class="mail-quota-fill" id="mm-aq-fill" style="width:0%"></div></div>
+                  <div class="mail-quota-meta">
+                    <strong id="mm-aq-remaining">—</strong>
+                    <span class="muted" id="mm-aq-used">kullanılan — / —</span>
+                    <span class="muted" id="mm-aq-renew">yenilenme: —</span>
+                  </div>
+                </div>
+                <form id="mm-aq-form" class="form-row-4" style="align-items:flex-end;">
+                  <div>
+                    <div class="mm-label-row"><label>Günlük limit</label><span class="mm-tip" tabindex="0" data-tip="Alibaba konsoldaki Daily quota ile aynı tut (örn. 50000)">?</span></div>
+                    <input id="mm-aq-limit" type="number" min="100" step="1000" value="50000">
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>Timezone</label><span class="mm-tip" tabindex="0" data-tip="Kotanın sıfırlandığı gün sınırı (genelde UTC)">?</span></div>
+                    <input id="mm-aq-tz" value="UTC" placeholder="UTC">
+                  </div>
+                  <div style="display:flex;gap:0.4rem;">
+                    <button class="btn btn-primary" type="submit">Kaydet</button>
+                  </div>
+                </form>
+                <p class="hint" id="mm-aq-hint" style="margin:0.5rem 0 0;">Limit Alibaba’daki hesap kotasıyla eşleşmeli. Panel kalanı mail_sends üzerinden sayar.</p>
+              </div>
+            </section>
             <section class="card" style="margin-bottom:1rem;">
               <div class="card-head"><span>Yeni firma (tenant)</span></div>
               <div class="card-body">
@@ -250,6 +283,13 @@
                     <input id="mm-d-cap" type="number" value="500">
                   </div>
                   <div>
+                    <div class="mm-label-row"><label>Isıtma grubu</label><span class="mm-tip" tabindex="0" data-tip="legacy = mevcut ısınmış 5’li; new = yeni domain (ayrı program / düşük hacim)">?</span></div>
+                    <select id="mm-d-cohort">
+                      <option value="new">Yeni (new)</option>
+                      <option value="legacy">Eski (legacy)</option>
+                    </select>
+                  </div>
+                  <div>
                     <div class="mm-label-row"><label>SMTP password</label><span class="mm-tip" tabindex="0" data-tip="Alibaba’da bu adrese set edilen SMTP şifresi">?</span></div>
                     <input id="mm-d-smtp" type="password" placeholder="opsiyonel">
                   </div>
@@ -287,8 +327,8 @@
             <section class="card" style="margin-bottom:1rem;">
               <div class="card-head">
                 <span class="mm-label-row" style="margin:0;">
-                  Isıtma programı (30 gün)
-                  <span class="mm-tip" tabindex="0" data-tip="00:00 sonrası yeni gün açılır. Görevleri işaretle; bitince domain cap otomatik güncellenir.">?</span>
+                  Isıtma programı (30 gün) — Eski / Yeni ayrı
+                  <span class="mm-tip" tabindex="0" data-tip="Eski ve yeni domainler ayrı track. Aynı programa karıştırılamaz. Yeni domainler düşük hacimle ısınır.">?</span>
                 </span>
                 <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
                   <button type="button" class="btn btn-sm btn-secondary" id="mm-wu-refresh">Yenile</button>
@@ -296,9 +336,13 @@
                 </div>
               </div>
               <div class="card-body">
+                <div class="mm-wu-cohort-tabs" style="display:flex;gap:0.4rem;margin:0 0 0.75rem;flex-wrap:wrap;">
+                  <button type="button" class="btn btn-sm btn-primary" id="mm-wu-tab-legacy" data-wu-cohort="legacy">Eski domainler</button>
+                  <button type="button" class="btn btn-sm btn-secondary" id="mm-wu-tab-new" data-wu-cohort="new">Yeni domainler</button>
+                </div>
                 <p class="hint" id="mm-wu-status" style="margin:0 0 0.75rem;">—</p>
                 <div id="mm-wu-setup" style="margin-bottom:1rem;">
-                  <p class="hint" style="margin:0 0 0.45rem;">Isıtılacak domainleri seç (öneri: 5 adet):</p>
+                  <p class="hint" style="margin:0 0 0.45rem;">Bu gruptan ısıtılacak domainleri seç (eski + yeni karıştırma):</p>
                   <div id="mm-wu-domain-pick" class="mm-wu-domain-pick"></div>
                 </div>
                 <div id="mm-wu-today" hidden>
@@ -389,8 +433,8 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260728mm24"></script>
-  <script src="/static/mailing_platform.js?v=20260722mm12"></script>
+  <script src="/static/mailing.js?v=20260819mm25"></script>
+  <script src="/static/mailing_platform.js?v=20260819mm13"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

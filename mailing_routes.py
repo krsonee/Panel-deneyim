@@ -4941,6 +4941,18 @@ def create_mailing_blueprint(permission_required):
             if not fetchone(conn, "SELECT id FROM mail_templates WHERE id = ?", (camp["template_id"],)):
                 return jsonify({"error": "Şablon bulunamadı."}), 400
 
+            # Alibaba hesap günlük kotası — yetersizse kuyruğa alma
+            try:
+                from mail_account_quota import can_queue
+                ok_q, q_err, q_snap = can_queue(conn, int(pending))
+                if not ok_q:
+                    return jsonify({
+                        "error": q_err,
+                        "quota": q_snap,
+                    }), 400
+            except Exception as q_exc:
+                print(f"⚠️  queue quota check: {q_exc}")
+
             scheduled_at = camp.get("scheduled_at")
             start_immediately = force_now
             if not start_immediately and scheduled_at:
@@ -5054,11 +5066,23 @@ def create_mailing_blueprint(permission_required):
         from mail_campaign_worker import start_campaign_send
         now = iso(utcnow())
         with closing(get_db()) as conn:
-            camp = fetchone(conn, "SELECT status FROM mail_campaigns WHERE id = ?", (campaign_id,))
+            camp = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (campaign_id,))
             if not camp:
                 return jsonify({"error": "Kampanya bulunamadı."}), 404
             if camp["status"] != "paused":
                 return jsonify({"error": f"Devam ettirilemez: {camp['status']}"}), 400
+            pending = scalar(
+                conn,
+                "SELECT COUNT(*) FROM mail_campaign_recipients WHERE campaign_id = ? AND status = 'pending'",
+                (campaign_id,),
+            ) or 0
+            try:
+                from mail_account_quota import can_queue
+                ok_q, q_err, q_snap = can_queue(conn, int(pending))
+                if not ok_q:
+                    return jsonify({"error": q_err, "quota": q_snap}), 400
+            except Exception as q_exc:
+                print(f"⚠️  resume quota check: {q_exc}")
             execute(
                 conn,
                 "UPDATE mail_campaigns SET status = 'queued', updated_at = ?, error = '' WHERE id = ?",
@@ -5079,6 +5103,18 @@ def create_mailing_blueprint(permission_required):
                 return jsonify({"error": "Kampanya bulunamadı."}), 404
             if camp["status"] not in ("done", "error", "cancelled", "paused"):
                 return jsonify({"error": f"Retry için uygun değil: {camp['status']}"}), 400
+            failed_n = scalar(
+                conn,
+                "SELECT COUNT(*) FROM mail_campaign_recipients WHERE campaign_id = ? AND status = 'failed'",
+                (campaign_id,),
+            ) or 0
+            try:
+                from mail_account_quota import can_queue
+                ok_q, q_err, q_snap = can_queue(conn, int(failed_n))
+                if not ok_q:
+                    return jsonify({"error": q_err, "quota": q_snap}), 400
+            except Exception as q_exc:
+                print(f"⚠️  retry-failed quota check: {q_exc}")
             n = execute(
                 conn,
                 """
@@ -5413,6 +5449,16 @@ def create_mailing_blueprint(permission_required):
             else:
                 rows = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC")
         return jsonify({"domains": [_domain_public(r) for r in (rows or [])]})
+
+    @bp.route("/account-quota", methods=["GET"])
+    @mail_perm(*MAIL_CAMP)
+    def account_quota_get():
+        """Alibaba Main Account günlük kota — kampanya sayacı."""
+        from mail_account_quota import quota_snapshot
+
+        with closing(get_db()) as conn:
+            snap = quota_snapshot(conn)
+        return jsonify({"quota": snap})
 
     @bp.route("/domains/<int:domain_id>", methods=["PATCH"])
     @mail_perm(*MAIL_SET)

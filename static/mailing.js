@@ -2619,6 +2619,60 @@
     if (cur) sel.value = cur;
   }
 
+  function fillDomainSelectGrouped(sel, domains) {
+    if (!sel) return;
+    var cur = sel.value;
+    var legacy = [];
+    var neu = [];
+    (domains || []).forEach(function (d) {
+      if ((d.warmup_cohort || "new") === "legacy") legacy.push(d);
+      else neu.push(d);
+    });
+    function opts(list) {
+      return list.map(function (d) {
+        var label = d.domain + " (" + (d.from_local || "noreply") + "@…)";
+        if (d.warm_status) label += " · " + d.warm_status;
+        return '<option value="' + esc(d.id) + '">' + esc(label) + "</option>";
+      }).join("");
+    }
+    var html = '<option value="">Domain seç</option>';
+    if (legacy.length) html += '<optgroup label="Eski domainler">' + opts(legacy) + "</optgroup>";
+    if (neu.length) html += '<optgroup label="Yeni domainler (ısıtma)">' + opts(neu) + "</optgroup>";
+    if (!legacy.length && !neu.length) html += opts(domains || []);
+    sel.innerHTML = html;
+    if (cur) sel.value = cur;
+  }
+
+  function renderAccountQuota(q) {
+    if (!q) return;
+    var rem = document.getElementById("mail-quota-remaining");
+    var used = document.getElementById("mail-quota-used");
+    var renew = document.getElementById("mail-quota-renew");
+    var fill = document.getElementById("mail-quota-fill");
+    var hint = document.getElementById("mail-quota-hint");
+    if (rem) rem.textContent = "Kalan " + fmtNum(q.remaining);
+    if (used) used.textContent = "kullanılan " + fmtNum(q.used) + " / " + fmtNum(q.limit);
+    if (renew) renew.textContent = "yenilenme: " + (q.renews_at_label || "—");
+    if (fill) {
+      var pct = Math.min(100, Math.max(0, Number(q.pct_used) || 0));
+      fill.style.width = pct + "%";
+      fill.classList.toggle("is-warn", pct >= 70 && pct < 90);
+      fill.classList.toggle("is-danger", pct >= 90 || !!q.exhausted);
+    }
+    if (hint) {
+      hint.textContent = q.exhausted
+        ? ("Kota dolu — kampanya başlatılmaz. " + (q.renews_at_label || ""))
+        : ("Kampanya alıcı sayısı kalan kotayı (" + fmtNum(q.remaining) + ") aşarsa gönderim başlamaz.");
+    }
+    window._mailAccountQuota = q;
+  }
+
+  function refreshAccountQuota() {
+    return mailApi("/api/mailing/account-quota").then(function (res) {
+      if (res.ok && res.data.quota) renderAccountQuota(res.data.quota);
+    }).catch(function () {});
+  }
+
   function mailLoadSelects() {
     return Promise.all([
       mailApi("/api/mailing/templates"),
@@ -2631,9 +2685,10 @@
       var labelTpl = function (t) { return t.name; };
       var labelDom = function (d) { return d.domain + " (" + (d.from_local || "noreply") + "@…)"; };
       fillSelect(document.getElementById("mail-camp-tpl"), mailTemplates, "id", labelTpl, "Şablon seç");
-      fillSelect(document.getElementById("mail-camp-domain"), mailDomains, "id", labelDom, "Domain seç");
+      fillDomainSelectGrouped(document.getElementById("mail-camp-domain"), mailDomains);
       fillSelect(document.getElementById("mail-ivr-tpl"), mailTemplates, "id", labelTpl, "Şablon seç");
       fillSelect(document.getElementById("mail-ivr-domain"), mailDomains, "id", labelDom, "Domain seç");
+      refreshAccountQuota();
     });
   }
 
@@ -3850,6 +3905,7 @@
           timeoutMs: 60000
         }).then(function (res) {
           mailToast((res && res.data && res.data.message) || (res && res.ok ? "Kuyruğa alındı" : ((res && res.data && res.data.error) || "Hata")));
+          refreshAccountQuota();
           mailLoadCampaigns();
         });
         return;
@@ -3868,6 +3924,7 @@
         mailApi("/api/mailing/campaigns/" + resumeC.getAttribute("data-id") + "/resume", { method: "POST" })
           .then(function (res) {
             mailToast((res && res.ok) ? "Devam ediyor" : ((res && res.data && res.data.error) || "Olmadı"));
+            refreshAccountQuota();
             mailLoadCampaigns();
           });
         return;
@@ -3878,6 +3935,7 @@
         mailApi("/api/mailing/campaigns/" + retryC.getAttribute("data-id") + "/retry-failed", { method: "POST" })
           .then(function (res) {
             mailToast((res && res.ok) ? "Retry başladı" : ((res && res.data && res.data.error) || "Olmadı"));
+            refreshAccountQuota();
             mailLoadCampaigns();
           });
         return;
@@ -4232,10 +4290,12 @@
                 "Taslak oluştu (#" + campId + ") ama kuyruk hatası: " +
                 ((qRes && qRes.data && qRes.data.error) || "bilinmiyor")
               );
+              refreshAccountQuota();
               mailLoadCampaigns();
               return;
             }
             mailToast(qRes.data.message || ("Kampanya #" + campId + " hazır"));
+            refreshAccountQuota();
             mailWriteCampSelectedIds([]);
             mailWriteCampPickSource("");
             campForm.reset();
@@ -4324,6 +4384,7 @@
           hint.innerHTML = html;
         });
     });
+    bindClick("mail-quota-refresh", function () { refreshAccountQuota(); });
     bindClick("mail-camp-refresh", mailLoadCampaigns);
 
     var ivrForm = document.getElementById("mail-ivr-form");

@@ -128,76 +128,103 @@ def save_state(conn, state: dict) -> None:
 
 
 def _warmup_gap_days(conn) -> int:
-    """Son gerçek bulk gönderimden bu yana gün."""
+    """Son gerçek bulk gönderimden bu yana gün (her iki cohort max)."""
     try:
-        from mail_warmup_program import activity_gap_days
-        return int(activity_gap_days(conn) or 0)
+        from mail_warmup_program import COHORTS, activity_gap_days, get_track, load_state
+
+        st = load_state(conn)
+        gaps = []
+        for c in COHORTS:
+            tr = get_track(st, c)
+            if tr.get("domain_ids"):
+                gaps.append(int(activity_gap_days(conn, tr, cohort=c) or 0))
+        return max(gaps) if gaps else 0
     except Exception:
         return 0
 
 
 def _sync_domain_caps(conn, *, soft: bool = False) -> dict:
-    """Isıtma programı domainlerinin daily_cap’ini plana çek.
-
-    soft=True (haftalık bakım / pasif dönüş): son gönderim gününe hizala,
-    takvim gününe göre şişmiş cap’i geri al. Eski soft_day=4/5 hack’i kaldırıldı.
-    """
+    """Isıtma programı domainlerinin daily_cap’ini plana çek (legacy + new ayrı)."""
     from mail_warmup_program import (
+        COHORTS,
         activity_gap_days,
         compute_day_number,
         day_plan,
+        get_track,
         load_state as wu_load,
         realign_to_last_send,
         save_state as wu_save,
         sync_program_caps,
     )
 
-    wu = wu_load(conn)
-    gap = activity_gap_days(conn, wu)
-    day_n = compute_day_number(wu)
-    note = ""
-    realign_result = None
-    effective_day = day_n
+    per_cohort = {}
+    total_updated = 0
+    max_gap = 0
+    for cohort in COHORTS:
+        wu = wu_load(conn)
+        tr = get_track(wu, cohort)
+        gap = activity_gap_days(conn, tr, cohort=cohort)
+        max_gap = max(max_gap, gap)
+        day_n = compute_day_number(tr)
+        note = ""
+        realign_result = None
+        effective_day = day_n
 
-    if soft and wu.get("started_on") and (wu.get("domain_ids") or []):
-        # Gap olsun olmasın bakımda son gönderime kilitle (takvim şişmesini düzelt)
-        try:
-            realign_result = realign_to_last_send(conn, advance=False)
-            effective_day = int(realign_result.get("resume_day") or day_n)
-            note = realign_result.get("note") or (
-                f"son gönderime hizalandı → day {effective_day} (gap {gap}g)"
-            )
-            wu = wu_load(conn)
-        except Exception as exc:
-            note = f"realign atlandı: {exc}"
-            print(f"⚠️  weekly realign: {exc}")
+        if soft and tr.get("started_on") and (tr.get("domain_ids") or []):
+            try:
+                realign_result = realign_to_last_send(conn, advance=False, cohort=cohort)
+                effective_day = int(realign_result.get("resume_day") or day_n)
+                note = realign_result.get("note") or (
+                    f"[{cohort}] son gönderime hizalandı → day {effective_day} (gap {gap}g)"
+                )
+            except Exception as exc:
+                note = f"[{cohort}] realign atlandı: {exc}"
+                print(f"⚠️  weekly realign [{cohort}]: {exc}")
 
-    sync = sync_program_caps(conn, wu, force=True)
-    plan = day_plan(compute_day_number(wu_load(conn)))
-    cap = int(sync.get("daily_cap") or plan["daily_cap_suggest"])
+        sync = sync_program_caps(conn, cohort=cohort, force=True)
+        plan = day_plan(compute_day_number(get_track(wu_load(conn), cohort)), cohort=cohort)
+        cap = int(sync.get("daily_cap") or plan["daily_cap_suggest"])
+        total_updated += int(sync.get("updated") or 0)
 
-    # Program duraklatılmışsa bakımda soft resume
-    resumed = False
-    wu = wu_load(conn)
-    if (wu.get("domain_ids") or []) and not wu.get("active") and wu.get("started_on"):
-        wu["active"] = True
-        wu_save(conn, wu)
-        resumed = True
-        try:
-            sync_program_caps(conn, wu, force=True)
-        except Exception:
-            pass
+        resumed = False
+        wu = wu_load(conn)
+        tr = get_track(wu, cohort)
+        if (tr.get("domain_ids") or []) and not tr.get("active") and tr.get("started_on"):
+            tr["active"] = True
+            wu_save(conn, wu)
+            resumed = True
+            try:
+                sync_program_caps(conn, cohort=cohort, force=True)
+            except Exception:
+                pass
 
+        per_cohort[cohort] = {
+            "domains_updated": int(sync.get("updated") or 0),
+            "daily_cap": cap,
+            "effective_day": effective_day,
+            "calendar_day": day_n,
+            "gap_days": gap,
+            "soft_note": note,
+            "resumed": resumed,
+            "realign": realign_result,
+            "last_send_date": (realign_result or {}).get("last_send_date"),
+        }
+
+    # Özet (geriye uyumlu alanlar = legacy öncelikli)
+    legacy = per_cohort.get("legacy") or {}
     return {
-        "domains_updated": int(sync.get("updated") or 0),
-        "daily_cap": cap,
-        "effective_day": effective_day,
-        "calendar_day": day_n,
-        "gap_days": gap,
-        "soft_note": note,
-        "resumed": resumed,
-        "realign": realign_result,
-        "last_send_date": (realign_result or {}).get("last_send_date"),
+        "domains_updated": total_updated,
+        "daily_cap": legacy.get("daily_cap"),
+        "effective_day": legacy.get("effective_day"),
+        "calendar_day": legacy.get("calendar_day"),
+        "gap_days": max_gap,
+        "soft_note": " | ".join(
+            (per_cohort[c].get("soft_note") or "") for c in COHORTS if per_cohort[c].get("soft_note")
+        ),
+        "resumed": any(per_cohort[c].get("resumed") for c in COHORTS),
+        "realign": legacy.get("realign"),
+        "last_send_date": legacy.get("last_send_date"),
+        "by_cohort": per_cohort,
     }
 
 
@@ -296,19 +323,27 @@ def ensure_sunday_maintenance(conn) -> dict | None:
         print(f"⚠️  weekly maintenance: {exc}")
         return {"ok": False, "error": str(exc)}
 
-    # Hafta içi: hasta/pasif gap varsa hizala (Pazar bekleme)
+    # Hafta içi: hasta/pasif gap varsa hizala (Pazar bekleme) — her cohort
     try:
-        from mail_warmup_program import activity_gap_days, maybe_auto_realign_after_gap
+        from mail_warmup_program import COHORTS, activity_gap_days, get_track, load_state, maybe_auto_realign_after_gap
 
-        gap = activity_gap_days(conn)
-        if gap >= 2:
-            result = maybe_auto_realign_after_gap(conn)
-            if result:
-                try:
-                    conn.commit()
-                except Exception:
-                    pass
-                return {"ok": True, "weekday_catchup": True, "gap_days": gap, "result": result}
+        st = load_state(conn)
+        results = []
+        max_gap = 0
+        for c in COHORTS:
+            tr = get_track(st, c)
+            gap = activity_gap_days(conn, tr, cohort=c)
+            max_gap = max(max_gap, gap)
+            if gap >= 2 and tr.get("active"):
+                result = maybe_auto_realign_after_gap(conn, cohort=c)
+                if result:
+                    results.append(result)
+        if results:
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            return {"ok": True, "weekday_catchup": True, "gap_days": max_gap, "result": results}
     except Exception as exc:
         print(f"⚠️  weekday warmup catchup: {exc}")
     return None

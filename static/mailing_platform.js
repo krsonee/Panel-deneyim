@@ -299,6 +299,42 @@
     });
   }
 
+  function renderAccountQuota(q) {
+    if (!q) return;
+    var rem = document.getElementById("mm-aq-remaining");
+    var used = document.getElementById("mm-aq-used");
+    var renew = document.getElementById("mm-aq-renew");
+    var fill = document.getElementById("mm-aq-fill");
+    var lim = document.getElementById("mm-aq-limit");
+    var tz = document.getElementById("mm-aq-tz");
+    var hint = document.getElementById("mm-aq-hint");
+    function fmt(n) {
+      try { return Number(n || 0).toLocaleString("tr-TR"); } catch (e) { return String(n); }
+    }
+    if (rem) rem.textContent = "Kalan " + fmt(q.remaining);
+    if (used) used.textContent = "kullanılan " + fmt(q.used) + " / " + fmt(q.limit);
+    if (renew) renew.textContent = "yenilenme: " + (q.renews_at_label || "—");
+    if (fill) {
+      var pct = Math.min(100, Math.max(0, Number(q.pct_used) || 0));
+      fill.style.width = pct + "%";
+      fill.classList.toggle("is-warn", pct >= 70 && pct < 90);
+      fill.classList.toggle("is-danger", pct >= 90 || !!q.exhausted);
+    }
+    if (lim && document.activeElement !== lim) lim.value = q.limit;
+    if (tz && document.activeElement !== tz) tz.value = q.tz || "UTC";
+    if (hint) {
+      hint.textContent = q.exhausted
+        ? ("Kota dolu — kampanya başlatılmaz. " + (q.renews_at_label || ""))
+        : "Limit Alibaba’daki hesap kotasıyla eşleşmeli. Panel kalanı mail_sends üzerinden sayar.";
+    }
+  }
+
+  function refreshAccountQuota() {
+    return api("/api/platform/account-quota").then(function (res) {
+      if (res.ok && res.data.quota) renderAccountQuota(res.data.quota);
+    }).catch(function () {});
+  }
+
   var _editDomainId = null;
   var _domainSaving = false;
 
@@ -319,6 +355,8 @@
       if (localEl) localEl.value = d.from_local || "info";
       document.getElementById("mm-d-warm").value = d.warm_status || "cold";
       document.getElementById("mm-d-cap").value = d.daily_cap != null ? d.daily_cap : 500;
+      var cohortEl = document.getElementById("mm-d-cohort");
+      if (cohortEl) cohortEl.value = d.warmup_cohort === "legacy" ? "legacy" : "new";
       document.getElementById("mm-d-smtp").value = "";
       document.getElementById("mm-d-smtp").placeholder = d.smtp_password_set ? "Boş = şifre aynı kalsın" : "SMTP şifresi";
       if (btn) {
@@ -383,7 +421,11 @@
           ? ' <span class="mm-badge mm-badge-ok">SMTP</span>'
           : ' <span class="mm-badge mm-badge-danger">SMTP yok</span>';
         return "<tr>" +
-          "<td>" + esc(d.domain) + "</td>" +
+          "<td>" + esc(d.domain) +
+          (d.warmup_cohort === "legacy"
+            ? ' <span class="mm-badge mm-badge-info">eski</span>'
+            : ' <span class="mm-badge mm-badge-warn">yeni</span>') +
+          "</td>" +
           "<td>" + fromAddr + smtpTag + "</td>" +
           "<td>" + mmWarmProgress(d) + "</td>" +
           "<td>" + esc(d.daily_cap) + "/g · " + esc(d.hourly_cap) + "/s</td>" +
@@ -413,6 +455,30 @@
   }
 
   var _wuSelected = {};
+  var _wuCohort = "legacy";
+  var _wuProgramFull = null;
+
+  function activeWarmupTrack(program) {
+    if (!program) return null;
+    if (program.tracks && program.tracks[_wuCohort]) return program.tracks[_wuCohort];
+    return program;
+  }
+
+  function setWuCohortTab(cohort) {
+    _wuCohort = cohort === "new" ? "new" : "legacy";
+    var leg = document.getElementById("mm-wu-tab-legacy");
+    var neu = document.getElementById("mm-wu-tab-new");
+    if (leg) {
+      leg.classList.toggle("btn-primary", _wuCohort === "legacy");
+      leg.classList.toggle("btn-secondary", _wuCohort !== "legacy");
+    }
+    if (neu) {
+      neu.classList.toggle("btn-primary", _wuCohort === "new");
+      neu.classList.toggle("btn-secondary", _wuCohort !== "new");
+    }
+    _wuSelected = {};
+    if (_wuProgramFull) renderWarmupProgram(_wuProgramFull);
+  }
 
   function applyWarmupBanner(program) {
     var banner = document.getElementById("mm-warmup-banner");
@@ -425,66 +491,65 @@
 
   function renderWarmupProgram(program) {
     window._mmWarmupProgram = program || null;
+    _wuProgramFull = program || null;
     applyWarmupBanner(program);
+    var track = activeWarmupTrack(program);
     var statusEl = document.getElementById("mm-wu-status");
     var setup = document.getElementById("mm-wu-setup");
     var todayBox = document.getElementById("mm-wu-today");
     var startBtn = document.getElementById("mm-wu-start");
     var pauseBtn = document.getElementById("mm-wu-pause");
     var resumeBtn = document.getElementById("mm-wu-resume");
-    if (!program) {
+    if (!program || !track) {
       if (statusEl) statusEl.textContent = "Program yüklenemedi";
       return;
     }
+    var cohortLabel = track.cohort_label || (_wuCohort === "new" ? "Yeni" : "Eski");
     if (statusEl) {
-      if (!program.active) {
-        statusEl.textContent = program.started_on
-          ? ("Program duraklatıldı · başlangıç " + program.started_on + " · devam için domainleri koru ve Devam’a bas")
-          : "Program henüz başlamadı. Aşağıdan ısıtılacak domainleri seç (öneri 5) ve Programı başlat.";
-      } else if (program.all_done_today) {
-        statusEl.textContent = "Bugünün görevleri tamam · yarın 00:00 (Türkiye) sonrası yeni gün açılır.";
+      if (!track.active) {
+        statusEl.textContent = track.started_on
+          ? (cohortLabel + " program duraklatıldı · başlangıç " + track.started_on)
+          : (cohortLabel + " program henüz başlamadı. Yalnız bu gruptan domain seç.");
+      } else if (track.all_done_today) {
+        statusEl.textContent = cohortLabel + " · bugünün görevleri tamam.";
       } else {
-        var tgt = (program.plan && program.plan.per_domain_target) || "—";
-        var sug = (program.plan && program.plan.daily_cap_suggest) || "—";
-        var real = program.cap_reality && program.cap_reality.min_daily_cap;
-        var gap = program.activity_gap_days || 0;
-        var lastSend = program.last_send_date || "—";
+        var tgt = (track.plan && track.plan.per_domain_target) || "—";
+        var sug = (track.plan && track.plan.daily_cap_suggest) || "—";
+        var real = track.cap_reality && track.cap_reality.min_daily_cap;
+        var gap = track.activity_gap_days || 0;
+        var lastSend = track.last_send_date || "—";
         statusEl.textContent =
-          "Aktif · Gün " + program.day + "/" + program.total_days +
-          " · önerilen ~" + tgt + "/domain · daily_cap hedef " + sug +
-          (real != null ? (" · şu an min cap " + real) : "") +
+          cohortLabel + " aktif · Gün " + track.day + "/" + track.total_days +
+          " · ~" + tgt + "/domain · daily_cap " + sug +
+          (real != null ? (" · min cap " + real) : "") +
           " · son gönderim " + lastSend +
-          (gap >= 2 ? (" · gap " + gap + "g (hizalandıysa bugün kaldığın günden devam)") : "");
+          (gap >= 2 ? (" · gap " + gap + "g") : "");
       }
-      if (program.realign_note) {
-        statusEl.textContent += " · " + program.realign_note;
-      }
-      if (program.auto_realign && program.auto_realign.ok) {
-        statusEl.textContent +=
-          " · otomatik hizalama: gün " + (program.auto_realign.resume_day || "?");
-      }
+      if (track.realign_note) statusEl.textContent += " · " + track.realign_note;
     }
-    if (setup) setup.hidden = !!program.active;
-    if (todayBox) todayBox.hidden = !program.active && !(program.domains && program.domains.length);
+    if (setup) setup.hidden = !!track.active;
+    if (todayBox) todayBox.hidden = !track.active && !(track.domains && track.domains.length);
     if (startBtn) {
-      startBtn.hidden = !!program.active;
-      startBtn.textContent = program.started_on && !program.active ? "Yeniden başlat" : "Programı başlat";
+      startBtn.hidden = !!track.active;
+      startBtn.textContent = track.started_on && !track.active ? "Yeniden başlat" : "Programı başlat";
     }
-    if (pauseBtn) pauseBtn.hidden = !program.active;
-    if (resumeBtn) resumeBtn.hidden = !(!program.active && program.started_on);
+    if (pauseBtn) pauseBtn.hidden = !track.active;
+    if (resumeBtn) resumeBtn.hidden = !(!track.active && track.started_on);
 
     var pick = document.getElementById("mm-wu-domain-pick");
-    if (pick && !program.active) {
-      var pool = (window._mmDomainsCache || []).slice();
-      if (!pool.length && program.suggested_domains) {
-        pool = program.suggested_domains;
-      }
+    if (pick && !track.active) {
+      var pool = (window._mmDomainsCache || []).filter(function (d) {
+        var c = (d.warmup_cohort || "new");
+        return c === _wuCohort;
+      });
+      if (!pool.length && track.suggested_domains) pool = track.suggested_domains;
       if (!Object.keys(_wuSelected).length) {
-        (program.domains && program.domains.length ? program.domains : (program.suggested_domains || []))
+        (track.domains && track.domains.length ? track.domains : (track.suggested_domains || []))
           .forEach(function (d) { _wuSelected[String(d.id)] = true; });
       }
       if (!pool.length) {
-        pick.innerHTML = '<span class="muted">Önce Domainler sekmesinden domain ekle.</span>';
+        pick.innerHTML = '<span class="muted">Bu grupta domain yok — Domainler’den ekle / grubunu «' +
+          (_wuCohort === "new" ? "Yeni" : "Eski") + '» yap.</span>';
       } else {
         pick.innerHTML = pool.map(function (d) {
           var id = String(d.id);
@@ -496,60 +561,45 @@
       }
     }
 
-    if (!program.active && !(program.domains && program.domains.length)) {
-      if (todayBox) todayBox.hidden = true;
-      return;
-    }
-    if (todayBox) todayBox.hidden = false;
-
-    var plan = program.plan || {};
+    // hero / tasks — reuse existing ids with track
     var dayEl = document.getElementById("mm-wu-day");
     var titleEl = document.getElementById("mm-wu-title");
     var targetsEl = document.getElementById("mm-wu-targets");
-    var progEl = document.getElementById("mm-wu-progress-label");
-    var domainsEl = document.getElementById("mm-wu-domains");
+    var progLabel = document.getElementById("mm-wu-progress-label");
+    var chips = document.getElementById("mm-wu-domains");
     var tasksEl = document.getElementById("mm-wu-tasks");
     var rulesEl = document.getElementById("mm-wu-rules");
-    var tasks = plan.tasks || [];
-    var doneCount = tasks.filter(function (t) { return t.done; }).length;
-    if (dayEl) dayEl.textContent = "Gün " + (program.day || "—") + " / " + (program.total_days || 30);
-    if (titleEl) titleEl.textContent = plan.title || "—";
-    if (targetsEl) {
-      var realCap = program.cap_reality && program.cap_reality.min_daily_cap;
-      targetsEl.textContent =
-        "Önerilen gönderim ~" + (plan.per_domain_target || "—") + "/domain" +
-        " · 5 domain toplam ~" + (plan.total_target_5 || "—") +
-        " · daily_cap hedef " + (plan.daily_cap_suggest || "—") +
-        (realCap != null ? (" · şu an min cap " + realCap) : "") +
-        " — gönderimi kesen sayı daily_cap’tir, banner önerisi değil";
-    }
-    if (progEl) progEl.textContent = doneCount + "/" + tasks.length;
-    if (domainsEl) {
-      var ds = program.domains || [];
-      domainsEl.innerHTML = ds.length
-        ? ds.map(function (d) {
-            return '<span class="mm-wu-chip">' + esc(d.domain) +
-              ' · cap ' + esc(d.daily_cap) +
-              ' · ' + esc(d.warm_status || "—") + "</span>";
-          }).join("")
-        : '<span class="muted">Domain seçilmedi</span>';
-    }
-    if (tasksEl) {
-      if (!program.active) {
-        tasksEl.innerHTML = '<p class="hint">Program duraklatıldı — görev işaretlemek için Devam’a bas.</p>';
-      } else {
+    if (track.active || (track.domains && track.domains.length)) {
+      if (dayEl) dayEl.textContent = "Gün " + (track.day || "—") + "/" + (track.total_days || 30);
+      if (titleEl) titleEl.textContent = (track.plan && track.plan.title) || "—";
+      if (targetsEl) {
+        targetsEl.textContent =
+          "önerilen ~" + ((track.plan && track.plan.per_domain_target) || "—") +
+          "/domain · daily_cap hedef " + ((track.plan && track.plan.daily_cap_suggest) || "—") +
+          " — gönderimi kesen sayı daily_cap’tir";
+      }
+      var tasks = (track.plan && track.plan.tasks) || [];
+      var doneN = tasks.filter(function (t) { return t.done; }).length;
+      if (progLabel) progLabel.textContent = doneN + "/" + tasks.length;
+      if (chips) {
+        chips.innerHTML = (track.domains || []).map(function (d) {
+          return '<span class="mm-wu-chip">' + esc(d.domain) +
+            " · cap " + esc(d.daily_cap) + "</span>";
+        }).join("") || '<span class="muted">Domain yok</span>';
+      }
+      if (tasksEl) {
         tasksEl.innerHTML = tasks.map(function (t) {
           return '<label class="mm-wu-task' + (t.done ? " is-done" : "") + '">' +
             '<input type="checkbox" data-wu-task="' + esc(t.key) + '"' + (t.done ? " checked" : "") + ">" +
             '<span class="mm-wu-task-body"><strong>' + esc(t.title) + "</strong>" +
-            '<small>' + esc(t.hint) + "</small></span></label>";
+            "<small>" + esc(t.hint || "") + "</small></span></label>";
         }).join("");
       }
-    }
-    if (rulesEl) {
-      rulesEl.innerHTML = (plan.rules || []).map(function (r) {
-        return "<li>" + esc(r) + "</li>";
-      }).join("");
+      if (rulesEl) {
+        rulesEl.innerHTML = ((track.plan && track.plan.rules) || []).map(function (r) {
+          return "<li>" + esc(r) + "</li>";
+        }).join("");
+      }
     }
   }
 
@@ -578,7 +628,7 @@
         if (_wuSelected[k]) ids.push(Number(k));
       });
     }
-    return ids.filter(function (n) { return n > 0; }).slice(0, 8);
+    return ids.filter(function (n) { return n > 0; }).slice(0, 20);
   }
 
   function applyWeeklyBanner(maint) {
@@ -717,6 +767,10 @@
   function bindWarmupProgramUi() {
     var refreshBtn = document.getElementById("mm-wu-refresh");
     if (refreshBtn) refreshBtn.addEventListener("click", refreshWarmupProgram);
+    var tabL = document.getElementById("mm-wu-tab-legacy");
+    var tabN = document.getElementById("mm-wu-tab-new");
+    if (tabL) tabL.addEventListener("click", function () { setWuCohortTab("legacy"); });
+    if (tabN) tabN.addEventListener("click", function () { setWuCohortTab("new"); });
     var startBtn = document.getElementById("mm-wu-start");
     if (startBtn) {
       startBtn.addEventListener("click", function () {
@@ -725,10 +779,10 @@
           alert("En az 1 domain seç.");
           return;
         }
-        if (!confirm(ids.length + " domain ile 30 günlük ısıtma programını başlat?")) return;
+        if (!confirm(ids.length + " domain ile «" + (_wuCohort === "new" ? "Yeni" : "Eski") + "» 30 günlük ısıtma programını başlat?")) return;
         api("/api/platform/warmup-program/start", {
           method: "POST",
-          body: { domain_ids: ids }
+          body: { domain_ids: ids, cohort: _wuCohort }
         }).then(function (res) {
           if (!res.ok) {
             alert((res.data && res.data.error) || "Başlatılamadı");
@@ -743,7 +797,7 @@
     var pauseBtn = document.getElementById("mm-wu-pause");
     if (pauseBtn) {
       pauseBtn.addEventListener("click", function () {
-        api("/api/platform/warmup-program", { method: "PATCH", body: { pause: true } })
+        api("/api/platform/warmup-program", { method: "PATCH", body: { pause: true, cohort: _wuCohort } })
           .then(function (res) {
             if (res.ok) renderWarmupProgram(res.data.program);
             else alert((res.data && res.data.error) || "Duraklatılamadı");
@@ -753,7 +807,7 @@
     var resumeBtn = document.getElementById("mm-wu-resume");
     if (resumeBtn) {
       resumeBtn.addEventListener("click", function () {
-        api("/api/platform/warmup-program", { method: "PATCH", body: { resume: true } })
+        api("/api/platform/warmup-program", { method: "PATCH", body: { resume: true, cohort: _wuCohort } })
           .then(function (res) {
             if (res.ok) renderWarmupProgram(res.data.program);
             else alert((res.data && res.data.error) || "Devam edilemedi");
@@ -770,7 +824,7 @@
         )) return;
         api("/api/platform/warmup-program/realign-last-send", {
           method: "POST",
-          body: { advance: false }
+          body: { advance: false, cohort: _wuCohort }
         }).then(function (res) {
           if (!res.ok) {
             alert((res.data && res.data.error) || "Hizalanamadı");
@@ -813,7 +867,7 @@
         if (!key) return;
         api("/api/platform/warmup-program", {
           method: "PATCH",
-          body: { task_key: key, done: !!el.checked }
+          body: { task_key: key, done: !!el.checked, cohort: _wuCohort }
         }).then(function (res) {
           if (!res.ok) {
             el.checked = !el.checked;
@@ -845,7 +899,8 @@
         ? document.getElementById("mm-d-local").value.trim()
         : "info",
       warm_status: document.getElementById("mm-d-warm").value,
-      daily_cap: Number(document.getElementById("mm-d-cap").value) || 500
+      daily_cap: Number(document.getElementById("mm-d-cap").value) || 500,
+      warmup_cohort: (document.getElementById("mm-d-cohort") || {}).value || "new"
     };
     var smtp = document.getElementById("mm-d-smtp").value;
     if (smtp) body.smtp_password = smtp;
@@ -981,6 +1036,26 @@
       syncPanelLoginFields();
       document.getElementById("mm-tenant-activity-close")?.addEventListener("click", hideTenantActivity);
       document.getElementById("mm-tenants-refresh")?.addEventListener("click", refreshTenants);
+      document.getElementById("mm-aq-refresh")?.addEventListener("click", refreshAccountQuota);
+      document.getElementById("mm-aq-form")?.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var hint = document.getElementById("mm-aq-hint");
+        api("/api/platform/account-quota", {
+          method: "PATCH",
+          body: {
+            limit: Number(document.getElementById("mm-aq-limit").value) || 50000,
+            tz: (document.getElementById("mm-aq-tz").value || "UTC").trim()
+          }
+        }).then(function (res) {
+          if (!res.ok) {
+            if (hint) hint.textContent = (res.data && res.data.error) || "Kaydedilemedi";
+            return;
+          }
+          if (res.data.quota) renderAccountQuota(res.data.quota);
+          if (hint) hint.textContent = "Alibaba hesap kotası kaydedildi (" +
+            ((res.data.quota && res.data.quota.limit) || "?") + "/gün)";
+        });
+      });
       document.getElementById("mm-domains-refresh")?.addEventListener("click", function () {
         resetDomainForm();
         refreshDomains();
@@ -1161,6 +1236,7 @@
     refresh: function () {
       return Promise.all([
         refreshTenants(),
+        refreshAccountQuota(),
         refreshDomains(),
         refreshWarmupProgram(),
         refreshWeeklyMaintenance()

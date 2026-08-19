@@ -264,9 +264,32 @@ def ensure_tenant_schema(conn) -> None:
         ("health_score", "INTEGER NOT NULL DEFAULT 100"),
         ("smtp_password_enc", "TEXT NOT NULL DEFAULT ''"),
         ("platform_owned", "INTEGER NOT NULL DEFAULT 1"),
+        # legacy = mevcut ısınmış havuz; new = yeni eklenen ısıtma domainleri
+        ("warmup_cohort", "TEXT NOT NULL DEFAULT 'new'"),
     ):
         if col not in dom_cols:
             _add_column(conn, "mail_domains", f"{col} {typ}")
+    try:
+        _legacy = (
+            "vipozelileti.com",
+            "vippozelileti.com",
+            "vipppozelileti.com",
+            "vipileti.com",
+            "pronetmail.com",
+        )
+        ph = ",".join(["?"] * len(_legacy))
+        execute(
+            conn,
+            f"""
+            UPDATE mail_domains
+            SET warmup_cohort = 'legacy'
+            WHERE LOWER(domain) IN ({ph})
+              AND COALESCE(NULLIF(warmup_cohort, ''), 'new') = 'new'
+            """,
+            _legacy,
+        )
+    except Exception as exc:
+        print(f"⚠️  warmup_cohort bootstrap: {exc}")
 
     for table in TENANT_TABLES:
         cols = _table_columns(conn, table)

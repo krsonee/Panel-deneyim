@@ -294,6 +294,30 @@ def deliver_mail(
     except Exception as exc:
         print(f"⚠️  domain block check: {exc}")
 
+    # Alibaba hesap bazlı günlük kota
+    try:
+        from mail_account_quota import account_quota_blocks_send
+        q_blocked, q_reason = account_quota_blocks_send(conn)
+        if q_blocked:
+            send_id = insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_sends (
+                    channel, campaign_id, contact_id, template_id, domain_id,
+                    to_email, to_phone, subject, status, provider_msg_id, error,
+                    opened_at, clicked_at, sent_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    channel, campaign_id, contact_id, template_id, domain_id,
+                    to_email, to_phone or "", subject or "", "skipped", "",
+                    (q_reason or "Alibaba kota")[:200], None, None, None, now,
+                ),
+            )
+            return send_id, "skipped", q_reason
+    except Exception as exc:
+        print(f"⚠️  account quota check: {exc}")
+
     send_id = insert_returning_id(
         conn,
         """

@@ -438,6 +438,18 @@ def platform_create_domain():
         has_smtp = bool(smtp_pw)
         init_status = (data.get("status") or ("active" if has_smtp else "pending")).strip()
         init_dns = (data.get("dns_status") or ("ready" if has_smtp else "unconfigured")).strip()
+        cohort = (data.get("warmup_cohort") or "new").strip().lower()
+        if cohort not in ("legacy", "new"):
+            cohort = "new"
+        # Bilinen eski domain adları otomatik legacy
+        if domain in (
+            "vipozelileti.com",
+            "vippozelileti.com",
+            "vipppozelileti.com",
+            "vipileti.com",
+            "pronetmail.com",
+        ):
+            cohort = "legacy"
         did = insert_returning_id(
             conn,
             """
@@ -460,13 +472,17 @@ def platform_create_domain():
                 enc,
             ),
         )
+        try:
+            execute(conn, "UPDATE mail_domains SET warmup_cohort = ? WHERE id = ?", (cohort, did))
+        except Exception:
+            pass
         # Also store legacy smtp_password encrypted if column exists
         try:
             execute(conn, "UPDATE mail_domains SET smtp_password = ? WHERE id = ?", (enc, did))
         except Exception:
             pass
         conn.commit()
-    return jsonify({"ok": True, "domain_id": did}), 201
+    return jsonify({"ok": True, "domain_id": did, "warmup_cohort": cohort}), 201
 
 
 def _platform_domain_public(row):
@@ -565,7 +581,19 @@ def platform_patch_domain(domain_id):
                 break
             except Exception as exc:
                 last_err = exc
-                print(f"⚠️  platform domain patch: {exc}")
+        if "warmup_cohort" in data:
+            cohort = str(data.get("warmup_cohort") or "new").strip().lower()
+            if cohort not in ("legacy", "new"):
+                cohort = "new"
+            try:
+                execute(
+                    conn,
+                    "UPDATE mail_domains SET warmup_cohort = ? WHERE id = ?",
+                    (cohort, domain_id),
+                )
+            except Exception as exc:
+                last_err = last_err or exc
+                print(f"⚠️  platform domain cohort: {exc}")
         if last_err:
             return jsonify({"error": f"Domain kaydedilemedi: {last_err}"}), 500
 
@@ -631,7 +659,12 @@ def platform_warmup_program_start():
     data = request.get_json(silent=True) or {}
     try:
         with closing(get_db()) as conn:
-            snap = start_program(conn, data.get("domain_ids") or [], notes=data.get("notes") or "")
+            snap = start_program(
+                conn,
+                data.get("domain_ids") or [],
+                notes=data.get("notes") or "",
+                cohort=data.get("cohort"),
+            )
             conn.commit()
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -654,6 +687,7 @@ def platform_warmup_program_patch():
                     str(data.get("task_key") or ""),
                     bool(data.get("done")),
                     day_date=data.get("date"),
+                    cohort=data.get("cohort") or "legacy",
                 )
             else:
                 snap = patch_program(conn, data)
@@ -673,9 +707,10 @@ def platform_warmup_program_realign():
 
     data = request.get_json(silent=True) or {}
     advance = bool(data.get("advance"))
+    cohort = data.get("cohort") or "legacy"
     try:
         with closing(get_db()) as conn:
-            result = realign_to_last_send(conn, advance=advance)
+            result = realign_to_last_send(conn, advance=advance, cohort=cohort)
             snap = program_snapshot(conn)
             conn.commit()
     except ValueError as exc:
@@ -683,6 +718,37 @@ def platform_warmup_program_realign():
     except Exception as exc:
         return jsonify({"error": f"Hizalanamadı: {exc}"}), 500
     return jsonify({"ok": True, "realign": result, "program": snap})
+
+
+@app.get("/api/platform/account-quota")
+@require_superadmin
+def platform_account_quota_get():
+    from mail_account_quota import quota_snapshot
+
+    with closing(get_db()) as conn:
+        snap = quota_snapshot(conn)
+    return jsonify({"quota": snap})
+
+
+@app.patch("/api/platform/account-quota")
+@require_superadmin
+def platform_account_quota_patch():
+    from mail_account_quota import quota_snapshot, set_quota_limit, set_quota_tz
+
+    data = request.get_json(silent=True) or {}
+    with closing(get_db()) as conn:
+        try:
+            if "limit" in data:
+                set_quota_limit(conn, int(data.get("limit")))
+            if "tz" in data and data.get("tz"):
+                set_quota_tz(conn, str(data.get("tz")))
+            conn.commit()
+            snap = quota_snapshot(conn)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "quota": snap})
 
 
 @app.get("/api/platform/weekly-maintenance")
