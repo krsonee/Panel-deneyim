@@ -506,73 +506,152 @@ def platform_mail_credit_patch():
     return jsonify({"ok": True, "credit": snap, "tenants": tenants})
 
 
-@app.post("/api/platform/domains")
-@require_superadmin
-def platform_create_domain():
-    data = request.get_json(silent=True) or {}
+def _create_domain_row(conn, data: dict):
+    """Domain kaydı oluşturur. Tek domain formu ve toplu ekleme aynı yolu kullanır
+    (mantık kopyalanmasın, ileride biri güncellenip diğeri unutulmasın).
+
+    Döner: (domain_id, error). error None ise başarılı.
+    """
     from mail_delivery import normalize_from_local, normalize_mail_domain
 
     domain = normalize_mail_domain(data.get("domain") or "")
     from_local = normalize_from_local(data.get("from_local") or "info")
     if not domain or "." not in domain:
-        return jsonify({"error": "Geçerli domain gerekli (örn. vipileti.com — info@ yazma)."}), 400
+        return None, "Geçerli domain gerekli (örn. vipileti.com — info@ yazma)."
     now = iso(utcnow())
-    with closing(get_db()) as conn:
-        if fetchone(conn, "SELECT id FROM mail_domains WHERE domain = ?", (domain,)):
-            return jsonify({"error": "Domain zaten var."}), 400
-        smtp_pw = (data.get("smtp_password") or "").strip()
-        enc = encrypt_secret(smtp_pw) if smtp_pw else ""
-        from database import insert_returning_id
+    if fetchone(conn, "SELECT id FROM mail_domains WHERE domain = ?", (domain,)):
+        return None, "Domain zaten var."
+    smtp_pw = (data.get("smtp_password") or "").strip()
+    enc = encrypt_secret(smtp_pw) if smtp_pw else ""
+    from database import insert_returning_id
 
-        has_smtp = bool(smtp_pw)
-        init_status = (data.get("status") or ("active" if has_smtp else "pending")).strip()
-        init_dns = (data.get("dns_status") or ("ready" if has_smtp else "unconfigured")).strip()
-        cohort = (data.get("warmup_cohort") or "new").strip().lower()
-        if cohort not in ("legacy", "new"):
-            cohort = "new"
-        # Bilinen eski domain adları otomatik legacy
-        if domain in (
-            "vipozelileti.com",
-            "vippozelileti.com",
-            "vipppozelileti.com",
-            "vipileti.com",
-            "pronetmail.com",
-        ):
-            cohort = "legacy"
-        did = insert_returning_id(
-            conn,
-            """
-            INSERT INTO mail_domains
-            (domain, status, from_name, from_local, dns_status, notes, created_at,
-             warm_status, warm_day, daily_cap, hourly_cap, health_score, smtp_password_enc, platform_owned)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 100, ?, 1)
-            """,
-            (
-                domain,
-                init_status,
-                (data.get("from_name") or "VIP").strip(),
-                from_local,
-                init_dns,
-                (data.get("notes") or "").strip(),
-                now,
-                (data.get("warm_status") or "cold").strip(),
-                int(data.get("daily_cap") or 500),
-                int(data.get("hourly_cap") or 50),
-                enc,
-            ),
-        )
-        try:
-            execute(conn, "UPDATE mail_domains SET warmup_cohort = ? WHERE id = ?", (cohort, did))
-        except Exception:
-            pass
-        # Also store legacy smtp_password encrypted if column exists
-        try:
-            execute(conn, "UPDATE mail_domains SET smtp_password = ? WHERE id = ?", (enc, did))
-        except Exception:
-            pass
+    has_smtp = bool(smtp_pw)
+    init_status = (data.get("status") or ("active" if has_smtp else "pending")).strip()
+    init_dns = (data.get("dns_status") or ("ready" if has_smtp else "unconfigured")).strip()
+    cohort = (data.get("warmup_cohort") or "new").strip().lower()
+    if cohort not in ("legacy", "new"):
+        cohort = "new"
+    # Bilinen eski domain adları otomatik legacy
+    if domain in (
+        "vipozelileti.com",
+        "vippozelileti.com",
+        "vipppozelileti.com",
+        "vipileti.com",
+        "pronetmail.com",
+    ):
+        cohort = "legacy"
+    try:
+        daily_cap = int(data.get("daily_cap") or 500)
+    except (TypeError, ValueError):
+        daily_cap = 500
+    try:
+        hourly_cap = int(data.get("hourly_cap") or 50)
+    except (TypeError, ValueError):
+        hourly_cap = 50
+    did = insert_returning_id(
+        conn,
+        """
+        INSERT INTO mail_domains
+        (domain, status, from_name, from_local, dns_status, notes, created_at,
+         warm_status, warm_day, daily_cap, hourly_cap, health_score, smtp_password_enc, platform_owned)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 100, ?, 1)
+        """,
+        (
+            domain,
+            init_status,
+            (data.get("from_name") or "VIP").strip(),
+            from_local,
+            init_dns,
+            (data.get("notes") or "").strip(),
+            now,
+            (data.get("warm_status") or "cold").strip(),
+            daily_cap,
+            hourly_cap,
+            enc,
+        ),
+    )
+    try:
+        execute(conn, "UPDATE mail_domains SET warmup_cohort = ? WHERE id = ?", (cohort, did))
+    except Exception:
+        pass
+    # Also store legacy smtp_password encrypted if column exists
+    try:
+        execute(conn, "UPDATE mail_domains SET smtp_password = ? WHERE id = ?", (enc, did))
+    except Exception:
+        pass
+    return did, None
+
+
+@app.post("/api/platform/domains")
+@require_superadmin
+def platform_create_domain():
+    data = request.get_json(silent=True) or {}
+    with closing(get_db()) as conn:
+        did, err = _create_domain_row(conn, data)
+        if err:
+            conn.rollback()
+            return jsonify({"error": err}), 400
         conn.commit()
-    _platform_audit("domain_create", f"id={did} domain={domain}")
+        cohort = (data.get("warmup_cohort") or "new").strip().lower()
+    _platform_audit("domain_create", f"id={did} domain={data.get('domain')}")
     return jsonify({"ok": True, "domain_id": did, "warmup_cohort": cohort}), 201
+
+
+@app.post("/api/platform/domains/bulk")
+@require_superadmin
+def platform_create_domains_bulk():
+    """50 domain gibi büyük partiler için — form'u tek tek 50 kere doldurmak yerine
+    satır satır yapıştırılan liste ile hepsini bir kerede oluşturur.
+
+    Beklenen gövde: {"text": "...", "defaults": {"warmup_cohort": "new", "daily_cap": 50, ...}}
+    Her satır: domain[,smtp_password[,from_local[,from_name]]]
+    Bir satırın başarısız olması diğerlerini durdurmaz — her satır için ayrı
+    sonuç (ok/error) döner, kullanıcı tam olarak hangi satırın neden
+    başarısız olduğunu görebilsin (kısmi başarı listeye gömülü kalmasın).
+    """
+    data = request.get_json(silent=True) or {}
+    raw_text = data.get("text") or ""
+    defaults = data.get("defaults") or {}
+    lines = [ln.strip() for ln in str(raw_text).splitlines()]
+    lines = [ln for ln in lines if ln and not ln.startswith("#")]
+    if not lines:
+        return jsonify({"error": "Liste boş."}), 400
+    if len(lines) > 500:
+        return jsonify({"error": "Tek seferde en fazla 500 satır."}), 400
+
+    results = []
+    created = 0
+    with closing(get_db()) as conn:
+        for idx, line in enumerate(lines, start=1):
+            parts = [p.strip() for p in line.split(",")]
+            domain_val = parts[0] if len(parts) > 0 else ""
+            entry = {
+                "domain": domain_val,
+                "smtp_password": parts[1] if len(parts) > 1 and parts[1] else "",
+                "from_local": parts[2] if len(parts) > 2 and parts[2] else (defaults.get("from_local") or "info"),
+                "from_name": parts[3] if len(parts) > 3 and parts[3] else (defaults.get("from_name") or "VIP"),
+                "warm_status": defaults.get("warm_status") or "cold",
+                "warmup_cohort": defaults.get("warmup_cohort") or "new",
+                "daily_cap": defaults.get("daily_cap") or 50,
+                "hourly_cap": defaults.get("hourly_cap") or 10,
+            }
+            try:
+                did, err = _create_domain_row(conn, entry)
+                if err:
+                    conn.rollback()
+                    results.append({"line": idx, "input": line, "ok": False, "domain": domain_val, "error": err})
+                    continue
+                conn.commit()
+                created += 1
+                results.append({"line": idx, "input": line, "ok": True, "domain": domain_val, "domain_id": did})
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                results.append({"line": idx, "input": line, "ok": False, "domain": domain_val, "error": str(exc)[:200]})
+    _platform_audit("domain_bulk_create", f"total={len(lines)} created={created}")
+    return jsonify({"ok": True, "total": len(lines), "created": created, "results": results})
 
 
 def _platform_domain_public(row):

@@ -974,6 +974,66 @@
     setDomainFormMode(null);
   }
 
+  var _bulkDomainsSaving = false;
+
+  function toggleBulkDomainsPanel() {
+    var panel = document.getElementById("mm-domains-bulk-panel");
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+  }
+
+  function submitBulkDomains() {
+    if (_bulkDomainsSaving) return;
+    var ta = document.getElementById("mm-domains-bulk-text");
+    var resultsBox = document.getElementById("mm-domains-bulk-results");
+    var text = ta ? ta.value : "";
+    if (!text || !text.trim()) {
+      if (resultsBox) resultsBox.innerHTML = '<p class="hint" style="color:var(--danger,#dc2626);">Liste boş — en az bir satır yaz.</p>';
+      return;
+    }
+    var btn = document.getElementById("mm-domains-bulk-submit");
+    var defaults = {
+      warmup_cohort: (document.getElementById("mm-bulk-cohort") || {}).value || "new",
+      daily_cap: Number((document.getElementById("mm-bulk-cap") || {}).value) || 50,
+      warm_status: (document.getElementById("mm-bulk-warm") || {}).value || "cold"
+    };
+    _bulkDomainsSaving = true;
+    if (btn) { btn.disabled = true; btn.textContent = "Ekleniyor…"; }
+    if (resultsBox) resultsBox.innerHTML = '<p class="hint">Ekleniyor…</p>';
+    api("/api/platform/domains/bulk", { method: "POST", body: { text: text, defaults: defaults } })
+      .then(function (res) {
+        _bulkDomainsSaving = false;
+        if (btn) { btn.disabled = false; btn.textContent = "Hepsini ekle"; }
+        if (!res.ok) {
+          if (resultsBox) resultsBox.innerHTML = '<p class="hint" style="color:var(--danger,#dc2626);">' +
+            esc((res.data && res.data.error) || "Eklenemedi") + "</p>";
+          return;
+        }
+        var rows = res.data.results || [];
+        var okCount = res.data.created || 0;
+        var failCount = rows.length - okCount;
+        var html = '<p class="hint"><strong>' + okCount + ' / ' + rows.length + '</strong> domain eklendi' +
+          (failCount ? (' · <span style="color:var(--danger,#dc2626);">' + failCount + " başarısız</span>") : "") +
+          "</p>";
+        html += '<div class="table-wrap"><div class="table-scroll"><table><thead><tr><th>#</th><th>Domain</th><th>Sonuç</th></tr></thead><tbody>';
+        rows.forEach(function (r) {
+          html += "<tr>" +
+            "<td>" + esc(r.line) + "</td>" +
+            "<td>" + esc(r.domain || "—") + "</td>" +
+            "<td>" + (r.ok
+              ? '<span class="mm-badge mm-badge-ok">Eklendi</span>'
+              : ('<span class="mm-badge mm-badge-danger">Hata: ' + esc(r.error || "?") + "</span>")) +
+            "</td></tr>";
+        });
+        html += "</tbody></table></div></div>";
+        if (resultsBox) resultsBox.innerHTML = html;
+        if (okCount > 0) {
+          if (ta) ta.value = "";
+          refreshDomains();
+        }
+      });
+  }
+
   function saveDomainForm(e) {
     e.preventDefault();
     if (_domainSaving) return;
@@ -1230,6 +1290,8 @@
         });
       });
       document.getElementById("mm-domain-form")?.addEventListener("submit", saveDomainForm);
+      document.getElementById("mm-domains-bulk-toggle")?.addEventListener("click", toggleBulkDomainsPanel);
+      document.getElementById("mm-domains-bulk-submit")?.addEventListener("click", submitBulkDomains);
 
       document.getElementById("mm-alloc-cancel")?.addEventListener("click", function () {
         closeModal("mm-alloc-modal");

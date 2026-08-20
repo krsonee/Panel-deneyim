@@ -308,8 +308,45 @@
 
           <div class="mm-plat-pane" id="mm-plat-domains" data-mm-plat="domains">
             <section class="card">
-              <div class="card-head"><span>Domain havuzu</span><button type="button" class="btn btn-sm btn-secondary" id="mm-domains-refresh">Yenile</button></div>
+              <div class="card-head">
+                <span>Domain havuzu</span>
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                  <button type="button" class="btn btn-sm btn-secondary" id="mm-domains-bulk-toggle">Toplu ekle</button>
+                  <button type="button" class="btn btn-sm btn-secondary" id="mm-domains-refresh">Yenile</button>
+                </div>
+              </div>
               <div class="card-body">
+                <section id="mm-domains-bulk-panel" hidden style="border:1px solid var(--border);border-radius:10px;padding:0.85rem;margin-bottom:1rem;background:var(--surface-2);">
+                  <p class="hint" style="margin:0 0 0.5rem;">
+                    Her satıra bir domain — format: <code>domain,smtp_password,from_local,from_name</code>
+                    (virgülden sonrasını boş bırakabilirsin, sadece <code>domain</code> zorunlu).<br>
+                    Örnek:<br>
+                    <code>baksana.ink,SmtpSifre123,info,VIP</code><br>
+                    <code>vipdomain2.com,BaskaSifre456</code>
+                  </p>
+                  <textarea id="mm-domains-bulk-text" rows="8" style="width:100%;font-family:monospace;font-size:0.8rem;" placeholder="baksana.ink,smtp_sifresi,info,VIP&#10;vipdomain2.com,smtp_sifresi2"></textarea>
+                  <div class="form-row-4" style="margin-top:0.6rem;">
+                    <div>
+                      <div class="mm-label-row"><label>Isıtma grubu (varsayılan)</label></div>
+                      <select id="mm-bulk-cohort">
+                        <option value="new">Yeni (new)</option>
+                        <option value="legacy">Eski (legacy)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div class="mm-label-row"><label>Daily cap (varsayılan)</label></div>
+                      <input id="mm-bulk-cap" type="number" value="50">
+                    </div>
+                    <div>
+                      <div class="mm-label-row"><label>Warm status (varsayılan)</label></div>
+                      <select id="mm-bulk-warm"><option value="cold">cold</option><option value="warming">warming</option></select>
+                    </div>
+                    <div style="display:flex;align-items:flex-end;">
+                      <button type="button" class="btn btn-primary" id="mm-domains-bulk-submit">Hepsini ekle</button>
+                    </div>
+                  </div>
+                  <div id="mm-domains-bulk-results" style="margin-top:0.75rem;"></div>
+                </section>
                 <form id="mm-domain-form" class="form-row-4" style="margin-bottom:1rem;">
                   <div>
                     <div class="mm-label-row"><label>Domain</label><span class="mm-tip" tabindex="0" data-tip="DirectMail’de doğrulanmış gönderen domain">?</span></div>
