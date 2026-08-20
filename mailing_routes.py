@@ -2784,6 +2784,12 @@ def create_mailing_blueprint(permission_required):
             except Exception as q_exc:
                 print(f"⚠️  account quota defaults: {q_exc}")
             try:
+                from mail_credit import ensure_credit_defaults
+                ensure_credit_defaults(conn)
+                conn.commit()
+            except Exception as c_exc:
+                print(f"⚠️  mail credit defaults: {c_exc}")
+            try:
                 from mail_template_wipe import ensure_templates_wiped_once
                 wiped = ensure_templates_wiped_once(conn)
                 if wiped:
@@ -5083,6 +5089,18 @@ def create_mailing_blueprint(permission_required):
             except Exception as q_exc:
                 print(f"⚠️  queue quota check: {q_exc}")
 
+            # Prepaid mail kredisi (global + firma tahsisi)
+            try:
+                from mail_credit import can_consume
+                tid = camp.get("tenant_id")
+                ok_c, c_err, c_snap = can_consume(
+                    conn, int(pending), tenant_id=int(tid) if tid else None
+                )
+                if not ok_c:
+                    return jsonify({"error": c_err, "credit": c_snap}), 400
+            except Exception as c_exc:
+                print(f"⚠️  queue credit check: {c_exc}")
+
             scheduled_at = camp.get("scheduled_at")
             start_immediately = force_now
             if not start_immediately and scheduled_at:
@@ -5213,6 +5231,16 @@ def create_mailing_blueprint(permission_required):
                     return jsonify({"error": q_err, "quota": q_snap}), 400
             except Exception as q_exc:
                 print(f"⚠️  resume quota check: {q_exc}")
+            try:
+                from mail_credit import can_consume
+                tid = camp.get("tenant_id") if isinstance(camp, dict) else camp["tenant_id"] if "tenant_id" in camp.keys() else None
+                ok_c, c_err, c_snap = can_consume(
+                    conn, int(pending), tenant_id=int(tid) if tid else None
+                )
+                if not ok_c:
+                    return jsonify({"error": c_err, "credit": c_snap}), 400
+            except Exception as c_exc:
+                print(f"⚠️  resume credit check: {c_exc}")
             execute(
                 conn,
                 "UPDATE mail_campaigns SET status = 'queued', updated_at = ?, error = '' WHERE id = ?",
@@ -5228,7 +5256,7 @@ def create_mailing_blueprint(permission_required):
         from mail_campaign_worker import start_campaign_send
         now = iso(utcnow())
         with closing(get_db()) as conn:
-            camp = fetchone(conn, "SELECT status FROM mail_campaigns WHERE id = ?", (campaign_id,))
+            camp = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (campaign_id,))
             if not camp:
                 return jsonify({"error": "Kampanya bulunamadı."}), 404
             if camp["status"] not in ("done", "error", "cancelled", "paused"):
@@ -5245,6 +5273,16 @@ def create_mailing_blueprint(permission_required):
                     return jsonify({"error": q_err, "quota": q_snap}), 400
             except Exception as q_exc:
                 print(f"⚠️  retry-failed quota check: {q_exc}")
+            try:
+                from mail_credit import can_consume
+                tid = camp.get("tenant_id")
+                ok_c, c_err, c_snap = can_consume(
+                    conn, int(failed_n), tenant_id=int(tid) if tid else None
+                )
+                if not ok_c:
+                    return jsonify({"error": c_err, "credit": c_snap}), 400
+            except Exception as c_exc:
+                print(f"⚠️  retry-failed credit check: {c_exc}")
             n = execute(
                 conn,
                 """
@@ -5594,12 +5632,22 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/account-quota", methods=["GET"])
     @mail_perm(*MAIL_CAMP)
     def account_quota_get():
-        """Alibaba Main Account günlük kota — kampanya sayacı."""
+        """Alibaba günlük kota + prepaid mail kredisi."""
         from mail_account_quota import quota_snapshot
+        from mail_credit import credit_snapshot, tenant_credit_snapshot
 
         with closing(get_db()) as conn:
             snap = quota_snapshot(conn)
-        return jsonify({"quota": snap})
+            credit = credit_snapshot(conn)
+            tenant_credit = None
+            try:
+                from mail_tenant import current_tenant_id
+                tid = current_tenant_id()
+                if tid:
+                    tenant_credit = tenant_credit_snapshot(conn, int(tid))
+            except Exception:
+                pass
+        return jsonify({"quota": snap, "credit": credit, "tenant_credit": tenant_credit})
 
     @bp.route("/domains/<int:domain_id>", methods=["PATCH"])
     @mail_perm(*MAIL_SET)

@@ -2667,9 +2667,52 @@
     window._mailAccountQuota = q;
   }
 
+  function renderMailCredit(credit, tenantCredit) {
+    var rem = document.getElementById("mail-credit-remaining");
+    var used = document.getElementById("mail-credit-used");
+    var ten = document.getElementById("mail-credit-tenant");
+    var fill = document.getElementById("mail-credit-fill");
+    var hint = document.getElementById("mail-credit-hint");
+    if (!credit) return;
+    if (rem) rem.textContent = "Kredi kalan " + fmtNum(credit.remaining);
+    if (used) used.textContent = "paket " + fmtNum(credit.used) + " / " + fmtNum(credit.total);
+    if (ten) {
+      if (tenantCredit && tenantCredit.allocated > 0) {
+        ten.textContent = "firma kalan " + fmtNum(tenantCredit.remaining) +
+          " / " + fmtNum(tenantCredit.allocated);
+      } else if (tenantCredit && tenantCredit.requires_allocation) {
+        ten.textContent = "firma: tahsis yok";
+      } else {
+        ten.textContent = "tahsis " + fmtNum(credit.allocated_to_tenants) +
+          " · serbest " + fmtNum(credit.unallocated);
+      }
+    }
+    if (fill) {
+      var pct = Math.min(100, Math.max(0, Number(credit.pct_used) || 0));
+      fill.style.width = pct + "%";
+      fill.classList.toggle("is-warn", pct >= 70 && pct < 90);
+      fill.classList.toggle("is-danger", pct >= 90 || !!credit.exhausted ||
+        !!(tenantCredit && tenantCredit.exhausted));
+    }
+    if (hint) {
+      if (tenantCredit && tenantCredit.requires_allocation) {
+        hint.textContent = "Bu firmaya kredi tahsis edilmedi — Platform’dan bölüştür.";
+      } else if (tenantCredit && tenantCredit.exhausted) {
+        hint.textContent = "Firma kredisi bitti — gönderim başlamaz.";
+      } else if (credit.exhausted) {
+        hint.textContent = "Paket kredisi bitti — top-up yap.";
+      } else {
+        hint.textContent = "Prepaid mail kredisi; her başarılı gönderimde düşer.";
+      }
+    }
+    window._mailCredit = credit;
+    window._mailTenantCredit = tenantCredit || null;
+  }
+
   function refreshAccountQuota() {
     return mailApi("/api/mailing/account-quota").then(function (res) {
       if (res.ok && res.data.quota) renderAccountQuota(res.data.quota);
+      if (res.ok) renderMailCredit(res.data.credit, res.data.tenant_credit);
     }).catch(function () {});
   }
 

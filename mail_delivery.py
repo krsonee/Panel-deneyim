@@ -318,6 +318,37 @@ def deliver_mail(
     except Exception as exc:
         print(f"⚠️  account quota check: {exc}")
 
+    # Prepaid mail kredisi (global + tenant)
+    credit_tenant_id = None
+    try:
+        if isinstance(contact, dict) and contact.get("tenant_id"):
+            credit_tenant_id = int(contact["tenant_id"])
+        elif campaign_id:
+            crow = fetchone(conn, "SELECT tenant_id FROM mail_campaigns WHERE id = ?", (campaign_id,))
+            if crow and crow.get("tenant_id"):
+                credit_tenant_id = int(crow["tenant_id"])
+        from mail_credit import credit_blocks_send
+        c_blocked, c_reason = credit_blocks_send(conn, tenant_id=credit_tenant_id)
+        if c_blocked:
+            send_id = insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_sends (
+                    channel, campaign_id, contact_id, template_id, domain_id,
+                    to_email, to_phone, subject, status, provider_msg_id, error,
+                    opened_at, clicked_at, sent_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    channel, campaign_id, contact_id, template_id, domain_id,
+                    to_email, to_phone or "", subject or "", "skipped", "",
+                    (c_reason or "Mail kredisi")[:200], None, None, None, now,
+                ),
+            )
+            return send_id, "skipped", c_reason
+    except Exception as exc:
+        print(f"⚠️  mail credit check: {exc}")
+
     send_id = insert_returning_id(
         conn,
         """
@@ -423,6 +454,11 @@ def deliver_mail(
             tag_send_outcome(conn, contact_id, "simulated", now)
         except Exception:
             pass
+        try:
+            from mail_credit import consume_credit
+            consume_credit(conn, tenant_id=credit_tenant_id, n=1)
+        except Exception as cexc:
+            print(f"⚠️  credit consume: {cexc}")
         return send_id, "simulated", ""
 
     host = (get_mail_setting(conn, "smtp_host", "") or "").strip()
@@ -562,6 +598,11 @@ def deliver_mail(
                 tag_send_outcome(conn, contact_id, "sent", now)
             except Exception:
                 pass
+            try:
+                from mail_credit import consume_credit
+                consume_credit(conn, tenant_id=credit_tenant_id, n=1)
+            except Exception as cexc:
+                print(f"⚠️  credit consume: {cexc}")
             return send_id, "sent", ""
         except Exception as exc:
             last_err = str(exc).strip()[:400] or "SMTP gönderim hatası"

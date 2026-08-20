@@ -594,6 +594,13 @@ def tenant_send_allowed(conn, tenant_id: int) -> tuple[bool, str]:
     cap = int(row["max_sends_day"] or 0)
     if cap and used >= cap:
         return False, f"Günlük gönderim kotası doldu ({cap})."
+    try:
+        from mail_credit import can_consume
+        ok_c, c_err, _ = can_consume(conn, 1, tenant_id=int(tenant_id))
+        if not ok_c:
+            return False, c_err
+    except Exception:
+        pass
     return True, ""
 
 

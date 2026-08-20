@@ -21,6 +21,10 @@
       .replace(/"/g, "&quot;");
   }
 
+  function fmtCr(n) {
+    try { return Number(n || 0).toLocaleString("tr-TR"); } catch (e) { return String(n); }
+  }
+
   function mmIcon(name) {
     var p = {
       edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
@@ -232,6 +236,8 @@
       document.getElementById("mm-t-name").value = t.name || "";
       if (slug) { slug.value = t.slug || ""; slug.readOnly = true; }
       document.getElementById("mm-t-cap").value = t.max_sends_day != null ? t.max_sends_day : 50000;
+      var crEl = document.getElementById("mm-t-credit");
+      if (crEl) crEl.value = t.credit_allocated != null ? t.credit_allocated : 0;
       if (panelChk) panelChk.checked = true;
       if (loginWrap) loginWrap.style.display = "none";
       if (user) { user.value = ""; user.required = false; user.placeholder = "değiştirme"; }
@@ -258,7 +264,7 @@
     return api("/api/platform/tenants").then(function (res) {
       var tbody = document.getElementById("mm-tenants-table");
       if (!res.ok) {
-        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty">Yüklenemedi</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty">Yüklenemedi</td></tr>';
         return;
       }
       var rows = res.data.tenants || [];
@@ -268,7 +274,7 @@
       if (!tbody) return;
       var visible = rows.filter(function (t) { return t.status !== "deleted"; });
       if (!visible.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty">Tenant yok</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">Tenant yok</td></tr>';
         return;
       }
       tbody.innerHTML = visible.map(function (t) {
@@ -276,12 +282,19 @@
         var panelTag = Number(t.user_count || 0) > 0
           ? ' <span class="mm-badge mm-badge-ok">panel</span>'
           : ' <span class="mm-badge mm-badge-info">operatör</span>';
+        var crAlloc = Number(t.credit_allocated || 0);
+        var crUsed = Number(t.credit_used || 0);
+        var crRem = crAlloc > 0 ? (crAlloc - crUsed) : null;
+        var crCell = crAlloc > 0
+          ? (fmtCr(crRem) + " / " + fmtCr(crAlloc))
+          : '<span class="muted">tahsis yok</span>';
         return "<tr>" +
           "<td>" + esc(t.id) + "</td>" +
           "<td>" + esc(t.slug) + "</td>" +
           "<td>" + esc(t.name) + panelTag + "</td>" +
           "<td>" + mmStatusBadge(t.status) + "</td>" +
           "<td>" + esc(t.max_sends_day) + "</td>" +
+          "<td>" + crCell + "</td>" +
           "<td>" + esc(t.domain_count) + "</td>" +
           '<td class="mm-actions-cell">' +
           mmIconBtn("mm-activity-tenant", "Aktivite / ne yaptılar", "eye", 'data-id="' + esc(t.id) + '"') +
@@ -332,6 +345,60 @@
   function refreshAccountQuota() {
     return api("/api/platform/account-quota").then(function (res) {
       if (res.ok && res.data.quota) renderAccountQuota(res.data.quota);
+    }).catch(function () {});
+  }
+
+  function renderMailCredit(credit, tenants) {
+    if (!credit) return;
+    var rem = document.getElementById("mm-cr-remaining");
+    var usedLbl = document.getElementById("mm-cr-used-lbl");
+    var alloc = document.getElementById("mm-cr-alloc");
+    var fill = document.getElementById("mm-cr-fill");
+    var hint = document.getElementById("mm-cr-hint");
+    var totalInp = document.getElementById("mm-cr-total");
+    var usedInp = document.getElementById("mm-cr-used");
+    if (rem) rem.textContent = "Kalan " + fmtCr(credit.remaining);
+    if (usedLbl) usedLbl.textContent = "kullanılan " + fmtCr(credit.used) + " / " + fmtCr(credit.total);
+    if (alloc) {
+      alloc.textContent = "tahsis " + fmtCr(credit.allocated_to_tenants) +
+        " · serbest " + fmtCr(credit.unallocated);
+    }
+    if (fill) {
+      var pct = Math.min(100, Math.max(0, Number(credit.pct_used) || 0));
+      fill.style.width = pct + "%";
+      fill.classList.toggle("is-warn", pct >= 70 && pct < 90);
+      fill.classList.toggle("is-danger", pct >= 90 || !!credit.exhausted);
+    }
+    if (totalInp && document.activeElement !== totalInp) totalInp.value = credit.total;
+    if (usedInp && document.activeElement !== usedInp) usedInp.value = credit.used;
+    if (hint) {
+      hint.textContent = credit.exhausted
+        ? "Paket bitti — top-up yap."
+        : "Firma oluştururken kredi tahsis et; tahsis edilmeyen firma gönderemez.";
+    }
+    var tbody = document.getElementById("mm-cr-tenants");
+    if (tbody) {
+      var rows = tenants || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">Firma yok</td></tr>';
+      } else {
+        tbody.innerHTML = rows.map(function (t) {
+          var remT = t.credit_remaining == null ? "—" : fmtCr(t.credit_remaining);
+          return "<tr>" +
+            "<td>" + esc(t.slug || t.name) + "</td>" +
+            "<td>" + fmtCr(t.credit_allocated) + "</td>" +
+            "<td>" + fmtCr(t.credit_used) + "</td>" +
+            "<td>" + remT + "</td>" +
+            '<td><button type="button" class="btn btn-sm btn-secondary mm-cr-alloc-btn" data-id="' +
+            esc(t.id) + '" data-alloc="' + esc(t.credit_allocated) + '">Tahsis</button></td></tr>';
+        }).join("");
+      }
+    }
+  }
+
+  function refreshMailCredit() {
+    return api("/api/platform/mail-credit").then(function (res) {
+      if (res.ok) renderMailCredit(res.data.credit, res.data.tenants);
     }).catch(function () {});
   }
 
@@ -1037,6 +1104,28 @@
       document.getElementById("mm-tenant-activity-close")?.addEventListener("click", hideTenantActivity);
       document.getElementById("mm-tenants-refresh")?.addEventListener("click", refreshTenants);
       document.getElementById("mm-aq-refresh")?.addEventListener("click", refreshAccountQuota);
+      document.getElementById("mm-cr-refresh")?.addEventListener("click", refreshMailCredit);
+      document.getElementById("mm-cr-form")?.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var hint = document.getElementById("mm-cr-hint");
+        var body = {
+          total: Number(document.getElementById("mm-cr-total").value) || 0,
+          used: Number(document.getElementById("mm-cr-used").value) || 0
+        };
+        var top = Number(document.getElementById("mm-cr-topup").value) || 0;
+        if (top > 0) body.top_up = top;
+        api("/api/platform/mail-credit", { method: "PATCH", body: body }).then(function (res) {
+          if (!res.ok) {
+            if (hint) hint.textContent = (res.data && res.data.error) || "Kaydedilemedi";
+            return;
+          }
+          renderMailCredit(res.data.credit, res.data.tenants);
+          var topEl = document.getElementById("mm-cr-topup");
+          if (topEl) topEl.value = "0";
+          if (hint) hint.textContent = "Kredi paketi kaydedildi · kalan " +
+            fmtCr((res.data.credit && res.data.credit.remaining) || 0);
+        });
+      });
       document.getElementById("mm-aq-form")?.addEventListener("submit", function (e) {
         e.preventDefault();
         var hint = document.getElementById("mm-aq-hint");
@@ -1071,7 +1160,8 @@
             method: "PATCH",
             body: {
               name: document.getElementById("mm-t-name").value.trim(),
-              max_sends_day: Number(document.getElementById("mm-t-cap").value) || 50000
+              max_sends_day: Number(document.getElementById("mm-t-cap").value) || 50000,
+              credit_allocated: Number((document.getElementById("mm-t-credit") || {}).value) || 0
             }
           }).then(function (res) {
             if (!res.ok) {
@@ -1081,6 +1171,7 @@
             if (hint) hint.textContent = "Firma güncellendi";
             setTenantFormMode(null);
             refreshTenants();
+            refreshMailCredit();
           });
           return;
         }
@@ -1093,7 +1184,8 @@
             owner_username: document.getElementById("mm-t-user").value.trim() || "admin",
             owner_password: wantPanel ? document.getElementById("mm-t-pass").value : "",
             create_panel_login: wantPanel,
-            max_sends_day: Number(document.getElementById("mm-t-cap").value) || 50000
+            max_sends_day: Number(document.getElementById("mm-t-cap").value) || 50000,
+            credit_allocated: Number((document.getElementById("mm-t-credit") || {}).value) || 0
           }
         }).then(function (res) {
           if (!res.ok) {
@@ -1107,6 +1199,7 @@
           }
           setTenantFormMode(null);
           refreshTenants();
+          refreshMailCredit();
         });
       });
       document.getElementById("mm-domain-form")?.addEventListener("submit", saveDomainForm);
@@ -1227,6 +1320,25 @@
             Number(deallocOne.getAttribute("data-tenant-id")),
             false
           );
+          return;
+        }
+        var crAllocBtn = e.target.closest(".mm-cr-alloc-btn");
+        if (crAllocBtn) {
+          var tidCr = Number(crAllocBtn.getAttribute("data-id"));
+          var cur = crAllocBtn.getAttribute("data-alloc") || "0";
+          var val = prompt("Bu firmaya tahsis edilecek kredi:", cur);
+          if (val === null) return;
+          api("/api/platform/mail-credit", {
+            method: "PATCH",
+            body: { tenant_id: tidCr, credit_allocated: Number(val) || 0 }
+          }).then(function (res) {
+            if (!res.ok) {
+              alert((res.data && res.data.error) || "Tahsis başarısız");
+              return;
+            }
+            renderMailCredit(res.data.credit, res.data.tenants);
+            refreshTenants();
+          });
         }
       });
       bindWarmupProgramUi();
@@ -1237,6 +1349,7 @@
       return Promise.all([
         refreshTenants(),
         refreshAccountQuota(),
+        refreshMailCredit(),
         refreshDomains(),
         refreshWarmupProgram(),
         refreshWeeklyMaintenance()

@@ -257,13 +257,16 @@ def platform_create_tenant():
                 plan=(data.get("plan") or "starter").strip(),
                 max_contacts=int(data.get("max_contacts") or 500000),
                 max_sends_day=int(data.get("max_sends_day") or 50000),
-                max_domains=int(data.get("max_domains") or 3),
+                max_domains=int(data.get("max_domains") or 50),
                 notes=(data.get("notes") or "").strip(),
             )
             login_hint = None
             if create_login:
                 create_tenant_user(conn, tid, owner_user, owner_pass, role="owner", display_name=name)
                 login_hint = f"{slug}/{owner_user}"
+            if "credit_allocated" in data:
+                from mail_credit import set_tenant_credit_allocated
+                set_tenant_credit_allocated(conn, tid, int(data.get("credit_allocated") or 0))
             conn.commit()
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -362,6 +365,12 @@ def platform_patch_tenant(tenant_id):
                 tenant_id,
             ),
         )
+        if "credit_allocated" in data:
+            from mail_credit import set_tenant_credit_allocated
+            try:
+                set_tenant_credit_allocated(conn, tenant_id, int(data.get("credit_allocated") or 0))
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
         conn.commit()
         row = fetchone(conn, "SELECT * FROM mail_tenants WHERE id = ?", (tenant_id,))
     return jsonify({"tenant": dict(row)})
@@ -394,27 +403,79 @@ def platform_list_domains():
     from mail_tenant import enrich_domain_public, heal_ready_domains
 
     with closing(get_db()) as conn:
-        try:
-            heal_ready_domains(conn)
-        except Exception:
-            pass
+        # Heal her listede değil — ~50 domain’de gereksiz UPDATE yükü olmasın
+        if (request.args.get("heal") or "").strip() in ("1", "true", "yes"):
+            try:
+                heal_ready_domains(conn)
+                conn.commit()
+            except Exception:
+                pass
         rows = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC") or []
+        alloc_rows = fetchall(
+            conn,
+            """
+            SELECT a.domain_id, a.tenant_id, a.exclusive, t.slug, t.name
+            FROM mail_domain_allocations a
+            JOIN mail_tenants t ON t.id = a.tenant_id
+            ORDER BY a.domain_id ASC, t.slug ASC
+            """,
+        ) or []
+        by_domain = {}
+        for a in alloc_rows:
+            did = int(a["domain_id"])
+            by_domain.setdefault(did, []).append(dict(a))
         out = []
         for r in rows:
             d = enrich_domain_public(r)
-            allocs = fetchall(
-                conn,
-                """
-                SELECT a.tenant_id, a.exclusive, t.slug, t.name
-                FROM mail_domain_allocations a
-                JOIN mail_tenants t ON t.id = a.tenant_id
-                WHERE a.domain_id = ?
-                """,
-                (d["id"],),
-            ) or []
-            d["allocations"] = [dict(a) for a in allocs]
+            d["allocations"] = by_domain.get(int(d["id"]), [])
             out.append(d)
-    return jsonify({"domains": out})
+    return jsonify({"domains": out, "count": len(out)})
+
+
+@app.get("/api/platform/mail-credit")
+@require_superadmin
+def platform_mail_credit_get():
+    from mail_credit import credit_snapshot, list_tenant_credits
+
+    with closing(get_db()) as conn:
+        snap = credit_snapshot(conn)
+        tenants = list_tenant_credits(conn)
+    return jsonify({"credit": snap, "tenants": tenants})
+
+
+@app.patch("/api/platform/mail-credit")
+@require_superadmin
+def platform_mail_credit_patch():
+    from mail_credit import (
+        credit_snapshot,
+        list_tenant_credits,
+        set_credit_total,
+        set_credit_used,
+        set_tenant_credit_allocated,
+        top_up_credits,
+    )
+
+    data = request.get_json(silent=True) or {}
+    with closing(get_db()) as conn:
+        try:
+            if "top_up" in data and data.get("top_up") is not None:
+                top_up_credits(conn, int(data.get("top_up") or 0))
+            if "total" in data and data.get("total") is not None:
+                set_credit_total(conn, int(data.get("total")))
+            if "used" in data and data.get("used") is not None:
+                set_credit_used(conn, int(data.get("used")))
+            if "tenant_id" in data and "credit_allocated" in data:
+                set_tenant_credit_allocated(
+                    conn, int(data["tenant_id"]), int(data.get("credit_allocated") or 0)
+                )
+            conn.commit()
+            snap = credit_snapshot(conn)
+            tenants = list_tenant_credits(conn)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "credit": snap, "tenants": tenants})
 
 
 @app.post("/api/platform/domains")
@@ -724,16 +785,19 @@ def platform_warmup_program_realign():
 @require_superadmin
 def platform_account_quota_get():
     from mail_account_quota import quota_snapshot
+    from mail_credit import credit_snapshot
 
     with closing(get_db()) as conn:
         snap = quota_snapshot(conn)
-    return jsonify({"quota": snap})
+        credit = credit_snapshot(conn)
+    return jsonify({"quota": snap, "credit": credit})
 
 
 @app.patch("/api/platform/account-quota")
 @require_superadmin
 def platform_account_quota_patch():
     from mail_account_quota import quota_snapshot, set_quota_limit, set_quota_tz
+    from mail_credit import credit_snapshot
 
     data = request.get_json(silent=True) or {}
     with closing(get_db()) as conn:
@@ -744,11 +808,12 @@ def platform_account_quota_patch():
                 set_quota_tz(conn, str(data.get("tz")))
             conn.commit()
             snap = quota_snapshot(conn)
+            credit = credit_snapshot(conn)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
-    return jsonify({"ok": True, "quota": snap})
+    return jsonify({"ok": True, "quota": snap, "credit": credit})
 
 
 @app.get("/api/platform/weekly-maintenance")

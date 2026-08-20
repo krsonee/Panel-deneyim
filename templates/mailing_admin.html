@@ -177,6 +177,50 @@
                 <p class="hint" id="mm-aq-hint" style="margin:0.5rem 0 0;">Limit Alibaba’daki hesap kotasıyla eşleşmeli. Panel kalanı mail_sends üzerinden sayar.</p>
               </div>
             </section>
+
+            <section class="card" style="margin-bottom:1rem;" id="mm-mail-credit-card">
+              <div class="card-head">
+                <span class="mm-label-row" style="margin:0;">
+                  Mail kredi paketi (Alibaba prepaid)
+                  <span class="mm-tip" tabindex="0" data-tip="Satın aldığın paket (örn. 500.000). Her başarılı gönderimde düşer. Firmalara tahsis et.">?</span>
+                </span>
+                <button type="button" class="btn btn-sm btn-secondary" id="mm-cr-refresh">Yenile</button>
+              </div>
+              <div class="card-body">
+                <div class="mail-quota-meter" style="margin-bottom:0.75rem;">
+                  <div class="mail-quota-bar"><div class="mail-quota-fill" id="mm-cr-fill" style="width:0%"></div></div>
+                  <div class="mail-quota-meta">
+                    <strong id="mm-cr-remaining">—</strong>
+                    <span class="muted" id="mm-cr-used-lbl">kullanılan — / —</span>
+                    <span class="muted" id="mm-cr-alloc">tahsis — · serbest —</span>
+                  </div>
+                </div>
+                <form id="mm-cr-form" class="form-row-4" style="align-items:flex-end;">
+                  <div>
+                    <div class="mm-label-row"><label>Paket toplam</label><span class="mm-tip" tabindex="0" data-tip="Alibaba’da aldığın toplam kredi">?</span></div>
+                    <input id="mm-cr-total" type="number" min="0" step="1000" value="500000">
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>Kullanılan (manuel)</label><span class="mm-tip" tabindex="0" data-tip="Genelde otomatik; düzeltme için">?</span></div>
+                    <input id="mm-cr-used" type="number" min="0" step="1" value="0">
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>Top-up (+)</label><span class="mm-tip" tabindex="0" data-tip="Yeni paket alınca buraya ekle">?</span></div>
+                    <input id="mm-cr-topup" type="number" min="0" step="1000" value="0" placeholder="0">
+                  </div>
+                  <div style="display:flex;gap:0.4rem;">
+                    <button class="btn btn-primary" type="submit">Kaydet</button>
+                  </div>
+                </form>
+                <p class="hint" id="mm-cr-hint" style="margin:0.5rem 0 0;">Firma oluştururken / düzenlerken kredi tahsis et; tahsis edilmeyen firma gönderemez.</p>
+                <div class="table-wrap" style="margin-top:0.75rem;"><div class="table-scroll">
+                  <table>
+                    <thead><tr><th>Firma</th><th>Tahsis</th><th>Kullanılan</th><th>Kalan</th><th></th></tr></thead>
+                    <tbody id="mm-cr-tenants"><tr><td colspan="5" class="empty">—</td></tr></tbody>
+                  </table>
+                </div></div>
+              </div>
+            </section>
             <section class="card" style="margin-bottom:1rem;">
               <div class="card-head"><span>Yeni firma (tenant)</span></div>
               <div class="card-body">
@@ -211,6 +255,10 @@
                   <div>
                     <div class="mm-label-row"><label>Günlük send kotası</label><span class="mm-tip" tabindex="0" data-tip="Tenant günlük gönderim üst limiti">?</span></div>
                     <input id="mm-t-cap" type="number" value="50000">
+                  </div>
+                  <div>
+                    <div class="mm-label-row"><label>Mail kredi tahsisi</label><span class="mm-tip" tabindex="0" data-tip="Paketten bu firmaya ayrılan kredi (0 = gönderemez)">?</span></div>
+                    <input id="mm-t-credit" type="number" min="0" step="1000" value="0" placeholder="örn. 250000">
                   </div>
                   <input type="hidden" id="mm-t-edit-id" value="">
                   <div style="display:flex;align-items:flex-end;gap:0.4rem;flex-wrap:wrap;">
@@ -250,8 +298,8 @@
               <div class="card-head"><span>Firmalar</span><button type="button" class="btn btn-sm btn-secondary" id="mm-tenants-refresh">Yenile</button></div>
               <div class="table-wrap"><div class="table-scroll">
                 <table>
-                  <thead><tr><th>ID</th><th>Slug</th><th>Ad</th><th>Durum</th><th>Kota/gün</th><th>Domain</th><th></th></tr></thead>
-                  <tbody id="mm-tenants-table"><tr><td colspan="7" class="empty">—</td></tr></tbody>
+                  <thead><tr><th>ID</th><th>Slug</th><th>Ad</th><th>Durum</th><th>Kota/gün</th><th>Kredi</th><th>Domain</th><th></th></tr></thead>
+                  <tbody id="mm-tenants-table"><tr><td colspan="8" class="empty">—</td></tr></tbody>
                 </table>
               </div></div>
             </section>
@@ -433,8 +481,8 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260820mm26"></script>
-  <script src="/static/mailing_platform.js?v=20260820mm14"></script>
+  <script src="/static/mailing.js?v=20260820mm27"></script>
+  <script src="/static/mailing_platform.js?v=20260820mm15"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");
