@@ -182,8 +182,15 @@ def is_suppressed(conn, email):
     row = fetchone(conn, "SELECT email FROM mail_suppressions WHERE email = ?", (email,))
     if row:
         return True
-    c = fetchone(conn, "SELECT unsubscribed FROM mail_contacts WHERE LOWER(email) = ?", (email,))
-    if c and int(c["unsubscribed"] or 0):
+    # mail_contacts artık (tenant_id, email) bazında bağımsız satırlara sahip olabilir
+    # (aynı e-posta farklı firmalarda ayrı kontak olabilir) — herhangi bir firmanın
+    # kaydında unsubscribed=1 varsa gönderim tüm firmalar için engellenir (güvenli taraf).
+    c = fetchone(
+        conn,
+        "SELECT 1 FROM mail_contacts WHERE LOWER(email) = ? AND unsubscribed = 1 LIMIT 1",
+        (email,),
+    )
+    if c:
         return True
     return False
 

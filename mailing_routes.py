@@ -1616,19 +1616,28 @@ def _bulk_upsert_contacts(conn, batch, tag, now, tenant_id=None):
     tag_like_pattern = f'%"{tag}"%'
     emails = [email for email, _ in batch]
     placeholders = ",".join(["?"] * len(emails))
-    existing_rows = fetchall(
-        conn,
-        f"SELECT email FROM mail_contacts WHERE LOWER(email) IN ({placeholders})",
-        tuple(e.lower() for e in emails),
-    )
-    existing_set = {str(r["email"]).lower() for r in (existing_rows or [])}
-    inserted = sum(1 for email, _ in batch if email.lower() not in existing_set)
-    updated = len(batch) - inserted
     cols = _table_columns(conn, "mail_contacts") or set()
     has_tenant = "tenant_id" in cols
     tid = int(tenant_id) if tenant_id else None
     if has_tenant and not tid:
         tid = 1
+    # Mevcut/yeni sayımı da tenant'a göre yapılmalı — email artık (tenant_id, email)
+    # bazında unique; başka firmanın kaydı burada "mevcut" sayılıp yanlış rapor vermesin.
+    if has_tenant:
+        existing_rows = fetchall(
+            conn,
+            f"SELECT email FROM mail_contacts WHERE LOWER(email) IN ({placeholders}) AND tenant_id = ?",
+            tuple(e.lower() for e in emails) + (tid,),
+        )
+    else:
+        existing_rows = fetchall(
+            conn,
+            f"SELECT email FROM mail_contacts WHERE LOWER(email) IN ({placeholders})",
+            tuple(e.lower() for e in emails),
+        )
+    existing_set = {str(r["email"]).lower() for r in (existing_rows or [])}
+    inserted = sum(1 for email, _ in batch if email.lower() not in existing_set)
+    updated = len(batch) - inserted
     values_sql = []
     params = []
     if has_tenant:
@@ -1639,7 +1648,7 @@ def _bulk_upsert_contacts(conn, batch, tag, now, tenant_id=None):
             INSERT INTO mail_contacts
             (email, name, tags, source, unsubscribed, notes, created_at, updated_at, tenant_id)
             VALUES {",".join(values_sql)}
-            ON CONFLICT (email) DO UPDATE SET
+            ON CONFLICT (tenant_id, email) DO UPDATE SET
                 name = CASE WHEN mail_contacts.name = '' THEN EXCLUDED.name ELSE mail_contacts.name END,
                 tags = CASE
                     WHEN ? = '' THEN mail_contacts.tags
@@ -1647,7 +1656,6 @@ def _bulk_upsert_contacts(conn, batch, tag, now, tenant_id=None):
                     WHEN mail_contacts.tags = '[]' THEN ?
                     ELSE substr(mail_contacts.tags, 1, length(mail_contacts.tags) - 1) || ',"' || ? || '"]'
                 END,
-                tenant_id = COALESCE(mail_contacts.tenant_id, EXCLUDED.tenant_id),
                 updated_at = EXCLUDED.updated_at
         """
     else:
@@ -3740,11 +3748,21 @@ def create_mailing_blueprint(permission_required):
             email = (data.get("email") if "email" in data else row["email"] or "").strip().lower()
             if not email or not EMAIL_RE.match(email):
                 return jsonify({"error": "Geçerli bir e-posta girin."}), 400
-            other = fetchone(
-                conn,
-                "SELECT id FROM mail_contacts WHERE LOWER(email) = ? AND id != ?",
-                (email, contact_id),
-            )
+            # (tenant_id, email) composite unique — çakışma kontrolü de aynı tenant
+            # kapsamında yapılmalı, yoksa başka firmanın kaydı burada engel olur.
+            row_tid = row.get("tenant_id") if isinstance(row, dict) else None
+            if row_tid:
+                other = fetchone(
+                    conn,
+                    "SELECT id FROM mail_contacts WHERE LOWER(email) = ? AND id != ? AND tenant_id = ?",
+                    (email, contact_id, int(row_tid)),
+                )
+            else:
+                other = fetchone(
+                    conn,
+                    "SELECT id FROM mail_contacts WHERE LOWER(email) = ? AND id != ?",
+                    (email, contact_id),
+                )
             if other:
                 return jsonify({"error": "Bu e-posta başka bir kontakta kayıtlı."}), 409
             tags = _tags_json(data.get("tags")) if "tags" in data else row["tags"]

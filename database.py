@@ -3387,12 +3387,36 @@ def ensure_mail_import_jobs_table(conn):
 
 def _dedupe_mail_contacts_by_email(conn):
     """Büyük ölçekli bulk upsert (ON CONFLICT) için email üzerinde UNIQUE
-    index gerekiyor — önce olası (nadir) mükerrer kayıtları birleştirir."""
-    dups = fetchall(conn, "SELECT email FROM mail_contacts GROUP BY email HAVING COUNT(*) > 1")
+    index gerekiyor — önce olası (nadir) mükerrer kayıtları birleştirir.
+
+    tenant_id varsa (tenant_id, email) bazında dedupe eder — farklı firmaların
+    aynı e-postaya sahip BAĞIMSIZ kayıtları asla birleştirilmez, sadece
+    gerçek mükerrerler (aynı tenant + aynı email) temizlenir."""
+    from database import _table_columns
+
+    cols = _table_columns(conn, "mail_contacts") or set()
+    has_tenant = "tenant_id" in cols
+    group_col = "tenant_id, email" if has_tenant else "email"
+    dups = fetchall(conn, f"SELECT {group_col} FROM mail_contacts GROUP BY {group_col} HAVING COUNT(*) > 1")
     for d in dups:
-        email = d["email"] if isinstance(d, dict) else d[0]
+        email = d["email"] if isinstance(d, dict) else d[-1]
+        tid = (d["tenant_id"] if isinstance(d, dict) else d[0]) if has_tenant else None
         try:
-            rows = fetchall(conn, "SELECT id, name, tags FROM mail_contacts WHERE email = ? ORDER BY id ASC", (email,))
+            if has_tenant:
+                if tid is None:
+                    rows = fetchall(
+                        conn,
+                        "SELECT id, name, tags FROM mail_contacts WHERE email = ? AND tenant_id IS NULL ORDER BY id ASC",
+                        (email,),
+                    )
+                else:
+                    rows = fetchall(
+                        conn,
+                        "SELECT id, name, tags FROM mail_contacts WHERE email = ? AND tenant_id = ? ORDER BY id ASC",
+                        (email, tid),
+                    )
+            else:
+                rows = fetchall(conn, "SELECT id, name, tags FROM mail_contacts WHERE email = ? ORDER BY id ASC", (email,))
             if len(rows) < 2:
                 continue
             keep_id = rows[0]["id"]
@@ -3428,9 +3452,33 @@ def _dedupe_mail_contacts_by_email(conn):
 
 
 def ensure_mail_contacts_unique_email(conn):
-    """Toplu import (ON CONFLICT (email) DO UPDATE) için gerekli unique index."""
+    """Toplu import (ON CONFLICT) ve elle e-posta ekleme için gerekli unique index.
+
+    tenant_id kolonu varsa (tenant_id, email) üzerinde COMPOSITE unique kurulur —
+    önceden email TEK BAŞINA global unique idi. Bu, Firma A'da zaten var olan bir
+    e-posta Firma B tarafında elle/CSV ile eklenmeye çalışıldığında
+    "duplicate key value violates unique constraint" hatasıyla kampanya/import'un
+    tamamen patlamasına sebep oluyordu (bkz. _ensure_contacts_from_emails,
+    _bulk_upsert_contacts_batch): tenant'a göre arama "bulunamadı" dönüyor, sonra
+    INSERT global constraint'e çarpıyordu. Composite ile her firma aynı e-posta
+    için kendi bağımsız satırına sahip olabilir; eski global index kaldırılır.
+    """
+    from database import _table_columns
+
+    cols = _table_columns(conn, "mail_contacts") or set()
+    has_tenant = "tenant_id" in cols
+    target_sql = (
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_contacts_tenant_email_unique ON mail_contacts(tenant_id, email)"
+        if has_tenant
+        else "CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_contacts_email_unique ON mail_contacts(email)"
+    )
     try:
-        execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_contacts_email_unique ON mail_contacts(email)")
+        if has_tenant:
+            try:
+                execute(conn, "DROP INDEX IF EXISTS idx_mail_contacts_email_unique")
+            except Exception:
+                pass
+        execute(conn, target_sql)
         conn.commit()
         return
     except Exception:
@@ -3440,7 +3488,7 @@ def ensure_mail_contacts_unique_email(conn):
             pass
     _dedupe_mail_contacts_by_email(conn)
     try:
-        execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_contacts_email_unique ON mail_contacts(email)")
+        execute(conn, target_sql)
         conn.commit()
     except Exception as exc:
         try:
