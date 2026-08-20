@@ -368,6 +368,75 @@ def ensure_tenant_schema(conn) -> None:
         )
         print(f"✉️  Mikromail superadmin bootstrap: {user}")
 
+    _strip_settings_permission_from_tenant_users(conn)
+    _repair_bizzo_template_ownership(conn)
+
+
+def _strip_settings_permission_from_tenant_users(conn) -> None:
+    """"mailing.settings" hiçbir firma kullanıcısında kalmasın — eski satırlar
+    (bu izin varsayılan listedeyken oluşturulmuş) burada temizlenir. Backend'de
+    ayrıca sert blok var, bu sadece UI/veri hijyeni içindir."""
+    import json
+
+    try:
+        rows = fetchall(
+            conn,
+            "SELECT id, permissions FROM mail_tenant_users WHERE permissions LIKE '%mailing.settings%'",
+        ) or []
+    except Exception:
+        return
+    for r in rows:
+        try:
+            perms = json.loads(r["permissions"] or "[]")
+        except Exception:
+            continue
+        if "mailing.settings" not in perms:
+            continue
+        cleaned = [p for p in perms if p != "mailing.settings"]
+        try:
+            execute(
+                conn,
+                "UPDATE mail_tenant_users SET permissions = ? WHERE id = ?",
+                (json.dumps(cleaned), int(r["id"])),
+            )
+        except Exception:
+            pass
+    try:
+        conn.commit()
+    except Exception:
+        pass
+
+
+def _repair_bizzo_template_ownership(conn) -> int:
+    """Bizzo marka şablonları (seed'de "Bizzo · " önekiyle oluşturulur) tenant_id
+    sütununun DEFAULT'u yüzünden yanlış tenant'ta (genelde makro) kalmış olabilir
+    — INSERT'lerde tenant_id hiç belirtilmiyordu. 'bizzo' slug'lı bir tenant
+    gerçekten varsa bu şablonları ona taşır; yoksa hiçbir şey yapmaz (dokunmadan
+    geçer, tek-tenant kurulumları bozmaz)."""
+    try:
+        bizzo = fetchone(conn, "SELECT id FROM mail_tenants WHERE slug = ?", ("bizzo",))
+        if not bizzo:
+            return 0
+        bizzo_id = int(bizzo["id"])
+        cols = _table_columns(conn, "mail_templates")
+        if "tenant_id" not in cols:
+            return 0
+        rows = fetchall(
+            conn,
+            "SELECT id FROM mail_templates WHERE name LIKE 'Bizzo%' AND (tenant_id IS NULL OR tenant_id != ?)",
+            (bizzo_id,),
+        ) or []
+        if not rows:
+            return 0
+        for r in rows:
+            execute(conn, "UPDATE mail_templates SET tenant_id = ? WHERE id = ?", (bizzo_id, int(r["id"])))
+        conn.commit()
+        print(f"✉️  Bizzo şablon sahipliği düzeltildi: {len(rows)} şablon → tenant_id={bizzo_id}")
+        return len(rows)
+    except Exception as exc:
+        print(f"⚠️  Bizzo template ownership repair: {exc}")
+        return 0
+
 
 _STALE_DOMAIN_NOTES = (
     "NS henüz yönlendirilmedi",
@@ -645,8 +714,11 @@ DEFAULT_TENANT_PERMISSIONS = [
     "module.mailing",
     "mailing.dashboard", "mailing.crm", "mailing.relations",
     "mailing.templates", "mailing.campaigns", "mailing.ivr",
-    "mailing.reports", "mailing.settings",
+    "mailing.reports",
 ]
+# NOT: "mailing.settings" bilerek YOK — Sistem Ayarları (SMTP/domain/scrub) SADECE
+# süper admin hesabında olur, firma kullanıcısına asla verilmez (backend'de de
+# _mail_permission_required ayrıca sert bloklar, bkz mailing_app.py).
 
 
 def create_tenant_user(conn, tenant_id: int, username: str, password: str, *,

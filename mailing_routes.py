@@ -818,9 +818,9 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
         raise ValueError("Kaynak ve hedef etiket aynı olamaz.")
 
     if to_tag:
-        _ensure_tag(conn, to_tag, now)
+        _ensure_tag(conn, to_tag, now, tenant_id=tenant_id)
     if from_tag:
-        _ensure_tag(conn, from_tag, now)
+        _ensure_tag(conn, from_tag, now, tenant_id=tenant_id)
 
     ids = []
     if contact_ids:
@@ -2003,7 +2003,7 @@ def _run_import_job(job_id, path, tag, tenant_id=None):
             pass
 
 
-def _ensure_tag(conn, name, now=None):
+def _ensure_tag(conn, name, now=None, tenant_id=None):
     name = (name or "").strip()
     if not name:
         return False
@@ -2011,13 +2011,43 @@ def _ensure_tag(conn, name, now=None):
         now = iso(utcnow())
     exists = scalar(conn, "SELECT COUNT(*) FROM mail_contact_tags WHERE name = ?", (name,))
     if not exists:
-        insert_returning_id(
-            conn,
-            "INSERT INTO mail_contact_tags (name, created_at) VALUES (?, ?)",
-            (name, now),
-        )
+        if tenant_id:
+            insert_returning_id(
+                conn,
+                "INSERT INTO mail_contact_tags (name, created_at, tenant_id) VALUES (?, ?, ?)",
+                (name, now, int(tenant_id)),
+            )
+        else:
+            insert_returning_id(
+                conn,
+                "INSERT INTO mail_contact_tags (name, created_at) VALUES (?, ?)",
+                (name, now),
+            )
         return True
     return False
+
+
+def _visible_tag_names(conn, tenant_id):
+    """Bu tenant'ın GERÇEKTEN görebilmesi gereken etiket adları: kendi
+    kontaklarında canlı kullanılanlar + kendi oluşturduğu (henüz 0 kontaklı)
+    etiketler. Registry (mail_contact_tags) global/paylaşımlı bir ad havuzu
+    olduğu için ham "SELECT * FROM mail_contact_tags" ASLA doğrudan tenant'a
+    dönülmemeli — başka firmanın etiket adları (örn. "Bizzo Test") sızar."""
+    if not tenant_id:
+        return None
+    names = set()
+    for c in _contact_tag_counts(conn, live=True, tenant_id=tenant_id):
+        n = (c.get("name") or "").strip()
+        if n:
+            names.add(n)
+    own_rows = fetchall(
+        conn, "SELECT name FROM mail_contact_tags WHERE tenant_id = ?", (int(tenant_id),)
+    ) or []
+    for r in own_rows:
+        n = (r["name"] or "").strip()
+        if n:
+            names.add(n)
+    return names
 
 
 def _tag_usage_count(conn, name, *, live=True, tenant_id=None):
@@ -2044,12 +2074,19 @@ def _tag_usage_count(conn, name, *, live=True, tenant_id=None):
         return 0
 
 
-def _delete_tag(conn, name, *, force=False):
-    """Etiketi registry'den sil. Kontak varsa force=True ile önce kontaktan kaldırır."""
+def _delete_tag(conn, name, *, force=False, tenant_id=None):
+    """Etiketi sil. Kontak varsa force=True ile önce kontaktan kaldırır.
+
+    tenant_id verilirse (firma oturumu) SADECE o firmanın kontaklarından
+    etiket kaldırılır — önceden bu filtre yoktu, bir firmanın "sil" işlemi
+    aynı ada sahip başka firmanın kontaklarını da etkileyebiliyordu (registry
+    global/paylaşımlı bir ad havuzu). Paylaşımlı registry satırı ise SADECE
+    hiçbir firma bu adı artık kullanmıyorsa (global kullanım=0) silinir.
+    """
     name = (name or "").strip()
     if not name:
         raise ValueError("Etiket adı gerekli.")
-    usage = _tag_usage_count(conn, name)
+    usage = _tag_usage_count(conn, name, live=True, tenant_id=tenant_id)
     stripped = 0
     if usage > 0:
         if not force:
@@ -2058,10 +2095,12 @@ def _delete_tag(conn, name, *, force=False):
                 "Önce taşı/kaldır veya zorla sil (kontaklardan da silinir)."
             )
         result = _bulk_retag_contacts(
-            conn, action="remove", from_tag=name, match_tag=name
+            conn, action="remove", from_tag=name, match_tag=name, tenant_id=tenant_id
         )
         stripped = int(result.get("updated") or 0)
-    execute(conn, "DELETE FROM mail_contact_tags WHERE name = ?", (name,))
+    global_usage = _tag_usage_count(conn, name, live=True, tenant_id=None)
+    if global_usage == 0:
+        execute(conn, "DELETE FROM mail_contact_tags WHERE name = ?", (name,))
     return {"deleted": name, "stripped": stripped, "had_contacts": usage}
 
 
@@ -3101,6 +3140,14 @@ def create_mailing_blueprint(permission_required):
                     print(f"✉️  seeded {nb} Bizzo mail templates")
             except Exception as seed_exc:
                 print(f"⚠️  mail template seed: {seed_exc}")
+            try:
+                # Seed'ler tenant_id belirtmeden INSERT eder (sütun DEFAULT'u
+                # yüzünden yanlış tenant'a düşebilir) — seed'ler bittikten
+                # SONRA burada, doğru sahibe (varsa) tekrar tayin ediyoruz.
+                from mail_tenant import _repair_bizzo_template_ownership
+                _repair_bizzo_template_ownership(conn)
+            except Exception as repair_exc:
+                print(f"⚠️  bizzo template ownership repair: {repair_exc}")
             try:
                 from mail_weekly_maintenance import ensure_sunday_maintenance
                 _wm = ensure_sunday_maintenance(conn)
@@ -4366,8 +4413,27 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/tags", methods=["GET"])
     @mail_perm(*MAIL_CRM)
     def list_tags():
+        from mail_tenant import current_tenant_id
+        _tid = current_tenant_id()
         with closing(get_db()) as conn:
-            rows = _rows(fetchall(conn, "SELECT * FROM mail_contact_tags ORDER BY name ASC"))
+            if _tid:
+                # Registry global/paylaşımlı — SADECE bu firmanın görebildiği
+                # (kendi kontaklarında kullanılan + kendi oluşturduğu) adlar
+                # döner. Önceden "SELECT * FROM mail_contact_tags" TÜM
+                # firmaların etiket adlarını (örn. başka firmanın "Bizzo Test"
+                # etiketi) her firmaya gösteriyordu.
+                names = _visible_tag_names(conn, _tid)
+                if names:
+                    placeholders = ",".join(["?"] * len(names))
+                    rows = _rows(fetchall(
+                        conn,
+                        f"SELECT * FROM mail_contact_tags WHERE name IN ({placeholders}) ORDER BY name ASC",
+                        tuple(names),
+                    ))
+                else:
+                    rows = []
+            else:
+                rows = _rows(fetchall(conn, "SELECT * FROM mail_contact_tags ORDER BY name ASC"))
         return jsonify({"tags": rows})
 
     # ── Gerçek CRM (ilişki) — Mail Rehber'den ayrı ─────────────
@@ -4690,13 +4756,15 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/tags", methods=["POST"])
     @mail_perm(*MAIL_CRM)
     def create_tag():
+        from mail_tenant import current_tenant_id
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "Etiket adı gerekli."}), 400
         now = iso(utcnow())
+        _tid = current_tenant_id()
         with closing(get_db()) as conn:
-            _ensure_tag(conn, name, now)
+            _ensure_tag(conn, name, now, tenant_id=_tid)
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_contact_tags WHERE name = ?", (name,))
         _invalidate_mail_stats_cache()
@@ -4705,15 +4773,20 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/tags/delete", methods=["POST"])
     @mail_perm(*MAIL_CRM)
     def delete_tag():
-        """Etiketi sil. force=true ise kontaktaki etiketleri de temizler."""
+        """Etiketi sil. force=true ise kontaktaki etiketleri de temizler.
+
+        Firma oturumunda SADECE kendi kontaklarından kaldırılır (bkz _delete_tag).
+        """
+        from mail_tenant import current_tenant_id
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
         force = bool(data.get("force"))
         if not name:
             return jsonify({"error": "Etiket adı gerekli."}), 400
+        _tid = current_tenant_id()
         try:
             with closing(get_db()) as conn:
-                result = _delete_tag(conn, name, force=force)
+                result = _delete_tag(conn, name, force=force, tenant_id=_tid)
                 conn.commit()
         except ValueError as exc:
             return jsonify({"error": str(exc), "needs_force": True}), 400
@@ -4729,9 +4802,13 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/tags/cleanup", methods=["POST"])
     @mail_perm(*MAIL_CRM)
     def cleanup_tags():
-        """0 kontak kalan tüm etiketleri sil."""
+        """0 kontak kalan etiketleri sil (firma oturumunda sadece kendi
+        görebildiği etiket adları arasından — başka firmanın kaydına dokunmaz)."""
+        from mail_tenant import current_tenant_id
+        _tid = current_tenant_id()
         with closing(get_db()) as conn:
-            deleted = _cleanup_empty_tags(conn)
+            names = sorted(_visible_tag_names(conn, _tid)) if _tid else None
+            deleted = _cleanup_empty_tags(conn, names=names)
             conn.commit()
         _invalidate_mail_stats_cache()
         return jsonify({
@@ -4805,7 +4882,15 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/templates/reseed", methods=["POST"])
     @mail_perm(*MAIL_TPL)
     def reseed_templates():
-        """Makrobet + Bizzo HTML şablonlarını günceller / eksikleri ekler."""
+        """Makrobet + Bizzo HTML şablonlarını günceller / eksikleri ekler.
+
+        Platform-genelinde tüm marka paketlerini yeniden yazan bir bakım
+        işlemi — tek bir firma tetikleyip başka firmanın şablonlarını
+        değiştiremesin diye SADECE süper admin çalıştırabilir.
+        """
+        from flask import session as _sess
+        if not _sess.get("mail_is_superadmin"):
+            return jsonify({"error": "Bu işlem yalnızca süper admin hesabı içindir."}), 403
         from mail_template_seeds import seed_makrobet_mail_templates
         from mail_template_seeds_bizzo import seed_bizzo_mail_templates
 
@@ -4831,7 +4916,15 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/templates/wipe-all", methods=["POST"])
     @mail_perm(*MAIL_TPL)
     def wipe_all_templates():
-        """Tüm şablonları siler; otomatik seed tekrar eklemez."""
+        """Tüm şablonları siler; otomatik seed tekrar eklemez.
+
+        Platformdaki TÜM firmaların şablonlarını siler (tenant filtresi yok) —
+        tek bir firma tetikleyip her firmayı etkilemesin diye SADECE süper
+        admin çalıştırabilir.
+        """
+        from flask import session as _sess
+        if not _sess.get("mail_is_superadmin"):
+            return jsonify({"error": "Bu işlem yalnızca süper admin hesabı içindir."}), 403
         from mail_template_wipe import wipe_all_mail_templates
 
         with closing(get_db()) as conn:
@@ -4845,6 +4938,9 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_TPL)
     def seed_davet_deneme_template():
         """Tek Makro davet şablonu: 3.000 TL deneme + %100 kayıp (wipe skip açıkken de)."""
+        from flask import session as _sess
+        if not _sess.get("mail_is_superadmin"):
+            return jsonify({"error": "Bu işlem yalnızca süper admin hesabı içindir."}), 403
         from mail_template_seeds_v2026 import seed_davet_deneme_kayip_template
 
         with closing(get_db()) as conn:
@@ -4862,6 +4958,9 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_TPL)
     def seed_steril_ayricaliklar_route():
         """Steril Makro özellik şablonu (Betroz tarzı kart grid, wipe skip açıkken de)."""
+        from flask import session as _sess
+        if not _sess.get("mail_is_superadmin"):
+            return jsonify({"error": "Bu işlem yalnızca süper admin hesabı içindir."}), 403
         from mail_template_seeds_v2026 import seed_steril_ayricaliklar_template
 
         with closing(get_db()) as conn:
@@ -4879,6 +4978,9 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_TPL)
     def seed_gorselsiz_ayricaliklar_route():
         """Görselsiz MakroVip davet (hero yok; wipe skip açıkken de)."""
+        from flask import session as _sess
+        if not _sess.get("mail_is_superadmin"):
+            return jsonify({"error": "Bu işlem yalnızca süper admin hesabı içindir."}), 403
         from mail_template_seeds_v2026 import seed_gorselsiz_ayricaliklar_template
 
         with closing(get_db()) as conn:
@@ -4896,6 +4998,9 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_TPL)
     def seed_bizzo_davet_1x_route():
         """Bizzo davet: 1x / sınırsız çekim (wipe skip açıkken de)."""
+        from flask import session as _sess
+        if not _sess.get("mail_is_superadmin"):
+            return jsonify({"error": "Bu işlem yalnızca süper admin hesabı içindir."}), 403
         from mail_template_seeds_bizzo import seed_bizzo_davet_1x_sinirsiz_template
 
         with closing(get_db()) as conn:

@@ -1184,6 +1184,11 @@ def _mail_permission_required(*required_perms):
         @wraps(view)
         @require_mail_login
         def wrapped(*args, **kwargs):
+            # "Sistem Ayarları" (mailing.settings) SADECE süper admin hesabında
+            # olur — firma kullanıcısının izin listesinde bu anahtar yanlışlıkla
+            # ya da manipülasyonla bulunsa bile burada kesin reddedilir.
+            if "mailing.settings" in required_perms and not session.get("mail_is_superadmin"):
+                return jsonify({"error": "Bu işlem yalnızca süper admin hesabı içindir."}), 403
             if session.get("mail_is_superadmin"):
                 tid = current_tenant_id()
                 is_read = request.method in ("GET", "HEAD", "OPTIONS")

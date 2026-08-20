@@ -115,6 +115,9 @@
     }
   }
 
+  // NOT: "mailing.settings" bilerek YOK — Sistem Ayarları SADECE süper admin
+  // hesabında olur, firma kullanıcısına buradan asla verilemez (backend'de de
+  // sert bloklu, bkz mailing_app.py _mail_permission_required).
   var MAILING_PERM_KEYS = [
     { key: "mailing.dashboard", label: "Mailing Özet" },
     { key: "mailing.crm", label: "Mail Rehber" },
@@ -122,8 +125,7 @@
     { key: "mailing.templates", label: "Mail Şablonları" },
     { key: "mailing.campaigns", label: "Kampanyalar" },
     { key: "mailing.ivr", label: "IVR Tetikleme" },
-    { key: "mailing.reports", label: "Mailing Raporları" },
-    { key: "mailing.settings", label: "Mailing Ayarları" }
+    { key: "mailing.reports", label: "Mailing Raporları" }
   ];
 
   var _activityTenantId = null;
