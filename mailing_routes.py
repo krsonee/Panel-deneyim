@@ -1380,43 +1380,49 @@ def _ensure_contacts_from_emails(conn, emails, now, tenant_id=None):
                 )
             continue
         if has_verify and has_tenant:
-            cid = insert_returning_id(
-                conn,
-                """
+            insert_sql = """
                 INSERT INTO mail_contacts
                 (email, name, tags, source, unsubscribed, notes, verify_status, created_at, updated_at, tenant_id)
                 VALUES (?, '', '[]', 'manual_campaign', 0, '', 'mx_ok', ?, ?, ?)
-                """,
-                (em, now, now, tid),
-            )
-        elif has_verify:
-            cid = insert_returning_id(
-                conn,
                 """
+            insert_params = (em, now, now, tid)
+        elif has_verify:
+            insert_sql = """
                 INSERT INTO mail_contacts
                 (email, name, tags, source, unsubscribed, notes, verify_status, created_at, updated_at)
                 VALUES (?, '', '[]', 'manual_campaign', 0, '', 'mx_ok', ?, ?)
-                """,
-                (em, now, now),
-            )
-        elif has_tenant:
-            cid = insert_returning_id(
-                conn,
                 """
+            insert_params = (em, now, now)
+        elif has_tenant:
+            insert_sql = """
                 INSERT INTO mail_contacts (email, name, tags, source, unsubscribed, notes, created_at, updated_at, tenant_id)
                 VALUES (?, '', '[]', 'manual_campaign', 0, '', ?, ?, ?)
-                """,
-                (em, now, now, tid),
-            )
-        else:
-            cid = insert_returning_id(
-                conn,
                 """
+            insert_params = (em, now, now, tid)
+        else:
+            insert_sql = """
                 INSERT INTO mail_contacts (email, name, tags, source, unsubscribed, notes, created_at, updated_at)
                 VALUES (?, '', '[]', 'manual_campaign', 0, '', ?, ?)
-                """,
-                (em, now, now),
-            )
+                """
+            insert_params = (em, now, now)
+        # SAVEPOINT: (tenant_id, email) tenant-scoped değil de eski global UNIQUE(email)
+        # hâlâ devredeyse (şema migration'ı henüz uygulanmadıysa) INSERT çakışabilir —
+        # bu durumda kampanya/işlem tamamen patlamasın, mevcut (başka firmanın) kaydını
+        # bul ve onu kullan. Savepoint sayesinde diğer e-postaların transaction'ı bozulmaz.
+        cid = None
+        sp = f"sp_ecfe_{len(ids)}"
+        try:
+            execute(conn, f"SAVEPOINT {sp}")
+            cid = insert_returning_id(conn, insert_sql, insert_params)
+            execute(conn, f"RELEASE SAVEPOINT {sp}")
+        except Exception as exc:
+            print(f"⚠️  _ensure_contacts_from_emails insert çakıştı ({em}): {exc}")
+            try:
+                execute(conn, f"ROLLBACK TO SAVEPOINT {sp}")
+            except Exception:
+                pass
+            fallback = fetchone(conn, "SELECT id FROM mail_contacts WHERE LOWER(email) = ? ORDER BY id ASC", (em,))
+            cid = int(fallback["id"]) if fallback else None
         if cid:
             ids.append(int(cid))
     return ids
@@ -3643,26 +3649,45 @@ def create_mailing_blueprint(permission_required):
             if existing:
                 return jsonify({"error": "Bu e-posta zaten kayıtlı.", "id": existing["id"]}), 409
             if _tid:
-                cid = insert_returning_id(
-                    conn,
-                    """
-                    INSERT INTO mail_contacts
-                    (email, phone, name, tags, source, unsubscribed, notes, created_at, updated_at, tenant_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        email,
-                        (data.get("phone") or "").strip(),
-                        (data.get("name") or "").strip(),
-                        tags,
-                        (data.get("source") or "manual").strip() or "manual",
-                        1 if data.get("unsubscribed") in (True, 1, "1", "true", "yes", "on") else 0,
-                        (data.get("notes") or "").strip(),
-                        now,
-                        now,
-                        int(_tid),
-                    ),
-                )
+                # SAVEPOINT: eski global UNIQUE(email) hâlâ devredeyse (şema migration'ı
+                # henüz uygulanmadıysa) başka firmanın kaydıyla çakışabilir — 500 patlatmak
+                # yerine net bir mesajla dön.
+                sp = "sp_create_contact"
+                try:
+                    execute(conn, f"SAVEPOINT {sp}")
+                    cid = insert_returning_id(
+                        conn,
+                        """
+                        INSERT INTO mail_contacts
+                        (email, phone, name, tags, source, unsubscribed, notes, created_at, updated_at, tenant_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            email,
+                            (data.get("phone") or "").strip(),
+                            (data.get("name") or "").strip(),
+                            tags,
+                            (data.get("source") or "manual").strip() or "manual",
+                            1 if data.get("unsubscribed") in (True, 1, "1", "true", "yes", "on") else 0,
+                            (data.get("notes") or "").strip(),
+                            now,
+                            now,
+                            int(_tid),
+                        ),
+                    )
+                    execute(conn, f"RELEASE SAVEPOINT {sp}")
+                except Exception as exc:
+                    print(f"⚠️  create_contact insert çakıştı ({email}): {exc}")
+                    try:
+                        execute(conn, f"ROLLBACK TO SAVEPOINT {sp}")
+                    except Exception:
+                        pass
+                    conn.commit()
+                    other = fetchone(conn, "SELECT id FROM mail_contacts WHERE LOWER(email) = ? LIMIT 1", (email,))
+                    return jsonify({
+                        "error": "Bu e-posta başka bir firmada kayıtlı, buraya eklenemedi.",
+                        "id": other["id"] if other else None,
+                    }), 409
                 conn.commit()
                 row = fetchone(conn, "SELECT * FROM mail_contacts WHERE id = ?", (cid,))
                 return jsonify({"contact": _contact_out(row)}), 201
@@ -3898,16 +3923,30 @@ def create_mailing_blueprint(permission_required):
                     )
                     updated += 1
                 elif has_tenant:
-                    insert_returning_id(
-                        conn,
-                        """
-                        INSERT INTO mail_contacts
-                        (email, phone, name, tags, source, unsubscribed, notes, created_at, updated_at, tenant_id)
-                        VALUES (?, ?, ?, ?, ?, 0, '', ?, ?, ?)
-                        """,
-                        (email, phone, name, _tags_json(tags), "csv", now, now, tid),
-                    )
-                    created += 1
+                    # SAVEPOINT: eski global UNIQUE(email) hâlâ devredeyse başka firmanın
+                    # kaydıyla çakışabilir — tüm CSV işlemi patlamasın, satırı güncelleme
+                    # olarak say.
+                    sp = "sp_csv_contact"
+                    try:
+                        execute(conn, f"SAVEPOINT {sp}")
+                        insert_returning_id(
+                            conn,
+                            """
+                            INSERT INTO mail_contacts
+                            (email, phone, name, tags, source, unsubscribed, notes, created_at, updated_at, tenant_id)
+                            VALUES (?, ?, ?, ?, ?, 0, '', ?, ?, ?)
+                            """,
+                            (email, phone, name, _tags_json(tags), "csv", now, now, tid),
+                        )
+                        execute(conn, f"RELEASE SAVEPOINT {sp}")
+                        created += 1
+                    except Exception as exc:
+                        print(f"⚠️  csv contact insert çakıştı ({email}): {exc}")
+                        try:
+                            execute(conn, f"ROLLBACK TO SAVEPOINT {sp}")
+                        except Exception:
+                            pass
+                        updated += 1
                 else:
                     insert_returning_id(
                         conn,
