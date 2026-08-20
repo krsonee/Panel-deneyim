@@ -605,6 +605,11 @@ def platform_create_domains_bulk():
 
     Beklenen gövde: {"text": "...", "defaults": {"warmup_cohort": "new", "daily_cap": 50, ...}}
     Her satır: domain[,smtp_password[,from_local[,from_name]]]
+    Ayraç virgül, noktalı virgül veya TAB olabilir — Excel/Google Sheets'ten
+    sütun sütun kopyala-yapıştır TAB ile ayrılmış gelir; önceden sadece virgül
+    destekleniyordu, bu yüzden sheet'ten yapıştırınca her satır tek (hatalı)
+    "domain" olarak parse ediliyor, kullanıcı elle virgülle tek tek yazmak
+    zorunda kalıyordu (bulk ekleme tek tek eklemekten farksız hale geliyordu).
     Bir satırın başarısız olması diğerlerini durdurmaz — her satır için ayrı
     sonuç (ok/error) döner, kullanıcı tam olarak hangi satırın neden
     başarısız olduğunu görebilsin (kısmi başarı listeye gömülü kalmasın).
@@ -619,11 +624,17 @@ def platform_create_domains_bulk():
     if len(lines) > 500:
         return jsonify({"error": "Tek seferde en fazla 500 satır."}), 400
 
+    def _split_line(ln: str) -> list:
+        for sep in ("\t", ";", ","):
+            if sep in ln:
+                return [p.strip() for p in ln.split(sep)]
+        return [ln.strip()]
+
     results = []
     created = 0
     with closing(get_db()) as conn:
         for idx, line in enumerate(lines, start=1):
-            parts = [p.strip() for p in line.split(",")]
+            parts = _split_line(line)
             domain_val = parts[0] if len(parts) > 0 else ""
             entry = {
                 "domain": domain_val,
