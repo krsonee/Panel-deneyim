@@ -293,6 +293,48 @@
                     <tbody id="mm-act-camps"><tr><td colspan="4" class="empty">—</td></tr></tbody>
                   </table>
                 </div></div>
+
+                <hr style="border-color:rgba(255,255,255,0.08);margin:1rem 0;">
+                <div style="border:1px solid var(--border);border-radius:10px;padding:0.85rem;margin-bottom:1rem;background:var(--surface-2);">
+                  <div class="mm-label-row" style="margin:0 0 0.4rem;">
+                    <label>Geçmiş veri gizleme (kesim noktası)</label>
+                    <span class="mm-tip" tabindex="0" data-tip="Bu tarihten ÖNCEKİ kampanya/rapor/gönderim/dashboard rakamları bu firmanın panel kullanıcılarına gösterilmez. Süper admin (sen) her zaman tam geçmişi görürsün. Boş = kısıtlama yok.">?</span>
+                  </div>
+                  <p class="hint" id="mm-cutoff-status" style="margin:0 0 0.6rem;">—</p>
+                  <div class="form-row-4" style="margin:0;align-items:flex-end;">
+                    <div>
+                      <div class="mm-label-row"><label>Tarih / saat</label></div>
+                      <input type="datetime-local" id="mm-cutoff-datetime">
+                    </div>
+                    <div>
+                      <div class="mm-label-row"><label>Bu kampanyadan itibaren göster</label></div>
+                      <select id="mm-cutoff-campaign-pick"><option value="">— bir kampanya seç —</option></select>
+                    </div>
+                    <div style="display:flex;gap:0.4rem;">
+                      <button type="button" class="btn btn-sm btn-secondary" id="mm-cutoff-now">Şimdi</button>
+                      <button type="button" class="btn btn-sm btn-primary" id="mm-cutoff-save">Kaydet</button>
+                    </div>
+                    <div>
+                      <button type="button" class="btn btn-sm btn-danger" id="mm-cutoff-clear">Kısıtlamayı kaldır</button>
+                    </div>
+                  </div>
+                </div>
+
+                <hr style="border-color:rgba(255,255,255,0.08);margin:1rem 0;">
+                <div class="mm-label-row" style="margin:0 0 0.5rem;"><label>Firma kullanıcıları</label></div>
+                <div class="table-wrap"><div class="table-scroll">
+                  <table>
+                    <thead><tr><th>Kullanıcı</th><th>Görünen ad</th><th>Durum</th><th>Yetki</th><th></th></tr></thead>
+                    <tbody id="mm-act-user-rows"><tr><td colspan="5" class="empty">—</td></tr></tbody>
+                  </table>
+                </div></div>
+                <form id="mm-user-add-form" class="form-row-4" style="margin-top:0.75rem;">
+                  <div><label>Kullanıcı adı</label><input id="mm-nu-username" required placeholder="operator1"></div>
+                  <div><label>Görünen ad</label><input id="mm-nu-display" placeholder="opsiyonel"></div>
+                  <div><label>Şifre</label><input id="mm-nu-password" type="password" minlength="8" required placeholder="en az 8 karakter"></div>
+                  <div style="display:flex;align-items:flex-end;"><button type="submit" class="btn btn-primary">Kullanıcı ekle</button></div>
+                </form>
+                <p class="hint" id="mm-user-add-hint" style="margin-top:0.4rem;"></p>
               </div>
             </section>
             <section class="card">
@@ -510,6 +552,28 @@
             </div>
           </div>
         </div>
+        <div class="mm-modal-overlay" id="mm-user-edit-modal" aria-hidden="true">
+          <div class="mm-modal" role="dialog" aria-labelledby="mm-user-edit-title">
+            <h3 id="mm-user-edit-title">Kullanıcıyı düzenle</h3>
+            <div class="form-row-4" style="margin:0;">
+              <div><label>Kullanıcı adı</label><input id="mm-ue-username"></div>
+              <div><label>Görünen ad</label><input id="mm-ue-display"></div>
+            </div>
+            <label class="mm-switch" style="margin-top:0.75rem;">
+              <input type="checkbox" id="mm-ue-active">
+              <span class="mm-switch-track"></span>
+              <span>Aktif (kapalıysa giriş yapamaz)</span>
+            </label>
+            <div class="mm-label-row" style="margin-top:0.85rem;"><label>Yetkiler</label></div>
+            <div id="mm-ue-perms" style="margin-top:0.35rem;"></div>
+            <input type="hidden" id="mm-ue-tenant-id" value="">
+            <input type="hidden" id="mm-ue-user-id" value="">
+            <div class="mm-modal-actions">
+              <button type="button" class="btn btn-secondary" id="mm-ue-cancel">İptal</button>
+              <button type="button" class="btn btn-primary" id="mm-ue-save">Kaydet</button>
+            </div>
+          </div>
+        </div>
         {% endif %}
       </div>
     </main>
@@ -522,7 +586,7 @@
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
   <script src="/static/mailing.js?v=20260820mm29"></script>
-  <script src="/static/mailing_platform.js?v=20260820mm15"></script>
+  <script src="/static/mailing_platform.js?v=20260820mm16"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

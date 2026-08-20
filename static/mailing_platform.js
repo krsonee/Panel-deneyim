@@ -76,7 +76,8 @@
       unlink: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/>',
       pause: '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>',
       play: '<path d="M8 5v14l11-7z"/>',
-      eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>'
+      eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
+      key: '<path d="M21 2 11.6 11.4"/><path d="m15.5 7.5 3 3L22 7l-3-3"/><circle cx="7.5" cy="15.5" r="5.5"/>'
     };
     return '<svg class="mm-ico" viewBox="0 0 24 24" aria-hidden="true">' + (p[name] || "") + "</svg>";
   }
@@ -114,14 +115,105 @@
     }
   }
 
+  var MAILING_PERM_KEYS = [
+    { key: "mailing.dashboard", label: "Mailing Özet" },
+    { key: "mailing.crm", label: "Mail Rehber" },
+    { key: "mailing.relations", label: "CRM (İlişki)" },
+    { key: "mailing.templates", label: "Mail Şablonları" },
+    { key: "mailing.campaigns", label: "Kampanyalar" },
+    { key: "mailing.ivr", label: "IVR Tetikleme" },
+    { key: "mailing.reports", label: "Mailing Raporları" },
+    { key: "mailing.settings", label: "Mailing Ayarları" }
+  ];
+
+  var _activityTenantId = null;
+  var _activityCampaigns = [];
+
   function hideTenantActivity() {
     var card = document.getElementById("mm-tenant-activity-card");
     if (card) card.hidden = true;
+    _activityTenantId = null;
+  }
+
+  /** UTC ISO -> <input type="datetime-local"> değeri (yerel saat, saniyesiz). */
+  function isoToLocalInput(iso) {
+    if (!iso) return "";
+    try {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      var pad = function (n) { return String(n).padStart(2, "0"); };
+      return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+        "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    } catch (e) { return ""; }
+  }
+
+  /** <input type="datetime-local"> değeri -> UTC ISO string. */
+  function localInputToIso(val) {
+    if (!val) return null;
+    var d = new Date(val);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString();
+  }
+
+  function renderCutoffBox(t) {
+    var status = document.getElementById("mm-cutoff-status");
+    var dt = document.getElementById("mm-cutoff-datetime");
+    var pick = document.getElementById("mm-cutoff-campaign-pick");
+    if (status) {
+      status.textContent = t.data_visible_from
+        ? ("Aktif — " + fmtTime(t.data_visible_from) + " öncesi bu firmaya gösterilmiyor.")
+        : "Kısıtlama yok — bu firma tüm geçmişi görüyor.";
+    }
+    if (dt) dt.value = isoToLocalInput(t.data_visible_from);
+    if (pick) {
+      pick.innerHTML = '<option value="">— bir kampanya seç —</option>' +
+        _activityCampaigns.map(function (c) {
+          return '<option value="' + esc(c.created_at || "") + '">' +
+            esc(c.name || ("#" + c.id)) + " · " + esc(fmtTime(c.created_at)) + "</option>";
+        }).join("");
+    }
+  }
+
+  function renderTenantUsersTable(tenantId, users) {
+    var tbody = document.getElementById("mm-act-user-rows");
+    if (!tbody) return;
+    if (!users || !users.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz panel kullanıcısı yok</td></tr>';
+      return;
+    }
+    tbody.innerHTML = users.map(function (u) {
+      var permCount = (u.permissions || []).filter(function (p) { return p !== "module.mailing"; }).length;
+      var activeBadge = u.active
+        ? '<span class="mm-badge mm-badge-ok">aktif</span>'
+        : '<span class="mm-badge mm-badge-danger">pasif</span>';
+      return "<tr>" +
+        "<td>" + esc(u.username) + "</td>" +
+        "<td>" + esc(u.display_name || "") + "</td>" +
+        "<td>" + activeBadge + "</td>" +
+        "<td>" + permCount + " / " + MAILING_PERM_KEYS.length + "</td>" +
+        '<td class="mm-actions-cell">' +
+        mmIconBtn("mm-user-edit", "Düzenle / yetkiler", "edit",
+          'data-tid="' + esc(tenantId) + '" data-uid="' + esc(u.id) + '"') +
+        mmIconBtn("mm-user-reset-pass", "Şifre sıfırla", "key",
+          'data-tid="' + esc(tenantId) + '" data-uid="' + esc(u.id) + '" data-username="' + esc(u.username) + '"') +
+        mmIconBtn(u.active ? "mm-user-del btn-danger" : "mm-user-del",
+          u.active ? "Devre dışı bırak" : "Yeniden aktif et", u.active ? "trash" : "play",
+          'data-tid="' + esc(tenantId) + '" data-uid="' + esc(u.id) + '" data-username="' + esc(u.username) + '" data-active="' + (u.active ? "1" : "0") + '"') +
+        "</td></tr>";
+    }).join("");
+  }
+
+  function refreshTenantUsersTable(tenantId) {
+    return api("/api/platform/tenants/" + tenantId + "/users").then(function (res) {
+      if (!res.ok) return;
+      renderTenantUsersTable(tenantId, res.data.users || []);
+    });
   }
 
   function showTenantActivity(tenantId) {
     var card = document.getElementById("mm-tenant-activity-card");
     if (!card) return;
+    _activityTenantId = tenantId;
     card.hidden = false;
     card.scrollIntoView({ behavior: "smooth", block: "nearest" });
     var title = document.getElementById("mm-tenant-activity-title");
@@ -143,20 +235,10 @@
       set("mm-act-kpi-ok", s.sends_ok);
       set("mm-act-kpi-fail", s.sends_fail);
       var usersEl = document.getElementById("mm-act-users");
-      var users = res.data.users || [];
-      if (usersEl) {
-        if (!users.length) {
-          usersEl.textContent = "Panel kullanıcısı yok — sadece sen (süper admin) operatör olarak yönetiyorsun. Üstten bu firmayı seçip şablon/kampanya ekleyebilirsin.";
-        } else {
-          usersEl.textContent = "Panel kullanıcıları (" + users.length + "): " +
-            users.map(function (u) {
-              return (u.username || "?") + " (" + (u.role || "user") + ")";
-            }).join(", ") +
-            " · Kontak: " + (s.contacts || 0);
-        }
-      }
+      if (usersEl) usersEl.textContent = "Kontak: " + (s.contacts || 0);
       var tbody = document.getElementById("mm-act-camps");
       var camps = res.data.campaigns || [];
+      _activityCampaigns = camps;
       if (tbody) {
         if (!camps.length) {
           tbody.innerHTML = '<tr><td colspan="4" class="empty">Henüz kampanya yok</td></tr>';
@@ -172,6 +254,8 @@
           }).join("");
         }
       }
+      renderCutoffBox(t);
+      refreshTenantUsersTable(tenantId);
     });
   }
 
@@ -1243,6 +1327,92 @@
       syncPanelLoginFields();
       document.getElementById("mm-tenant-activity-close")?.addEventListener("click", hideTenantActivity);
       document.getElementById("mm-tenants-refresh")?.addEventListener("click", refreshTenants);
+
+      document.getElementById("mm-cutoff-campaign-pick")?.addEventListener("change", function () {
+        var v = this.value;
+        var dt = document.getElementById("mm-cutoff-datetime");
+        if (v && dt) dt.value = isoToLocalInput(v);
+      });
+      document.getElementById("mm-cutoff-now")?.addEventListener("click", function () {
+        var dt = document.getElementById("mm-cutoff-datetime");
+        if (dt) dt.value = isoToLocalInput(new Date().toISOString());
+      });
+      document.getElementById("mm-cutoff-save")?.addEventListener("click", function () {
+        if (!_activityTenantId) return;
+        var dt = document.getElementById("mm-cutoff-datetime");
+        var iso = dt && dt.value ? localInputToIso(dt.value) : null;
+        if (dt && dt.value && !iso) { alert("Geçersiz tarih/saat."); return; }
+        api("/api/platform/tenants/" + _activityTenantId, {
+          method: "PATCH",
+          body: { data_visible_from: iso }
+        }).then(function (res) {
+          if (!res.ok) { alert((res.data && res.data.error) || "Kaydedilemedi"); return; }
+          renderCutoffBox(res.data.tenant || {});
+        });
+      });
+      document.getElementById("mm-cutoff-clear")?.addEventListener("click", function () {
+        if (!_activityTenantId) return;
+        if (!confirm("Bu firma için geçmiş veri kısıtlamasını tamamen kaldırmak istediğine emin misin? (Tüm geçmiş yeniden görünür olur)")) return;
+        api("/api/platform/tenants/" + _activityTenantId, {
+          method: "PATCH",
+          body: { data_visible_from: null }
+        }).then(function (res) {
+          if (!res.ok) { alert((res.data && res.data.error) || "Kaldırılamadı"); return; }
+          renderCutoffBox(res.data.tenant || {});
+        });
+      });
+
+      document.getElementById("mm-user-add-form")?.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (!_activityTenantId) return;
+        var hint = document.getElementById("mm-user-add-hint");
+        var username = document.getElementById("mm-nu-username").value.trim();
+        var password = document.getElementById("mm-nu-password").value;
+        var display = document.getElementById("mm-nu-display").value.trim();
+        api("/api/platform/tenants/" + _activityTenantId + "/users", {
+          method: "POST",
+          body: { username: username, password: password, display_name: display }
+        }).then(function (res) {
+          if (!res.ok) {
+            if (hint) hint.textContent = (res.data && res.data.error) || "Oluşturulamadı";
+            return;
+          }
+          if (hint) hint.textContent = "Kullanıcı eklendi: " + username;
+          document.getElementById("mm-user-add-form").reset();
+          refreshTenantUsersTable(_activityTenantId);
+          refreshTenants();
+        });
+      });
+
+      document.getElementById("mm-ue-cancel")?.addEventListener("click", function () {
+        closeModal("mm-user-edit-modal");
+      });
+      document.getElementById("mm-user-edit-modal")?.addEventListener("click", function (e) {
+        if (e.target.id === "mm-user-edit-modal") closeModal("mm-user-edit-modal");
+      });
+      document.getElementById("mm-ue-save")?.addEventListener("click", function () {
+        var tid = document.getElementById("mm-ue-tenant-id").value;
+        var uid = document.getElementById("mm-ue-user-id").value;
+        if (!tid || !uid) return;
+        var perms = Array.prototype.map.call(
+          document.querySelectorAll(".mm-ue-perm-chk:checked"),
+          function (el) { return el.value; }
+        );
+        perms.unshift("module.mailing");
+        api("/api/platform/tenants/" + tid + "/users/" + uid, {
+          method: "PATCH",
+          body: {
+            username: document.getElementById("mm-ue-username").value.trim(),
+            display_name: document.getElementById("mm-ue-display").value.trim(),
+            active: !!document.getElementById("mm-ue-active").checked,
+            permissions: perms
+          }
+        }).then(function (res) {
+          if (!res.ok) { alert((res.data && res.data.error) || "Kaydedilemedi"); return; }
+          closeModal("mm-user-edit-modal");
+          refreshTenantUsersTable(tid);
+        });
+      });
       document.getElementById("mm-aq-refresh")?.addEventListener("click", refreshAccountQuota);
       document.getElementById("mm-cr-refresh")?.addEventListener("click", refreshMailCredit);
       document.getElementById("mm-cr-form")?.addEventListener("submit", function (e) {
@@ -1424,6 +1594,73 @@
             Number(delTenant.getAttribute("data-id")),
             delTenant.getAttribute("data-name") || ""
           );
+          return;
+        }
+        var userEdit = e.target.closest(".mm-user-edit");
+        if (userEdit) {
+          var ueTid = userEdit.getAttribute("data-tid");
+          var ueUid = userEdit.getAttribute("data-uid");
+          api("/api/platform/tenants/" + ueTid + "/users").then(function (res) {
+            if (!res.ok) { alert((res.data && res.data.error) || "Yüklenemedi"); return; }
+            var u = (res.data.users || []).find(function (x) { return String(x.id) === String(ueUid); });
+            if (!u) { alert("Kullanıcı bulunamadı."); return; }
+            document.getElementById("mm-ue-tenant-id").value = ueTid;
+            document.getElementById("mm-ue-user-id").value = ueUid;
+            document.getElementById("mm-ue-username").value = u.username || "";
+            document.getElementById("mm-ue-display").value = u.display_name || "";
+            document.getElementById("mm-ue-active").checked = !!u.active;
+            var perms = u.permissions || [];
+            var grid = document.getElementById("mm-ue-perms");
+            if (grid) {
+              grid.innerHTML = MAILING_PERM_KEYS.map(function (p) {
+                var checked = perms.indexOf(p.key) !== -1 ? " checked" : "";
+                return '<label style="display:inline-flex;align-items:center;gap:0.35rem;margin:0 0.9rem 0.5rem 0;">' +
+                  '<input type="checkbox" class="mm-ue-perm-chk" value="' + esc(p.key) + '"' + checked + '> ' +
+                  esc(p.label) + "</label>";
+              }).join("");
+            }
+            openModal("mm-user-edit-modal");
+          });
+          return;
+        }
+        var userResetPass = e.target.closest(".mm-user-reset-pass");
+        if (userResetPass) {
+          var rpTid = userResetPass.getAttribute("data-tid");
+          var rpUid = userResetPass.getAttribute("data-uid");
+          var rpUsername = userResetPass.getAttribute("data-username") || "";
+          var newPass = prompt("«" + rpUsername + "» için yeni şifre (en az 8 karakter):", "");
+          if (newPass == null) return;
+          if (newPass.length < 8) { alert("Şifre en az 8 karakter olmalı."); return; }
+          api("/api/platform/tenants/" + rpTid + "/users/" + rpUid + "/reset-password", {
+            method: "POST",
+            body: { password: newPass }
+          }).then(function (res) {
+            if (!res.ok) { alert((res.data && res.data.error) || "Sıfırlanamadı"); return; }
+            alert("Şifre güncellendi: " + rpUsername);
+          });
+          return;
+        }
+        var userDel = e.target.closest(".mm-user-del");
+        if (userDel) {
+          var udTid = userDel.getAttribute("data-tid");
+          var udUid = userDel.getAttribute("data-uid");
+          var udUsername = userDel.getAttribute("data-username") || "";
+          var udActive = userDel.getAttribute("data-active") === "1";
+          if (udActive) {
+            if (!confirm("«" + udUsername + "» kullanıcısını devre dışı bırakmak istediğine emin misin? (Giriş yapamaz olur)")) return;
+            api("/api/platform/tenants/" + udTid + "/users/" + udUid, { method: "DELETE" }).then(function (res) {
+              if (!res.ok) { alert((res.data && res.data.error) || "Silinemedi"); return; }
+              refreshTenantUsersTable(udTid);
+            });
+          } else {
+            api("/api/platform/tenants/" + udTid + "/users/" + udUid, {
+              method: "PATCH",
+              body: { active: true }
+            }).then(function (res) {
+              if (!res.ok) { alert((res.data && res.data.error) || "Güncellenemedi"); return; }
+              refreshTenantUsersTable(udTid);
+            });
+          }
           return;
         }
         var editBtn = e.target.closest(".mm-edit-domain");

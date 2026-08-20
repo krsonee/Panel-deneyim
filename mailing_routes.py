@@ -2110,6 +2110,27 @@ _TENANT_STATS_CACHE = {}
 _TENANT_TAG_COUNT_CACHE = {}
 
 
+def _restricted_cutoff(tenant_id, conn=None):
+    """Firma kullanıcısı (superadmin DEĞİL) icin, o tenant'a atanmis bir gecmis
+    veri kesim tarihi (mail_tenants.data_visible_from) varsa ISO string olarak
+    dondurur; yoksa None (kisitlama yok). Superadmin/impersonation her zaman
+    None dondurur — tam gecmisi gorur.
+    """
+    if not tenant_id:
+        return None
+    try:
+        from flask import session as _sess
+        if _sess.get("mail_is_superadmin"):
+            return None
+        from mail_tenant import get_data_visible_from
+        if conn is not None:
+            return get_data_visible_from(conn, tenant_id)
+        with closing(get_db()) as _c:
+            return get_data_visible_from(_c, tenant_id)
+    except Exception:
+        return None
+
+
 def _approx_contact_total(conn, tenant_id=None):
     """Kontak toplamı — önce canlı istatistik, 0 ise exact COUNT (import sonrası kartlar boş kalmasın).
 
@@ -3160,17 +3181,34 @@ def create_mailing_blueprint(permission_required):
 
         tid verilirse TÜM sorgular tenant_id ile filtrelenir — önceden hiçbir
         filtre yoktu, her firma platformun toplam rakamlarını görüyordu.
+
+        Ayrıca o tenant'a bir data_visible_from kesimi atanmışsa (ve oturum
+        superadmin DEĞİLSE) kampanya/gönderim/açılma/tıklama/ivr/suppression
+        sayıları SADECE created_at >= kesim olan satırlarla sınırlanır — geçmiş
+        superadmin işlemleri firma kullanıcısına sızmaz. Kontak/şablon/domain
+        sayıları bilerek bu kesimden ayrık tutulur (firma mevcut kontak
+        listesini/şablonlarını görebilmeli).
         """
         tid_clause = " WHERE tenant_id = ?" if tid else ""
         tid_and = " AND tenant_id = ?" if tid else ""
         tid_params = (int(tid),) if tid else ()
 
+        cutoff = _restricted_cutoff(tid, conn=conn)
+        cutoff_and = " AND created_at >= ?" if cutoff else ""
+        cutoff_params = (cutoff,) if cutoff else ()
+
         contacts, contacts_approx = _approx_contact_total(conn, tenant_id=tid)
         active_contacts = contacts
         templates = scalar(conn, f"SELECT COUNT(*) FROM mail_templates{tid_clause}", tid_params) or 0
-        campaigns = scalar(conn, f"SELECT COUNT(*) FROM mail_campaigns{tid_clause}", tid_params) or 0
+        campaigns = scalar(
+            conn, f"SELECT COUNT(*) FROM mail_campaigns{tid_clause}{cutoff_and}", tid_params + cutoff_params
+        ) or 0
         if tid:
-            sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE tenant_id = ?", tid_params) or 0
+            sends_total = scalar(
+                conn,
+                f"SELECT COUNT(*) FROM mail_sends WHERE tenant_id = ?{cutoff_and}",
+                tid_params + cutoff_params,
+            ) or 0
         elif uses_postgres():
             try:
                 sends_total = int(scalar(
@@ -3184,36 +3222,42 @@ def create_mailing_blueprint(permission_required):
         else:
             sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends") or 0
         sends_real = int(scalar(
-            conn, f"SELECT COUNT(*) FROM mail_sends WHERE status = 'sent'{tid_and}", tid_params
+            conn, f"SELECT COUNT(*) FROM mail_sends WHERE status = 'sent'{tid_and}{cutoff_and}",
+            tid_params + cutoff_params,
         ) or 0)
         sends_simulated = int(scalar(
-            conn, f"SELECT COUNT(*) FROM mail_sends WHERE status = 'simulated'{tid_and}", tid_params
+            conn, f"SELECT COUNT(*) FROM mail_sends WHERE status = 'simulated'{tid_and}{cutoff_and}",
+            tid_params + cutoff_params,
         ) or 0)
         sends_sim = sends_real + sends_simulated
         sends_queued = int(scalar(
-            conn, f"SELECT COUNT(*) FROM mail_sends WHERE status = 'queued'{tid_and}", tid_params
+            conn, f"SELECT COUNT(*) FROM mail_sends WHERE status = 'queued'{tid_and}{cutoff_and}",
+            tid_params + cutoff_params,
         ) or 0)
         sends_failed = int(scalar(
-            conn, f"SELECT COUNT(*) FROM mail_sends WHERE status = 'failed'{tid_and}", tid_params
+            conn, f"SELECT COUNT(*) FROM mail_sends WHERE status = 'failed'{tid_and}{cutoff_and}",
+            tid_params + cutoff_params,
         ) or 0)
         delivery_health = _delivery_health_snapshot(conn, tenant_id=tid)
         opened = int(scalar(
-            conn, f"SELECT COUNT(*) FROM mail_sends WHERE opened_at IS NOT NULL{tid_and}", tid_params
+            conn, f"SELECT COUNT(*) FROM mail_sends WHERE opened_at IS NOT NULL{tid_and}{cutoff_and}",
+            tid_params + cutoff_params,
         ) or 0)
         clicked = int(scalar(
-            conn, f"SELECT COUNT(*) FROM mail_sends WHERE clicked_at IS NOT NULL{tid_and}", tid_params
+            conn, f"SELECT COUNT(*) FROM mail_sends WHERE clicked_at IS NOT NULL{tid_and}{cutoff_and}",
+            tid_params + cutoff_params,
         ) or 0)
         try:
             if tid:
                 link_clicked = int(scalar(
                     conn,
-                    """
+                    f"""
                     SELECT COUNT(DISTINCT cl.send_id) FROM mail_click_links cl
                     JOIN mail_sends s ON s.id = cl.send_id
                     WHERE cl.send_id IS NOT NULL AND COALESCE(cl.click_count, 0) > 0
-                      AND s.tenant_id = ?
+                      AND s.tenant_id = ?{cutoff_and.replace('created_at', 's.created_at')}
                     """,
-                    tid_params,
+                    tid_params + cutoff_params,
                 ) or 0)
             else:
                 link_clicked = int(scalar(
@@ -3228,11 +3272,12 @@ def create_mailing_blueprint(permission_required):
         except Exception:
             pass
         ivr_events = scalar(
-            conn, f"SELECT COUNT(*) FROM mail_ivr_events{tid_clause}", tid_params
+            conn, f"SELECT COUNT(*) FROM mail_ivr_events{tid_clause}{cutoff_and}", tid_params + cutoff_params
         ) or 0
         try:
             suppressed = int(scalar(
-                conn, f"SELECT COUNT(*) FROM mail_suppressions{tid_clause}", tid_params
+                conn, f"SELECT COUNT(*) FROM mail_suppressions{tid_clause}{cutoff_and}",
+                tid_params + cutoff_params,
             ) or 0)
         except Exception:
             suppressed = 0
@@ -5074,11 +5119,20 @@ def create_mailing_blueprint(permission_required):
             except Exception:
                 _tid = None
             if _tid:
-                rows = _rows(fetchall(
-                    conn,
-                    "SELECT * FROM mail_campaigns WHERE tenant_id = ? ORDER BY id DESC LIMIT 100",
-                    (int(_tid),),
-                ))
+                _cutoff = _restricted_cutoff(_tid, conn=conn)
+                if _cutoff:
+                    rows = _rows(fetchall(
+                        conn,
+                        "SELECT * FROM mail_campaigns WHERE tenant_id = ? AND created_at >= ? "
+                        "ORDER BY id DESC LIMIT 100",
+                        (int(_tid), _cutoff),
+                    ))
+                else:
+                    rows = _rows(fetchall(
+                        conn,
+                        "SELECT * FROM mail_campaigns WHERE tenant_id = ? ORDER BY id DESC LIMIT 100",
+                        (int(_tid),),
+                    ))
             else:
                 rows = _rows(fetchall(conn, "SELECT * FROM mail_campaigns ORDER BY id DESC LIMIT 100"))
             repaired = False
@@ -6039,7 +6093,8 @@ def create_mailing_blueprint(permission_required):
         cid = request.args.get("campaign_id")
         _tid = current_tenant_id()
         with closing(get_db()) as conn:
-            rows = campaign_analytics(conn, int(cid) if cid else None, tenant_id=_tid)
+            _cutoff = _restricted_cutoff(_tid, conn=conn)
+            rows = campaign_analytics(conn, int(cid) if cid else None, tenant_id=_tid, created_since=_cutoff)
         return jsonify({"campaigns": rows})
 
     @bp.route("/reports/engagement-timeline", methods=["GET"])
@@ -6111,7 +6166,8 @@ def create_mailing_blueprint(permission_required):
         with closing(get_db()) as conn:
             camp = fetchone(
                 conn,
-                "SELECT id, name, tag_filter, status, total_count, tenant_id FROM mail_campaigns WHERE id = ?",
+                "SELECT id, name, tag_filter, status, total_count, tenant_id, created_at "
+                "FROM mail_campaigns WHERE id = ?",
                 (campaign_id,),
             )
             if not camp:
@@ -6122,6 +6178,11 @@ def create_mailing_blueprint(permission_required):
                 _tid = current_tenant_id()
                 if _tid and camp.get("tenant_id") and int(camp["tenant_id"]) != int(_tid):
                     return jsonify({"error": "Bu kampanya başka firmaya ait."}), 403
+                # Kesim korumasi: ID tahmin ederek eski (kesim tarihinden onceki)
+                # bir kampanyanin alicilarina dogrudan ulasilmasin.
+                _cutoff = _restricted_cutoff(_tid, conn=conn)
+                if _cutoff and camp.get("created_at") and str(camp["created_at"]) < str(_cutoff):
+                    return jsonify({"error": "Bu kampanya artık görüntülenemiyor."}), 403
             except Exception:
                 pass
             where = ["r.campaign_id = ?"]
@@ -6339,6 +6400,10 @@ def create_mailing_blueprint(permission_required):
                     " OR contact_id IN (SELECT id FROM mail_contacts WHERE tenant_id = ?))"
                 )
                 params.extend([int(_tid), int(_tid)])
+                _cutoff = _restricted_cutoff(_tid, conn=conn)
+                if _cutoff:
+                    sql += " AND created_at >= ?"
+                    params.append(_cutoff)
             if status:
                 sql += " AND status = ?"
                 params.append(status)
@@ -6367,6 +6432,10 @@ def create_mailing_blueprint(permission_required):
                     " OR contact_id IN (SELECT id FROM mail_contacts WHERE tenant_id = ?))"
                 )
                 tenant_params = (int(_tid), int(_tid))
+                _cutoff = _restricted_cutoff(_tid, conn=conn)
+                if _cutoff:
+                    tenant_clause += " AND created_at >= ?"
+                    tenant_params = tenant_params + (_cutoff,)
             by_status = _rows(fetchall(
                 conn,
                 f"SELECT status, COUNT(*) AS cnt FROM mail_sends{tenant_clause} GROUP BY status ORDER BY cnt DESC",

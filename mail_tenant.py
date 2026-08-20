@@ -295,6 +295,14 @@ def ensure_tenant_schema(conn) -> None:
     except Exception as exc:
         print(f"⚠️  warmup_cohort bootstrap: {exc}")
 
+    # Gecmis veri gizleme kesim noktasi — set edilirse (NULL degilse) o tenant'in
+    # NON-superadmin oturumlari SADECE created_at >= data_visible_from olan
+    # kampanya/rapor/gonderim/dashboard rakamlarini gorur. Superadmin/impersonation
+    # bundan hic etkilenmez, her zaman tam gecmisi gorur. Varsayilan NULL = kisitlama yok.
+    tenant_cols = _table_columns(conn, "mail_tenants")
+    if "data_visible_from" not in tenant_cols:
+        _add_column(conn, "mail_tenants", "data_visible_from TEXT")
+
     for table in TENANT_TABLES:
         cols = _table_columns(conn, table)
         if not cols:
@@ -633,18 +641,22 @@ def create_tenant(conn, *, slug: str, name: str, plan: str = "starter",
     )
 
 
+DEFAULT_TENANT_PERMISSIONS = [
+    "module.mailing",
+    "mailing.dashboard", "mailing.crm", "mailing.relations",
+    "mailing.templates", "mailing.campaigns", "mailing.ivr",
+    "mailing.reports", "mailing.settings",
+]
+
+
 def create_tenant_user(conn, tenant_id: int, username: str, password: str, *,
-                       role: str = "owner", display_name: str = "") -> int:
+                       role: str = "owner", display_name: str = "",
+                       permissions: list | None = None) -> int:
     from werkzeug.security import generate_password_hash
     import json
 
     now = iso(utcnow())
-    perms = json.dumps([
-        "module.mailing",
-        "mailing.dashboard", "mailing.crm", "mailing.relations",
-        "mailing.templates", "mailing.campaigns", "mailing.ivr",
-        "mailing.reports", "mailing.settings",
-    ])
+    perms = json.dumps(permissions if permissions is not None else DEFAULT_TENANT_PERMISSIONS)
     return insert_returning_id(
         conn,
         """
@@ -662,6 +674,108 @@ def create_tenant_user(conn, tenant_id: int, username: str, password: str, *,
             now,
             now,
         ),
+    )
+
+
+def list_tenant_users(conn, tenant_id: int):
+    return fetchall(
+        conn,
+        "SELECT id, tenant_id, username, display_name, role, permissions, active, "
+        "created_at, updated_at FROM mail_tenant_users WHERE tenant_id = ? ORDER BY id ASC",
+        (int(tenant_id),),
+    )
+
+
+def update_tenant_user(conn, tenant_id: int, user_id: int, *, username: str | None = None,
+                       display_name: str | None = None, active: bool | None = None,
+                       permissions: list | None = None) -> None:
+    import json
+
+    row = fetchone(
+        conn,
+        "SELECT * FROM mail_tenant_users WHERE id = ? AND tenant_id = ?",
+        (int(user_id), int(tenant_id)),
+    )
+    if not row:
+        raise ValueError("Kullanıcı bulunamadı.")
+    new_username = row["username"]
+    if username is not None:
+        new_username = username.strip().lower()
+        if not new_username:
+            raise ValueError("Kullanıcı adı boş olamaz.")
+        dupe = fetchone(
+            conn,
+            "SELECT id FROM mail_tenant_users WHERE tenant_id = ? AND LOWER(username) = ? AND id != ?",
+            (int(tenant_id), new_username, int(user_id)),
+        )
+        if dupe:
+            raise ValueError("Bu kullanıcı adı bu firmada zaten kayıtlı.")
+    new_display = display_name if display_name is not None else row["display_name"]
+    new_active = int(bool(active)) if active is not None else row["active"]
+    new_perms = json.dumps(permissions) if permissions is not None else row["permissions"]
+    now = iso(utcnow())
+    execute(
+        conn,
+        """
+        UPDATE mail_tenant_users
+        SET username = ?, display_name = ?, active = ?, permissions = ?, updated_at = ?
+        WHERE id = ? AND tenant_id = ?
+        """,
+        (new_username, new_display, new_active, new_perms, now, int(user_id), int(tenant_id)),
+    )
+
+
+def set_tenant_user_password(conn, tenant_id: int, user_id: int, new_password: str) -> None:
+    from werkzeug.security import generate_password_hash
+
+    if not new_password or len(new_password) < 8:
+        raise ValueError("Şifre en az 8 karakter olmalı.")
+    row = fetchone(
+        conn,
+        "SELECT id FROM mail_tenant_users WHERE id = ? AND tenant_id = ?",
+        (int(user_id), int(tenant_id)),
+    )
+    if not row:
+        raise ValueError("Kullanıcı bulunamadı.")
+    now = iso(utcnow())
+    execute(
+        conn,
+        "UPDATE mail_tenant_users SET password_hash = ?, updated_at = ? WHERE id = ? AND tenant_id = ?",
+        (generate_password_hash(new_password, method="pbkdf2:sha256"), now, int(user_id), int(tenant_id)),
+    )
+
+
+def delete_tenant_user(conn, tenant_id: int, user_id: int) -> None:
+    """Soft-delete: active=0 (denetim icin satir kalir, giris yapamaz)."""
+    row = fetchone(
+        conn,
+        "SELECT id FROM mail_tenant_users WHERE id = ? AND tenant_id = ?",
+        (int(user_id), int(tenant_id)),
+    )
+    if not row:
+        raise ValueError("Kullanıcı bulunamadı.")
+    now = iso(utcnow())
+    execute(
+        conn,
+        "UPDATE mail_tenant_users SET active = 0, updated_at = ? WHERE id = ? AND tenant_id = ?",
+        (now, int(user_id), int(tenant_id)),
+    )
+
+
+def get_data_visible_from(conn, tenant_id: int) -> str | None:
+    if not tenant_id:
+        return None
+    row = fetchone(conn, "SELECT data_visible_from FROM mail_tenants WHERE id = ?", (int(tenant_id),))
+    val = (row["data_visible_from"] if row else None) or None
+    return val.strip() if isinstance(val, str) and val.strip() else None
+
+
+def set_data_visible_from(conn, tenant_id: int, value: str | None) -> None:
+    now = iso(utcnow())
+    execute(
+        conn,
+        "UPDATE mail_tenants SET data_visible_from = ?, updated_at = ? WHERE id = ?",
+        ((value or None), now, int(tenant_id)),
     )
 
 

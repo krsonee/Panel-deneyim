@@ -33,14 +33,20 @@ from mail_tenant import (
     current_tenant_id,
     deallocate_domain,
     decrypt_secret,
+    delete_tenant_user,
     encrypt_secret,
     ensure_tenant_schema,
+    get_data_visible_from,
     init_mail_tenant_layer,
     list_allocated_domains,
+    list_tenant_users,
     normalize_slug,
     require_mail_login,
     require_superadmin,
+    set_data_visible_from,
+    set_tenant_user_password,
     tenant_active,
+    update_tenant_user,
 )
 
 app = Flask(__name__)
@@ -376,7 +382,7 @@ def platform_patch_tenant(tenant_id):
             UPDATE mail_tenants SET
                 name = ?, status = ?, plan = ?,
                 max_contacts = ?, max_sends_day = ?, max_domains = ?,
-                notes = ?, updated_at = ?
+                notes = ?, data_visible_from = ?, updated_at = ?
             WHERE id = ?
             """,
             (
@@ -387,6 +393,7 @@ def platform_patch_tenant(tenant_id):
                 int(data["max_sends_day"]) if "max_sends_day" in data else row["max_sends_day"],
                 int(data["max_domains"]) if "max_domains" in data else row["max_domains"],
                 (data.get("notes") if "notes" in data else row["notes"]),
+                ((data.get("data_visible_from") or None) if "data_visible_from" in data else row["data_visible_from"]),
                 now,
                 tenant_id,
             ),
@@ -423,6 +430,123 @@ def platform_delete_tenant(tenant_id):
         conn.commit()
     _platform_audit("tenant_delete", f"id={tenant_id} slug={slug}")
     return jsonify({"ok": True, "tenant_id": tenant_id, "status": "deleted"})
+
+
+def _tenant_user_public(row) -> dict:
+    import json
+
+    d = dict(row)
+    try:
+        d["permissions"] = json.loads(d.get("permissions") or "[]")
+    except Exception:
+        d["permissions"] = []
+    d.pop("password_hash", None)
+    return d
+
+
+@app.get("/api/platform/tenants/<int:tenant_id>/users")
+@require_superadmin
+def platform_list_tenant_users(tenant_id):
+    with closing(get_db()) as conn:
+        t = fetchone(conn, "SELECT id FROM mail_tenants WHERE id = ?", (tenant_id,))
+        if not t:
+            return jsonify({"error": "Firma bulunamadı."}), 404
+        rows = list_tenant_users(conn, tenant_id) or []
+    return jsonify({"users": [_tenant_user_public(r) for r in rows]})
+
+
+@app.post("/api/platform/tenants/<int:tenant_id>/users")
+@require_superadmin
+def platform_create_tenant_user(tenant_id):
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip().lower()
+    password = data.get("password") or ""
+    display_name = (data.get("display_name") or "").strip()
+    perms = data.get("permissions")
+    if not username or not password:
+        return jsonify({"error": "Kullanıcı adı ve şifre gerekli."}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Şifre en az 8 karakter olmalı."}), 400
+    try:
+        with closing(get_db()) as conn:
+            t = fetchone(conn, "SELECT id FROM mail_tenants WHERE id = ?", (tenant_id,))
+            if not t:
+                return jsonify({"error": "Firma bulunamadı."}), 404
+            dupe = fetchone(
+                conn,
+                "SELECT id FROM mail_tenant_users WHERE tenant_id = ? AND LOWER(username) = ?",
+                (tenant_id, username),
+            )
+            if dupe:
+                return jsonify({"error": "Bu kullanıcı adı bu firmada zaten kayıtlı."}), 409
+            uid = create_tenant_user(
+                conn, tenant_id, username, password,
+                role=(data.get("role") or "operator"),
+                display_name=display_name,
+                permissions=(list(perms) if isinstance(perms, list) else None),
+            )
+            conn.commit()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Oluşturulamadı: {exc}"}), 400
+    _platform_audit("tenant_user_create", f"tenant_id={tenant_id} user_id={uid} username={username}")
+    return jsonify({"ok": True, "user_id": uid}), 201
+
+
+@app.patch("/api/platform/tenants/<int:tenant_id>/users/<int:user_id>")
+@require_superadmin
+def platform_patch_tenant_user(tenant_id, user_id):
+    data = request.get_json(silent=True) or {}
+    perms = data.get("permissions")
+    try:
+        with closing(get_db()) as conn:
+            update_tenant_user(
+                conn, tenant_id, user_id,
+                username=(data.get("username") if "username" in data else None),
+                display_name=(data.get("display_name") if "display_name" in data else None),
+                active=(bool(data.get("active")) if "active" in data else None),
+                permissions=(list(perms) if isinstance(perms, list) else None),
+            )
+            conn.commit()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Güncellenemedi: {exc}"}), 400
+    _platform_audit("tenant_user_patch", f"tenant_id={tenant_id} user_id={user_id} fields={sorted(data.keys())}")
+    return jsonify({"ok": True})
+
+
+@app.post("/api/platform/tenants/<int:tenant_id>/users/<int:user_id>/reset-password")
+@require_superadmin
+def platform_reset_tenant_user_password(tenant_id, user_id):
+    data = request.get_json(silent=True) or {}
+    new_password = data.get("password") or ""
+    try:
+        with closing(get_db()) as conn:
+            set_tenant_user_password(conn, tenant_id, user_id, new_password)
+            conn.commit()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Sıfırlanamadı: {exc}"}), 400
+    _platform_audit("tenant_user_reset_password", f"tenant_id={tenant_id} user_id={user_id}")
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/platform/tenants/<int:tenant_id>/users/<int:user_id>")
+@require_superadmin
+def platform_delete_tenant_user(tenant_id, user_id):
+    try:
+        with closing(get_db()) as conn:
+            delete_tenant_user(conn, tenant_id, user_id)
+            conn.commit()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Silinemedi: {exc}"}), 400
+    _platform_audit("tenant_user_delete", f"tenant_id={tenant_id} user_id={user_id}")
+    return jsonify({"ok": True})
 
 
 @app.get("/api/platform/domains")
