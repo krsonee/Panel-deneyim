@@ -994,6 +994,18 @@
           <div><label>Sub-ID parametresi</label><input type="text" id="mail-set-sc-subid" placeholder="afp1"></div>
           <div style="grid-column:1/-1;"><button type="submit" class="btn btn-primary">Kaydet</button></div>
         </form>
+        <hr style="border-color:rgba(255,255,255,0.08);margin:1rem 0;">
+        <p class="muted" style="font-size:0.8rem;margin-bottom:0.5rem;">
+          Kayıt / yatırım / FTD verisini Smartico'dan çekmek için gereken rapor API anahtarı (Smartico panelinde: Settings → API key to view reports). Yukarıdaki Affiliate ID / Sub-ID bu anahtar olmadan hiçbir veri çekemez.
+        </p>
+        <p class="muted" style="font-size:0.8rem;margin-bottom:0.5rem;">
+          Durum: <span id="mail-set-sc-api-status">—</span> · Kayıtlı anahtar: <code id="mail-set-sc-api-masked">—</code>
+        </p>
+        <form id="mail-smartico-api-form" class="form-row-4">
+          <div><label>Smartico API Key</label><input type="password" id="mail-set-sc-api-key" placeholder="yeni anahtar (boş = değiştirme)" autocomplete="off"></div>
+          <div><label>API Host</label><input type="text" id="mail-set-sc-api-host" placeholder="https://boapi.smartico.ai"></div>
+          <div style="grid-column:1/-1;"><button type="submit" class="btn btn-primary">API anahtarını kaydet</button></div>
+        </form>
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">

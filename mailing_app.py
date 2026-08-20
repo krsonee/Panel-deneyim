@@ -22,6 +22,7 @@ from database import (
     get_db,
     init_mailing_schema,
     iso,
+    migrate_smartico,
     scalar,
     utcnow,
 )
@@ -1122,6 +1123,18 @@ def _startup():
         init_mailing_schema(conn)
         ensure_tenant_schema(conn)
         migrate_mail_campaigns_pro(conn)
+        try:
+            # mikromail kendi DB'sine sahip (mikromail-db, ana panelden ayrı) —
+            # smartico_settings tablosu ana panelin init_schema/migrate_schema'sında
+            # oluşuyordu ama mailing_app._startup() bunu hiç çağırmıyordu; bu yüzden
+            # Smartico API key/host hiçbir zaman kaydedilemiyordu (relation does not exist).
+            migrate_smartico(conn)
+        except Exception as sc_exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            print(f"⚠️  migrate_smartico (mailing) hata: {sc_exc}")
         try:
             from mail_weekly_maintenance import ensure_sunday_maintenance
             _wm = ensure_sunday_maintenance(conn)

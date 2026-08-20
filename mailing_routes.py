@@ -4459,7 +4459,7 @@ def create_mailing_blueprint(permission_required):
             if not affiliate_id:
                 return jsonify({"error": "Önce Ayarlar'dan Smartico Affiliate ID gir."}), 400
             if not smartico_api.is_configured(conn):
-                return jsonify({"error": "Smartico API anahtarı tanımlı değil (Link Takip > Smartico)."}), 400
+                return jsonify({"error": "Smartico API anahtarı tanımlı değil (Ayarlar → Smartico CRM eşleştirme)."}), 400
 
             result = smartico_api.fetch_subid_conversions(conn, affiliate_id, subid_param)
             if result.get("error"):
@@ -4530,7 +4530,7 @@ def create_mailing_blueprint(permission_required):
             if not smartico_api.is_configured(conn):
                 return jsonify({
                     "error": "not_configured",
-                    "message": "Smartico API anahtarı yok (Link Takip → Smartico Ayarlar).",
+                    "message": "Smartico API anahtarı yok (Ayarlar → Smartico CRM eşleştirme).",
                     "rows": [],
                     "summary": {},
                 }), 400
@@ -6582,6 +6582,18 @@ def create_mailing_blueprint(permission_required):
             scrub = _scrub_settings(conn)
             settings["scrub"] = scrub
             try:
+                sc_cfg = smartico_api.get_config(conn)
+                settings["smartico_api_configured"] = bool(sc_cfg["api_key"])
+                settings["smartico_api_host"] = sc_cfg["api_host"]
+                settings["smartico_api_key_masked"] = (
+                    smartico_api.mask_key(sc_cfg["api_key"]) if sc_cfg["api_key"] else ""
+                )
+            except Exception as sc_exc:
+                settings["smartico_api_configured"] = False
+                settings["smartico_api_host"] = ""
+                settings["smartico_api_key_masked"] = ""
+                settings["smartico_api_error"] = str(sc_exc)
+            try:
                 from mail_tenant import current_tenant_id, list_allocated_domains
                 from flask import session as _sess
                 _tid = current_tenant_id()
@@ -6611,6 +6623,18 @@ def create_mailing_blueprint(permission_required):
         with closing(get_db()) as conn:
             if data.get("rotate_webhook_secret"):
                 upsert_mail_setting(conn, "webhook_secret", secrets.token_hex(24))
+            if "smartico_api_key" in data or "smartico_api_host" in data:
+                # Global Smartico rapor API key/host — mikromail'in kendi DB'sinde
+                # (smartico_settings tablosu); ana panelden tamamen ayrı, superadmin-only.
+                from flask import session as _sess
+                if not _sess.get("mail_is_superadmin"):
+                    return jsonify({"error": "Yalnızca süper admin değiştirebilir."}), 403
+                existing = smartico_api.get_config(conn)
+                new_key = (data.get("smartico_api_key") or "").strip() or existing["api_key"]
+                new_host = (data.get("smartico_api_host") or "").strip() or existing["api_host"]
+                if not new_key:
+                    return jsonify({"error": "Smartico API anahtarı boş olamaz."}), 400
+                smartico_api.save_config(conn, new_key, new_host)
             bool_keys = {
                 "scrub_smtp_verify", "scrub_auto_suppress_invalid", "scrub_suppress_disposable",
                 "scrub_suppress_role", "scrub_campaign_only_valid",
@@ -6644,6 +6668,18 @@ def create_mailing_blueprint(permission_required):
             settings["webhook_secret_masked"] = _mask_secret(settings.get("webhook_secret") or "")
             from mail_scrub import scrub_settings as _scrub_settings
             settings["scrub"] = _scrub_settings(conn)
+            try:
+                sc_cfg = smartico_api.get_config(conn)
+                settings["smartico_api_configured"] = bool(sc_cfg["api_key"])
+                settings["smartico_api_host"] = sc_cfg["api_host"]
+                settings["smartico_api_key_masked"] = (
+                    smartico_api.mask_key(sc_cfg["api_key"]) if sc_cfg["api_key"] else ""
+                )
+            except Exception as sc_exc:
+                settings["smartico_api_configured"] = False
+                settings["smartico_api_host"] = ""
+                settings["smartico_api_key_masked"] = ""
+                settings["smartico_api_error"] = str(sc_exc)
         return jsonify({"settings": settings})
 
     @bp.route("/settings/test-smtp", methods=["POST"])

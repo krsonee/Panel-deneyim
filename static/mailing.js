@@ -3395,6 +3395,17 @@
       var scSub = document.getElementById("mail-set-sc-subid");
       if (scAff) scAff.value = s.smartico_affiliate_id || "";
       if (scSub) scSub.value = s.smartico_subid_param || "afp1";
+      var scApiHost = document.getElementById("mail-set-sc-api-host");
+      if (scApiHost) scApiHost.value = s.smartico_api_host || "";
+      var scApiKeyInput = document.getElementById("mail-set-sc-api-key");
+      if (scApiKeyInput) scApiKeyInput.value = "";
+      setText("mail-set-sc-api-masked", s.smartico_api_key_masked || "—");
+      setText(
+        "mail-set-sc-api-status",
+        s.smartico_api_configured
+          ? "bağlı"
+          : (s.smartico_api_error ? "hata: " + s.smartico_api_error : "yapılandırılmadı — kayıt/FTD verisi çekilemez")
+      );
       setText("mail-set-webhook-masked", s.webhook_secret_masked || "—");
       setText("mail-set-pass-hint", s.smtp_password_set ? "Şifre kayıtlı (değiştirmek için yaz)" : "Şifre yok");
       updateProviderPill(s.provider_mode);
@@ -4907,6 +4918,29 @@
         }).then(function (res) {
           if (!res || !res.ok) { mailToast("Kaydedilemedi"); return; }
           mailToast("Smartico ayarları kaydedildi");
+          mailLoadSettings();
+        });
+      });
+    }
+    var scApiForm = document.getElementById("mail-smartico-api-form");
+    if (scApiForm) {
+      scApiForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var key = document.getElementById("mail-set-sc-api-key").value.trim();
+        var host = document.getElementById("mail-set-sc-api-host").value.trim();
+        if (!key) {
+          mailToast("Değiştirmek için yeni bir API key yaz (host tek başına kaydedilmez).");
+          return;
+        }
+        mailApi("/api/mailing/settings", {
+          method: "PATCH",
+          body: { smartico_api_key: key, smartico_api_host: host }
+        }).then(function (res) {
+          if (!res || !res.ok) {
+            mailToast((res && res.data && res.data.error) || "Kaydedilemedi");
+            return;
+          }
+          mailToast("Smartico API anahtarı kaydedildi");
           mailLoadSettings();
         });
       });
