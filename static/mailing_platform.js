@@ -19,6 +19,30 @@
     });
   }
 
+  /** Render/proxy ara sıra ilk POST cevabını düşürüyor (~30s Load failed).
+   * status=0 ise bir kez daha dene — domain eklemede "hata sandım, tekrar basınca oldu" senaryosu. */
+  function apiRetry(path, opts, left) {
+    left = left == null ? 1 : left;
+    return api(path, opts).then(function (res) {
+      if (res.status === 0 && left > 0) {
+        return new Promise(function (resolve) {
+          setTimeout(function () {
+            resolve(apiRetry(path, opts, left - 1));
+          }, 1200);
+        });
+      }
+      return res;
+    });
+  }
+
+  function findDomainByName(name) {
+    var n = String(name || "").trim().toLowerCase();
+    if (!n) return null;
+    return (window._mmDomainsCache || []).find(function (d) {
+      return String(d.domain || "").toLowerCase() === n;
+    }) || null;
+  }
+
   function esc(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -1000,7 +1024,7 @@
     _bulkDomainsSaving = true;
     if (btn) { btn.disabled = true; btn.textContent = "Ekleniyor…"; }
     if (resultsBox) resultsBox.innerHTML = '<p class="hint">Ekleniyor…</p>';
-    api("/api/platform/domains/bulk", { method: "POST", body: { text: text, defaults: defaults } })
+    apiRetry("/api/platform/domains/bulk", { method: "POST", body: { text: text, defaults: defaults } })
       .then(function (res) {
         _bulkDomainsSaving = false;
         if (btn) { btn.disabled = false; btn.textContent = "Hepsini ekle"; }
@@ -1069,12 +1093,38 @@
       : "/api/platform/domains";
     var method = _editDomainId ? "PATCH" : "POST";
 
-    api(path, { method: method, body: body })
+    apiRetry(path, { method: method, body: body })
       .then(function (res) {
         if (!res.ok) {
           var err = (res.data && res.data.error) || ("Kaydedilemedi (HTTP " + res.status + ")");
           if (res.status === 401 || res.status === 403) {
             err = "Oturum düşmüş — sayfayı yenile, tekrar giriş yap, sonra kaydet";
+            setDomainHint(err, true);
+            return;
+          }
+          // Create: cevap gelmeden kopunca sunucu yine de kaydetmiş olabilir;
+          // ikinci denemede "Domain zaten var" da aynı şey. Listeyi doğrula.
+          if (!_editDomainId && body.domain) {
+            var maybeDup = /zaten var/i.test(String(err));
+            var maybeNet = res.status === 0;
+            if (maybeDup || maybeNet) {
+              setDomainHint("Bağlantı koptu — kayıt kontrol ediliyor…", false);
+              return refreshDomains().then(function () {
+                var existing = findDomainByName(body.domain);
+                if (existing) {
+                  resetDomainForm();
+                  setDomainHint(
+                    "Kaydedildi: " + (existing.from_local || "info") + "@" + existing.domain,
+                    false
+                  );
+                  if (window.MakroMailing && typeof window.MakroMailing.onShow === "function") {
+                    window.MakroMailing.onShow();
+                  }
+                  return;
+                }
+                setDomainHint(err, true);
+              });
+            }
           }
           setDomainHint(err, true);
           return;

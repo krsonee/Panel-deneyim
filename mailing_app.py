@@ -585,6 +585,8 @@ def _create_domain_row(conn, data: dict):
 @app.post("/api/platform/domains")
 @require_superadmin
 def platform_create_domain():
+    from mail_tenant import enrich_domain_public
+
     data = request.get_json(silent=True) or {}
     with closing(get_db()) as conn:
         did, err = _create_domain_row(conn, data)
@@ -593,8 +595,17 @@ def platform_create_domain():
             return jsonify({"error": err}), 400
         conn.commit()
         cohort = (data.get("warmup_cohort") or "new").strip().lower()
+        row = fetchone(conn, "SELECT * FROM mail_domains WHERE id = ?", (did,))
+        domain_out = enrich_domain_public(row) if row else None
     _platform_audit("domain_create", f"id={did} domain={data.get('domain')}")
-    return jsonify({"ok": True, "domain_id": did, "warmup_cohort": cohort}), 201
+    return jsonify(
+        {
+            "ok": True,
+            "domain_id": did,
+            "warmup_cohort": cohort,
+            "domain": domain_out,
+        }
+    ), 201
 
 
 @app.post("/api/platform/domains/bulk")
