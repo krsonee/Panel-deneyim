@@ -19,6 +19,7 @@ from database import (
     fetchone,
     get_mail_setting,
     upsert_mail_setting,
+    uses_postgres,
 )
 
 SETTING_KEY = "warmup_program_v1"
@@ -334,9 +335,18 @@ def program_day_on_date(started_on: str, on_date: str | date) -> int:
 
 
 def _send_day_expr(column: str = "COALESCE(sent_at, created_at)") -> str:
-    """SQL: gönderim anını takvim gününe (YYYY-MM-DD) çevir — PG + SQLite ISO text."""
-    # Prod ISO string veya timestamptz; substr her iki tarafta da güvenli
-    return f"substr(CAST({column} AS TEXT), 1, 10)"
+    """SQL: gönderim anını operatör (Europe/Istanbul, DST'siz sabit +3) takvim
+    gününe çevirir.
+
+    Önceden ham UTC günü kullanılıyordu (substr(CAST(col AS TEXT),1,10)) — TR
+    saatinde 00:00–02:59 arasına denk gelen gönderimler (UTC 21:00–23:59) bir
+    önceki UTC gününe düşüyor, warmup gap/realign hesaplarını kaydırabiliyordu.
+    _parse_op_date zaten TR'ye çeviriyordu; burada da aynı ofseti uygulayarak
+    ikisini hizaladık.
+    """
+    if uses_postgres():
+        return f"substr(CAST(({column}::timestamptz + interval '3 hours') AS TEXT), 1, 10)"
+    return f"substr(datetime({column}, '+3 hours'), 1, 10)"
 
 
 def last_program_send_info(conn, domain_ids=None, *, min_volume: int | None = None) -> dict:
@@ -631,12 +641,23 @@ def sync_program_caps(conn, state: dict | None = None, *, cohort: str = COHORT_L
     updated = 0
     for did in tr.get("domain_ids") or []:
         try:
+            # burned/paused domainin cap'ini YÜKSELTME — warm_status'u koruyoruz
+            # ama önceden daily_cap/hourly_cap koşulsuz plana göre yazılıyordu;
+            # bu da domain_health'in kasıtlı pause/burn ettiği bir domaine
+            # otomatik kapasite geri veriyordu (health kontrolü sadece
+            # warm_status'a bakıyor, cap'in kendisine bakmıyor).
             execute(
                 conn,
                 """
                 UPDATE mail_domains
-                SET daily_cap = ?,
-                    hourly_cap = ?,
+                SET daily_cap = CASE
+                        WHEN COALESCE(warm_status, '') IN ('burned', 'paused') THEN daily_cap
+                        ELSE ?
+                    END,
+                    hourly_cap = CASE
+                        WHEN COALESCE(warm_status, '') IN ('burned', 'paused') THEN hourly_cap
+                        ELSE ?
+                    END,
                     warm_day = ?,
                     warm_status = CASE
                         WHEN COALESCE(warm_status, '') IN ('burned', 'paused') THEN warm_status

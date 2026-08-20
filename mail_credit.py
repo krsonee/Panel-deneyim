@@ -7,7 +7,7 @@ kaynak doğruluk paneldedir.
 
 from __future__ import annotations
 
-from database import execute, fetchall, fetchone, get_mail_setting, scalar, upsert_mail_setting
+from database import add_int_setting, execute, fetchall, fetchone, get_mail_setting, row_get, scalar, upsert_mail_setting
 
 SETTING_TOTAL = "mail_credit_total"
 SETTING_USED = "mail_credit_used"
@@ -132,8 +132,8 @@ def tenant_credit_snapshot(conn, tenant_id: int) -> dict:
             "exhausted": True,
             "error": "Tenant yok",
         }
-    allocated = int(row.get("credit_allocated") or 0)
-    used = int(row.get("credit_used") or 0)
+    allocated = int(row_get(row, "credit_allocated") or 0)
+    used = int(row_get(row, "credit_used") or 0)
     remaining = max(0, allocated - used)
     # allocated=0 → sınırsız tenant payı yok; global havuzdan düşer ama tenant bloklanmaz
     # Kullanıcı firmalara bölüşüm istedi — 0 = henüz pay yok → gönderemez (strict)
@@ -145,8 +145,8 @@ def tenant_credit_snapshot(conn, tenant_id: int) -> dict:
         "remaining": remaining if not unlimited else None,
         "exhausted": (not unlimited) and remaining <= 0,
         "requires_allocation": unlimited,
-        "slug": row.get("slug") or "",
-        "name": row.get("name") or "",
+        "slug": row_get(row, "slug") or "",
+        "name": row_get(row, "name") or "",
     }
 
 
@@ -157,7 +157,7 @@ def set_tenant_credit_allocated(conn, tenant_id: int, allocated: int) -> dict:
     row = fetchone(conn, "SELECT credit_used FROM mail_tenants WHERE id = ?", (int(tenant_id),))
     if not row:
         raise ValueError("Tenant yok.")
-    used = int(row.get("credit_used") or 0)
+    used = int(row_get(row, "credit_used") or 0)
     if n < used:
         raise ValueError(f"Tahsis ({n}) kullanılan krediden ({used}) küçük olamaz.")
     other = sum_tenant_allocated(conn, exclude_tenant_id=int(tenant_id))
@@ -223,28 +223,28 @@ def credit_blocks_send(conn, *, tenant_id: int | None = None) -> tuple[bool, str
 
 
 def consume_credit(conn, *, tenant_id: int | None = None, n: int = 1) -> bool:
-    """Başarılı gönderim sonrası kredi düş. False = kredi yoktu (yine de düşmeye çalışmaz)."""
+    """Başarılı gönderim sonrası kredi düş. False = kredi yoktu (yine de düşmeye çalışmaz).
+
+    Artış SQL'de atomik yapılır — eşzamanlı worker'larda Python'da
+    "oku + topla + yaz" sırasında bir increment'in kaybolması (lost update)
+    riskini önler.
+    """
     need = max(1, int(n or 1))
     ok, _, _ = can_consume(conn, need, tenant_id=tenant_id)
     if not ok:
         return False
-    used = get_credit_used(conn) + need
     total = get_credit_total(conn)
-    upsert_mail_setting(conn, SETTING_USED, str(min(used, total)))
+    add_int_setting(conn, SETTING_USED, need, lo=0, hi=total)
     if tenant_id:
-        row = fetchone(
+        execute(
             conn,
-            "SELECT credit_allocated, credit_used FROM mail_tenants WHERE id = ?",
-            (int(tenant_id),),
+            """
+            UPDATE mail_tenants
+            SET credit_used = MIN(COALESCE(credit_used, 0) + ?, COALESCE(credit_allocated, 0))
+            WHERE id = ? AND COALESCE(credit_allocated, 0) > 0
+            """,
+            (need, int(tenant_id)),
         )
-        if row and int(row.get("credit_allocated") or 0) > 0:
-            tu = int(row.get("credit_used") or 0) + need
-            ta = int(row.get("credit_allocated") or 0)
-            execute(
-                conn,
-                "UPDATE mail_tenants SET credit_used = ? WHERE id = ?",
-                (min(tu, ta), int(tenant_id)),
-            )
     return True
 
 

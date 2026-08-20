@@ -12,6 +12,7 @@ from database import (
     get_mail_setting,
     insert_returning_id,
     iso,
+    row_get,
     safe_rollback,
     utcnow,
 )
@@ -47,25 +48,29 @@ def _domain_from(conn, domain_id):
 
 
 def _resolve_domain_smtp_password(row) -> str:
-    """Makro panel uyumu: düz smtp_password öncelikli, sonra enc decrypt."""
+    """Şifreli alan (smtp_password_enc) öncelikli; düz metin sadece eski
+    kayıtlar için geriye-uyumluluk fallback'i (yeni kayıtlar artık düz metin
+    yazmıyor — bkz. mailing_app.platform_patch_domain)."""
     if not row:
         return ""
     d = dict(row)
-    plain = (d.get("smtp_password") or "").strip()
     enc = (d.get("smtp_password_enc") or "").strip()
+    if enc:
+        if enc.startswith("enc:v1:"):
+            try:
+                from mail_tenant import decrypt_secret
+
+                dec = (decrypt_secret(enc) or "").strip()
+                if dec:
+                    return dec
+            except Exception:
+                pass
+        else:
+            return enc
+    plain = (d.get("smtp_password") or "").strip()
     if plain and not plain.startswith("enc:v1:"):
         return plain
-    blob = enc or plain
-    if not blob:
-        return ""
-    if blob.startswith("enc:v1:"):
-        try:
-            from mail_tenant import decrypt_secret
-
-            return (decrypt_secret(blob) or "").strip()
-        except Exception:
-            return ""
-    return blob
+    return ""
 
 
 def _smtp_send(
@@ -265,9 +270,13 @@ def deliver_mail(
             (
                 channel, campaign_id, contact_id, template_id, domain_id,
                 to_email, to_phone or "", subject or "", "skipped", "",
-                "Suppression / unsubscribed", None, None, None, now,
-            ),
-        )
+                    "Suppression / unsubscribed", None, None, None, now,
+                ),
+            )
+        try:
+            conn.commit()
+        except Exception:
+            safe_rollback(conn)
         return send_id, "skipped", "Suppression / unsubscribed"
 
     # Domain pause / daily_cap
@@ -290,6 +299,10 @@ def deliver_mail(
                     block_reason[:200], None, None, None, now,
                 ),
             )
+            try:
+                conn.commit()
+            except Exception:
+                safe_rollback(conn)
             return send_id, "skipped", block_reason
     except Exception as exc:
         print(f"⚠️  domain block check: {exc}")
@@ -314,6 +327,10 @@ def deliver_mail(
                     (q_reason or "Alibaba kota")[:200], None, None, None, now,
                 ),
             )
+            try:
+                conn.commit()
+            except Exception:
+                safe_rollback(conn)
             return send_id, "skipped", q_reason
     except Exception as exc:
         print(f"⚠️  account quota check: {exc}")
@@ -325,8 +342,8 @@ def deliver_mail(
             credit_tenant_id = int(contact["tenant_id"])
         elif campaign_id:
             crow = fetchone(conn, "SELECT tenant_id FROM mail_campaigns WHERE id = ?", (campaign_id,))
-            if crow and crow.get("tenant_id"):
-                credit_tenant_id = int(crow["tenant_id"])
+            if crow and row_get(crow, "tenant_id"):
+                credit_tenant_id = int(row_get(crow, "tenant_id"))
         from mail_credit import credit_blocks_send
         c_blocked, c_reason = credit_blocks_send(conn, tenant_id=credit_tenant_id)
         if c_blocked:
@@ -345,6 +362,10 @@ def deliver_mail(
                     (c_reason or "Mail kredisi")[:200], None, None, None, now,
                 ),
             )
+            try:
+                conn.commit()
+            except Exception:
+                safe_rollback(conn)
             return send_id, "skipped", c_reason
     except Exception as exc:
         print(f"⚠️  mail credit check: {exc}")
@@ -459,6 +480,10 @@ def deliver_mail(
             consume_credit(conn, tenant_id=credit_tenant_id, n=1)
         except Exception as cexc:
             print(f"⚠️  credit consume: {cexc}")
+        try:
+            conn.commit()
+        except Exception:
+            safe_rollback(conn)
         return send_id, "simulated", ""
 
     host = (get_mail_setting(conn, "smtp_host", "") or "").strip()
@@ -476,6 +501,10 @@ def deliver_mail(
             tag_send_outcome(conn, contact_id, "failed", now)
         except Exception:
             pass
+        try:
+            conn.commit()
+        except Exception:
+            safe_rollback(conn)
         return send_id, "failed", "SMTP host tanımlı değil"
 
     from_email, from_name = _domain_from(conn, domain_id)
@@ -528,6 +557,10 @@ def deliver_mail(
             tag_send_outcome(conn, contact_id, "failed", now)
         except Exception:
             pass
+        try:
+            conn.commit()
+        except Exception:
+            safe_rollback(conn)
         return send_id, "failed", err
     else:
         user = from_email_l or settings_user
@@ -545,6 +578,10 @@ def deliver_mail(
             tag_send_outcome(conn, contact_id, "failed", now)
         except Exception:
             pass
+        try:
+            conn.commit()
+        except Exception:
+            safe_rollback(conn)
         return send_id, "failed", err
 
     extra = list_unsubscribe_headers(unsub_http) if unsub_http else None
@@ -603,12 +640,19 @@ def deliver_mail(
                 consume_credit(conn, tenant_id=credit_tenant_id, n=1)
             except Exception as cexc:
                 print(f"⚠️  credit consume: {cexc}")
+            # SMTP fiilen gönderildi (harici, geri alınamaz) — durum güncellemesi
+            # commit edilmezse ve süreç burada çökerse kayıt 'queued' kalır ve
+            # bir retry mekanizması aynı maili tekrar gönderebilir (double-send).
+            try:
+                conn.commit()
+            except Exception:
+                safe_rollback(conn)
             return send_id, "sent", ""
         except Exception as exc:
             last_err = str(exc).strip()[:400] or "SMTP gönderim hatası"
-            if "535" not in last_err and "Authentication" not in last_err and "auth" not in last_err.lower():
-                # Timeout / network — diğer host’a geç; auth değilse de dene
-                continue
+            # Yanlış bölge host'u da 535 verebildiği için auth hatalarında da
+            # diğer host'ları deniyoruz — if/else öncesi ikisi de aynı continue'ya
+            # gidiyordu (dead branch); tek continue ile aynı davranış, daha açık.
             continue
 
     err = f"{last_err} [auth={auth_source}; user={user}; hosts_tried={len(host_list)}]"
@@ -626,4 +670,8 @@ def deliver_mail(
         tag_send_outcome(conn, contact_id, "failed", now)
     except Exception:
         pass
+    try:
+        conn.commit()
+    except Exception:
+        safe_rollback(conn)
     return send_id, "failed", err

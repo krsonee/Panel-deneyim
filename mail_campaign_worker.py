@@ -14,6 +14,7 @@ from database import (
     get_db,
     get_mail_setting,
     iso,
+    row_get,
     safe_rollback,
     scalar,
     utcnow,
@@ -260,7 +261,7 @@ def _tick_scheduled():
             cid = int(r["id"])
             if is_campaign_running(cid):
                 continue
-            raw = r.get("scheduled_at")
+            raw = row_get(r, "scheduled_at")
             if not raw:
                 print(f"⚠️  campaign #{cid} scheduled ama scheduled_at boş — bekletiliyor")
                 continue
@@ -292,8 +293,8 @@ def _tick_scheduled():
             cid = int(r["id"])
             if is_campaign_running(cid) or cid in due:
                 continue
-            raw = r.get("scheduled_at")
-            sent = int(r.get("sent_count") or 0)
+            raw = row_get(r, "scheduled_at")
+            sent = int(row_get(r, "sent_count") or 0)
             # Henüz mail gitmemiş + saat gelecekte → scheduled'a geri çek
             if sent <= 0 and raw and schedule_is_future(raw, now=now):
                 execute(
@@ -516,7 +517,7 @@ def _process_campaign(campaign_id):
         # Domain bazlı hız (varsa kampanya hızından düşük olan uygulanır)
         try:
             drow = fetchone(conn, "SELECT rate_per_minute FROM mail_domains WHERE id = ?", (camp.get("domain_id"),))
-            dom_rate = int((drow or {}).get("rate_per_minute") or 0) if drow else 0
+            dom_rate = int(row_get(drow, "rate_per_minute") or 0) if drow else 0
             if dom_rate > 0:
                 rate = min(rate, dom_rate) if rate > 0 else dom_rate
                 delay = (60.0 / rate) if rate > 0 else delay
@@ -591,7 +592,7 @@ def _process_campaign(campaign_id):
                                 "SELECT rate_per_minute FROM mail_domains WHERE id = ?",
                                 (batch_dom,),
                             )
-                            dom_rate = int((drow or {}).get("rate_per_minute") or 0) if drow else 0
+                            dom_rate = int(row_get(drow, "rate_per_minute") or 0) if drow else 0
                             camp_rate = int(camp.get("rate_per_minute") or 0)
                             mode = (get_mail_setting(conn, "provider_mode", "stub") or "stub").strip().lower()
                             base = camp_rate
@@ -667,7 +668,12 @@ def _process_campaign(campaign_id):
                     send_id, status, err = None, "failed", "domain"
                     if is_auto_camp:
                         from mail_domain_pick import pick_tenant_domain
-                        for _attempt in range(5):
+                        # Sabit 5 deneme, havuzda 5'ten çok domain varsa hâlâ
+                        # gönderilebilir domainler dururken kampanyayı erken
+                        # "failed" bırakabiliyordu. pick_tenant_domain excluded
+                        # havuz tükenince zaten None döner — üst sınır sadece
+                        # olası bir döngü hatasına karşı güvenlik payı.
+                        for _attempt in range(200):
                             send_domain_id = pick_tenant_domain(
                                 conn,
                                 int(tenant_id_camp) if tenant_id_camp else None,

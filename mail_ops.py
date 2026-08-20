@@ -235,11 +235,14 @@ def suppress_email(conn, email, reason="unsubscribed", source="system"):
 
 
 def make_unsub_token(conn, *, email, contact_id=None, send_id=None):
+    """SQLite de SAVEPOINT destekler — önceden sadece Postgres'te savepoint
+    kullanılıyor, SQLite modunda insert patlarsa safe_rollback() TÜM
+    transaction'ı (aynı çağrıda önceden yapılmış mail_sends insert'i, sayaç
+    güncellemeleri vb. dahil) geri alıyordu. Artık ikisinde de savepoint."""
     token = secrets.token_urlsafe(18)
     sp = "sp_mail_unsub"
     try:
-        if uses_postgres():
-            execute(conn, f"SAVEPOINT {sp}")
+        execute(conn, f"SAVEPOINT {sp}")
         execute(
             conn,
             """
@@ -248,15 +251,11 @@ def make_unsub_token(conn, *, email, contact_id=None, send_id=None):
             """,
             (token, contact_id, send_id, (email or "").strip().lower(), iso(utcnow())),
         )
-        if uses_postgres():
-            execute(conn, f"RELEASE SAVEPOINT {sp}")
+        execute(conn, f"RELEASE SAVEPOINT {sp}")
     except Exception as exc:
         print(f"⚠️  mail_unsub_tokens insert: {exc}")
         try:
-            if uses_postgres():
-                execute(conn, f"ROLLBACK TO SAVEPOINT {sp}")
-            else:
-                safe_rollback(conn)
+            execute(conn, f"ROLLBACK TO SAVEPOINT {sp}")
         except Exception:
             safe_rollback(conn)
     return token

@@ -197,7 +197,8 @@ def ensure_mail_scrub_schema(conn):
         "scrub_auto_suppress_invalid": "1",
         "scrub_suppress_disposable": "1",
         "scrub_suppress_role": "0",
-        "scrub_campaign_only_valid": "0",
+        # Alibaba %90 başarı şartı — varsayılan AÇIK: kampanya sadece valid/mx_ok kontağa gitsin
+        "scrub_campaign_only_valid": "1",
         "scrub_skip_hours": "168",
         "scrub_mail_from": "",
     }
@@ -641,10 +642,15 @@ def _process_scrub_job(job_id: int):
                 chunk = selected_ids[i:i + batch_size]
                 with closing(get_db()) as conn:
                     ph = ",".join(["?"] * len(chunk))
+                    sql = f"SELECT id, email, verified_at, verify_status FROM mail_contacts WHERE id IN ({ph})"
+                    params = list(chunk)
+                    if job_tenant_id:
+                        sql += " AND tenant_id = ?"
+                        params.append(int(job_tenant_id))
                     rows = fetchall(
                         conn,
-                        f"SELECT id, email, verified_at, verify_status FROM mail_contacts WHERE id IN ({ph}) ORDER BY id ASC",
-                        tuple(chunk),
+                        sql + " ORDER BY id ASC",
+                        tuple(params),
                     ) or []
                 yield rows
             return

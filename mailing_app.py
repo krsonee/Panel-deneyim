@@ -72,6 +72,30 @@ def _login_rate_ok(username: str) -> bool:
     return True
 
 
+def _platform_actor() -> str:
+    """Superadmin platform aksiyonlarını mail_audit_log'a yazan çağrılarda
+    'kim yaptı' — session'daki görünen ad/username."""
+    return (
+        session.get("mail_display_name")
+        or session.get("mail_username")
+        or request.headers.get("X-Admin-User")
+        or "superadmin"
+    )
+
+
+def _platform_audit(action: str, detail: str = "") -> None:
+    """Tenant/domain/kredi/kota gibi hassas superadmin aksiyonları için audit
+    log — önceden bu aksiyonların hiçbiri mail_audit_log'a yazılmıyordu, 'kim
+    ne yaptı' izlenemiyordu."""
+    try:
+        from mail_ops import audit
+        with closing(get_db()) as _c:
+            audit(_c, _platform_actor(), action, detail)
+            _c.commit()
+    except Exception as exc:
+        print(f"⚠️  platform audit log: {exc}")
+
+
 @app.get("/health")
 def health():
     return jsonify({"ok": True, "service": "mikromail"})
@@ -272,6 +296,7 @@ def platform_create_tenant():
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": f"Oluşturulamadı: {exc}"}), 400
+    _platform_audit("tenant_create", f"id={tid} slug={slug} name={name}")
     return jsonify({
         "ok": True,
         "tenant_id": tid,
@@ -373,6 +398,7 @@ def platform_patch_tenant(tenant_id):
                 return jsonify({"error": str(exc)}), 400
         conn.commit()
         row = fetchone(conn, "SELECT * FROM mail_tenants WHERE id = ?", (tenant_id,))
+    _platform_audit("tenant_patch", f"id={tenant_id} fields={sorted(data.keys())}")
     return jsonify({"tenant": dict(row)})
 
 
@@ -394,6 +420,7 @@ def platform_delete_tenant(tenant_id):
             ("deleted", now, tenant_id),
         )
         conn.commit()
+    _platform_audit("tenant_delete", f"id={tenant_id} slug={slug}")
     return jsonify({"ok": True, "tenant_id": tenant_id, "status": "deleted"})
 
 
@@ -475,6 +502,7 @@ def platform_mail_credit_patch():
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+    _platform_audit("mail_credit_patch", f"fields={sorted(data.keys())}")
     return jsonify({"ok": True, "credit": snap, "tenants": tenants})
 
 
@@ -543,6 +571,7 @@ def platform_create_domain():
         except Exception:
             pass
         conn.commit()
+    _platform_audit("domain_create", f"id={did} domain={domain}")
     return jsonify({"ok": True, "domain_id": did, "warmup_cohort": cohort}), 201
 
 
@@ -589,16 +618,20 @@ def platform_patch_domain(domain_id):
         else:
             warm_day = int(row.get("warm_day") or 0)
 
-        # Makro panel gibi düz şifre de sakla (gönderim bunu tercih eder)
+        # Yeni şifre girildiğinde artık düz metin SAKLANMIYOR — sadece enc.
+        # (Eski kayıtlarda hâlâ düz smtp_password olabilir; _resolve_domain_smtp_password
+        # bunu geriye-uyumluluk için okur ama yeni yazımlar enc-only.)
         plain_pw = None
         enc = row.get("smtp_password_enc") or ""
         if data.get("smtp_password"):
-            plain_pw = str(data["smtp_password"]).strip()
+            new_pw = str(data["smtp_password"]).strip()
             try:
-                enc = encrypt_secret(plain_pw)
+                enc = encrypt_secret(new_pw)
+                plain_pw = ""  # eski düz metni de temizle
             except Exception as exc:
                 print(f"⚠️  smtp encrypt: {exc}")
                 enc = ""
+                plain_pw = new_pw  # encrypt başarısızsa en azından gönderim çalışsın
         elif row.get("smtp_password") and not str(row.get("smtp_password")).startswith("enc:v1:"):
             plain_pw = str(row.get("smtp_password")).strip()
 
@@ -660,6 +693,11 @@ def platform_patch_domain(domain_id):
 
         conn.commit()
         updated = fetchone(conn, "SELECT * FROM mail_domains WHERE id = ?", (domain_id,))
+    _safe_fields = sorted(k for k in data.keys() if "password" not in k)
+    _platform_audit(
+        "domain_patch",
+        f"id={domain_id} fields={_safe_fields}" + (" +smtp_password" if "smtp_password" in data else ""),
+    )
     return jsonify({"ok": True, "domain": _platform_domain_public(updated)})
 
 
@@ -681,6 +719,7 @@ def platform_allocate(domain_id):
             execute(conn, "DELETE FROM mail_domain_allocations WHERE domain_id = ?", (domain_id,))
         aid = allocate_domain(conn, domain_id, tid, exclusive=bool(data.get("exclusive")))
         conn.commit()
+    _platform_audit("domain_allocate", f"domain_id={domain_id} tenant_id={tid} replace={replace}")
     return jsonify({"ok": True, "allocation_id": aid, "replaced": replace})
 
 
@@ -699,6 +738,7 @@ def platform_deallocate(domain_id):
         else:
             deallocate_domain(conn, domain_id, int(raw_tid))
         conn.commit()
+    _platform_audit("domain_deallocate", f"domain_id={domain_id} tenant_id={raw_tid} all={all_flag}")
     return jsonify({"ok": True})
 
 
@@ -709,6 +749,14 @@ def platform_warmup_program_get():
 
     with closing(get_db()) as conn:
         snap = program_snapshot(conn)
+        # program_snapshot() günlük cap senkronizasyonunu (sync_program_caps)
+        # ve state kaydını (save_state) tetikler — commit yoksa bu yazımlar
+        # bağlantı kapanınca sessizce rollback olur ve domainlerin gerçek
+        # daily_cap'i asla ısıtma planına göre artmaz.
+        try:
+            conn.commit()
+        except Exception:
+            pass
     return jsonify({"program": snap})
 
 
@@ -813,6 +861,7 @@ def platform_account_quota_patch():
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+    _platform_audit("account_quota_patch", f"fields={sorted(data.keys())}")
     return jsonify({"ok": True, "quota": snap, "credit": credit})
 
 
@@ -954,14 +1003,3 @@ def _startup():
 
 
 _startup()
-
-
-# Decrypt helper for delivery layer
-def get_domain_smtp_password(conn, domain_id: int) -> str:
-    row = fetchone(conn, "SELECT smtp_password_enc, smtp_password FROM mail_domains WHERE id = ?", (domain_id,))
-    if not row:
-        return ""
-    blob = (row.get("smtp_password_enc") if hasattr(row, "get") else None) or ""
-    if not blob:
-        blob = dict(row).get("smtp_password_enc") or dict(row).get("smtp_password") or ""
-    return decrypt_secret(blob) if blob else ""

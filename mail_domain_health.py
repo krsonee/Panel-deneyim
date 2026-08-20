@@ -5,12 +5,16 @@ from __future__ import annotations
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
-from database import execute, fetchall, fetchone, get_db, iso, scalar, utcnow
+from database import execute, fetchall, fetchone, get_db, iso, row_get, scalar, utcnow
 
 WINDOW_HOURS = 24
 MIN_SAMPLE = 20
-BOUNCE_RATE_MAX = 5.0
-FAIL_RATE_MAX = 10.0
+# Alibaba hesap yöneticisi hesap genelinde ≥%90 başarı istiyor (limit artırım şartı,
+# ≥%80 sürdürme şartı). Domain eşiklerini bu hedeften ÖNCE alarm verecek şekilde
+# sıkılaştırdık — eskiden %10 fail'e kadar izin veriyordu, bu tek başına hesabı
+# %90'ın altına düşürebiliyordu.
+BOUNCE_RATE_MAX = 4.0
+FAIL_RATE_MAX = 7.0
 COMPLAINT_RATE_MAX = 0.3
 
 try:
@@ -89,7 +93,7 @@ def pause_domain(conn, domain_id: int, reason: str) -> bool:
     )
     if not row:
         return False
-    st = (row.get("warm_status") or "").strip().lower()
+    st = (row_get(row, "warm_status") or "").strip().lower()
     if st in ("paused", "burned"):
         return False
     now = iso(utcnow())
@@ -131,7 +135,7 @@ def pause_domain(conn, domain_id: int, reason: str) -> bool:
             safe_rollback(conn)
         except Exception:
             pass
-    print(f"✉️  AUTO-PAUSE domain #{domain_id} ({row.get('domain')}): {reason}")
+    print(f"✉️  AUTO-PAUSE domain #{domain_id} ({row_get(row, 'domain')}): {reason}")
     return True
 
 
@@ -160,10 +164,10 @@ def review_all_active_domains(conn) -> list[dict]:
         try:
             result = evaluate_and_maybe_pause(conn, int(r["id"]))
             result["domain_id"] = int(r["id"])
-            result["domain"] = r.get("domain")
+            result["domain"] = row_get(r, "domain")
             out.append(result)
         except Exception as exc:
-            print(f"⚠️  domain health #{r.get('id')}: {exc}")
+            print(f"⚠️  domain health #{row_get(r, 'id')}: {exc}")
             try:
                 from database import safe_rollback
                 safe_rollback(conn)
@@ -182,10 +186,10 @@ def domain_is_send_blocked(conn, domain_id) -> tuple[bool, str]:
     )
     if not row:
         return True, "Domain bulunamadı"
-    st = (row.get("warm_status") or "").strip().lower()
+    st = (row_get(row, "warm_status") or "").strip().lower()
     if st in ("paused", "burned"):
         return True, f"Domain {st}"
-    daily_cap = int(row.get("daily_cap") or 0)
+    daily_cap = int(row_get(row, "daily_cap") or 0)
     if daily_cap > 0:
         now_local = datetime.now(OP_TZ)
         day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)

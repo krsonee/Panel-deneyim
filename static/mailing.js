@@ -148,6 +148,47 @@
     }
     box.hidden = !show;
     if (show) text.textContent = msg;
+    mailRenderSuccessRate(h.success_rate);
+  }
+
+  function mailFmtSuccessRate(sr) {
+    if (!sr || sr.rate == null) return "—";
+    return sr.rate.toFixed(1).replace(".", ",") + "%";
+  }
+
+  function mailRenderSuccessRate(sr) {
+    sr = sr || {};
+    var d24 = sr.last_24h || {};
+    var d7 = sr.last_7d || {};
+    var el24 = document.getElementById("mail-success-rate-24h");
+    var el7 = document.getElementById("mail-success-rate-7d");
+    var note = document.getElementById("mail-success-rate-note");
+    if (el24) {
+      el24.textContent = mailFmtSuccessRate(d24);
+      el24.className = "";
+      if (d24.tier === "danger") el24.style.color = "var(--red, #ef4444)";
+      else if (d24.tier === "warn") el24.style.color = "var(--amber, #f59e0b)";
+      else if (d24.tier === "good") el24.style.color = "var(--green, #22c55e)";
+      else el24.style.color = "";
+    }
+    if (el7) {
+      el7.textContent = mailFmtSuccessRate(d7);
+      if (d7.tier === "danger") el7.style.color = "var(--red, #ef4444)";
+      else if (d7.tier === "warn") el7.style.color = "var(--amber, #f59e0b)";
+      else if (d7.tier === "good") el7.style.color = "var(--green, #22c55e)";
+      else el7.style.color = "";
+    }
+    if (note) {
+      if (d7.total) {
+        var msg = "Son 7 gün: " + fmtNum(d7.accepted) + " kabul / " + fmtNum(d7.rejected) + " fail+bounce (n=" + fmtNum(d7.total) + "). ";
+        if (d7.tier === "danger") msg += "⚠️ %80 sürdürme eşiğinin altında — Alibaba limiti kısabilir. Liste temizliği (scrub) yap.";
+        else if (d7.tier === "warn") msg += "%90 limit-artış eşiğinin altında ama %80 üstünde — artış istemeden önce scrub + doğrulanmış liste kullan.";
+        else msg += "Alibaba'nın limit artırma eşiğinin (%90) üzerinde — iyi durumda.";
+        note.textContent = msg;
+      } else {
+        note.textContent = "Son 7 günde ölçülebilir gönderim yok.";
+      }
+    }
   }
 
   function mmMsgIdCell(id) {
@@ -298,12 +339,17 @@
     return _mailEnsureTenantPromise;
   }
 
+  var _mailToastTimer = null;
   function mailToast(msg) {
     var el = document.getElementById("toast");
     if (!el) { alert(msg); return; }
+    // Önceki toast'ın zamanlayıcısı hâlâ beklemedeyse bu yeni mesajı erken
+    // gizleyebiliyordu (iki toast 2.8s içinde art arda gelirse) — her
+    // çağrıda önceki timer temizlenir.
+    if (_mailToastTimer) clearTimeout(_mailToastTimer);
     el.textContent = msg;
     el.classList.add("show");
-    setTimeout(function () { el.classList.remove("show"); }, 2800);
+    _mailToastTimer = setTimeout(function () { el.classList.remove("show"); }, 2800);
   }
 
   function esc(s) {
@@ -1925,15 +1971,22 @@
   }
 
   var mailTagRecountTimer = null;
+  var _mailContactStatsRefreshInFlight = null;
   function mailLoadContactStats(opts) {
     opts = opts || {};
+    // refresh=1 milyonlarca satırda tam etiket recount tetikler (5dk timeout) —
+    // çift tıklama iki eşzamanlı ağır tarama başlatıyordu; devam eden bir
+    // refresh varsa onun promise'ini paylaş.
+    if (opts.refresh && _mailContactStatsRefreshInFlight) {
+      return _mailContactStatsRefreshInFlight;
+    }
     var parts = [];
     if (opts.refresh) parts.push("refresh=1");
     if (opts.syncTags) parts.push("sync_tags=1");
     var qs = parts.length ? ("?" + parts.join("&")) : "";
     var timeout = opts.refresh ? 300000 : 20000;
     setText("mail-crm-stat-total", "…");
-    return mailApi("/api/mailing/contacts/stats" + qs, { timeoutMs: timeout }).then(function (res) {
+    var p = mailApi("/api/mailing/contacts/stats" + qs, { timeoutMs: timeout }).then(function (res) {
       if (!res || !res.ok) {
         setText("mail-crm-stat-total", "—");
         return;
@@ -1950,6 +2003,13 @@
       // Etiket sayılarını yenilemek için Mail Rehber "Yenile" (refresh=1) kullanılır.
       if (mailTagRecountTimer) { clearTimeout(mailTagRecountTimer); mailTagRecountTimer = null; }
     });
+    if (opts.refresh) {
+      _mailContactStatsRefreshInFlight = p.finally(function () {
+        _mailContactStatsRefreshInFlight = null;
+      });
+      return _mailContactStatsRefreshInFlight;
+    }
+    return p;
   }
 
   var mailContactsPageTotal = 0;
@@ -2688,12 +2748,20 @@
       doms.textContent = sendable + " / " + allocated + " domain gönderilebilir";
     }
     if (fill) {
-      // Bar: sendable oranı (0 sendable → danger)
-      var pct = allocated > 0 ? Math.min(100, Math.round((sendable / allocated) * 100)) : 0;
-      // Invert fill for "remaining fuel" feel: use remaining vs soft 10k scale if no better
-      var fuel = Math.min(100, Math.round((remaining / Math.max(remaining + 1, 5000)) * 100));
-      if (remaining <= 0) fuel = 0;
-      else if (remaining < 500) fuel = Math.max(8, fuel);
+      // "Bugün kalan / gönderilebilir domainlerin toplam günlük cap'i" —
+      // önceden sabit 5000 tavana göre ölçekleniyordu, bu yüzden 6.000 kalan
+      // ile 600.000 kalan görsel olarak aynı (~%100 dolu) görünüyordu.
+      var totalCap = 0;
+      (cap.domains || []).forEach(function (d) {
+        if (d && d.sendable) totalCap += Number(d.daily_cap) || 0;
+      });
+      var fuel;
+      if (totalCap > 0) {
+        fuel = Math.min(100, Math.max(0, Math.round((remaining / totalCap) * 100)));
+      } else {
+        fuel = remaining > 0 ? 100 : 0;
+      }
+      if (remaining > 0 && fuel < 8) fuel = 8;
       fill.style.width = fuel + "%";
       fill.classList.toggle("is-warn", remaining > 0 && remaining < 1000);
       fill.classList.toggle("is-danger", remaining <= 0 || sendable <= 0);
@@ -3744,16 +3812,24 @@
         });
       }
     });
-    bindClick("mail-contacts-refresh", function () {
+    bindClick("mail-contacts-refresh", function (e) {
+      var btn = e && e.currentTarget;
+      if (btn) btn.disabled = true;
       mailLoadContacts();
       mailLoadTags();
-      mailLoadContactStats({ refresh: true });
+      mailLoadContactStats({ refresh: true }).finally(function () {
+        if (btn) btn.disabled = false;
+      });
     });
-    bindClick("mail-crm-tag-refresh", function () {
+    bindClick("mail-crm-tag-refresh", function (e) {
+      var btn = e && e.currentTarget;
+      if (btn) btn.disabled = true;
       var hint = document.getElementById("mail-crm-tag-stats-hint");
       if (hint) hint.textContent = "Özet yenileniyor…";
       mailLoadContactStats({ refresh: true }).then(function () {
         if (hint) hint.textContent = "Aynı kontak birden fazla etikette sayılabilir";
+      }).finally(function () {
+        if (btn) btn.disabled = false;
       });
     });
     bindClick("mail-contacts-select-page", function () {
@@ -4982,9 +5058,28 @@
     return mailRefreshImportStatus({ force: true });
   }
 
+  /** .mm-tip / .mm-tip-btn öğeleri tabindex="0" ile klavye ile focus alabiliyor
+   * ama data-tip ekran okuyucuya hiç ulaşmıyordu (custom attribute, aria değil)
+   * ve tooltip sadece mouseover'da açılıyordu — klavye kullanıcısı için görünmez
+   * bir "?" düğmesiydi. Burada tüm mevcut/gelecek .mm-tip öğelerine data-tip'ten
+   * aria-label türetip focus/blur'da da tooltip'i açıyoruz. */
+  function mailEnhanceTipA11y(root) {
+    (root || document).querySelectorAll(".mm-tip[data-tip], .mm-tip-btn[data-tip]").forEach(function (el) {
+      if (!el.getAttribute("aria-label")) {
+        el.setAttribute("aria-label", el.getAttribute("data-tip") || "");
+      }
+      if (!el.getAttribute("role")) el.setAttribute("role", "button");
+    });
+  }
+
   function mailBindFloatingTips() {
     if (window.__mmFloatTipBound) return;
     window.__mmFloatTipBound = true;
+    mailEnhanceTipA11y(document);
+    var tipObserver = new MutationObserver(function () { mailEnhanceTipA11y(document); });
+    try {
+      tipObserver.observe(document.body, { childList: true, subtree: true });
+    } catch (e) {}
     var tipEl = document.getElementById("mm-float-tip");
     if (!tipEl) {
       tipEl = document.createElement("div");
@@ -5027,6 +5122,16 @@
       if (!el) return;
       var related = e.relatedTarget;
       if (related && el.contains(related)) return;
+      hideTimer = setTimeout(hide, 40);
+    }, true);
+    document.addEventListener("focusin", function (e) {
+      var el = e.target.closest(".mm-tip-btn[data-tip], .mm-tip[data-tip], .btn-icon[data-tip]");
+      if (!el) return;
+      showFor(el);
+    }, true);
+    document.addEventListener("focusout", function (e) {
+      var el = e.target.closest(".mm-tip-btn[data-tip], .mm-tip[data-tip], .btn-icon[data-tip]");
+      if (!el) return;
       hideTimer = setTimeout(hide, 40);
     }, true);
     document.addEventListener("scroll", hide, true);

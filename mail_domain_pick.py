@@ -72,6 +72,40 @@ def domain_remaining_today(conn, domain_row) -> int:
     return max(0, cap - sent)
 
 
+def _sent_today_by_domain(conn, domain_ids: list[int]) -> dict[int, int]:
+    """Havuzdaki TÜM domainler için 'bugün gönderilen' sayısını TEK sorguda getirir.
+
+    Öncesinde her domain için ayrı ayrı COUNT(*) sorgusu atılıyordu (N+1) —
+    ~50 domainlik havuzda tek bir pick_tenant_domain çağrısı 50-100+ sorgu
+    üretebiliyordu; kampanya worker'ı bunu recipient/batch başına tekrar tekrar
+    çağırdığı için toplam sorgu sayısı hızla büyüyordu.
+    """
+    ids = [int(i) for i in domain_ids]
+    if not ids:
+        return {}
+    since = day_since_iso_utc()
+    ph = ",".join(["?"] * len(ids))
+    rows = fetchall(
+        conn,
+        f"""
+        SELECT domain_id, COUNT(*) AS cnt
+        FROM mail_sends
+        WHERE domain_id IN ({ph})
+          AND status IN ('sent', 'simulated')
+          AND created_at >= ?
+        GROUP BY domain_id
+        """,
+        tuple(ids) + (since,),
+    ) or []
+    out = {int(i): 0 for i in ids}
+    for r in rows:
+        try:
+            out[int(r["domain_id"])] = int(r["cnt"] or 0)
+        except Exception:
+            continue
+    return out
+
+
 def _pool_domains(conn, tenant_id: int | None) -> list[dict]:
     from mail_tenant import domain_has_smtp, list_allocated_domains
 
@@ -95,24 +129,24 @@ def list_sendable_domains(
     exclude_ids: set[int] | None = None,
 ) -> list[dict]:
     """paused/burned/cap-dolu hariç, kalan slotu olan domainler."""
-    from mail_domain_health import domain_is_send_blocked
-
     exclude_ids = exclude_ids or set()
+    pool = [d for d in _pool_domains(conn, tenant_id) if int(d["id"]) not in exclude_ids]
+    sent_by_domain = _sent_today_by_domain(conn, [int(d["id"]) for d in pool])
+
     out = []
-    for d in _pool_domains(conn, tenant_id):
+    for d in pool:
         did = int(d["id"])
-        if did in exclude_ids:
-            continue
         st = (d.get("warm_status") or "").strip().lower()
         if st in ("paused", "burned"):
             continue
-        blocked, reason = domain_is_send_blocked(conn, did)
-        rem = domain_remaining_today(conn, d)
+        cap = int(d.get("daily_cap") or 0)
+        sent = sent_by_domain.get(did, 0)
+        rem = max(0, cap - sent) if cap > 0 else 0
         d["_remaining_today"] = rem
-        d["_sent_today"] = domain_sent_today(conn, did)
-        d["_blocked"] = blocked
-        d["_block_reason"] = reason
-        if blocked or rem <= 0:
+        d["_sent_today"] = sent
+        d["_blocked"] = False
+        d["_block_reason"] = ""
+        if rem <= 0:
             continue
         out.append(d)
     return out
@@ -148,29 +182,30 @@ def pick_tenant_domain(
 
 def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
     allocated = _pool_domains(conn, tenant_id)
+    sent_by_domain = _sent_today_by_domain(conn, [int(d["id"]) for d in allocated])
     sendable = []
     remaining_sum = 0
     domains = []
     for d in allocated:
         did = int(d["id"])
-        sent = domain_sent_today(conn, did)
-        rem = domain_remaining_today(conn, d)
+        sent = sent_by_domain.get(did, 0)
+        cap = int(d.get("daily_cap") or 0)
+        rem = max(0, cap - sent) if cap > 0 else 0
         st = (d.get("warm_status") or "").strip().lower()
-        blocked = st in ("paused", "burned") or rem <= 0
-        from mail_domain_health import domain_is_send_blocked
-        is_blocked, reason = domain_is_send_blocked(conn, did)
-        blocked = blocked or is_blocked
+        is_blocked = st in ("paused", "burned")
+        reason = f"Domain {st}" if is_blocked else ("cap" if rem <= 0 else "")
+        blocked = is_blocked or rem <= 0
         item = {
             "id": did,
             "domain": d.get("domain") or "",
             "warm_status": st,
             "warmup_cohort": (d.get("warmup_cohort") or "new"),
-            "daily_cap": int(d.get("daily_cap") or 0),
+            "daily_cap": cap,
             "sent_today": sent,
             "remaining_today": rem,
             "health_score": int(d.get("health_score") or 0),
-            "sendable": not blocked and rem > 0,
-            "block_reason": reason if is_blocked else ("cap" if rem <= 0 else ""),
+            "sendable": not blocked,
+            "block_reason": reason,
         }
         domains.append(item)
         if item["sendable"]:

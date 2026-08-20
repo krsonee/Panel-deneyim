@@ -18,7 +18,7 @@
     }
     [data-theme="light"] {
       --bg: #f1f5f9; --sidebar: #ffffff; --surface: #ffffff; --surface-2: #f8fafc;
-      --border: #e2e8f0; --text: #0f172a; --muted: #64748b;
+      --border: #e2e8f0; --text: #0f172a; --muted: #475569;
       
       --accent-soft: rgba(178,255,79,0.18); --row-hover: rgba(178,255,79,0.10);
       

@@ -159,6 +159,22 @@ def scalar(conn, sql, params=()):
     return row[0]
 
 
+def row_get(row, key, default=None):
+    """Postgres (RealDictCursor) satırları dict'tir ve .get() destekler; SQLite
+    modunda sqlite3.Row .get() desteklemez ve AttributeError fırlatır — bu genelde
+    geniş bir except'e yakalanıp sessizce yutulduğu için domain-pause/cap/kredi
+    kontrolleri fark edilmeden devre dışı kalabilir. Bu yardımcı her iki durumda
+    da güvenli çalışır."""
+    if row is None:
+        return default
+    if isinstance(row, dict):
+        return row.get(key, default)
+    try:
+        return row[key]
+    except Exception:
+        return default
+
+
 def insert_returning_id(conn, sql, params=()):
     if uses_postgres():
         sql = q(sql)
@@ -2730,6 +2746,36 @@ def upsert_mail_setting(conn, key, value):
         execute(conn, "INSERT OR REPLACE INTO mail_settings (key, value) VALUES (?, ?)", (key, str(value)))
 
 
+def add_int_setting(conn, key, delta, *, lo=0, hi=None):
+    """mail_settings içindeki bir tamsayıyı atomik artır (kredi tüketimi gibi eşzamanlı
+    worker'larda okuma-değiştirme-yazma sırasında bir increment'in kaybolmaması için —
+    artış doğrudan SQL UPDATE'te yapılır, Python'da ara okuma yapılmaz)."""
+    delta = int(delta or 0)
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            INSERT INTO mail_settings (key, value) VALUES (?, ?)
+            ON CONFLICT (key) DO UPDATE SET
+                value = (COALESCE(CAST(mail_settings.value AS BIGINT), 0) + ?)::text
+            """,
+            (key, str(delta), delta),
+        )
+    else:
+        execute(conn, "INSERT OR IGNORE INTO mail_settings (key, value) VALUES (?, '0')", (key,))
+        execute(
+            conn,
+            "UPDATE mail_settings SET value = CAST((CAST(value AS INTEGER) + ?) AS TEXT) WHERE key = ?",
+            (delta, key),
+        )
+    val = int(scalar(conn, "SELECT value FROM mail_settings WHERE key = ?", (key,)) or 0)
+    clamped = max(lo, val) if hi is None else max(lo, min(val, hi))
+    if clamped != val:
+        upsert_mail_setting(conn, key, str(clamped))
+        val = clamped
+    return val
+
+
 def seed_mailing_defaults(conn):
     import secrets
 
@@ -3331,6 +3377,11 @@ def ensure_mail_import_jobs_table(conn):
         execute(conn, "ALTER TABLE mail_import_jobs ADD COLUMN inserted_count INTEGER NOT NULL DEFAULT 0")
     if cols and "updated_count" not in cols:
         execute(conn, "ALTER TABLE mail_import_jobs ADD COLUMN updated_count INTEGER NOT NULL DEFAULT 0")
+    if cols and "tenant_id" not in cols:
+        try:
+            execute(conn, "ALTER TABLE mail_import_jobs ADD COLUMN tenant_id INTEGER")
+        except Exception:
+            pass
     conn.commit()
 
 

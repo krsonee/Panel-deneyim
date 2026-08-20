@@ -507,14 +507,26 @@ def _split_smartico_marker(dest):
 
 
 def _click_serializer():
-    """İmzalı tıklama tokenı — DB silinse bile dest_url yönlendirmesi çalışır."""
+    """İmzalı tıklama tokenı — DB silinse bile dest_url yönlendirmesi çalışır.
+
+    Env secret yoksa sabit "dev-mikromail" string'ine düşmez (tahmin edilebilir
+    imza = link/contact_id sahteciliği); mail_ops_secret ile aynı kalıcı,
+    rastgele anahtarı kullanır (bkz. mail_ops._ops_secret).
+    """
     from itsdangerous import URLSafeSerializer
 
     secret = (
         os.environ.get("MAILING_SECRET_KEY")
         or os.environ.get("SECRET_KEY")
-        or "dev-mikromail"
-    )
+        or ""
+    ).strip()
+    if not secret:
+        try:
+            from mail_ops import _ops_secret
+            secret = _ops_secret()
+        except Exception as exc:
+            print(f"⚠️  click serializer secret fallback: {exc}")
+            secret = "dev-mikromail"
     return URLSafeSerializer(str(secret), salt="mail-click-v2")
 
 
@@ -1302,11 +1314,15 @@ def _filter_sendable_contact_ids(
     return out
 
 
-def _ensure_contacts_from_emails(conn, emails, now):
+def _ensure_contacts_from_emails(conn, emails, now, tenant_id=None):
     """Elle girilen e-postaları kontak olarak upsert eder; id listesi döner.
 
     Postgres'te başarısız SQL transaction'ı öldürür — try/except ile
     ikinci sorgu çalışmaz. Bu yüzden kolonları önce kontrol ediyoruz.
+
+    Tenant scoped: Firma A'nın elle girdiği e-posta Firma B'nin kontağıyla
+    eşleşip Firma B'nin kaydına yazmasın (ya da tenant'sız/başka firma
+    kontağı sessizce iliştirilmesin) — eşleşme + yeni kayıt tenant_id'ye göre.
     """
     from database import _table_columns
 
@@ -1324,9 +1340,18 @@ def _ensure_contacts_from_emails(conn, emails, now):
         return []
     cols = _table_columns(conn, "mail_contacts") or set()
     has_verify = "verify_status" in cols
+    has_tenant = "tenant_id" in cols
+    tid = int(tenant_id) if tenant_id else (1 if has_tenant else None)
     ids = []
     for em in cleaned:
-        row = fetchone(conn, "SELECT id FROM mail_contacts WHERE LOWER(email) = ?", (em,))
+        if has_tenant:
+            row = fetchone(
+                conn,
+                "SELECT id FROM mail_contacts WHERE LOWER(email) = ? AND tenant_id = ?",
+                (em, tid),
+            )
+        else:
+            row = fetchone(conn, "SELECT id FROM mail_contacts WHERE LOWER(email) = ?", (em,))
         if row:
             ids.append(int(row["id"]))
             if has_verify:
@@ -1343,7 +1368,17 @@ def _ensure_contacts_from_emails(conn, emails, now):
                     (int(row["id"]),),
                 )
             continue
-        if has_verify:
+        if has_verify and has_tenant:
+            cid = insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_contacts
+                (email, name, tags, source, unsubscribed, notes, verify_status, created_at, updated_at, tenant_id)
+                VALUES (?, '', '[]', 'manual_campaign', 0, '', 'mx_ok', ?, ?, ?)
+                """,
+                (em, now, now, tid),
+            )
+        elif has_verify:
             cid = insert_returning_id(
                 conn,
                 """
@@ -1352,6 +1387,15 @@ def _ensure_contacts_from_emails(conn, emails, now):
                 VALUES (?, '', '[]', 'manual_campaign', 0, '', 'mx_ok', ?, ?)
                 """,
                 (em, now, now),
+            )
+        elif has_tenant:
+            cid = insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_contacts (email, name, tags, source, unsubscribed, notes, created_at, updated_at, tenant_id)
+                VALUES (?, '', '[]', 'manual_campaign', 0, '', ?, ?, ?)
+                """,
+                (em, now, now, tid),
             )
         else:
             cid = insert_returning_id(
@@ -1385,7 +1429,7 @@ def _attach_campaign_recipients(
     emails = list(emails or [])
 
     if emails:
-        contact_ids = _ensure_contacts_from_emails(conn, emails, now) + contact_ids
+        contact_ids = _ensure_contacts_from_emails(conn, emails, now, tenant_id=tenant_id) + contact_ids
         # Elle girilen adresler bilinçli test — verified filtresi uygulama
         only_verified = False
 
@@ -2454,51 +2498,60 @@ def create_mailing_click_blueprint():
                 print(f"⚠️  mail_click signed analytics: {exc}")
             return redirect(dest, code=302)
 
-        # 2) Eski rastgele token — DB
+        # 2) Eski rastgele token — DB (bot/mail-client hit edebilir; analitik hatası
+        # yönlendirmeyi asla bloklamasın — imzalı v2 dalıyla aynı davranış)
         with closing(get_db()) as conn:
             row = fetchone(conn, "SELECT * FROM mail_click_links WHERE token = ?", (token,))
             if not row:
                 return _dead_click_page()
+            row = _row(row)
             dest = _finalize_dest(
-                row["dest_url"],
-                is_sc=bool(row["is_smartico"]),
-                contact_id=row["contact_id"],
+                row.get("dest_url"),
+                is_sc=bool(row.get("is_smartico")),
+                contact_id=row.get("contact_id"),
             )
             if not dest:
                 return _dead_click_page()
-            first = row["first_clicked_at"] or now
-            execute(
-                conn,
-                """
-                UPDATE mail_click_links SET
-                    click_count = COALESCE(click_count, 0) + 1,
-                    first_clicked_at = ?,
-                    last_clicked_at = ?
-                WHERE id = ?
-                """,
-                (first, now, row["id"]),
-            )
-            if row["send_id"]:
+            try:
+                first = row.get("first_clicked_at") or now
                 execute(
                     conn,
-                    "UPDATE mail_sends SET clicked_at = COALESCE(clicked_at, ?) WHERE id = ?",
-                    (now, row["send_id"]),
+                    """
+                    UPDATE mail_click_links SET
+                        click_count = COALESCE(click_count, 0) + 1,
+                        first_clicked_at = ?,
+                        last_clicked_at = ?
+                    WHERE id = ?
+                    """,
+                    (first, now, row["id"]),
                 )
-            if row["contact_id"]:
-                opened = False
                 if row.get("send_id"):
-                    srow = fetchone(
+                    execute(
                         conn,
-                        "SELECT opened_at FROM mail_sends WHERE id = ?",
-                        (row["send_id"],),
+                        "UPDATE mail_sends SET clicked_at = COALESCE(clicked_at, ?) WHERE id = ?",
+                        (now, row["send_id"]),
                     )
-                    opened = bool(srow and srow.get("opened_at"))
+                if row.get("contact_id"):
+                    opened = False
+                    if row.get("send_id"):
+                        srow = _row(fetchone(
+                            conn,
+                            "SELECT opened_at FROM mail_sends WHERE id = ?",
+                            (row["send_id"],),
+                        ))
+                        opened = bool(srow and srow.get("opened_at"))
+                    try:
+                        from mail_ops import tag_click_outcome
+                        tag_click_outcome(conn, row["contact_id"], opened=opened, now=now)
+                    except Exception:
+                        _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
+                conn.commit()
+            except Exception as exc:
+                print(f"⚠️  mail_click legacy analytics: {exc}")
                 try:
-                    from mail_ops import tag_click_outcome
-                    tag_click_outcome(conn, row["contact_id"], opened=opened, now=now)
+                    conn.rollback()
                 except Exception:
-                    _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
-            conn.commit()
+                    pass
         return redirect(dest, code=302)
 
     @bp.route("/m/o/<int:send_id>/<sig>", methods=["GET"])
@@ -2527,12 +2580,16 @@ def create_mailing_click_blueprint():
     @bp.route("/m/u/<token>", methods=["GET", "POST"])
     def mail_unsubscribe(token):
         from mail_ops import apply_unsubscribe
-        with closing(get_db()) as conn:
-            ok, info = apply_unsubscribe(conn, token)
-            try:
-                conn.commit()
-            except Exception:
-                pass
+        try:
+            with closing(get_db()) as conn:
+                ok, info = apply_unsubscribe(conn, token)
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+        except Exception as exc:
+            print(f"⚠️  mail_unsubscribe: {exc}")
+            ok, info = False, ""
         if not ok:
             return (
                 "<!doctype html><meta charset=utf-8><title>Hata</title>"
@@ -2673,9 +2730,58 @@ def _delivery_health_snapshot(conn):
     real_7 = _count("sent")
     sim_7 = _count("simulated")
     fail_7 = _count("failed")
+    bounced_7 = _count("bounced")
     skip_7 = _count("skipped")
     queued_7 = _count("queued")
     stub_msgid_7 = _count(stub_msgid=True)
+
+    # Alibaba hesap yöneticisinin gördüğü "success rate" — sent / (sent + fail).
+    # Limit artırımı için >=%90, sürdürme için >=%80 şart (WhatsApp: 20.08.2026 görüşme).
+    since_24 = (utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def _count_since(since_ts, status=None):
+        clauses = ["CAST(created_at AS TEXT) >= ?"]
+        params = [since_ts]
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        try:
+            return int(scalar(
+                conn,
+                f"SELECT COUNT(*) FROM mail_sends WHERE {' AND '.join(clauses)}",
+                tuple(params),
+            ) or 0)
+        except Exception:
+            return 0
+
+    def _success_rate(since_ts):
+        accepted = _count_since(since_ts, "sent") + _count_since(since_ts, "simulated")
+        rejected = _count_since(since_ts, "failed") + _count_since(since_ts, "bounced")
+        total = accepted + rejected
+        rate = round(100.0 * accepted / total, 2) if total else None
+        if rate is None:
+            tier = "no_data"
+        elif rate >= 90:
+            tier = "good"
+        elif rate >= 80:
+            tier = "warn"
+        else:
+            tier = "danger"
+        return {
+            "accepted": accepted,
+            "rejected": rejected,
+            "total": total,
+            "rate": rate,
+            "tier": tier,
+        }
+
+    success_rate = {
+        "last_24h": _success_rate(since_24),
+        "last_7d": _success_rate(since),
+        "target_increase": 90.0,
+        "target_maintain": 80.0,
+        "note": "Alibaba: limit artışı için ≥%90, mevcut limiti sürdürmek için ≥%80 gerekli.",
+    }
     samples = []
     try:
         rows = fetchall(
@@ -2756,10 +2862,12 @@ def _delivery_health_snapshot(conn):
             "sent": real_7,
             "simulated": sim_7,
             "failed": fail_7,
+            "bounced": bounced_7,
             "skipped": skip_7,
             "queued": queued_7,
             "stub_msgid": stub_msgid_7,
         },
+        "success_rate": success_rate,
         "ok": ok,
         "verdict": verdict,
         "message": message,
@@ -3206,6 +3314,20 @@ def create_mailing_blueprint(permission_required):
             deleted = 0
             try:
                 if ids:
+                    # Tenant scope: firma sadece kendi kontaklarını toplu silebilir
+                    try:
+                        from mail_tenant import current_tenant_id
+                        _tid = current_tenant_id()
+                    except Exception:
+                        _tid = None
+                    if _tid:
+                        ph = ",".join(["?"] * len(ids))
+                        owned = fetchall(
+                            conn,
+                            f"SELECT id FROM mail_contacts WHERE id IN ({ph}) AND tenant_id = ?",
+                            tuple(ids) + (int(_tid),),
+                        )
+                        ids = [int(r["id"]) for r in (owned or [])]
                     for i in range(0, len(ids), 200):
                         chunk = ids[i : i + 200]
                         deleted += _delete_contacts_by_ids(conn, chunk)
@@ -3394,6 +3516,14 @@ def create_mailing_blueprint(permission_required):
             row = fetchone(conn, "SELECT * FROM mail_contacts WHERE id = ?", (contact_id,))
             if not row:
                 return jsonify({"error": "Kontak bulunamadı."}), 404
+            row = _row(row)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and row.get("tenant_id") and int(row["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu kontak başka firmaya ait."}), 403
+            except Exception:
+                pass
         return jsonify({"contact": _contact_out(row)})
 
     @bp.route("/contacts/<int:contact_id>", methods=["PATCH"])
@@ -3405,6 +3535,14 @@ def create_mailing_blueprint(permission_required):
             row = fetchone(conn, "SELECT * FROM mail_contacts WHERE id = ?", (contact_id,))
             if not row:
                 return jsonify({"error": "Kontak bulunamadı."}), 404
+            row = _row(row)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and row.get("tenant_id") and int(row["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu kontak başka firmaya ait."}), 403
+            except Exception:
+                pass
             email = (data.get("email") if "email" in data else row["email"] or "").strip().lower()
             if not email or not EMAIL_RE.match(email):
                 return jsonify({"error": "Geçerli bir e-posta girin."}), 400
@@ -3469,6 +3607,17 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_CRM)
     def delete_contact(contact_id):
         with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT id, tenant_id FROM mail_contacts WHERE id = ?", (contact_id,))
+            if not row:
+                return jsonify({"error": "Kontak bulunamadı."}), 404
+            row = _row(row)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and row.get("tenant_id") and int(row["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu kontak başka firmaya ait."}), 403
+            except Exception:
+                pass
             try:
                 _delete_contacts_by_ids(conn, [contact_id])
                 _invalidate_mail_stats_cache()
@@ -3495,6 +3644,16 @@ def create_mailing_blueprint(permission_required):
         updated = 0
         skipped = 0
         with closing(get_db()) as conn:
+            from database import _table_columns
+            cols = _table_columns(conn, "mail_contacts") or set()
+            has_tenant = "tenant_id" in cols
+            tid = None
+            if has_tenant:
+                try:
+                    from mail_tenant import current_tenant_id
+                    tid = current_tenant_id() or 1
+                except Exception:
+                    tid = 1
             for row in reader:
                 email = _extract_email_from_row(row)
                 if not email:
@@ -3505,7 +3664,14 @@ def create_mailing_blueprint(permission_required):
                 tags = _parse_tags(row.get("tags") or row.get("tag") or "")
                 if default_tag and default_tag not in tags:
                     tags.append(default_tag)
-                existing = fetchone(conn, "SELECT id, tags FROM mail_contacts WHERE LOWER(email) = ?", (email,))
+                if has_tenant:
+                    existing = fetchone(
+                        conn,
+                        "SELECT id, tags FROM mail_contacts WHERE LOWER(email) = ? AND tenant_id = ?",
+                        (email, tid),
+                    )
+                else:
+                    existing = fetchone(conn, "SELECT id, tags FROM mail_contacts WHERE LOWER(email) = ?", (email,))
                 if existing:
                     merged = list(dict.fromkeys(_parse_tags(existing["tags"]) + tags))
                     execute(
@@ -3519,6 +3685,17 @@ def create_mailing_blueprint(permission_required):
                         (name, phone, _tags_json(merged), now, existing["id"]),
                     )
                     updated += 1
+                elif has_tenant:
+                    insert_returning_id(
+                        conn,
+                        """
+                        INSERT INTO mail_contacts
+                        (email, phone, name, tags, source, unsubscribed, notes, created_at, updated_at, tenant_id)
+                        VALUES (?, ?, ?, ?, ?, 0, '', ?, ?, ?)
+                        """,
+                        (email, phone, name, _tags_json(tags), "csv", now, now, tid),
+                    )
+                    created += 1
                 else:
                     insert_returning_id(
                         conn,
@@ -3550,16 +3727,34 @@ def create_mailing_blueprint(permission_required):
         tag = (request.form.get("tag") or "").strip()
         _ensure_import_dir()
         now = iso(utcnow())
+        try:
+            from mail_tenant import current_tenant_id as _cur_tid_early
+            _tid_job = _cur_tid_early()
+        except Exception:
+            _tid_job = None
         with closing(get_db()) as conn:
-            job_id = insert_returning_id(
-                conn,
-                """
-                INSERT INTO mail_import_jobs
-                (filename, tag, status, total_rows, processed_rows, upserted_count, inserted_count, updated_count, skipped_count, error, created_at, updated_at)
-                VALUES (?, ?, 'pending', 0, 0, 0, 0, 0, 0, '', ?, ?)
-                """,
-                (file.filename, tag, now, now),
-            )
+            from database import _table_columns
+            job_cols = _table_columns(conn, "mail_import_jobs") or set()
+            if "tenant_id" in job_cols:
+                job_id = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_import_jobs
+                    (filename, tag, status, total_rows, processed_rows, upserted_count, inserted_count, updated_count, skipped_count, error, created_at, updated_at, tenant_id)
+                    VALUES (?, ?, 'pending', 0, 0, 0, 0, 0, 0, '', ?, ?, ?)
+                    """,
+                    (file.filename, tag, now, now, _tid_job),
+                )
+            else:
+                job_id = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_import_jobs
+                    (filename, tag, status, total_rows, processed_rows, upserted_count, inserted_count, updated_count, skipped_count, error, created_at, updated_at)
+                    VALUES (?, ?, 'pending', 0, 0, 0, 0, 0, 0, '', ?, ?)
+                    """,
+                    (file.filename, tag, now, now),
+                )
             conn.commit()
         path = _import_job_path(job_id, file.filename)
         try:
@@ -3579,18 +3774,12 @@ def create_mailing_blueprint(permission_required):
             except Exception:
                 pass
             return jsonify({"error": err}), 500
-        try:
-            from mail_tenant import current_tenant_id
-
-            _tid = current_tenant_id()
-        except Exception:
-            _tid = None
         threading.Thread(
             target=_run_import_job,
-            args=(job_id, path, tag, _tid),
+            args=(job_id, path, tag, _tid_job),
             daemon=True,
         ).start()
-        return jsonify({"job_id": job_id, "status": "pending", "tenant_id": _tid}), 202
+        return jsonify({"job_id": job_id, "status": "pending", "tenant_id": _tid_job}), 202
 
     @bp.route("/contacts/import/emails", methods=["POST"])
     @mail_perm(*MAIL_CRM)
@@ -3670,6 +3859,14 @@ def create_mailing_blueprint(permission_required):
             row = fetchone(conn, "SELECT * FROM mail_import_jobs WHERE id = ?", (job_id,))
             if not row:
                 return jsonify({"error": "İş bulunamadı."}), 404
+            row = _row(row)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and row.get("tenant_id") and int(row["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu iş başka firmaya ait."}), 403
+            except Exception:
+                pass
             job = _reconcile_stale_import_job(conn, row)
         return jsonify({"job": job})
 
@@ -3677,7 +3874,22 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_CRM)
     def list_import_jobs():
         with closing(get_db()) as conn:
-            raw = fetchall(conn, "SELECT * FROM mail_import_jobs ORDER BY id DESC LIMIT 30")
+            try:
+                from database import _table_columns
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                job_cols = _table_columns(conn, "mail_import_jobs") or set()
+            except Exception:
+                _tid = None
+                job_cols = set()
+            if _tid and "tenant_id" in job_cols:
+                raw = fetchall(
+                    conn,
+                    "SELECT * FROM mail_import_jobs WHERE tenant_id = ? ORDER BY id DESC LIMIT 30",
+                    (int(_tid),),
+                )
+            else:
+                raw = fetchall(conn, "SELECT * FROM mail_import_jobs ORDER BY id DESC LIMIT 30")
             jobs = []
             for row in raw:
                 jobs.append(_reconcile_stale_import_job(conn, row))
@@ -3687,9 +3899,17 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_CRM)
     def cancel_import_job(job_id):
         with closing(get_db()) as conn:
-            row = fetchone(conn, "SELECT status FROM mail_import_jobs WHERE id = ?", (job_id,))
+            row = fetchone(conn, "SELECT * FROM mail_import_jobs WHERE id = ?", (job_id,))
             if not row:
                 return jsonify({"error": "İş bulunamadı."}), 404
+            row = _row(row)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and row.get("tenant_id") and int(row["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu iş başka firmaya ait."}), 403
+            except Exception:
+                pass
             status = row["status"]
             if status in ("done", "error", "cancelled", "cancelling"):
                 return jsonify({"error": f"İş zaten sonlanmış ya da iptal ediliyor ({status})."}), 400
@@ -3757,6 +3977,15 @@ def create_mailing_blueprint(permission_required):
             row = fetchone(conn, "SELECT * FROM mail_scrub_jobs WHERE id = ?", (job_id,))
             if not row:
                 return jsonify({"error": "İş bulunamadı."}), 404
+            row = _row(row)
+            try:
+                from database import _table_columns
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and "tenant_id" in (_table_columns(conn, "mail_scrub_jobs") or set()) and row.get("tenant_id") and int(row["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu iş başka firmaya ait."}), 403
+            except Exception:
+                pass
         return jsonify({"job": job_public(row)})
 
     @bp.route("/contacts/scrub/latest", methods=["GET"])
@@ -3765,16 +3994,39 @@ def create_mailing_blueprint(permission_required):
         from mail_scrub import job_public
 
         with closing(get_db()) as conn:
-            row = fetchone(conn, "SELECT * FROM mail_scrub_jobs ORDER BY id DESC LIMIT 1")
+            try:
+                from database import _table_columns
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                cols = _table_columns(conn, "mail_scrub_jobs") or set()
+            except Exception:
+                _tid = None
+                cols = set()
+            if _tid and "tenant_id" in cols:
+                row = fetchone(
+                    conn,
+                    "SELECT * FROM mail_scrub_jobs WHERE tenant_id = ? ORDER BY id DESC LIMIT 1",
+                    (int(_tid),),
+                )
+            else:
+                row = fetchone(conn, "SELECT * FROM mail_scrub_jobs ORDER BY id DESC LIMIT 1")
         return jsonify({"job": job_public(row) if row else None})
 
     @bp.route("/contacts/scrub/cancel/<int:job_id>", methods=["POST"])
     @mail_perm(*MAIL_CRM)
     def cancel_scrub(job_id):
         with closing(get_db()) as conn:
-            row = fetchone(conn, "SELECT status FROM mail_scrub_jobs WHERE id = ?", (job_id,))
+            row = fetchone(conn, "SELECT * FROM mail_scrub_jobs WHERE id = ?", (job_id,))
             if not row:
                 return jsonify({"error": "İş bulunamadı."}), 404
+            row = _row(row)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and row.get("tenant_id") and int(row["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu iş başka firmaya ait."}), 403
+            except Exception:
+                pass
             status = row["status"]
             if status in ("done", "error", "cancelled", "cancelling"):
                 return jsonify({"error": f"İş zaten sonlanmış ({status})."}), 400
@@ -4419,6 +4671,7 @@ def create_mailing_blueprint(permission_required):
             row = fetchone(conn, "SELECT * FROM mail_templates WHERE id = ?", (template_id,))
             if not row:
                 return jsonify({"error": "Şablon bulunamadı."}), 404
+            row = _row(row)
             try:
                 from mail_tenant import current_tenant_id
                 _tid = current_tenant_id()
@@ -4532,6 +4785,17 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_TPL)
     def delete_template(template_id):
         with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT id, tenant_id FROM mail_templates WHERE id = ?", (template_id,))
+            if not row:
+                return jsonify({"error": "Şablon bulunamadı."}), 404
+            row = _row(row)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and row.get("tenant_id") and int(row["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu şablon başka firmaya ait."}), 403
+            except Exception:
+                pass
             execute(conn, "DELETE FROM mail_templates WHERE id = ?", (template_id,))
             conn.commit()
         return jsonify({"ok": True})
@@ -5082,6 +5346,13 @@ def create_mailing_blueprint(permission_required):
             if not row:
                 return jsonify({"error": "Kampanya bulunamadı."}), 404
             row = _row(row)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and row.get("tenant_id") and int(row["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu kampanya başka firmaya ait."}), 403
+            except Exception:
+                pass
             if row["status"] not in ("draft", "scheduled"):
                 return jsonify({"error": "Sadece taslak / zamanlanmış kampanyalar düzenlenebilir."}), 400
             scheduled_raw = data.get("scheduled_at") if "scheduled_at" in data else row.get("scheduled_at")
@@ -5126,8 +5397,18 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_CAMP)
     def delete_campaign(campaign_id):
         with closing(get_db()) as conn:
-            row = fetchone(conn, "SELECT status FROM mail_campaigns WHERE id = ?", (campaign_id,))
-            if row and row["status"] in ("sending", "queued"):
+            row = fetchone(conn, "SELECT status, tenant_id FROM mail_campaigns WHERE id = ?", (campaign_id,))
+            if not row:
+                return jsonify({"error": "Kampanya bulunamadı."}), 404
+            row = _row(row)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and row.get("tenant_id") and int(row["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu kampanya başka firmaya ait."}), 403
+            except Exception:
+                pass
+            if row["status"] in ("sending", "queued"):
                 return jsonify({"error": "Gönderimdeki kampanya silinemez — önce iptal edin."}), 400
             execute(conn, "DELETE FROM mail_campaign_recipients WHERE campaign_id = ?", (campaign_id,))
             execute(conn, "DELETE FROM mail_campaigns WHERE id = ?", (campaign_id,))
@@ -5149,6 +5430,13 @@ def create_mailing_blueprint(permission_required):
             if not camp:
                 return jsonify({"error": "Kampanya bulunamadı."}), 404
             camp = _row(camp)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid_guard = current_tenant_id()
+                if _tid_guard and camp.get("tenant_id") and int(camp["tenant_id"]) != int(_tid_guard):
+                    return jsonify({"error": "Bu kampanya başka firmaya ait."}), 403
+            except Exception:
+                pass
             if camp["status"] not in ("draft", "scheduled", "queued"):
                 return jsonify({"error": f"Kampanya durumu uygun değil: {camp['status']}"}), 400
             pending = scalar(
@@ -5279,6 +5567,13 @@ def create_mailing_blueprint(permission_required):
             if not camp:
                 return jsonify({"error": "Kampanya bulunamadı."}), 404
             camp = _row(camp)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid_guard = current_tenant_id()
+                if _tid_guard and camp.get("tenant_id") and int(camp["tenant_id"]) != int(_tid_guard):
+                    return jsonify({"error": "Bu kampanya başka firmaya ait."}), 403
+            except Exception:
+                pass
             if camp["status"] not in ("scheduled", "queued", "sending", "cancelling"):
                 return jsonify({"error": f"İptal edilemez: {camp['status']}"}), 400
             new_status = "cancelled" if camp["status"] == "scheduled" else "cancelling"
@@ -5301,9 +5596,17 @@ def create_mailing_blueprint(permission_required):
     def pause_campaign(campaign_id):
         now = iso(utcnow())
         with closing(get_db()) as conn:
-            camp = fetchone(conn, "SELECT status FROM mail_campaigns WHERE id = ?", (campaign_id,))
+            camp = fetchone(conn, "SELECT status, tenant_id FROM mail_campaigns WHERE id = ?", (campaign_id,))
             if not camp:
                 return jsonify({"error": "Kampanya bulunamadı."}), 404
+            camp = _row(camp)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid_guard = current_tenant_id()
+                if _tid_guard and camp.get("tenant_id") and int(camp["tenant_id"]) != int(_tid_guard):
+                    return jsonify({"error": "Bu kampanya başka firmaya ait."}), 403
+            except Exception:
+                pass
             if camp["status"] not in ("sending", "queued", "scheduled"):
                 return jsonify({"error": f"Duraklatılamaz: {camp['status']}"}), 400
             execute(
@@ -5329,6 +5632,14 @@ def create_mailing_blueprint(permission_required):
             camp = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (campaign_id,))
             if not camp:
                 return jsonify({"error": "Kampanya bulunamadı."}), 404
+            camp = _row(camp)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid_guard = current_tenant_id()
+                if _tid_guard and camp.get("tenant_id") and int(camp["tenant_id"]) != int(_tid_guard):
+                    return jsonify({"error": "Bu kampanya başka firmaya ait."}), 403
+            except Exception:
+                pass
             if camp["status"] != "paused":
                 return jsonify({"error": f"Devam ettirilemez: {camp['status']}"}), 400
             pending = scalar(
@@ -5345,7 +5656,7 @@ def create_mailing_blueprint(permission_required):
                 print(f"⚠️  resume quota check: {q_exc}")
             try:
                 from mail_credit import can_consume
-                tid = camp.get("tenant_id") if isinstance(camp, dict) else camp["tenant_id"] if "tenant_id" in camp.keys() else None
+                tid = camp.get("tenant_id")
                 ok_c, c_err, c_snap = can_consume(
                     conn, int(pending), tenant_id=int(tid) if tid else None
                 )
@@ -5356,7 +5667,7 @@ def create_mailing_blueprint(permission_required):
             try:
                 from mail_domain_pick import campaign_is_auto, tenant_domain_capacity_snapshot
                 from mail_domain_health import domain_is_send_blocked
-                camp_d = camp if isinstance(camp, dict) else dict(camp)
+                camp_d = camp
                 if campaign_is_auto(camp_d):
                     tid = camp_d.get("tenant_id")
                     cap = tenant_domain_capacity_snapshot(conn, int(tid) if tid else None)
@@ -5389,6 +5700,14 @@ def create_mailing_blueprint(permission_required):
             camp = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (campaign_id,))
             if not camp:
                 return jsonify({"error": "Kampanya bulunamadı."}), 404
+            camp = _row(camp)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid_guard = current_tenant_id()
+                if _tid_guard and camp.get("tenant_id") and int(camp["tenant_id"]) != int(_tid_guard):
+                    return jsonify({"error": "Bu kampanya başka firmaya ait."}), 403
+            except Exception:
+                pass
             if camp["status"] not in ("done", "error", "cancelled", "paused"):
                 return jsonify({"error": f"Retry için uygun değil: {camp['status']}"}), 400
             failed_n = scalar(
@@ -5413,6 +5732,22 @@ def create_mailing_blueprint(permission_required):
                     return jsonify({"error": c_err, "credit": c_snap}), 400
             except Exception as c_exc:
                 print(f"⚠️  retry-failed credit check: {c_exc}")
+            try:
+                from mail_domain_pick import campaign_is_auto, tenant_domain_capacity_snapshot
+                from mail_domain_health import domain_is_send_blocked
+                if campaign_is_auto(camp):
+                    cap = tenant_domain_capacity_snapshot(conn, int(tid) if tid else None)
+                    if int(cap.get("remaining_today") or 0) <= 0:
+                        return jsonify({
+                            "error": "Bugün domain kapasitesi yok — retry yapılamadı.",
+                            "domain_capacity": cap,
+                        }), 400
+                else:
+                    blocked, block_reason = domain_is_send_blocked(conn, camp.get("domain_id"))
+                    if blocked:
+                        return jsonify({"error": f"Domain engeli: {block_reason}"}), 400
+            except Exception as d_exc:
+                print(f"⚠️  retry-failed domain capacity: {d_exc}")
             n = execute(
                 conn,
                 """
@@ -5504,9 +5839,21 @@ def create_mailing_blueprint(permission_required):
             limit = 500
         status_filter = (request.args.get("status") or "").strip().lower()
         with closing(get_db()) as conn:
-            camp = fetchone(conn, "SELECT id, name, tag_filter, status, total_count FROM mail_campaigns WHERE id = ?", (campaign_id,))
+            camp = fetchone(
+                conn,
+                "SELECT id, name, tag_filter, status, total_count, tenant_id FROM mail_campaigns WHERE id = ?",
+                (campaign_id,),
+            )
             if not camp:
                 return jsonify({"error": "Kampanya bulunamadı."}), 404
+            camp = _row(camp)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and camp.get("tenant_id") and int(camp["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu kampanya başka firmaya ait."}), 403
+            except Exception:
+                pass
             where = ["r.campaign_id = ?"]
             params = [campaign_id]
             if status_filter:
@@ -5565,14 +5912,32 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_CRM)
     def export_contacts():
         tag = (request.args.get("tag") or "").strip()
-        limit = min(int(request.args.get("limit") or 50000), 200000)
+        try:
+            limit = min(int(request.args.get("limit") or 50000), 200000)
+        except (TypeError, ValueError):
+            limit = 50000
         with closing(get_db()) as conn:
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+            except Exception:
+                _tid = None
             if tag:
                 clause, params = _tag_match_clause(tag)
+                params = list(params)
+                if _tid:
+                    clause += " AND tenant_id = ?"
+                    params.append(int(_tid))
                 rows = fetchall(
                     conn,
                     f"SELECT email, name, phone, tags, source, unsubscribed, created_at FROM mail_contacts WHERE {clause} ORDER BY id DESC LIMIT ?",
-                    params + (limit,),
+                    tuple(params) + (limit,),
+                )
+            elif _tid:
+                rows = fetchall(
+                    conn,
+                    "SELECT email, name, phone, tags, source, unsubscribed, created_at FROM mail_contacts WHERE tenant_id = ? ORDER BY id DESC LIMIT ?",
+                    (int(_tid), limit),
                 )
             else:
                 rows = fetchall(
@@ -5619,7 +5984,7 @@ def create_mailing_blueprint(permission_required):
             expected = (get_mail_setting(conn, "webhook_secret", "") or "").strip()
             if not expected or secret != expected:
                 return jsonify({"error": "Unauthorized"}), 401
-            email = (
+            email = str(
                 data.get("email")
                 or data.get("rcpt")
                 or data.get("recipient")
@@ -5631,8 +5996,8 @@ def create_mailing_blueprint(permission_required):
                 dests = data["mail"].get("destination") or []
                 if dests:
                     email = str(dests[0]).strip().lower()
-            btype = (data.get("type") or data.get("bounceType") or data.get("event") or "bounce").strip().lower()
-            reason = (data.get("reason") or data.get("diagnosticCode") or btype)[:200]
+            btype = str(data.get("type") or data.get("bounceType") or data.get("event") or "bounce").strip().lower()
+            reason = str(data.get("reason") or data.get("diagnosticCode") or btype)[:200]
             if not email or not EMAIL_RE.match(email):
                 return jsonify({"error": "email gerekli"}), 400
             if "complaint" in btype or "spam" in btype:
@@ -5686,10 +6051,24 @@ def create_mailing_blueprint(permission_required):
     def list_sends():
         status = (request.args.get("status") or "").strip()
         channel = (request.args.get("channel") or "").strip()
-        limit = min(int(request.args.get("limit") or 200), 1000)
+        try:
+            limit = min(int(request.args.get("limit") or 200), 1000)
+        except (TypeError, ValueError):
+            limit = 200
         with closing(get_db()) as conn:
             sql = "SELECT * FROM mail_sends WHERE 1=1"
             params = []
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+            except Exception:
+                _tid = None
+            if _tid:
+                sql += (
+                    " AND (campaign_id IN (SELECT id FROM mail_campaigns WHERE tenant_id = ?)"
+                    " OR contact_id IN (SELECT id FROM mail_contacts WHERE tenant_id = ?))"
+                )
+                params.extend([int(_tid), int(_tid)])
             if status:
                 sql += " AND status = ?"
                 params.append(status)
@@ -5705,17 +6084,33 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_REP)
     def reports_summary():
         with closing(get_db()) as conn:
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+            except Exception:
+                _tid = None
+            tenant_clause = ""
+            tenant_params = ()
+            if _tid:
+                tenant_clause = (
+                    " WHERE (campaign_id IN (SELECT id FROM mail_campaigns WHERE tenant_id = ?)"
+                    " OR contact_id IN (SELECT id FROM mail_contacts WHERE tenant_id = ?))"
+                )
+                tenant_params = (int(_tid), int(_tid))
             by_status = _rows(fetchall(
                 conn,
-                "SELECT status, COUNT(*) AS cnt FROM mail_sends GROUP BY status ORDER BY cnt DESC",
+                f"SELECT status, COUNT(*) AS cnt FROM mail_sends{tenant_clause} GROUP BY status ORDER BY cnt DESC",
+                tenant_params,
             ))
             by_channel = _rows(fetchall(
                 conn,
-                "SELECT channel, COUNT(*) AS cnt FROM mail_sends GROUP BY channel ORDER BY cnt DESC",
+                f"SELECT channel, COUNT(*) AS cnt FROM mail_sends{tenant_clause} GROUP BY channel ORDER BY cnt DESC",
+                tenant_params,
             ))
             recent = _rows(fetchall(
                 conn,
-                "SELECT * FROM mail_sends ORDER BY id DESC LIMIT 20",
+                f"SELECT * FROM mail_sends{tenant_clause} ORDER BY id DESC LIMIT 20",
+                tenant_params,
             ))
         return jsonify({
             "by_status": by_status,
@@ -5791,8 +6186,19 @@ def create_mailing_blueprint(permission_required):
                 ensure_auto_domain_column(conn)
             except Exception:
                 pass
-            tid = current_tenant_id()
-            snap = tenant_domain_capacity_snapshot(conn, int(tid) if tid else None)
+            try:
+                tid = current_tenant_id()
+                snap = tenant_domain_capacity_snapshot(conn, int(tid) if tid else None)
+            except Exception as exc:
+                print(f"⚠️  domain_capacity_get: {exc}")
+                snap = {
+                    "allocated_count": 0,
+                    "sendable_count": 0,
+                    "remaining_today": 0,
+                    "domains": [],
+                    "auto_default": True,
+                    "note": "Kapasite hesaplanamadı.",
+                }
             try:
                 conn.commit()
             except Exception:
@@ -5808,6 +6214,16 @@ def create_mailing_blueprint(permission_required):
             if not row:
                 return jsonify({"error": "Domain bulunamadı."}), 404
             row = dict(row)
+            try:
+                from flask import session as _sess
+                from mail_tenant import assert_tenant_domain, current_tenant_id
+                if not _sess.get("mail_is_superadmin"):
+                    _tid = current_tenant_id()
+                    assert_tenant_domain(conn, int(domain_id), int(_tid) if _tid else None)
+            except PermissionError as p_exc:
+                return jsonify({"error": str(p_exc)}), 403
+            except Exception:
+                pass
             from mail_delivery import normalize_from_local, normalize_mail_domain
 
             from_name = (data.get("from_name") if "from_name" in data else row.get("from_name") or "").strip()
@@ -6052,7 +6468,10 @@ def create_mailing_blueprint(permission_required):
     @bp.route("/ivr/events", methods=["GET"])
     @mail_perm(*MAIL_IVR)
     def list_ivr_events():
-        limit = min(int(request.args.get("limit") or 100), 500)
+        try:
+            limit = min(int(request.args.get("limit") or 100), 500)
+        except (TypeError, ValueError):
+            limit = 100
         with closing(get_db()) as conn:
             rows = _rows(fetchall(
                 conn,
@@ -6079,10 +6498,10 @@ def create_mailing_blueprint(permission_required):
             if not expected or secret != expected:
                 return jsonify({"error": "Unauthorized"}), 401
 
-            phone = (data.get("phone") or data.get("tel") or "").strip()
-            email = (data.get("email") or "").strip().lower()
-            answered_at = (data.get("answered_at") or now).strip()
-            name = (data.get("name") or "").strip()
+            phone = str(data.get("phone") or data.get("tel") or "").strip()
+            email = str(data.get("email") or "").strip().lower()
+            answered_at = str(data.get("answered_at") or now).strip()
+            name = str(data.get("name") or "").strip()
 
             event_id = insert_returning_id(
                 conn,

@@ -30,6 +30,27 @@
       <span id="mail-delivery-alert-text">Gönderim sağlığı kontrol ediliyor…</span>
       <button type="button" class="btn btn-sm btn-primary" id="mail-delivery-alert-go">Ayarlar</button>
     </div>
+    <section class="card" id="mail-success-rate-card" style="margin-bottom:0.85rem;">
+      <div class="card-head">
+        <span class="mm-label-row" style="margin:0;">
+          Alibaba başarı oranı
+          <span class="mm-tip" tabindex="0" data-tip="Alibaba DirectMail hesap yöneticisinin gördüğü oran: sent / (sent + fail + bounce). Limit artışı için ≥%90, mevcut limiti korumak için ≥%80 gerekir.">?</span>
+        </span>
+      </div>
+      <div class="card-body" style="display:flex;flex-wrap:wrap;gap:1.5rem;align-items:center;">
+        <div>
+          <div class="val" id="mail-success-rate-24h" style="font-size:1.8rem;font-weight:700;">—</div>
+          <div class="lbl muted">Son 24 saat</div>
+        </div>
+        <div>
+          <div class="val" id="mail-success-rate-7d" style="font-size:1.8rem;font-weight:700;">—</div>
+          <div class="lbl muted">Son 7 gün</div>
+        </div>
+        <div style="flex:1;min-width:200px;">
+          <p class="hint" id="mail-success-rate-note" style="margin:0;">Hesaplanıyor…</p>
+        </div>
+      </div>
+    </section>
     <section class="kpi-grid acc-kpi-grid">
       <div class="kpi"><div class="val" id="mail-kpi-contacts">—</div><div class="lbl">Kontak</div><div class="sub muted" id="mail-kpi-contacts-sub"></div></div>
       <div class="kpi cyan"><div class="val" id="mail-kpi-campaigns">—</div><div class="lbl">Kampanya</div></div>
@@ -988,7 +1009,7 @@
   <div class="modal mail-tpl-view-modal">
     <div class="modal-head">
       <h3 id="mail-tpl-view-title">Şablon önizleme</h3>
-      <button type="button" class="modal-close" id="mail-tpl-view-close">&times;</button>
+      <button type="button" class="modal-close" id="mail-tpl-view-close" aria-label="Kapat">&times;</button>
     </div>
     <div class="modal-body mail-tpl-view-body">
       <iframe id="mail-tpl-view-frame" class="mail-tpl-view-frame" title="Şablon önizleme" sandbox="allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"></iframe>
@@ -1000,7 +1021,7 @@
   <div class="modal" style="max-width:860px;width:96%;max-height:90vh;display:flex;flex-direction:column;">
     <div class="modal-head">
       <h3 id="mail-picker-title">Kontak listesi</h3>
-      <button type="button" class="modal-close" id="mail-picker-close">&times;</button>
+      <button type="button" class="modal-close" id="mail-picker-close" aria-label="Kapat">&times;</button>
     </div>
     <div class="modal-body" style="padding:0.85rem 1rem;overflow:auto;flex:1;min-height:0;">
       <p class="hint" id="mail-picker-meta" style="margin:0 0 0.65rem;">—</p>
@@ -1034,7 +1055,7 @@
   <div class="modal" style="max-width:820px;width:96%;max-height:90vh;display:flex;flex-direction:column;">
     <div class="modal-head">
       <h3 id="mail-camp-detail-title">Kampanya alıcıları</h3>
-      <button type="button" class="modal-close" id="mail-camp-detail-close">&times;</button>
+      <button type="button" class="modal-close" id="mail-camp-detail-close" aria-label="Kapat">&times;</button>
     </div>
     <div class="modal-body" style="padding:0.85rem 1rem;overflow:auto;flex:1;min-height:0;">
       <p class="hint" id="mail-camp-detail-meta" style="margin:0 0 0.75rem;">—</p>

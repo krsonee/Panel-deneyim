@@ -12,6 +12,10 @@
       return r.json().catch(function () { return {}; }).then(function (data) {
         return { ok: r.ok, status: r.status, data: data };
       });
+    }).catch(function (err) {
+      // fetch() reddi (offline/DNS/timeout) yakalanmazsa çağıran .then() zinciri
+      // hiç çalışmaz — 28 çağrı noktasının 27'sinde sessiz başarısızlık oluyordu.
+      return { ok: false, status: 0, data: { error: "Ağ hatası: " + (err && err.message ? err.message : "bağlantı kurulamadı") } };
     });
   }
 
@@ -23,6 +27,20 @@
 
   function fmtCr(n) {
     try { return Number(n || 0).toLocaleString("tr-TR"); } catch (e) { return String(n); }
+  }
+
+  /** Sunucu UTC ISO zaman damgalarını TR yerel saatine çevirir — mailing.js'teki
+   * fmtTime() ile aynı davranış (bu dosyada eşdeğeri yoktu, ham UTC string'ler
+   * doğrudan admin'e gösteriliyordu, ör. "son auto-run" 3 saat geride görünüyordu). */
+  function fmtTime(iso) {
+    if (!iso) return "—";
+    try {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return String(iso);
+      return d.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" });
+    } catch (e) {
+      return String(iso);
+    }
   }
 
   function mmIcon(name) {
@@ -126,7 +144,7 @@
               "<td>" + esc(c.name) + "</td>" +
               "<td>" + mmStatusBadge(c.status) + "</td>" +
               "<td>" + esc(prog) + "</td>" +
-              "<td>" + esc(c.updated_at || c.created_at || "—") + "</td></tr>";
+              "<td>" + esc(fmtTime(c.updated_at || c.created_at)) + "</td></tr>";
           }).join("");
         }
       }
@@ -729,7 +747,7 @@
       } else {
         statusEl.textContent =
           "Program: her Pazar (TR) · bu hafta " + (maint.week_key || "—") +
-          (maint.last_run_at ? (" · son auto-run " + String(maint.last_run_at).slice(0, 16)) : " · henüz auto-run yok");
+          (maint.last_run_at ? (" · son auto-run " + fmtTime(maint.last_run_at)) : " · henüz auto-run yok");
       }
     }
     if (tasksEl) {
@@ -745,7 +763,7 @@
       var run = maint.this_week_run;
       var act = run && run.actions ? run.actions.length : 0;
       metaEl.textContent = run
-        ? ("Bu hafta auto-run: " + String(run.ran_at || "").slice(0, 19) + " · " + act + " adım")
+        ? ("Bu hafta auto-run: " + fmtTime(run.ran_at) + " · " + act + " adım")
         : "Bu hafta henüz otomatik bakım koşmadı — «Bakımı çalıştır» ile başlat.";
     }
     if (runBtn) {
