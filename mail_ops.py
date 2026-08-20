@@ -26,16 +26,26 @@ from database import (
 
 
 def _ops_secret(conn=None):
+    """Open/click imza anahtarı — webhook_secret ile KARIŞTIRMA (değişince tüm pixel kırılır)."""
+    import os
+
     close = False
     if conn is None:
         conn = get_db()
         close = True
     try:
-        secret = (get_mail_setting(conn, "webhook_secret", "") or "").strip()
+        secret = (get_mail_setting(conn, "mail_ops_secret", "") or "").strip()
         if not secret:
-            secret = (get_mail_setting(conn, "mail_ops_secret", "") or "").strip()
+            secret = (os.environ.get("MAILING_SECRET_KEY") or "").strip()
         if not secret:
             secret = secrets.token_hex(24)
+            upsert_mail_setting(conn, "mail_ops_secret", secret)
+            try:
+                conn.commit()
+            except Exception:
+                pass
+        elif not (get_mail_setting(conn, "mail_ops_secret", "") or "").strip():
+            # Env’den geldiyse DB’ye sabitle — web/worker aynı kalsın
             upsert_mail_setting(conn, "mail_ops_secret", secret)
             try:
                 conn.commit()
@@ -51,7 +61,11 @@ def _ops_secret(conn=None):
 
 
 def ensure_mail_ops_schema(conn):
-    """Suppression + unsub token tabloları / kolonlar."""
+    """Suppression + unsub token tabloları / kolonlar. Open secret’ı sabitle."""
+    try:
+        _ops_secret(conn)
+    except Exception as exc:
+        print(f"⚠️  mail_ops_secret ensure: {exc}")
     if uses_postgres():
         execute(
             conn,
@@ -272,9 +286,26 @@ def open_url(send_id, conn=None):
 
 
 def verify_open_sig(conn, send_id, sig):
+    """İmza doğrula — yeni mail_ops_secret + eski webhook_secret (geçiş)."""
+    got = (sig or "").strip()
+    if not got:
+        return False
     secret = _ops_secret(conn)
     expect = hmac.new(secret.encode(), f"open:{int(send_id)}".encode(), hashlib.sha256).hexdigest()[:20]
-    return hmac.compare_digest(expect, (sig or "").strip())
+    if hmac.compare_digest(expect, got):
+        return True
+    # Eski mailler webhook_secret ile imzalanmış olabilir
+    try:
+        legacy = (get_mail_setting(conn, "webhook_secret", "") or "").strip()
+        if legacy and legacy != secret:
+            expect2 = hmac.new(
+                legacy.encode(), f"open:{int(send_id)}".encode(), hashlib.sha256
+            ).hexdigest()[:20]
+            if hmac.compare_digest(expect2, got):
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def apply_unsubscribe(conn, token):
@@ -357,9 +388,9 @@ def tag_click_outcome(conn, contact_id, *, opened=False, now=None):
 def inject_ops_footer(conn, body, *, send_id, contact_id=None, email="", as_html=True):
     """Open pixel + List-Unsubscribe URL + şablon bozmayan discreete unsub.
 
-    Şablon HTML'ine dokunulmaz — gönderim anında en alta eklenir.
-    display:none / 0px / beyaz-üzerine-beyaz YOK; 9px soluk metin.
-    Dönüş: (body, unsub_url) — unsub_url ayrıca List-Unsubscribe header'ına gider.
+    Şablon HTML'ine dokunulmaz — gönderim anında eklenir.
+    Pixel hem <body> hemen sonrası hem sonda (istemci/proxy güvenilirliği).
+    Dönüş: (body, unsub_url).
     """
     import re
 
@@ -370,25 +401,44 @@ def inject_ops_footer(conn, body, *, send_id, contact_id=None, email="", as_html
     opixel = open_url(send_id, conn)
     href = html_lib.escape(uurl, quote=True)
     if as_html:
-        if 'data-mm-ops-unsub="1"' in body or "data-mm-ops-unsub='1'" in body:
-            return body, uurl
+        pixel_src = html_lib.escape(opixel, quote=True)
         pixel = (
-            f'<img src="{html_lib.escape(opixel, quote=True)}" width="1" height="1" alt="" '
-            'style="display:block;width:1px;height:1px;border:0;" />'
+            f'<img src="{pixel_src}" width="1" height="1" alt="" '
+            'data-mm-ops-open="1" '
+            'style="display:block;width:1px;height:1px;border:0;outline:none;" />'
         )
-        discreet = (
-            '<div data-mm-ops-unsub="1" style="margin:18px 0 0;padding:0;text-align:center;'
-            'font-family:Arial,Helvetica,sans-serif;line-height:1.2;">'
-            f'<a href="{href}" target="_blank" rel="noopener noreferrer" '
-            'style="color:#9ca3af;font-size:9px;font-weight:400;text-decoration:underline;'
-            'letter-spacing:0;">Abonelikten çık</a>'
-            "</div>"
-        )
-        footer = discreet + pixel
-        if re.search(r"(?i)</body>", body):
-            body = re.sub(r"(?i)</body>", footer + "</body>", body, count=1)
-        else:
-            body = body + footer
+        has_unsub = 'data-mm-ops-unsub="1"' in body or "data-mm-ops-unsub='1'" in body
+        has_open = 'data-mm-ops-open="1"' in body or "data-mm-ops-open='1'" in body
+        discreet = ""
+        if not has_unsub:
+            discreet = (
+                '<div data-mm-ops-unsub="1" style="margin:18px 0 0;padding:0;text-align:center;'
+                'font-family:Arial,Helvetica,sans-serif;line-height:1.2;">'
+                f'<a href="{href}" target="_blank" rel="noopener noreferrer" '
+                'style="color:#9ca3af;font-size:9px;font-weight:400;text-decoration:underline;'
+                'letter-spacing:0;">Abonelikten çık</a>'
+                "</div>"
+            )
+        # Açılma pikseli yoksa mutlaka ekle (eski kod unsub varken pixel’i de atlıyordu)
+        if not has_open:
+            # Üst: bazı istemciler sadece yukarıyı yükler
+            if re.search(r"(?i)<body[^>]*>", body):
+                body = re.sub(
+                    r"(?i)(<body[^>]*>)",
+                    r"\1" + pixel,
+                    body,
+                    count=1,
+                )
+            footer = discreet + pixel
+            if re.search(r"(?i)</body>", body):
+                body = re.sub(r"(?i)</body>", footer + "</body>", body, count=1)
+            else:
+                body = body + footer
+        elif discreet:
+            if re.search(r"(?i)</body>", body):
+                body = re.sub(r"(?i)</body>", discreet + "</body>", body, count=1)
+            else:
+                body = body + discreet
         return body, uurl
     if "Abonelikten çık:" in (body or ""):
         return body, uurl

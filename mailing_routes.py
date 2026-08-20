@@ -462,8 +462,20 @@ def _plain_to_html(text):
 
 
 def _public_base():
-    """Click/open/unsub absolute base — worker’da request yoksa da kırılmasın."""
+    """Click/open/unsub absolute base — worker’da request yoksa da kırılmasın.
+
+    Mailing servisinde her zaman mikromail host; yanlış PUBLIC_BASE_URL
+    (takipmkr vs) open pixel’i 302’ye düşürüp açılma sayımını öldürür.
+    """
+    mode = (os.environ.get("SERVICE_MODE") or "").strip().lower()
+    mailing_default = "https://mikromail.onrender.com"
     base = (os.environ.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    # Panel host’una işaret eden PUBLIC_BASE mailing’de override
+    if mode in ("mailing", "mailing-worker"):
+        if not base or "takipmkr" in base.lower() or "bizzopanel" in base.lower():
+            mm = (os.environ.get("MIKROMAIL_URL") or mailing_default).strip().rstrip("/")
+            return mm or mailing_default
+        return base
     if base:
         return base
     try:
@@ -472,9 +484,8 @@ def _public_base():
             return root
     except RuntimeError:
         pass
-    mode = (os.environ.get("SERVICE_MODE") or "").strip().lower()
     if mode in ("mailing", "mailing-worker"):
-        return "https://mikromail.onrender.com"
+        return mailing_default
     return ""
 
 
@@ -2503,8 +2514,11 @@ def create_mailing_click_blueprint():
                 if verify_open_sig(conn, send_id, sig):
                     record_open(conn, send_id)
                     conn.commit()
-        except Exception:
-            pass
+                else:
+                    # Eski webhook_secret ile imzalanmış mailler — mail_ops_secret ile dene
+                    print(f"⚠️  open sig mismatch send_id={send_id}")
+        except Exception as exc:
+            print(f"⚠️  mail_open_pixel: {exc}")
         return pixel, 200, {
             "Content-Type": "image/gif",
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

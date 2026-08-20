@@ -202,58 +202,74 @@
 
   function mailApi(path, opts) {
     opts = opts || {};
-    var timeoutMs = opts.timeoutMs || 15000;
-    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-    var timer = controller ? setTimeout(function () { controller.abort(); }, timeoutMs) : null;
-    var fetchOpts = Object.assign({ headers: {} }, opts);
-    delete fetchOpts.timeoutMs;
-    fetchOpts.headers = Object.assign({}, fetchOpts.headers || {});
-    if (window.MAIL_STANDALONE && window.MAIL_TENANT_ID) {
-      fetchOpts.headers["X-Tenant-Id"] = String(window.MAIL_TENANT_ID);
-    }
-    if (fetchOpts.body && typeof fetchOpts.body === "object" && !(fetchOpts.body instanceof FormData)) {
-      fetchOpts.headers["Content-Type"] = "application/json";
-      fetchOpts.body = JSON.stringify(fetchOpts.body);
-    }
-    if (controller) fetchOpts.signal = controller.signal;
-    fetchOpts.credentials = fetchOpts.credentials || "same-origin";
-    return fetch(path, fetchOpts).then(function (r) {
-      if (timer) clearTimeout(timer);
-      if (r.status === 401) {
-        location.href = window.MAIL_STANDALONE ? "/login" : "/admin/login";
-        return { ok: false, status: 401, data: { error: "Oturum düştü — tekrar giriş yap" } };
+    var timeoutMs = opts.timeoutMs || 45000;
+    var retries = opts.retries != null ? opts.retries : 1;
+    var attempt = 0;
+
+    function once() {
+      attempt += 1;
+      var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var timer = controller ? setTimeout(function () { controller.abort(); }, timeoutMs) : null;
+      var fetchOpts = Object.assign({ headers: {} }, opts);
+      delete fetchOpts.timeoutMs;
+      delete fetchOpts.retries;
+      fetchOpts.headers = Object.assign({}, fetchOpts.headers || {});
+      if (window.MAIL_STANDALONE && window.MAIL_TENANT_ID) {
+        fetchOpts.headers["X-Tenant-Id"] = String(window.MAIL_TENANT_ID);
       }
-      return r.text().then(function (text) {
-        var data = {};
-        if (text) {
-          try {
-            data = JSON.parse(text);
-          } catch (parseErr) {
-            var snippet = String(text).replace(/\s+/g, " ").slice(0, 140);
-            data = {
-              error: "Sunucu JSON dönmedi (HTTP " + r.status + ")" +
-                (snippet ? (": " + snippet) : "")
-            };
-            return { ok: false, status: r.status, data: data };
-          }
+      if (fetchOpts.body && typeof fetchOpts.body === "object" && !(fetchOpts.body instanceof FormData)) {
+        fetchOpts.headers["Content-Type"] = "application/json";
+        fetchOpts.body = JSON.stringify(fetchOpts.body);
+      }
+      if (controller) fetchOpts.signal = controller.signal;
+      fetchOpts.credentials = fetchOpts.credentials || "same-origin";
+      return fetch(path, fetchOpts).then(function (r) {
+        if (timer) clearTimeout(timer);
+        if (r.status === 401) {
+          location.href = window.MAIL_STANDALONE ? "/login" : "/admin/login";
+          return { ok: false, status: 401, data: { error: "Oturum düştü — tekrar giriş yap" } };
         }
-        return { ok: r.ok, status: r.status, data: data || {} };
+        return r.text().then(function (text) {
+          var data = {};
+          if (text) {
+            try {
+              data = JSON.parse(text);
+            } catch (parseErr) {
+              var snippet = String(text).replace(/\s+/g, " ").slice(0, 140);
+              data = {
+                error: "Sunucu JSON dönmedi (HTTP " + r.status + ")" +
+                  (snippet ? (": " + snippet) : "")
+              };
+              return { ok: false, status: r.status, data: data };
+            }
+          }
+          return { ok: r.ok, status: r.status, data: data || {} };
+        });
+      }).catch(function (err) {
+        if (timer) clearTimeout(timer);
+        var isAbort = err && err.name === "AbortError";
+        var msg = isAbort
+          ? "İstek zaman aşımı — tekrar dene"
+          : ("İstek başarısız: " + ((err && err.message) || "ağ hatası"));
+        if (attempt <= retries && (isAbort || !err || err.name === "TypeError")) {
+          return new Promise(function (resolve) {
+            setTimeout(function () { resolve(once()); }, 400 * attempt);
+          });
+        }
+        return { ok: false, status: 0, data: { error: msg } };
       });
-    }).catch(function (err) {
-      if (timer) clearTimeout(timer);
-      var msg = (err && err.name === "AbortError")
-        ? "İstek zaman aşımı — tekrar dene"
-        : ("İstek başarısız: " + ((err && err.message) || "ağ hatası"));
-      return { ok: false, status: 0, data: { error: msg } };
-    });
+    }
+    return once();
   }
 
+  var _mailEnsureTenantPromise = null;
   function mailEnsureTenant() {
     if (!window.MAIL_STANDALONE || !window.MAIL_IS_SUPERADMIN) {
       return Promise.resolve(window.MAIL_TENANT_ID || null);
     }
     if (window.MAIL_TENANT_ID) return Promise.resolve(window.MAIL_TENANT_ID);
-    return fetch("/api/platform/tenants", { credentials: "same-origin" })
+    if (_mailEnsureTenantPromise) return _mailEnsureTenantPromise;
+    _mailEnsureTenantPromise = fetch("/api/platform/tenants", { credentials: "same-origin" })
       .then(function (r) { return r.json().catch(function () { return {}; }); })
       .then(function (data) {
         var rows = (data && data.tenants) || [];
@@ -274,7 +290,12 @@
           return window.MAIL_TENANT_ID;
         });
       })
-      .catch(function () { return null; });
+      .catch(function () { return null; })
+      .then(function (tid) {
+        if (!window.MAIL_TENANT_ID) _mailEnsureTenantPromise = null;
+        return tid;
+      });
+    return _mailEnsureTenantPromise;
   }
 
   function mailToast(msg) {
@@ -710,16 +731,19 @@
 
   function mailStartNextImport() {
     if (mailImportBusy) return;
-    var next = mailImportQueue.shift();
-    mailRenderImportQueue();
-    if (!next) {
-      mailImportBusy = false;
+    mailEnsureTenant().then(function () {
+      if (mailImportBusy) return;
+      var next = mailImportQueue.shift();
+      mailRenderImportQueue();
+      if (!next) {
+        mailImportBusy = false;
+        mailUpdateBulkFormState();
+        return;
+      }
+      mailImportBusy = true;
       mailUpdateBulkFormState();
-      return;
-    }
-    mailImportBusy = true;
-    mailUpdateBulkFormState();
-    mailRunImportItem(next.file, next.tag);
+      mailRunImportItem(next.file, next.tag);
+    });
   }
 
   function mailRunImportItem(file, tag) {
@@ -3537,28 +3561,52 @@
               "). Sadece e-posta yapıştır veya Excel’den e-posta kolonunu kopyala.")
             : "Geçerli e-posta bulunamadı. Satır başına bir e-posta yapıştır (isim/telefon karışmasın).";
         }
-        return;
+        return Promise.resolve(false);
       }
+      if (window._mailPasteBusy) {
+        if (pasteStatusEl) pasteStatusEl.textContent = "Önceki kayıt bitiyor…";
+        return Promise.resolve(false);
+      }
+      window._mailPasteBusy = true;
       if (pasteStatusEl) {
-        pasteStatusEl.textContent = fmtNum(info.valid.length) + " e-posta kaydediliyor… (aktif tenant’a)";
+        pasteStatusEl.textContent = fmtNum(info.valid.length) + " e-posta kaydediliyor…";
       }
-      // Doğrudan API — File/CSV kuyruğuna bağımlı değil (daha güvenilir)
-      mailPasteEmailsDirect(info.valid, tag).then(function (res) {
-        if (!res || !res.ok) {
-          var err = (res && res.data && res.data.error) || "Kayıt başarısız";
+      var pasteBtn = document.getElementById("mail-paste-submit");
+      if (pasteBtn) pasteBtn.disabled = true;
+      return mailEnsureTenant().then(function (tid) {
+        if (window.MAIL_STANDALONE && window.MAIL_IS_SUPERADMIN && !tid && !window.MAIL_TENANT_ID) {
+          mailToast("Üstten tenant (makro) seç — sonra tekrar dene");
+          if (pasteStatusEl) pasteStatusEl.textContent = "Tenant seçilmedi";
+          return null;
+        }
+        return mailPasteEmailsDirect(info.valid, tag);
+      }).then(function (res) {
+        window._mailPasteBusy = false;
+        if (pasteBtn) pasteBtn.disabled = false;
+        if (!res) return false;
+        if (!res.ok) {
+          var err = (res.data && res.data.error) || "Kayıt başarısız — tekrar dene";
           if (pasteStatusEl) pasteStatusEl.textContent = "Hata: " + err;
           mailToast(err);
-          return;
+          return false;
         }
         var msg = (res.data && res.data.message) ||
           (fmtNum(res.data.created) + " yeni · " + fmtNum(res.data.updated) + " güncellendi");
         if (info.invalid.length) msg += " · " + fmtNum(info.invalid.length) + " hatalı atlandı";
         if (pasteStatusEl) pasteStatusEl.textContent = msg;
         mailToast(msg);
+        if (pasteBox) {
+          pasteBox.value = "";
+          mailUpdatePasteMeta("");
+        }
         if (typeof mailLoadContacts === "function") mailLoadContacts();
         else if (typeof mailLoadCrm === "function") mailLoadCrm();
+        return true;
       }).catch(function () {
+        window._mailPasteBusy = false;
+        if (pasteBtn) pasteBtn.disabled = false;
         if (pasteStatusEl) pasteStatusEl.textContent = "Bağlantı hatası — tekrar dene";
+        return false;
       });
     }
     if (pasteBox) {
@@ -3568,17 +3616,14 @@
         var text = (e.clipboardData || window.clipboardData).getData("text");
         pasteBox.value = text;
         mailUpdatePasteMeta(text);
+        // Otomatik kaydet — kutuyu başarıdan önce silme (ilk tık kaçmasın)
         mailHandlePastedText(text);
-        pasteBox.value = "";
-        mailUpdatePasteMeta("");
       });
     }
     bindClick("mail-paste-submit", function () {
       var text = pasteBox ? pasteBox.value : "";
       if (!text || !text.trim()) { mailToast("Önce bir şey yapıştır veya yaz"); return; }
       mailHandlePastedText(text);
-      if (pasteBox) pasteBox.value = "";
-      mailUpdatePasteMeta("");
     });
     var contactsSub = document.getElementById("mail-contacts-subnav");
     if (contactsSub) {
@@ -4363,17 +4408,29 @@
     }
     bindClick("mail-camp-preview", function () {
       var hint = document.getElementById("mail-camp-preview-hint");
+      var btn = document.getElementById("mail-camp-preview");
+      if (window._mailCampPreviewBusy) return;
+      window._mailCampPreviewBusy = true;
+      if (btn) btn.disabled = true;
       if (hint) hint.textContent = "Hesaplanıyor…";
-      mailEnsureTenant().then(function () {
+      mailEnsureTenant().then(function (tid) {
+        if (window.MAIL_STANDALONE && window.MAIL_IS_SUPERADMIN && !tid && !window.MAIL_TENANT_ID) {
+          if (hint) hint.textContent = "Üstten tenant (makro) seç — sonra tekrar dene";
+          return null;
+        }
         return mailApi("/api/mailing/campaigns/select-preview", {
           method: "POST",
           body: mailCampSelectionPayload(),
-          timeoutMs: 60000
+          timeoutMs: 90000,
+          retries: 2
         });
       }).then(function (res) {
+          window._mailCampPreviewBusy = false;
+          if (btn) btn.disabled = false;
           if (!hint) return;
-          if (!res || !res.ok) {
-            hint.textContent = (res && res.data && res.data.error) || "Hesaplanamadı — üstten tenant (makro) seçili mi?";
+          if (!res) return;
+          if (!res.ok) {
+            hint.textContent = (res.data && res.data.error) || "Hesaplanamadı — tekrar dene (tenant seçili mi?)";
             return;
           }
           var total = res.data.matching_count || 0;
@@ -4425,6 +4482,10 @@
             html += " · etiket: " + esc(tags.join(", "));
           }
           hint.innerHTML = html;
+        }).catch(function () {
+          window._mailCampPreviewBusy = false;
+          if (btn) btn.disabled = false;
+          if (hint) hint.textContent = "Hesaplama hatası — tekrar dene";
         });
     });
     bindClick("mail-quota-refresh", function () { refreshAccountQuota(); });

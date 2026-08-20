@@ -2459,15 +2459,32 @@ else:
         or "https://mikromail.onrender.com"
     ).rstrip("/")
 
+    @app.route("/m/o/<path:rest>", methods=["GET"])
+    def _proxy_mail_open(rest):
+        """Open pixel — 302 yerine proxy (çoğu mail istemcisi redirect’te açılma saymaz)."""
+        import urllib.request
+        url = f"{_mm}/m/o/{rest}"
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": request.headers.get("User-Agent") or "Mikromail-OpenProxy/1"},
+                method="GET",
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = resp.read()
+                ctype = resp.headers.get("Content-Type") or "image/gif"
+            return data, 200, {
+                "Content-Type": ctype,
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            }
+        except Exception:
+            from flask import redirect as _redir
+            return _redir(url, code=302)
+
     @app.route("/m/c/<path:token>", methods=["GET"])
     def _proxy_mail_click(token):
         from flask import redirect as _redir
         return _redir(f"{_mm}/m/c/{token}", code=302)
-
-    @app.route("/m/o/<path:rest>", methods=["GET"])
-    def _proxy_mail_open(rest):
-        from flask import redirect as _redir
-        return _redir(f"{_mm}/m/o/{rest}", code=302)
 
     @app.route("/m/u/<path:token>", methods=["GET", "POST"])
     def _proxy_mail_unsub(token):
