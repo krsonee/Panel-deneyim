@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="tr"><head><meta charset="utf-8"><title>mock</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,Segoe UI,Arial,sans-serif;background:#090D16;color:#F9FAFB;width:1400px}
+.app{display:flex;min-height:820px}
+.side{width:240px;background:#0B1220;border-right:1px solid #1F2937;padding:18px 12px}
+.side h1{font-size:18px;margin-bottom:4px}.side h1 span{color:#38bdf8}
+.side p{font-size:11px;color:#9CA3AF;margin-bottom:18px}
+.nav{display:flex;flex-direction:column;gap:4px}
+.nav button{text-align:left;border:0;background:transparent;color:#9CA3AF;padding:10px 12px;border-radius:8px;font-size:13px}
+.nav button.on{background:rgba(56,189,248,.14);color:#7dd3fc}
+.main{flex:1;padding:18px 22px}
+.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.head h2{font-size:20px}.head .sub{font-size:12px;color:#9CA3AF}
+.pill{font-size:11px;padding:6px 10px;border-radius:999px;border:1px solid rgba(52,211,153,.35);color:#34d399;background:rgba(52,211,153,.12)}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.kpi{background:#111827;border:1px solid #1F2937;border-radius:12px;padding:14px}
+.kpi .v{font-size:26px;font-weight:700}.kpi .l{font-size:11px;color:#9CA3AF;margin-top:4px}
+.card{background:#111827;border:1px solid #1F2937;border-radius:12px;padding:14px;margin-bottom:12px}
+.card h3{font-size:13px;margin-bottom:10px;color:#e5e7eb}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-size:11px;padding:6px 10px;border-radius:999px;background:#151e2e;border:1px solid #334155}
+.chip.ok{border-color:rgba(52,211,153,.4);color:#6ee7b7}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{font-size:11px;color:#9CA3AF;display:block;margin-bottom:4px}
+input,select,textarea{width:100%;background:#0B1220;border:1px solid #1F2937;border-radius:8px;color:#F9FAFB;padding:8px 10px;font-size:12px}
+.btn{display:inline-block;background:#38bdf8;color:#041018;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700}
+.btn.sec{background:#1e293b;color:#e2e8f0}
+.table{width:100%;border-collapse:collapse;font-size:12px}
+.table th{text-align:left;color:#9CA3AF;font-weight:600;padding:8px;border-bottom:1px solid #1F2937}
+.table td{padding:8px;border-bottom:1px solid #1F2937}
+.hint{font-size:11px;color:#9CA3AF;line-height:1.4;margin-top:8px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tabs span{font-size:12px;padding:6px 10px;border-radius:8px;background:#151e2e;color:#9CA3AF}
+.tabs span.on{background:rgba(56,189,248,.14);color:#7dd3fc}
+.drop{border:1px dashed #334155;border-radius:10px;padding:22px;text-align:center;color:#9CA3AF;font-size:12px}
+.bar{height:8px;background:#1F2937;border-radius:99px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;width:62%;background:#34d399}
+</style></head>
+<body>
+<!-- DASH -->
+<div class="app" id="dash">
+  <aside class="side"><h1>Mikro<span>mail</span></h1><p>firma · operatör</p>
+    <div class="nav"><button class="on">Dashboard</button><button>Kontak & CRM</button><button>Şablonlar</button><button>Kampanyalar</button><button>IVR Otomasyon</button><button>Raporlar</button><button>Sistem Ayarları</button></div>
+  </aside>
+  <div class="main">
+    <div class="head"><div><h2>Dashboard</h2><div class="sub">Özet ve domain durumu</div></div><span class="pill">SMTP / DirectMail</span></div>
+    <div class="card"><h3>Gönderim başarı oranı</h3><div class="grid" style="margin:0"><div class="kpi"><div class="v">96.1%</div><div class="l">Son 24 saat</div></div><div class="kpi"><div class="v">98.2%</div><div class="l">Son 7 gün</div></div><div class="kpi" style="grid-column:span 2"><div class="l" style="margin:0;line-height:1.45">Kabul / (kabul+fail+bounce). %90 üzeri iyi durumda.</div></div></div></div>
+    <div class="grid"><div class="kpi"><div class="v">128.4k</div><div class="l">Kontak</div></div><div class="kpi"><div class="v">14</div><div class="l">Kampanya</div></div><div class="kpi"><div class="v">2.055</div><div class="l">Gerçek SMTP (7g)</div></div><div class="kpi"><div class="v">0</div><div class="l">IVR olayı</div></div></div>
+    <div class="card"><h3>Domain durumu</h3><div class="chips"><span class="chip ok">domain-a · ready</span><span class="chip ok">domain-b · ready</span><span class="chip">domain-c · warming</span></div><p class="hint">Domain seçmezsiniz — kampanyada sistem sağlık + günlük cap’e göre otomatik döner.</p></div>
+  </div>
+</div>
+
+<!-- CONTACTS -->
+<div class="app" id="contacts" style="margin-top:40px">
+  <aside class="side"><h1>Mikro<span>mail</span></h1><p>firma · operatör</p>
+    <div class="nav"><button>Dashboard</button><button class="on">Kontak & CRM</button><button>Şablonlar</button><button>Kampanyalar</button><button>IVR Otomasyon</button><button>Raporlar</button><button>Sistem Ayarları</button></div>
+  </aside>
+  <div class="main">
+    <div class="head"><div><h2>Kontak & CRM</h2><div class="sub">Mail Rehber · etiket · scrub</div></div><span class="pill">SMTP / DirectMail</span></div>
+    <div class="tabs"><span class="on">Mail Rehber</span><span>Üye eşleşmesi</span><span>İlişki CRM</span></div>
+    <div class="row">
+      <div class="card"><h3>Etiket oluştur</h3><label>Yeni etiket</label><input value="agustos_vip"><div style="margin-top:8px"><span class="btn">Etiket oluştur</span></div>
+        <div class="chips" style="margin-top:12px"><span class="chip">vip</span><span class="chip">kaynak_a</span><span class="chip ok">mail_valid</span><span class="chip">mail_invalid</span></div>
+      </div>
+      <div class="card"><h3>Kontak ekle (tekli)</h3><label>E-posta</label><input placeholder="ornek@mail.com"><div class="row" style="margin-top:8px"><div><label>Ad</label><input></div><div><label>Etiket</label><select><option>vip</option></select></div></div><div style="margin-top:8px"><span class="btn">Ekle</span></div></div>
+    </div>
+    <div class="row">
+      <div class="card"><h3>CSV / XLSX yükle</h3><div class="drop">Sürükle bırak veya tıkla · CSV, XLSX</div><label style="margin-top:8px">Varsayılan etiket</label><select><option>kaynak_a</option></select><div style="margin-top:8px"><span class="btn">Yüklemeyi başlat</span></div></div>
+      <div class="card"><h3>Sadece e-posta yapıştır</h3><textarea rows="5">ali@ornek.com
+veli@ornek.com
+ayse@ornek.com</textarea><div class="chips" style="margin-top:8px"><span class="chip ok">3 geçerli</span><span class="chip">0 hatalı</span></div><div style="margin-top:8px"><span class="btn sec">Kuyruğa ekle</span></div></div>
+    </div>
+    <div class="card"><h3>Liste temizle (scrub)</h3><p class="hint" style="margin:0 0 8px">Syntax · disposable · MX · SMTP ping. Geçersizler suppression’a; geçerliye mail_valid.</p>
+      <div class="chips"><span class="chip">vip</span><span class="chip">kaynak_a</span><span class="chip">mail_mx_ok</span></div>
+      <div style="margin-top:10px;display:flex;gap:8px"><span class="btn">Listeyi temizle</span><span class="btn sec">Seçilileri temizle</span></div>
+      <div class="bar"><i></i></div><p class="hint">İşlem arka planda ilerler; iptal edilebilir.</p>
+    </div>
+  </div>
+</div>
+
+<!-- TEMPLATES -->
+<div class="app" id="tpl" style="margin-top:40px">
+  <aside class="side"><h1>Mikro<span>mail</span></h1><p>firma · operatör</p>
+    <div class="nav"><button>Dashboard</button><button>Kontak & CRM</button><button class="on">Şablonlar</button><button>Kampanyalar</button><button>IVR Otomasyon</button><button>Raporlar</button><button>Sistem Ayarları</button></div>
+  </aside>
+  <div class="main">
+    <div class="head"><div><h2>Şablonlar</h2><div class="sub">Mail içerikleri</div></div><span class="pill">SMTP / DirectMail</span></div>
+    <div class="card">
+      <div class="tabs"><span class="on">Basit yazı</span><span>HTML</span></div>
+      <div class="row"><div><label>Şablon adı</label><input value="VIP davet v3"></div><div><label>Konu satırı</label><input value="Merhaba {{name}}, özel fırsatın hazır"></div></div>
+      <div style="margin:10px 0;display:flex;gap:6px;flex-wrap:wrap"><span class="btn sec">{{name}}</span><span class="btn sec">{{email}}</span><span class="btn sec">Takip linki ekle</span></div>
+      <label>Mail metni</label>
+      <textarea rows="8">Merhaba {{name}},
+
+Sana özel bir fırsatımız var.
+
+Hemen bak: {{link:https://ornek-site.com/kampanya}}
+
+İyi günler</textarea>
+      <div style="margin-top:10px;display:flex;gap:8px"><span class="btn">Şablonu kaydet</span><span class="btn sec">Test mail gönder</span><input style="width:200px" value="test@sirket.com"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CAMPAIGNS -->
+<div class="app" id="camp" style="margin-top:40px">
+  <aside class="side"><h1>Mikro<span>mail</span></h1><p>firma · operatör</p>
+    <div class="nav"><button>Dashboard</button><button>Kontak & CRM</button><button>Şablonlar</button><button class="on">Kampanyalar</button><button>IVR Otomasyon</button><button>Raporlar</button><button>Sistem Ayarları</button></div>
+  </aside>
+  <div class="main">
+    <div class="head"><div><h2>Kampanyalar</h2><div class="sub">Gönderim ve zamanlama</div></div><span class="pill">SMTP / DirectMail</span></div>
+    <div class="grid"><div class="kpi"><div class="v">12.4k</div><div class="l">Hesap kotası kalan</div></div><div class="kpi"><div class="v">48.2k</div><div class="l">Mail kredisi kalan</div></div><div class="kpi"><div class="v">1.8k</div><div class="l">Domain kapasitesi bugün</div></div><div class="kpi"><div class="v">OK</div><div class="l">Gönderim hazır</div></div></div>
+    <div class="card"><h3>Yeni kampanya</h3>
+      <div class="row"><div><label>Kampanya adı</label><input value="2026-08-20 vip_listesi"></div><div><label>Şablon</label><select><option>VIP davet v3</option></select></div></div>
+      <div class="row" style="margin-top:8px"><div><label>Gönderen domain</label><select><option>Otomatik (önerilen)</option></select></div><div><label>Alıcı kaynağı</label><select><option>Etiket</option><option>Seçili kontaklar</option><option>Elle e-posta</option></select></div></div>
+      <div style="margin-top:8px"><label>Hedef etiket(ler)</label><div class="chips"><span class="chip ok">✓ vip_listesi</span><span class="chip">kaynak_a</span><span class="chip">mail_valid</span></div></div>
+      <div class="row" style="margin-top:8px"><div><label>Maks alıcı</label><input value="500"></div><div><label>Hız (mail/dk)</label><input value="20"></div></div>
+      <div class="chips" style="margin-top:10px"><span class="chip">✓ Önceden gidenleri hariç tut</span><span class="chip">✓ Sadece doğrulanmış</span><span class="chip">Hemen gönder</span></div>
+      <div style="margin-top:12px"><span class="btn">Kampanyayı başlat</span></div>
+      <p class="hint">Kota / kredi / domain cap dolarsa kampanya kontrollü durur; kalan alıcılar yakılmaz.</p>
+    </div>
+  </div>
+</div>
+
+<!-- REPORTS -->
+<div class="app" id="rep" style="margin-top:40px">
+  <aside class="side"><h1>Mikro<span>mail</span></h1><p>firma · operatör</p>
+    <div class="nav"><button>Dashboard</button><button>Kontak & CRM</button><button>Şablonlar</button><button>Kampanyalar</button><button>IVR Otomasyon</button><button class="on">Raporlar</button><button>Sistem Ayarları</button></div>
+  </aside>
+  <div class="main">
+    <div class="head"><div><h2>Raporlar</h2><div class="sub">Analitik ve gönderim logları</div></div><span class="pill">SMTP / DirectMail</span></div>
+    <div class="grid"><div class="kpi"><div class="v">2.055</div><div class="l">İletilen</div></div><div class="kpi"><div class="v">38</div><div class="l">Fail + bounce</div></div><div class="kpi"><div class="v">412</div><div class="l">Açılma</div></div><div class="kpi"><div class="v">67</div><div class="l">Tıklama</div></div></div>
+    <div class="card"><h3>Kampanya analitiği</h3>
+      <table class="table"><thead><tr><th>Kampanya</th><th>Durum</th><th>İletilen</th><th>Açılma</th><th>Tık</th></tr></thead>
+      <tbody>
+        <tr><td>2026-08-19 vip</td><td>tamamlandı</td><td>820</td><td>18%</td><td>3.1%</td></tr>
+        <tr><td>2026-08-18 kaynak_a</td><td>tamamlandı</td><td>640</td><td>14%</td><td>2.4%</td></tr>
+        <tr><td>2026-08-17 test</td><td>durduruldu</td><td>120</td><td>—</td><td>—</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+</div>
+</body></html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html><html><head><meta charset=utf-8><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,Segoe UI,Arial,sans-serif;background:#090D16;color:#F9FAFB;width:1400px}
+.app{display:flex;min-height:820px}
+.side{width:240px;background:#0B1220;border-right:1px solid #1F2937;padding:18px 12px}
+.side h1{font-size:18px;margin-bottom:4px}.side h1 span{color:#38bdf8}
+.side p{font-size:11px;color:#9CA3AF;margin-bottom:18px}
+.nav{display:flex;flex-direction:column;gap:4px}
+.nav button{text-align:left;border:0;background:transparent;color:#9CA3AF;padding:10px 12px;border-radius:8px;font-size:13px}
+.nav button.on{background:rgba(56,189,248,.14);color:#7dd3fc}
+.main{flex:1;padding:18px 22px}
+.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.head h2{font-size:20px}.head .sub{font-size:12px;color:#9CA3AF}
+.pill{font-size:11px;padding:6px 10px;border-radius:999px;border:1px solid rgba(52,211,153,.35);color:#34d399;background:rgba(52,211,153,.12)}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.kpi{background:#111827;border:1px solid #1F2937;border-radius:12px;padding:14px}
+.kpi .v{font-size:26px;font-weight:700}.kpi .l{font-size:11px;color:#9CA3AF;margin-top:4px}
+.card{background:#111827;border:1px solid #1F2937;border-radius:12px;padding:14px;margin-bottom:12px}
+.card h3{font-size:13px;margin-bottom:10px;color:#e5e7eb}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-size:11px;padding:6px 10px;border-radius:999px;background:#151e2e;border:1px solid #334155}
+.chip.ok{border-color:rgba(52,211,153,.4);color:#6ee7b7}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{font-size:11px;color:#9CA3AF;display:block;margin-bottom:4px}
+input,select,textarea{width:100%;background:#0B1220;border:1px solid #1F2937;border-radius:8px;color:#F9FAFB;padding:8px 10px;font-size:12px}
+.btn{display:inline-block;background:#38bdf8;color:#041018;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700}
+.btn.sec{background:#1e293b;color:#e2e8f0}
+.table{width:100%;border-collapse:collapse;font-size:12px}
+.table th{text-align:left;color:#9CA3AF;font-weight:600;padding:8px;border-bottom:1px solid #1F2937}
+.table td{padding:8px;border-bottom:1px solid #1F2937}
+.hint{font-size:11px;color:#9CA3AF;line-height:1.4;margin-top:8px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tabs span{font-size:12px;padding:6px 10px;border-radius:8px;background:#151e2e;color:#9CA3AF}
+.tabs span.on{background:rgba(56,189,248,.14);color:#7dd3fc}
+.drop{border:1px dashed #334155;border-radius:10px;padding:22px;text-align:center;color:#9CA3AF;font-size:12px}
+.bar{height:8px;background:#1F2937;border-radius:99px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;width:62%;background:#34d399}
+body{width:1400px;}</style></head><body><!-- DASH -->
+<div class="app" id="dash">
+  <aside class="side"><h1>Mikro<span>mail</span></h1><p>firma · operatör</p>
+    <div class="nav"><button class="on">Dashboard</button><button>Kontak & CRM</button><button>Şablonlar</button><button>Kampanyalar</button><button>IVR Otomasyon</button><button>Raporlar</button><button>Sistem Ayarları</button></div>
+  </aside>
+  <div class="main">
+    <div class="head"><div><h2>Dashboard</h2><div class="sub">Özet ve domain durumu</div></div><span class="pill">SMTP / DirectMail</span></div>
+    <div class="card"><h3>Gönderim başarı oranı</h3><div class="grid" style="margin:0"><div class="kpi"><div class="v">96.1%</div><div class="l">Son 24 saat</div></div><div class="kpi"><div class="v">98.2%</div><div class="l">Son 7 gün</div></div><div class="kpi" style="grid-column:span 2"><div class="l" style="margin:0;line-height:1.45">Kabul / (kabul+fail+bounce). %90 üzeri iyi durumda.</div></div></div></div>
+    <div class="grid"><div class="kpi"><div class="v">128.4k</div><div class="l">Kontak</div></div><div class="kpi"><div class="v">14</div><div class="l">Kampanya</div></div><div class="kpi"><div class="v">2.055</div><div class="l">Gerçek SMTP (7g)</div></div><div class="kpi"><div class="v">0</div><div class="l">IVR olayı</div></div></div>
+    <div class="card"><h3>Domain durumu</h3><div class="chips"><span class="chip ok">domain-a · ready</span><span class="chip ok">domain-b · ready</span><span class="chip">domain-c · warming</span></div><p class="hint">Domain seçmezsiniz — kampanyada sistem sağlık + günlük cap’e göre otomatik döner.</p></div>
+  </div>
+</div>
+
+</body></html>

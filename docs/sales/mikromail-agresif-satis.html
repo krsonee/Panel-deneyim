@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<title>Mikro Mail — Agresif Satış Sunumu</title>
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: "Avenir Next", "Segoe UI", Arial, sans-serif;
+    color: #12202e;
+    background: #0b1520;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .slide {
+    width: 297mm; height: 210mm;
+    page-break-after: always; break-after: page;
+    position: relative; overflow: hidden;
+    padding: 14mm 16mm 12mm;
+    background:
+      radial-gradient(ellipse 90% 70% at 100% -10%, rgba(251, 113, 133, 0.16), transparent 50%),
+      radial-gradient(ellipse 70% 55% at 0% 100%, rgba(20, 184, 166, 0.18), transparent 50%),
+      linear-gradient(145deg, #090d14 0%, #121f2e 50%, #0b1520 100%);
+    color: #eef3f8;
+  }
+  .slide:last-child { page-break-after: auto; }
+  .slide.light {
+    background:
+      radial-gradient(ellipse 80% 60% at 110% 0%, #fecdd3 0%, transparent 45%),
+      radial-gradient(ellipse 60% 50% at -5% 100%, #ccfbf1 0%, transparent 45%),
+      linear-gradient(160deg, #f8fafc 0%, #eef2f6 100%);
+    color: #0f172a;
+  }
+  .brand {
+    position: absolute; top: 7mm; left: 16mm;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    font-weight: 700; color: #2dd4bf;
+  }
+  .brand img { width: 22px; height: 22px; border-radius: 6px; object-fit: cover; }
+  .slide.light .brand { color: #0f766e; }
+  .page-no { position: absolute; bottom: 7mm; right: 16mm; font-size: 11px; opacity: 0.4; }
+  .footer-note { position: absolute; bottom: 7mm; left: 16mm; font-size: 10px; opacity: 0.4; }
+
+  h1 { font-size: 46px; line-height: 1.05; font-weight: 800; letter-spacing: -0.025em; }
+  h2 { font-size: 30px; line-height: 1.12; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 8px; }
+  h3 { font-size: 15px; font-weight: 750; margin-bottom: 6px; }
+  .lead { font-size: 17px; line-height: 1.4; opacity: 0.9; max-width: 230mm; }
+  .accent { color: #2dd4bf; }
+  .hot { color: #fb7185; }
+  .slide.light .accent { color: #0f766e; }
+  .slide.light .hot { color: #e11d48; }
+
+  .tag {
+    display: inline-block; font-size: 10px; font-weight: 800;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    padding: 5px 11px; border-radius: 999px; margin-bottom: 10px;
+    background: rgba(251,113,133,0.16); color: #fda4af;
+    border: 1px solid rgba(251,113,133,0.35);
+  }
+  .slide.light .tag {
+    background: #ffe4e6; color: #9f1239; border-color: #fecdd3;
+  }
+  .tag.ok {
+    background: rgba(45,212,191,0.15); color: #5eead4;
+    border-color: rgba(45,212,191,0.35);
+  }
+  .slide.light .tag.ok { background: #ecfdf5; color: #065f46; border-color: #a7f3d0; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; margin-top: 7mm; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6mm; margin-top: 7mm; }
+  .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 5mm; margin-top: 6mm; }
+
+  .card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px; padding: 14px 16px;
+  }
+  .slide.light .card {
+    background: #fff; border: 1px solid rgba(15,23,42,0.08);
+    box-shadow: 0 10px 28px rgba(15,23,42,0.06);
+  }
+  .card p, .card li { font-size: 13px; line-height: 1.4; opacity: 0.92; }
+  .card ul { padding-left: 15px; }
+  .card li { margin: 4px 0; }
+  .big { font-size: 40px; font-weight: 900; line-height: 1; color: #5eead4; }
+  .slide.light .big { color: #0f766e; }
+  .big.hot { color: #fb7185; }
+  .slide.light .big.hot { color: #e11d48; }
+  .sub { font-size: 11px; opacity: 0.65; margin-top: 4px; }
+
+  .hero { display: flex; flex-direction: column; justify-content: center; height: 100%; }
+  .logo-hero { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .logo-hero img {
+    width: 60px; height: 60px; border-radius: 14px; object-fit: cover;
+    box-shadow: 0 14px 34px rgba(15,118,110,0.4);
+  }
+  .logo-hero .word {
+    font-size: 18px; font-weight: 900; letter-spacing: 0.1em;
+    text-transform: uppercase; color: #5eead4;
+  }
+  .slide.light .logo-hero .word { color: #0f766e; }
+
+  .strike { text-decoration: line-through; opacity: 0.45; }
+  .vs {
+    display: grid; grid-template-columns: 1fr 40px 1fr; gap: 6mm; margin-top: 8mm; align-items: stretch;
+  }
+  .vs .mid { display:flex; align-items:center; justify-content:center; font-weight:900; font-size:18px; color:#fb7185; }
+
+  .cta-box {
+    margin-top: 10mm; padding: 16px 18px; border-radius: 14px;
+    background: linear-gradient(110deg, rgba(20,184,166,0.2), rgba(251,113,133,0.12));
+    border: 1px solid rgba(45,212,191,0.35);
+  }
+  .cta-box strong { font-size: 18px; display: block; margin-bottom: 4px; }
+  .cta-box span { font-size: 13px; opacity: 0.85; }
+
+  .bar {
+    height: 10px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; margin-top: 8px;
+  }
+  .slide.light .bar { background: #e2e8f0; }
+  .bar > i { display:block; height:100%; background: linear-gradient(90deg,#14b8a6,#2dd4bf); }
+  .bar.bad > i { background: linear-gradient(90deg,#e11d48,#fb7185); width: 28% !important; }
+
+  .pill-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:8mm; }
+  .pill {
+    font-size: 12px; font-weight: 700; padding: 7px 12px; border-radius: 999px;
+    background: rgba(20,184,166,0.14); border: 1px solid rgba(45,212,191,0.3);
+  }
+  .slide.light .pill { background:#ecfdf5; border-color:#99f6e4; color:#115e59; }
+</style>
+</head>
+<body>
+
+<!-- 1 COVER -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Mikro Mail · Satış</div>
+  <div class="hero">
+    <div class="logo-hero"><img src="mikromail-mark.png" alt="Mikro Mail" /><div class="word">Mikro Mail</div></div>
+    <div class="tag">Kesin konuşuyoruz</div>
+    <h1>Mailiniz spam’e<br>düşüyorsa<br><span class="hot">para yakıyorsunuz.</span></h1>
+    <p class="lead" style="margin-top:10px;">Kirli liste + soğuk domain + plansız hacim = yanmış itibar.<br>Mikro Mail bunu durdurur: ısıtılmış havuz, kota, scrub, kampanya, rapor — tek panel.</p>
+    <div class="cta-box">
+      <strong>60 dakikada demo. Aynı gün tenant açılır.</strong>
+      <span>İlk hafta: scrub + test kampanya + ısıtma günü 1. Bahaneye yer yok.</span>
+    </div>
+  </div>
+  <div class="footer-note">Gizli / Ticari</div>
+  <div class="page-no">01</div>
+</section>
+
+<!-- 2 COST -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Mikro Mail · Gerçek maliyet</div>
+  <div class="tag">Hesap kitabını bozan taraf</div>
+  <h2>Göndermemek değil — <span class="hot">yanlış göndermek</span> pahalı</h2>
+  <div class="grid-3">
+    <div class="card">
+      <div class="big hot">%0</div>
+      <div class="sub">Açılmayan mailin değeri</div>
+      <p style="margin-top:10px;">Spam klasörüne giden her mail; lisans, kota, operatör saatini çöpe atar.</p>
+    </div>
+    <div class="card">
+      <div class="big hot">1</div>
+      <div class="sub">yanmış domain = yeniden kurulum</div>
+      <p style="margin-top:10px;">DNS, SPF/DKIM, ısıtma, içerik — haftalar. Rakipler o sürede sizden önde gider.</p>
+    </div>
+    <div class="card">
+      <div class="big">3×</div>
+      <div class="sub">korumasız hacmin risk çarpanı</div>
+      <p style="margin-top:10px;">Cap yok, scrub yok, health yoksa bounce patlar — her şey birden durur.</p>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:10mm;font-size:15px;"><strong>Soru net:</strong> Bu ay kaç mailiniz kutuya hiç düşmedi? Bilmiyorsanız zaten kaybediyorsunuz.</p>
+  <div class="page-no">02</div>
+</section>
+
+<!-- 3 VS -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Mikro Mail · Karşılaştırma</div>
+  <div class="tag">“Excel + SMTP yeter” yalanı</div>
+  <h2>Dağınık araçlar vs Mikro Mail</h2>
+  <div class="vs">
+    <div class="card">
+      <h3 class="hot">Eski düzen</h3>
+      <ul>
+        <li class="strike">Tek domain, full gaz</li>
+        <li>Liste temizliği “sonra”</li>
+        <li>Şablon bir yerde, rapor başka yerde</li>
+        <li>Kim gönderdi belli değil</li>
+        <li>Bounce gelince panik</li>
+        <li>Firma bazlı kota yok</li>
+      </ul>
+      <div class="bar bad" style="margin-top:12px;"><i style="width:28%"></i></div>
+      <div class="sub">Kontrol: düşük · Risk: yüksek</div>
+    </div>
+    <div class="mid">VS</div>
+    <div class="card">
+      <h3 class="accent">Mikro Mail</h3>
+      <ul>
+        <li>Isıtılmış domain havuzu</li>
+        <li>Scrub + suppression zorunlu hat</li>
+        <li>Şablon → kampanya → rapor tek yerde</li>
+        <li>Multi-tenant, kredi, tahsis</li>
+        <li>Health ile otomatik pause</li>
+        <li>30 günlük ısıtma programı</li>
+      </ul>
+      <div class="bar" style="margin-top:12px;"><i style="width:92%"></i></div>
+      <div class="sub">Kontrol: yüksek · Ölçek: planlı</div>
+    </div>
+  </div>
+  <div class="page-no">03</div>
+</section>
+
+<!-- 4 PUNCH PRODUCT -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Mikro Mail · Ürün</div>
+  <div class="tag ok">Ne satıyoruz?</div>
+  <h2>Gönderim değil — <span class="accent">kontrol edilebilir ölçek</span></h2>
+  <div class="grid-2">
+    <div class="card">
+      <h3>Altyapı kası</h3>
+      <ul>
+        <li>Domain havuzu + DirectMail SMTP</li>
+        <li>Günlük / saatlik cap</li>
+        <li>Eski & yeni ısıtma kohortları</li>
+        <li>Hesap kotası + prepaid mail kredisi</li>
+        <li>Bounce / complaint webhook</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Operasyon kası</h3>
+      <ul>
+        <li>Kontak import + etiket segment</li>
+        <li>Scrub (MX, disposable, role…)</li>
+        <li>Şablon + takip linki</li>
+        <li>Kampanya + otomatik domain rotasyonu</li>
+        <li>CRM skor / not / görev</li>
+      </ul>
+    </div>
+  </div>
+  <div class="pill-row">
+    <span class="pill">Spam’e giden mail = maliyet</span>
+    <span class="pill">Pause koruması = domain kurtarır</span>
+    <span class="pill">Kredi = firma bazlı fren</span>
+    <span class="pill">Rapor = “attık mı?” bitiyor</span>
+  </div>
+  <div class="page-no">04</div>
+</section>
+
+<!-- 5 MONEY LANGUAGE -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Mikro Mail · Dil</div>
+  <div class="tag">Satış cümleleri</div>
+  <h2>Müşteriye böyle anlatın</h2>
+  <div class="grid-2">
+    <div class="card">
+      <h3>“Listeniz kirliyse kota yakıyorsunuz.”</h3>
+      <p>Scrub olmadan gönderim = blind fire. Invalid adres bounce üretir, health düşer, domain pause olur.</p>
+    </div>
+    <div class="card">
+      <h3>“Soğuk domainle volume = intihar.”</h3>
+      <p>30 gün ısıtma programı var. Cap gün gün artar. Sessizlikte sistem şişirmez, hizalar.</p>
+    </div>
+    <div class="card">
+      <h3>“Firma başına kredi yoksa kaos var.”</h3>
+      <p>Tahsis edilmemiş firma gönderemez. Ortak hesabı bir firma bitiremez.</p>
+    </div>
+    <div class="card">
+      <h3>“Rapor yoksa optimizasyon yok.”</h3>
+      <p>Açılma, tıklama, fail, kampanya detayı. Kör gönderim bitiyor.</p>
+    </div>
+  </div>
+  <div class="page-no">05</div>
+</section>
+
+<!-- 6 WHO -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Mikro Mail · Kime?</div>
+  <div class="tag">Ideal müşteri</div>
+  <h2>Bu deck’i kime koyacaksınız?</h2>
+  <div class="grid-3">
+    <div class="card">
+      <div class="big">A</div>
+      <h3 style="margin-top:8px;">Ajans / operasyon</h3>
+      <p>Birden fazla marka adına mail atan, domain yakmaktan korkan ekipler.</p>
+    </div>
+    <div class="card">
+      <div class="big">B</div>
+      <h3 style="margin-top:8px;">Yüksek hacim marka</h3>
+      <p>Günlük binlerce mail; kota, scrub ve ısıtma olmadan ölçeklenemeyenler.</p>
+    </div>
+    <div class="card">
+      <div class="big">C</div>
+      <h3 style="margin-top:8px;">Merkezi platform</h3>
+      <p>Alt firmalara domain / kredi tahsis edip kontrolü elde tutmak isteyenler.</p>
+    </div>
+  </div>
+  <div class="cta-box" style="background:linear-gradient(110deg,#fff1f2,#f0fdfa);border-color:#fda4af;color:#0f172a;">
+    <strong style="color:#9f1239;">Uymayan:</strong>
+    <span>“Ayda 200 mail atarım, Gmail yeter” diyenler. Mikro Mail ölçek ve kontrol ürünüdür.</span>
+  </div>
+  <div class="page-no">06</div>
+</section>
+
+<!-- 7 OBJECTION -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Mikro Mail · İtiraz kırıcı</div>
+  <div class="tag">“Pahalı / karmaşık / sonra bakarız”</div>
+  <h2>İtiraz → cevap (sert)</h2>
+  <div class="grid-2">
+    <div class="card">
+      <h3>“Zaten SMTP’miz var.”</h3>
+      <p>SMTP boru. Mikro Mail vana, sayaç, filtre ve gösterge paneli. Borusu olan herkes su basabilir — kontrol eden kazanır.</p>
+    </div>
+    <div class="card">
+      <h3>“Ekip öğrenemez.”</h3>
+      <p>Kontak → scrub → şablon → kampanya. 1 günlük eğitim. Eğitim PDF’i hazır. Bahaneniz kalmasın.</p>
+    </div>
+    <div class="card">
+      <h3>“Önce liste toplayalım.”</h3>
+      <p>Liste geldikçe kirlenir. Scrub hattı yoksa ilk büyük gönderide domain yanar. Altyapı önce, volume sonra.</p>
+    </div>
+    <div class="card">
+      <h3>“Bütçe yok.”</h3>
+      <p>Yanmış domain + kayıp hafta + spam’e giden kota = sessiz fatura. Mikro Mail o faturayı keser.</p>
+    </div>
+  </div>
+  <div class="page-no">07</div>
+</section>
+
+<!-- 8 OFFER -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Mikro Mail · Teklif</div>
+  <div class="tag ok">Kapanış paketi</div>
+  <h2>Bugün karar → bu hafta canlı</h2>
+  <div class="grid-4">
+    <div class="card" style="text-align:center;"><div class="big">1</div><div class="sub">Demo (60 dk)</div><p style="margin-top:8px;">Panel + ısıtma + kampanya canlı</p></div>
+    <div class="card" style="text-align:center;"><div class="big">2</div><div class="sub">Tenant açılışı</div><p style="margin-top:8px;">Kredi + domain tahsisi</p></div>
+    <div class="card" style="text-align:center;"><div class="big">3</div><div class="sub">İlk scrub</div><p style="margin-top:8px;">Listeniz temizlenir</p></div>
+    <div class="card" style="text-align:center;"><div class="big">4</div><div class="sub">Test kampanya</div><p style="margin-top:8px;">Raporu birlikte okuruz</p></div>
+  </div>
+  <div class="cta-box" style="margin-top:10mm;background:linear-gradient(110deg,#0f766e,#134e4a);color:#ecfdf5;border:none;">
+    <strong style="color:#fff;">Tek soru:</strong>
+    <span style="color:#ccfbf1;">Bu ay domain yakmaya devam mı, yoksa ısıtılmış havuzla mı gideceksiniz?</span>
+  </div>
+  <div class="page-no">08</div>
+</section>
+
+<!-- 9 CLOSE -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Mikro Mail</div>
+  <div class="hero">
+    <div class="logo-hero"><img src="mikromail-mark.png" alt="Mikro Mail" /><div class="word">Mikro Mail</div></div>
+    <div class="tag">Karar anı</div>
+    <h1>Rakipler ısınıyor.<br><span class="hot">Siz hâlâ “sonra” mı diyorsunuz?</span></h1>
+    <p class="lead" style="margin-top:12px;">Mikro Mail: domain havuzu · ısıtma · scrub · kampanya · kredi · rapor.<br>Satış değil — kaybı durdurma teklifi.</p>
+    <div class="cta-box">
+      <strong>Hemen: demo randevusu alın.</strong>
+      <span>Aynı gün tenant. İlk hafta üretim hattı. Bahanesiz.</span>
+    </div>
+  </div>
+  <div class="footer-note">© Mikro Mail — agresif satış deck’i · Gizli / Ticari</div>
+  <div class="page-no">09</div>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<title>Mikro Mail — Müşteri Paneli Eğitim Kılavuzu</title>
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: "Avenir Next", "Segoe UI", Arial, sans-serif;
+    background: #0b1520; color: #e8eef4;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .slide {
+    width: 297mm; height: 210mm; position: relative; overflow: hidden;
+    page-break-after: always; break-after: page;
+    padding: 12mm 14mm 10mm;
+    background:
+      radial-gradient(ellipse 80% 60% at 100% 0%, rgba(14,165,140,.16), transparent 55%),
+      radial-gradient(ellipse 60% 50% at 0% 100%, rgba(56,189,248,.10), transparent 50%),
+      linear-gradient(145deg,#0b1520,#122433 45%,#0e1a28);
+  }
+  .slide:last-child { page-break-after: auto; }
+  .slide.light {
+    background:
+      radial-gradient(ellipse 90% 70% at 110% -10%, #d7f5ee 0%, transparent 50%),
+      radial-gradient(ellipse 60% 50% at -10% 110%, #dbeafe 0%, transparent 45%),
+      linear-gradient(160deg,#f7fafc,#eef3f7);
+    color: #12202e;
+  }
+  .brand {
+    position: absolute; top: 6mm; left: 14mm;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+    font-weight: 700; color: #2dd4bf;
+  }
+  .brand img { width: 20px; height: 20px; border-radius: 5px; object-fit: cover; }
+  .slide.light .brand { color: #0f766e; }
+  .page-no { position: absolute; bottom: 6mm; right: 14mm; font-size: 10px; opacity: .4; }
+  .footer-note { position: absolute; bottom: 6mm; left: 14mm; font-size: 9px; opacity: .4; }
+
+  h1 { font-size: 40px; line-height: 1.08; font-weight: 800; letter-spacing: -.02em; }
+  h2 { font-size: 26px; line-height: 1.15; font-weight: 750; margin-bottom: 6px; }
+  h3 { font-size: 14px; font-weight: 700; margin-bottom: 5px; }
+  .lead { font-size: 14px; line-height: 1.45; opacity: .88; max-width: 230mm; }
+  .accent { color: #2dd4bf; }
+  .slide.light .accent { color: #0f766e; }
+  .tag {
+    display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .14em;
+    text-transform: uppercase; padding: 4px 9px; border-radius: 999px; margin-bottom: 8px;
+    background: rgba(45,212,191,.14); color: #5eead4; border: 1px solid rgba(45,212,191,.3);
+  }
+  .slide.light .tag { background: rgba(15,118,110,.1); color: #0f766e; border-color: rgba(15,118,110,.25); }
+
+  .logo-hero { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .logo-hero img { width: 52px; height: 52px; border-radius: 12px; object-fit: cover; }
+  .logo-hero .word { font-size: 16px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #5eead4; }
+  .slide.light .logo-hero .word { color: #0f766e; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; margin-top: 5mm; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5mm; margin-top: 5mm; }
+  .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4mm; margin-top: 5mm; }
+  .split { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 7mm; margin-top: 4mm; align-items: start; }
+  .split.rev { grid-template-columns: 0.9fr 1.1fr; }
+
+  .card {
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px; padding: 11px 13px;
+  }
+  .slide.light .card {
+    background: #fff; border: 1px solid rgba(18,32,46,.08);
+    box-shadow: 0 8px 22px rgba(18,32,46,.06);
+  }
+  .card p, .card li { font-size: 11.5px; line-height: 1.4; opacity: .92; }
+  .card ul { padding-left: 14px; }
+  .card li { margin: 3px 0; }
+  .card .num { font-size: 18px; font-weight: 800; color: #2dd4bf; margin-bottom: 2px; }
+  .slide.light .card .num { color: #0f766e; }
+
+  .shot {
+    width: 100%; border-radius: 10px; border: 1px solid rgba(255,255,255,.12);
+    display: block; object-fit: cover; object-position: top left;
+    max-height: 128mm; background: #0B1220;
+  }
+  .slide.light .shot { border-color: rgba(18,32,46,.1); }
+  .shot-cap { font-size: 10px; opacity: .55; margin-top: 4px; }
+
+  .steps { counter-reset: s; list-style: none; margin-top: 4mm; }
+  .steps li {
+    counter-increment: s; display: flex; gap: 10px; align-items: flex-start;
+    padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.08);
+    font-size: 12px; line-height: 1.4;
+  }
+  .slide.light .steps li { border-bottom-color: rgba(18,32,46,.08); }
+  .steps li::before {
+    content: counter(s); flex: 0 0 22px; height: 22px; line-height: 22px; text-align: center;
+    border-radius: 50%; background: #14b8a6; color: #042f2e; font-weight: 800; font-size: 11px;
+  }
+
+  .callout {
+    border-left: 3px solid #14b8a6; padding: 8px 11px; margin-top: 4mm;
+    background: rgba(20,184,166,.08); border-radius: 0 10px 10px 0;
+    font-size: 11.5px; line-height: 1.4;
+  }
+  .slide.light .callout { background: #f0fdfa; }
+  .warn {
+    background: rgba(251,191,36,.12); border: 1px solid rgba(251,191,36,.35);
+    border-radius: 10px; padding: 8px 11px; font-size: 11.5px; line-height: 1.4; color: #fde68a;
+  }
+  .slide.light .warn { color: #92400e; background: #fffbeb; border-color: #fcd34d; }
+
+  .pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4mm; }
+  .pill {
+    font-size: 11px; padding: 5px 10px; border-radius: 999px;
+    background: rgba(20,184,166,.14); border: 1px solid rgba(45,212,191,.3);
+  }
+  .slide.light .pill { background: #ecfdf8; border-color: #99f6e4; color: #115e59; }
+
+  .toc ol { margin: 5mm 0 0 5mm; columns: 2; column-gap: 12mm; }
+  .toc li { font-size: 13px; margin: 6px 0; break-inside: avoid; }
+  .toc li span { opacity: .5; font-size: 11px; margin-left: 5px; }
+
+  code { font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+    background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; }
+  .slide.light code { background: #e2e8f0; }
+
+  .hero { display: flex; flex-direction: column; justify-content: center; height: 100%; padding-top: 4mm; }
+</style>
+</head>
+<body>
+
+<!-- 01 COVER -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Mikro Mail · Müşteri eğitimi</div>
+  <div class="hero">
+    <div class="logo-hero"><img src="mikromail-mark.png" alt="" /><div class="word">Mikro Mail</div></div>
+    <div class="tag">Firma / müşteri paneli</div>
+    <h1>Operatör eğitim<br>kılavuzu</h1>
+    <p class="lead" style="margin-top:8px;">Bu doküman <strong>sizin paneli</strong> içindir: kontak, etiket, scrub, şablon, kampanya, rapor.<br>
+    Domain havuzu / ısıtma / firma açma → platform admin işidir; burada yok.</p>
+    <div class="pill-row">
+      <span class="pill">Görsel + adım adım</span>
+      <span class="pill">Canlı panel ekranları (demo)</span>
+      <span class="pill">İlk günden üretime</span>
+    </div>
+  </div>
+  <div class="footer-note">Gizli · Müşteri eğitimi</div>
+  <div class="page-no">01</div>
+</section>
+
+<!-- 02 QUICK OVERVIEW -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Hızlı özet</div>
+  <div class="tag">1 sayfada tüm akış</div>
+  <h2>Müşteri panelinde iş sırası</h2>
+  <div class="grid-4">
+    <div class="card"><div class="num">1</div><h3>Kontak yükle</h3><p>CSV / yapıştır / tekli. Etiket ver.</p></div>
+    <div class="card"><div class="num">2</div><h3>Scrub et</h3><p>Geçersizleri ayıkla. mail_valid kalsın.</p></div>
+    <div class="card"><div class="num">3</div><h3>Şablon yaz</h3><p>{{name}} + takip linki. Test mail.</p></div>
+    <div class="card"><div class="num">4</div><h3>Kampanya at</h3><p>Etiket seç · otomatik domain · başlat.</p></div>
+  </div>
+  <div class="grid-3" style="margin-top:6mm;">
+    <div class="card"><h3>Sizin işiniz</h3><ul><li>Liste & etiket</li><li>İçerik & kampanya</li><li>Rapor okuma</li><li>CRM not / görev</li></ul></div>
+    <div class="card"><h3>Sistemin işi</h3><ul><li>Domain rotasyonu</li><li>Cap / kredi kontrolü</li><li>Bounce suppression</li><li>Gönderim kuyruğu</li></ul></div>
+    <div class="card"><h3>Admin’in işi</h3><ul><li>Domain ekleme</li><li>Isıtma programı</li><li>Kredi tahsisi</li><li>Hesap kotası</li></ul></div>
+  </div>
+  <div class="callout"><strong>Kural:</strong> Domain seçmek zorunda değilsiniz. Kampanyada “Otomatik” bırakın — sağlık + günlük kapasiteye göre döner.</div>
+  <div class="page-no">02</div>
+</section>
+
+<!-- 03 TOC -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />İçindekiler</div>
+  <div class="tag">Detaylı eğitim</div>
+  <h2>Sayfa haritası</h2>
+  <div class="toc">
+    <ol>
+      <li>Menü & giriş <span>04</span></li>
+      <li>Dashboard <span>05</span></li>
+      <li>Mail Rehber — etiket <span>06</span></li>
+      <li>Kontak ekleme yöntemleri <span>07–08</span></li>
+      <li>Liste temizleme (scrub) <span>09</span></li>
+      <li>Kontak tablosu & kampanyaya aktar <span>10</span></li>
+      <li>Şablon oluşturma <span>11–12</span></li>
+      <li>Kampanya gönderme <span>13–14</span></li>
+      <li>Raporlar <span>15</span></li>
+      <li>IVR & ayarlar (özet) <span>16</span></li>
+      <li>İlişki CRM <span>17</span></li>
+      <li>Günlük checklist & hatalar <span>18–19</span></li>
+    </ol>
+  </div>
+  <div class="page-no">03</div>
+</section>
+
+<!-- 04 MENU -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Menü</div>
+  <div class="tag">Sol sidebar</div>
+  <h2>Nereye tıklarsınız?</h2>
+  <div class="grid-2">
+    <div class="card">
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <tr><td style="padding:6px 0;"><strong>Dashboard</strong></td><td>KPI, başarı oranı, domain chip’leri</td></tr>
+        <tr><td style="padding:6px 0;"><strong>Kontak & CRM</strong></td><td>Rehber · etiket · scrub · ilişki</td></tr>
+        <tr><td style="padding:6px 0;"><strong>Şablonlar</strong></td><td>Mail içeriği + test</td></tr>
+        <tr><td style="padding:6px 0;"><strong>Kampanyalar</strong></td><td>Gönderim / zamanlama</td></tr>
+        <tr><td style="padding:6px 0;"><strong>IVR Otomasyon</strong></td><td>Arama sonrası mail kuralı</td></tr>
+        <tr><td style="padding:6px 0;"><strong>Raporlar</strong></td><td>Açılma, tık, log</td></tr>
+        <tr><td style="padding:6px 0;"><strong>Sistem Ayarları</strong></td><td>Scrub tercihleri (yetkiye göre)</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Sağ üstte ne görürsünüz?</h3>
+      <ul>
+        <li><strong>SMTP / DirectMail</strong> yeşil = canlı gönderim</li>
+        <li><strong>Stub</strong> sarı = simülasyon (mail gitmez)</li>
+        <li>Stub görürseniz admin’e bildirin</li>
+      </ul>
+      <div class="warn" style="margin-top:10px;">Tenant / Domain havuzu / Warm-up menüleri müşteri panelinde yoktur. Görürseniz admin hesabındasınızdır.</div>
+    </div>
+  </div>
+  <div class="page-no">04</div>
+</section>
+
+<!-- 05 DASHBOARD -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Dashboard</div>
+  <div class="tag">Özet ekranı</div>
+  <h2>Güne buradan bakın</h2>
+  <div class="split">
+    <div>
+      <img class="shot" src="ss/mock-dash.png" alt="Dashboard" />
+      <div class="shot-cap">Örnek Dashboard görünümü (demo veri)</div>
+    </div>
+    <div>
+      <div class="card">
+        <h3>Ne okursunuz?</h3>
+        <ul>
+          <li><strong>Başarı oranı</strong> — 24s / 7g. %90+ iyi.</li>
+          <li><strong>Kontak / kampanya / SMTP</strong> KPI’ları</li>
+          <li><strong>Domain chip’leri</strong> — ready / warming</li>
+        </ul>
+      </div>
+      <div class="callout"><strong>Sizin aksiyonunuz:</strong> Oran düşüyorsa scrub sıkılaştırın, şablonu sadeleştirin, hacmi düşürün. Domain eklemek sizin işiniz değil.</div>
+      <div class="card" style="margin-top:4mm;">
+        <h3>Kırmızı / uyarı banner</h3>
+        <p>Gönderim sağlığı bozulursa üstte uyarı çıkar → Ayarlar’a götürür. Admin ile birlikte çözün.</p>
+      </div>
+    </div>
+  </div>
+  <div class="page-no">05</div>
+</section>
+
+<!-- 06 TAGS -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Mail Rehber · Etiket</div>
+  <div class="tag">Segmentasyon</div>
+  <h2>Önce etiket, sonra liste</h2>
+  <div class="grid-2">
+    <div>
+      <ol class="steps">
+        <li><div><strong>Kontak & CRM</strong> → üstte <em>Mail Rehber</em> alt sekmesi</div></li>
+        <li><div><strong>Etiket yönetimi</strong> kutusuna anlamlı isim yaz (örn. <code>agustos_vip</code>)</div></li>
+        <li><div><strong>Etiket oluştur</strong>’a bas</div></li>
+        <li><div>Import / yapıştırırken aynı etiketi seç</div></li>
+        <li><div>Kampanyada hedef = bu etiket</div></li>
+      </ol>
+      <div class="callout"><strong>İsimleme:</strong> tarih + kaynak + segment. Örn. <code>2026_08_partner_temiz</code>. “data1” kullanmayın.</div>
+    </div>
+    <div class="card">
+      <h3>Hazır sistem etiketleri (scrub sonrası)</h3>
+      <ul>
+        <li><code>mail_valid</code> — gönderilebilir</li>
+        <li><code>mail_invalid</code> — gönderme</li>
+        <li><code>mail_mx_ok</code> — MX var</li>
+        <li><code>mail_disposable</code> — geçici mail</li>
+        <li><code>mail_role</code> — info@ / noreply@</li>
+        <li><code>mail_unknown</code> — emin değil</li>
+      </ul>
+      <p style="margin-top:8px;">Kampanyada mümkünse <strong>sadece doğrulanmış</strong> + kendi segment etiketinizi birlikte kullanın.</p>
+    </div>
+  </div>
+  <div class="page-no">06</div>
+</section>
+
+<!-- 07 IMPORT -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Kontak ekleme</div>
+  <div class="tag">3 yöntem</div>
+  <h2>Listeyi içeri alma</h2>
+  <div class="split rev">
+    <div>
+      <img class="shot" src="ss/mock-contacts.png" alt="Kontak" />
+      <div class="shot-cap">Mail Rehber — ekleme & scrub alanları (demo)</div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:3mm;">
+        <div class="num">A</div><h3>Tekli form</h3>
+        <p>E-posta zorunlu. Ad, telefon, etiket, CRM aşama opsiyonel. VIP / düzeltme için.</p>
+      </div>
+      <div class="card" style="margin-bottom:3mm;">
+        <div class="num">B</div><h3>CSV / XLSX</h3>
+        <p>Sürükle-bırak. Büyük dosya otomatik parçalanır. Varsayılan etiket seç → <strong>Yüklemeyi başlat</strong>. İlerleme çubuğunu izle.</p>
+      </div>
+      <div class="card">
+        <div class="num">C</div><h3>E-posta yapıştır</h3>
+        <p>Satır satır mail. Geçerli/hatalı sayacı anlık. Etiket seç → <strong>Kuyruğa ekle</strong>.</p>
+      </div>
+    </div>
+  </div>
+  <div class="page-no">07</div>
+</section>
+
+<!-- 08 IMPORT DETAIL -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Kontak ekleme · detay</div>
+  <div class="tag">Pratik kurallar</div>
+  <h2>Yüklerken bozmayın</h2>
+  <div class="grid-2">
+    <div class="card">
+      <h3>CSV sütunları</h3>
+      <ul>
+        <li>En az <code>email</code> sütunu</li>
+        <li>Opsiyonel: name, tags, phone</li>
+        <li>İlk satır başlık olsun</li>
+        <li>Excel’den kaydederken XLSX tercih edin</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Yükleme panosu</h3>
+      <ul>
+        <li>Durum rozeti: bekliyor / işleniyor / bitti / hata</li>
+        <li>Hata kutusunu oku — sütun adı yanlış olabilir</li>
+        <li>Sırada birden fazla dosya varsa sırayla gider</li>
+        <li>Takılırsa iptal / admin’e haber</li>
+      </ul>
+    </div>
+  </div>
+  <div class="warn" style="margin-top:6mm;"><strong>Yapma:</strong> Yükler yüklemez 50.000’lik kampanya açmak. Önce scrub bitmeli. Aksi halde bounce domain’i yakar (sizin kotanızı da yer).</div>
+  <div class="callout"><strong>Küçük CSV yapıştır:</strong> Birkaç bin satır için “details” altındaki metin kutusu yeter. Dev liste için dosya yükleyin.</div>
+  <div class="page-no">08</div>
+</section>
+
+<!-- 09 SCRUB -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Liste temizleme</div>
+  <div class="tag">Scrub</div>
+  <h2>Göndermeden önce süzgeç</h2>
+  <div class="grid-2">
+    <div>
+      <ol class="steps">
+        <li><div>Mail Rehber’de <strong>Liste temizle</strong> kartına in</div></li>
+        <li><div>Kapsam: ilgili etiketleri işaretle (boş = tümü — dikkat!)</div></li>
+        <li><div><strong>Listeyi temizle</strong> veya <strong>Seçilileri temizle</strong></div></li>
+        <li><div>İlerleme çubuğu + üst banner’ı izle</div></li>
+        <li><div>Bitince <code>mail_valid</code> / <code>mail_invalid</code> etiketlerini kontrol et</div></li>
+      </ol>
+      <div class="callout">SMTP ping “pasif kullanıcı” bulmaz; mailbox kabul ediyor mu bakar. Catch-all domainler <code>mail_unknown</code> / catch-all olabilir.</div>
+    </div>
+    <div class="card">
+      <h3>Sonuç ne olur?</h3>
+      <ul>
+        <li>Invalid / disposable / role → suppression (ayara bağlı)</li>
+        <li>Valid → kampanyaya uygun</li>
+        <li>Kampanyada “Sadece doğrulanmış” açın</li>
+      </ul>
+      <h3 style="margin-top:10px;">Ne zaman tekrar scrub?</h3>
+      <ul>
+        <li>Yeni büyük liste geldiğinde</li>
+        <li>Bounce oranı yükseldiğinde</li>
+        <li>Haftalık bakımda (önerilir)</li>
+      </ul>
+    </div>
+  </div>
+  <div class="page-no">09</div>
+</section>
+
+<!-- 10 TABLE + TAG MOVE -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Kontak tablosu</div>
+  <div class="tag">Seç · taşı · kampanyaya</div>
+  <h2>Listeden kampanyaya köprü</h2>
+  <div class="grid-3">
+    <div class="card"><div class="num">1</div><h3>Filtrele</h3><p>Ara kutusu + etiket filtresi. Sayfayı seç / tek tek işaretle.</p></div>
+    <div class="card"><div class="num">2</div><h3>Etiket taşı (3 adım)</h3><p>Kimler? → Kaynak etiket → Hedef etiket. Taşı / Kopyala / Kaynak kaldır.</p></div>
+    <div class="card"><div class="num">3</div><h3>Seçilileri kampanyaya</h3><p>Buton, Kampanyalar formuna alıcı olarak aktarır. Oradan şablon seçip gönderirsiniz.</p></div>
+  </div>
+  <div class="card" style="margin-top:6mm;">
+    <h3>CSV export</h3>
+    <p>Filtrelenmiş / seçili listeyi dışa aktarın. Partner paylaşımı veya yedek için. Suppression’dakileri kampanyaya sokmayın.</p>
+  </div>
+  <div class="callout"><strong>İpucu:</strong> Aynı kişiye peş peşe mail gitmesin diye kampanyada “önceden / kuyruktaki alıcıları hariç tut” işaretli kalsın.</div>
+  <div class="page-no">10</div>
+</section>
+
+<!-- 11 TEMPLATES -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Şablonlar</div>
+  <div class="tag">İçerik</div>
+  <h2>Şablon oluşturma</h2>
+  <div class="split">
+    <div>
+      <img class="shot" src="ss/mock-tpl.png" alt="Şablon" />
+      <div class="shot-cap">Şablon editörü — basit yazı modu (demo)</div>
+    </div>
+    <div>
+      <ol class="steps">
+        <li><div><strong>Şablonlar</strong> menüsü</div></li>
+        <li><div>Mod: <strong>Basit yazı</strong> (önerilen başlangıç) veya HTML</div></li>
+        <li><div>Ad + konu satırı</div></li>
+        <li><div>Araç çubuğundan <code>{{name}}</code> / <code>{{email}}</code></div></li>
+        <li><div><strong>Takip linki ekle</strong> → ölçülen CTA</div></li>
+        <li><div><strong>Test mail gönder</strong> → kendi kutunuz</div></li>
+        <li><div><strong>Şablonu kaydet</strong></div></li>
+      </ol>
+    </div>
+  </div>
+  <div class="page-no">11</div>
+</section>
+
+<!-- 12 TEMPLATE RULES -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Şablon · kurallar</div>
+  <div class="tag">Deliverability</div>
+  <h2>Spam’e düşürmeyen içerik</h2>
+  <div class="grid-2">
+    <div class="card">
+      <h3>Yap</h3>
+      <ul>
+        <li>Kısa, net konu</li>
+        <li>Tek ana CTA linki</li>
+        <li><code>{{link:https://…}}</code> ile takip</li>
+        <li>İsim yoksa sistem kibar varsayılan kullanır</li>
+        <li>Isınmada sade metin</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Yapma</h3>
+      <ul>
+        <li>ALL CAPS + !!!</li>
+        <li>Şüpheli kısaltıcı / bozuk link</li>
+        <li>Ağır HTML / spam kelime yığını</li>
+        <li>Test etmeden toplu basmak</li>
+        <li>Aynı HTML’i her gün aynı kitleye</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout"><strong>Affiliate / üye eşleme linki:</strong> Özel link biçimi ile tıklayan kişi CRM’deki kontakla eşlenebilir. Admin kurulumunu yaptıysa şablonda ilgili seçenek görünür.</div>
+  <div class="page-no">12</div>
+</section>
+
+<!-- 13 CAMPAIGN -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Kampanyalar</div>
+  <div class="tag">Gönderim</div>
+  <h2>Kampanya formunu doldurun</h2>
+  <div class="split rev">
+    <div>
+      <img class="shot" src="ss/mock-camp.png" alt="Kampanya" />
+      <div class="shot-cap">Yeni kampanya formu + kota göstergeleri (demo)</div>
+    </div>
+    <div>
+      <ol class="steps">
+        <li><div>Üstteki kota / kredi / domain kapasitesine bak</div></li>
+        <li><div>Kampanya adı (tarih + segment)</div></li>
+        <li><div>Şablon seç</div></li>
+        <li><div>Domain = <strong>Otomatik</strong></div></li>
+        <li><div>Alıcı: etiket / seçili / elle</div></li>
+        <li><div>Maks alıcı + hız (mail/dk)</div></li>
+        <li><div>Filtre: hariç tut + sadece doğrulanmış</div></li>
+        <li><div>Hemen veya zamanla → Başlat</div></li>
+      </ol>
+    </div>
+  </div>
+  <div class="page-no">13</div>
+</section>
+
+<!-- 14 CAMPAIGN DETAIL -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Kampanya · detay</div>
+  <div class="tag">Kota & durumlar</div>
+  <h2>Neden durur, ne yaparsınız?</h2>
+  <div class="grid-2">
+    <div class="card">
+      <h3>3 fren</h3>
+      <ul>
+        <li>Hesap günlük kotası</li>
+        <li>Firmanızın mail kredisi</li>
+        <li>Domain daily / hourly cap</li>
+      </ul>
+      <p style="margin-top:8px;">Biri dolunca kampanya <strong>kontrollü stop</strong> olur. Kalan alıcılar “yanmış” sayılmaz — sonra devam / yeni kampanya.</p>
+    </div>
+    <div class="card">
+      <h3>Durum sözlüğü</h3>
+      <ul>
+        <li>kuyrukta / gönderiliyor</li>
+        <li>tamamlandı</li>
+        <li>duraklatıldı / iptal</li>
+        <li>durduruldu (kapasite)</li>
+        <li>hata</li>
+      </ul>
+      <p style="margin-top:8px;">Detay satırından ilerleme ve fail sebebini okuyun.</p>
+    </div>
+  </div>
+  <div class="warn" style="margin-top:6mm;"><strong>Karışık etiket:</strong> Birden fazla etiket OR birleşimidir. Bir etiketten kısmi kişi seçtiyseniz o etiketin “hepsi” otomatik düşer — özet satırını okuyun.</div>
+  <div class="page-no">14</div>
+</section>
+
+<!-- 15 REPORTS -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Raporlar</div>
+  <div class="tag">Ölçüm</div>
+  <h2>Attıktan sonra iş bitmez</h2>
+  <div class="split">
+    <div>
+      <img class="shot" src="ss/mock-rep.png" alt="Rapor" />
+      <div class="shot-cap">Rapor KPI + kampanya tablosu (demo)</div>
+    </div>
+    <div>
+      <div class="card">
+        <h3>Bakılacaklar</h3>
+        <ul>
+          <li>İletilen vs fail/bounce</li>
+          <li>Açılma / tıklama</li>
+          <li>Kampanya satır detayı</li>
+          <li>Gönderim logları (kanal/durum)</li>
+        </ul>
+      </div>
+      <div class="callout"><strong>Alarm:</strong> Bounce ani yükseldiyse yeni kampanya açmayın. Scrub + şablon sadeleştir + admin’e domain health sor.</div>
+      <div class="card" style="margin-top:3mm;">
+        <h3>Dashboard ile fark</h3>
+        <p>Dashboard genel nabız; Raporlar kampanya/log derinliği. İkisini birlikte kullanın.</p>
+      </div>
+    </div>
+  </div>
+  <div class="page-no">15</div>
+</section>
+
+<!-- 16 IVR + SETTINGS -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />IVR & Ayarlar</div>
+  <div class="tag">İleri seviye</div>
+  <h2>İki ek modül (kısa)</h2>
+  <div class="grid-2">
+    <div class="card">
+      <h3>IVR Otomasyon</h3>
+      <ul>
+        <li>Arama cevaplanınca mail tetikler</li>
+        <li>Kural: ad + şablon + domain + gecikme (sn)</li>
+        <li>Webhook URL/secret santrale verilir</li>
+        <li>Kurulum genelde admin + santral ekibi</div></li>
+      </ul>
+      <p style="margin-top:8px;">Sizden beklenen: doğru şablon ve gecikme süresi.</p>
+    </div>
+    <div class="card">
+      <h3>Sistem Ayarları (yetkiye göre)</h3>
+      <ul>
+        <li>Scrub: SMTP ping aç/kapa</li>
+        <li>Invalid / disposable / role → suppression</li>
+        <li>“Kampanyada varsayılan: sadece doğrulanmış”</li>
+        <li>SMTP alanları çoğu müşteride kilitli / admin</li>
+      </ul>
+      <p style="margin-top:8px;">Emin değilseniz varsayılanları bozmayın.</p>
+    </div>
+  </div>
+  <div class="page-no">16</div>
+</section>
+
+<!-- 17 CRM RELATIONS -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />İlişki CRM</div>
+  <div class="tag">Kontak & CRM · alt sekme</div>
+  <h2>Rehber ≠ ilişki takibi</h2>
+  <div class="grid-2">
+    <div class="card">
+      <h3>Pipeline aşamaları</h3>
+      <p>Aday → Temas → İlgili → Dönüşen / VIP · Uyuyan · Kayıp</p>
+      <ul>
+        <li>Skor 0–100 (açılma/tık/gönderim sinyali)</li>
+        <li>Sıcak kontak (50+) KPI</li>
+        <li>Not ekle, takip görevi (vadeli)</li>
+        <li>Zaman çizelgesi: send/open/click/not/görev</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Ne zaman kullanırsınız?</h3>
+      <ul>
+        <li>Tıklayan / açan kişiyi ara</li>
+        <li>VIP’e manuel yükselt</li>
+        <li>Operatöre görev ata</li>
+        <li>“Skorları yenile” ile toplu güncelle</li>
+      </ul>
+      <div class="callout" style="margin-top:8px;">Mail Rehber = liste makinesi. İlişki CRM = insan takibi. İkisini karıştırmayın.</div>
+    </div>
+  </div>
+  <div class="page-no">17</div>
+</section>
+
+<!-- 18 DAILY -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Günlük ritim</div>
+  <div class="tag">Checklist</div>
+  <h2>Her gün operatör rutini</h2>
+  <div class="grid-2">
+    <div class="card">
+      <h3>Sabah</h3>
+      <ol class="steps">
+        <li><div>Dashboard başarı oranı</div></li>
+        <li><div>Kredi / kapasite yeterli mi?</div></li>
+        <li><div>Dün fail/bounce var mı?</div></li>
+        <li><div>Yeni liste varsa scrub</div></li>
+      </ol>
+    </div>
+    <div class="card">
+      <h3>Öğleden sonra</h3>
+      <ol class="steps">
+        <li><div>Test mail (spam klasörü)</div></li>
+        <li><div>Kampanyayı cap içinde gönder</div></li>
+        <li><div>Rapor oku</div></li>
+        <li><div>Sıcak kontaklara CRM not/görev</div></li>
+        <li><div>Yarınki etiket + şablon hazırla</div></li>
+      </ol>
+    </div>
+  </div>
+  <div class="page-no">18</div>
+</section>
+
+<!-- 19 MISTAKES -->
+<section class="slide">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Sık hatalar</div>
+  <div class="tag">Yapmayın</div>
+  <h2>Bunları görürsek eğitim yarım demektir</h2>
+  <div class="grid-2">
+    <div class="card">
+      <ul>
+        <li>Scrub’suz toplu gönderim</li>
+        <li>Etiketsiz “tüm rehber” kampanyası</li>
+        <li>Domain’i elle zorla sabitlemek (gerekmedikçe)</li>
+        <li>Stub moddayken “neden mail gitmiyor?”</div></li>
+        <li>Aynı kişiye aynı gün 3 kampanya</li>
+      </ul>
+    </div>
+    <div class="card">
+      <ul>
+        <li>Test etmeden HTML yayınlamak</li>
+        <li>Kota dolunca panikle yeni domain istemek (önce scrub/şablon)</li>
+        <li>Invalid etiketini hedef seçmek</li>
+        <li>CRM notu yazmadan “sıcak” diye aramamak</li>
+        <li>Admin işlerini (DNS/ısıtma) müşteri panelinde aramak</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout"><strong>Altın kural:</strong> Temiz etiket + doğrulanmış liste + sade şablon + otomatik domain + rapor. Bu dörtlü bozulursa hacim artırma.</div>
+  <div class="page-no">19</div>
+</section>
+
+<!-- 20 CLOSE -->
+<section class="slide light">
+  <div class="brand"><img src="mikromail-mark.png" alt="" />Mikro Mail</div>
+  <div class="hero" style="padding-top:0;">
+    <div class="logo-hero"><img src="mikromail-mark.png" alt="" /><div class="word">Mikro Mail</div></div>
+    <div class="tag">Hazırsınız</div>
+    <h1>İlk iş:<br><span class="accent">1 etiket · 1 scrub · 1 test mail · 1 küçük kampanya</span></h1>
+    <p class="lead" style="margin-top:10px;">Bu dört adımı tamamlamadan büyük volume açmayın.<br>Takıldığınız ekranın adını destek ekibine yazın — birlikte bakarız.</p>
+  </div>
+  <div class="footer-note">© Mikro Mail — müşteri paneli eğitim kılavuzu</div>
+  <div class="page-no">20</div>
+</section>
+
+</body>
+</html>
