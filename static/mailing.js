@@ -2659,12 +2659,62 @@
         return '<option value="' + esc(d.id) + '">' + esc(label) + "</option>";
       }).join("");
     }
-    var html = '<option value="">Domain seç</option>';
-    if (legacy.length) html += '<optgroup label="Eski domainler">' + opts(legacy) + "</optgroup>";
-    if (neu.length) html += '<optgroup label="Yeni domainler (ısıtma)">' + opts(neu) + "</optgroup>";
-    if (!legacy.length && !neu.length) html += opts(domains || []);
+    // Firma: sadece otomatik. Superadmin: otomatik + sabit domain zorlama.
+    var html = '<option value="auto">Otomatik (önerilen) — sağlık + günlük cap</option>';
+    if (window.MAIL_IS_SUPERADMIN) {
+      if (legacy.length) html += '<optgroup label="Sabit — Eski domainler">' + opts(legacy) + "</optgroup>";
+      if (neu.length) html += '<optgroup label="Sabit — Yeni domainler">' + opts(neu) + "</optgroup>";
+      if (!legacy.length && !neu.length && (domains || []).length) {
+        html += '<optgroup label="Sabit domain">' + opts(domains || []) + "</optgroup>";
+      }
+    }
     sel.innerHTML = html;
-    if (cur) sel.value = cur;
+    if (cur && cur !== "auto" && window.MAIL_IS_SUPERADMIN) sel.value = cur;
+    else sel.value = "auto";
+  }
+
+  function renderDomainCapacity(cap) {
+    if (!cap) return;
+    var rem = document.getElementById("mail-domain-cap-remaining");
+    var doms = document.getElementById("mail-domain-cap-domains");
+    var fill = document.getElementById("mail-domain-cap-fill");
+    var note = document.getElementById("mail-domain-cap-note");
+    var hint = document.getElementById("mail-domain-cap-hint");
+    var remaining = Number(cap.remaining_today) || 0;
+    var sendable = Number(cap.sendable_count) || 0;
+    var allocated = Number(cap.allocated_count) || 0;
+    if (rem) rem.textContent = "Bugün kalan " + fmtNum(remaining);
+    if (doms) {
+      doms.textContent = sendable + " / " + allocated + " domain gönderilebilir";
+    }
+    if (fill) {
+      // Bar: sendable oranı (0 sendable → danger)
+      var pct = allocated > 0 ? Math.min(100, Math.round((sendable / allocated) * 100)) : 0;
+      // Invert fill for "remaining fuel" feel: use remaining vs soft 10k scale if no better
+      var fuel = Math.min(100, Math.round((remaining / Math.max(remaining + 1, 5000)) * 100));
+      if (remaining <= 0) fuel = 0;
+      else if (remaining < 500) fuel = Math.max(8, fuel);
+      fill.style.width = fuel + "%";
+      fill.classList.toggle("is-warn", remaining > 0 && remaining < 1000);
+      fill.classList.toggle("is-danger", remaining <= 0 || sendable <= 0);
+    }
+    if (note) {
+      note.textContent = remaining <= 0
+        ? "Bugün domain kapasitesi yok — kampanya başlamaz / otomatik durur."
+        : ("Bugün gönderilebilir toplam slot (tahsisli domainler). Otomatik rotasyon bunu kullanır.");
+    }
+    if (hint) {
+      hint.textContent = sendable > 0
+        ? ("Otomatik: " + sendable + " domain · bugün ~" + fmtNum(remaining) + " mail kapasitesi")
+        : "Gönderilebilir domain yok — Platform/ısıtma kontrol et.";
+    }
+    window._mailDomainCapacity = cap;
+  }
+
+  function refreshDomainCapacity() {
+    return mailApi("/api/mailing/domain-capacity").then(function (res) {
+      if (res.ok) renderDomainCapacity(res.data);
+    }).catch(function () {});
   }
 
   function renderAccountQuota(q) {
@@ -2756,6 +2806,7 @@
       fillSelect(document.getElementById("mail-ivr-tpl"), mailTemplates, "id", labelTpl, "Şablon seç");
       fillSelect(document.getElementById("mail-ivr-domain"), mailDomains, "id", labelDom, "Domain seç");
       refreshAccountQuota();
+      refreshDomainCapacity();
     });
   }
 
@@ -4318,10 +4369,22 @@
         var body = mailCampSelectionPayload();
         body.name = document.getElementById("mail-camp-name").value.trim();
         body.template_id = Number(document.getElementById("mail-camp-tpl").value);
-        body.domain_id = Number(document.getElementById("mail-camp-domain").value);
+        var domSel = document.getElementById("mail-camp-domain");
+        var domVal = domSel ? String(domSel.value || "auto") : "auto";
+        if (!domVal || domVal === "auto") {
+          body.auto_domain = true;
+          body.domain_id = null;
+        } else {
+          body.auto_domain = false;
+          body.domain_id = Number(domVal);
+        }
         body.notes = document.getElementById("mail-camp-notes").value.trim();
-        if (!body.template_id || !body.domain_id) {
-          mailToast("Şablon ve domain seçin");
+        if (!body.template_id) {
+          mailToast("Şablon seçin");
+          return;
+        }
+        if (!body.auto_domain && !body.domain_id) {
+          mailToast("Domain seçin veya Otomatik bırakın");
           return;
         }
         var when = mailCampWhenMode();
@@ -4488,7 +4551,10 @@
           if (hint) hint.textContent = "Hesaplama hatası — tekrar dene";
         });
     });
-    bindClick("mail-quota-refresh", function () { refreshAccountQuota(); });
+    bindClick("mail-quota-refresh", function () {
+      refreshAccountQuota();
+      refreshDomainCapacity();
+    });
     bindClick("mail-camp-refresh", mailLoadCampaigns);
 
     var ivrForm = document.getElementById("mail-ivr-form");

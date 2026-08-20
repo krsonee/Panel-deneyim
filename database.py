@@ -3228,6 +3228,7 @@ def migrate_mail_campaigns_pro(conn):
         ("failed_count", "INTEGER NOT NULL DEFAULT 0"),
         ("skipped_count", "INTEGER NOT NULL DEFAULT 0"),
         ("error", "TEXT NOT NULL DEFAULT ''"),
+        ("auto_domain", "INTEGER NOT NULL DEFAULT 0"),
     ]
     for name, typedef in extras:
         cols = _table_columns(conn, "mail_campaigns") or set()

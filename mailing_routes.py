@@ -4617,11 +4617,20 @@ def create_mailing_blueprint(permission_required):
         if not name:
             return jsonify({"error": "Kampanya adı gerekli."}), 400
         template_id = data.get("template_id")
-        domain_id = data.get("domain_id")
+        domain_raw = data.get("domain_id")
+        auto_flag = data.get("auto_domain")
+        if auto_flag is True or auto_flag == 1 or str(auto_flag).lower() in ("1", "true", "yes"):
+            auto_domain = True
+        elif auto_flag is False or auto_flag == 0 or str(auto_flag).lower() in ("0", "false", "no"):
+            auto_domain = False
+        else:
+            # domain boş / "auto" → otomatik rotasyon
+            auto_domain = domain_raw in (None, "", 0, "0", "auto")
+        domain_id = None if auto_domain else domain_raw
         if not template_id:
             return jsonify({"error": "Şablon seçin."}), 400
-        if not domain_id:
-            return jsonify({"error": "Domain seçin."}), 400
+        if not auto_domain and not domain_id:
+            return jsonify({"error": "Domain seçin veya otomatik bırakın."}), 400
         now = iso(utcnow())
         # tag_filters[] öncelikli; yoksa tag_filter (tek / virgüllü)
         if data.get("tag_filters") is not None:
@@ -4705,21 +4714,65 @@ def create_mailing_blueprint(permission_required):
                 )
                 if tpl_own and tpl_own.get("tenant_id") and int(tpl_own["tenant_id"]) != int(_tid):
                     return jsonify({"error": "Şablon başka firmaya ait."}), 403
-            if not fetchone(conn, "SELECT id FROM mail_domains WHERE id = ?", (domain_id,)):
-                return jsonify({"error": "Domain bulunamadı."}), 404
-            # Managed send: tenant sadece tahsisli domain kullanır
+            from database import _table_columns, migrate_mail_campaigns_pro
+            from mail_domain_pick import (
+                ensure_auto_domain_column,
+                pick_tenant_domain,
+                tenant_domain_capacity_snapshot,
+            )
+
+            # Mikromail DB'de pro kolonlar eksik kalmış olabilir — insert öncesi garanti et
+            try:
+                migrate_mail_campaigns_pro(conn)
+                ensure_auto_domain_column(conn)
+            except Exception as mig_exc:
+                print(f"⚠️  campaign migrate before insert: {mig_exc}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
             try:
                 from mail_tenant import assert_tenant_domain, tenant_send_allowed
                 if _tid:
-                    assert_tenant_domain(conn, int(domain_id), int(_tid))
                     ok_send, send_err = tenant_send_allowed(conn, int(_tid))
                     if not ok_send:
                         return jsonify({"error": send_err}), 400
-            except PermissionError as p_exc:
-                return jsonify({"error": str(p_exc)}), 403
             except Exception:
                 pass
+
+            if auto_domain:
+                cap = tenant_domain_capacity_snapshot(conn, int(_tid) if _tid else None)
+                if int(cap.get("sendable_count") or 0) <= 0:
+                    return jsonify({
+                        "error": "Gönderilebilir domain yok (paused/burned veya günlük cap dolu). "
+                                 "Isıtma / Platform domain durumunu kontrol et.",
+                        "domain_capacity": cap,
+                    }), 400
+                # Telemetri: ilk seçilen domain (auto_domain=1 iken worker rotasyon yapar)
+                domain_id = pick_tenant_domain(conn, int(_tid) if _tid else None)
+                if not domain_id:
+                    return jsonify({"error": "Otomatik domain seçilemedi.", "domain_capacity": cap}), 400
+            else:
+                try:
+                    domain_id = int(domain_id)
+                except (TypeError, ValueError):
+                    return jsonify({"error": "Geçersiz domain."}), 400
+                if not fetchone(conn, "SELECT id FROM mail_domains WHERE id = ?", (domain_id,)):
+                    return jsonify({"error": "Domain bulunamadı."}), 404
+                try:
+                    from mail_tenant import assert_tenant_domain
+                    if _tid:
+                        assert_tenant_domain(conn, int(domain_id), int(_tid))
+                except PermissionError as p_exc:
+                    return jsonify({"error": str(p_exc)}), 403
+                except Exception:
+                    pass
+
             notes_extra = (data.get("notes") or "").strip()
+            if auto_domain:
+                auto_note = "[auto-domain]"
+                notes_extra = f"{auto_note} {notes_extra}".strip() if notes_extra else auto_note
             if recipient_mode == "tag" and contact_ids and tag_filter:
                 mix_note = f"[mixed: {len(contact_ids)} seçili + etiket]"
                 notes_extra = f"{mix_note} {notes_extra}".strip()
@@ -4728,17 +4781,6 @@ def create_mailing_blueprint(permission_required):
                     notes_extra = f"[{recipient_mode}] {notes_extra}"
                 else:
                     notes_extra = f"[{recipient_mode}]"
-            from database import _table_columns, migrate_mail_campaigns_pro
-
-            # Mikromail DB'de pro kolonlar eksik kalmış olabilir — insert öncesi garanti et
-            try:
-                migrate_mail_campaigns_pro(conn)
-            except Exception as mig_exc:
-                print(f"⚠️  campaign migrate before insert: {mig_exc}")
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
 
             camp_cols = _table_columns(conn, "mail_campaigns") or set()
             required_pro = (
@@ -4754,12 +4796,27 @@ def create_mailing_blueprint(permission_required):
                              + "). Render’da mikromail servisini Restart et."
                 }), 500
 
+            has_auto_col = "auto_domain" in camp_cols
+            auto_val = 1 if auto_domain else 0
             insert_params = (
                 name, template_id, domain_id, tag_filter, notes_extra,
                 scheduled_raw, rate, max_recipients, 1 if exclude_sent else 0,
                 now, now,
             )
-            if _tid and "tenant_id" in camp_cols:
+            if _tid and "tenant_id" in camp_cols and has_auto_col:
+                cid = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_campaigns
+                    (name, campaign_type, template_id, domain_id, status, tag_filter, notes,
+                     scheduled_at, rate_per_minute, max_recipients, exclude_previously_sent,
+                     total_count, sent_count, failed_count, skipped_count, error,
+                     created_at, updated_at, tenant_id, auto_domain)
+                    VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?, ?, ?)
+                    """,
+                    insert_params + (int(_tid), auto_val),
+                )
+            elif _tid and "tenant_id" in camp_cols:
                 cid = insert_returning_id(
                     conn,
                     """
@@ -4771,6 +4828,19 @@ def create_mailing_blueprint(permission_required):
                     VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?, ?)
                     """,
                     insert_params + (int(_tid),),
+                )
+            elif has_auto_col:
+                cid = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_campaigns
+                    (name, campaign_type, template_id, domain_id, status, tag_filter, notes,
+                     scheduled_at, rate_per_minute, max_recipients, exclude_previously_sent,
+                     total_count, sent_count, failed_count, skipped_count, error,
+                     created_at, updated_at, auto_domain)
+                    VALUES (?, 'bulk', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, '', ?, ?, ?)
+                    """,
+                    insert_params + (auto_val,),
                 )
             else:
                 cid = insert_returning_id(
@@ -5115,6 +5185,34 @@ def create_mailing_blueprint(permission_required):
             except Exception as c_exc:
                 print(f"⚠️  queue credit check: {c_exc}")
 
+            # Domain kapasitesi — auto: tahsisli havuz; pinned: tek domain
+            try:
+                from mail_domain_pick import (
+                    campaign_is_auto,
+                    ensure_auto_domain_column,
+                    tenant_domain_capacity_snapshot,
+                )
+                from mail_domain_health import domain_is_send_blocked
+
+                ensure_auto_domain_column(conn)
+                if campaign_is_auto(camp):
+                    tid = camp.get("tenant_id")
+                    cap = tenant_domain_capacity_snapshot(
+                        conn, int(tid) if tid else None
+                    )
+                    if int(cap.get("remaining_today") or 0) <= 0:
+                        return jsonify({
+                            "error": "Bugün gönderilebilir domain kapasitesi yok "
+                                     "(cap dolu veya domainler paused).",
+                            "domain_capacity": cap,
+                        }), 400
+                else:
+                    blocked, block_reason = domain_is_send_blocked(conn, camp.get("domain_id"))
+                    if blocked:
+                        return jsonify({"error": f"Domain engeli: {block_reason}"}), 400
+            except Exception as d_exc:
+                print(f"⚠️  queue domain capacity: {d_exc}")
+
             scheduled_at = camp.get("scheduled_at")
             start_immediately = force_now
             if not start_immediately and scheduled_at:
@@ -5255,6 +5353,24 @@ def create_mailing_blueprint(permission_required):
                     return jsonify({"error": c_err, "credit": c_snap}), 400
             except Exception as c_exc:
                 print(f"⚠️  resume credit check: {c_exc}")
+            try:
+                from mail_domain_pick import campaign_is_auto, tenant_domain_capacity_snapshot
+                from mail_domain_health import domain_is_send_blocked
+                camp_d = camp if isinstance(camp, dict) else dict(camp)
+                if campaign_is_auto(camp_d):
+                    tid = camp_d.get("tenant_id")
+                    cap = tenant_domain_capacity_snapshot(conn, int(tid) if tid else None)
+                    if int(cap.get("remaining_today") or 0) <= 0:
+                        return jsonify({
+                            "error": "Bugün domain kapasitesi yok — devam ettirilemez.",
+                            "domain_capacity": cap,
+                        }), 400
+                else:
+                    blocked, block_reason = domain_is_send_blocked(conn, camp_d.get("domain_id"))
+                    if blocked:
+                        return jsonify({"error": f"Domain engeli: {block_reason}"}), 400
+            except Exception as d_exc:
+                print(f"⚠️  resume domain capacity: {d_exc}")
             execute(
                 conn,
                 "UPDATE mail_campaigns SET status = 'queued', updated_at = ?, error = '' WHERE id = ?",
@@ -5662,6 +5778,26 @@ def create_mailing_blueprint(permission_required):
             except Exception:
                 pass
         return jsonify({"quota": snap, "credit": credit, "tenant_credit": tenant_credit})
+
+    @bp.route("/domain-capacity", methods=["GET"])
+    @mail_perm(*MAIL_CAMP)
+    def domain_capacity_get():
+        """Tenant tahsisli domainlerin bugünkü kalan kapasitesi (otomatik rotasyon UI)."""
+        from mail_domain_pick import ensure_auto_domain_column, tenant_domain_capacity_snapshot
+        from mail_tenant import current_tenant_id
+
+        with closing(get_db()) as conn:
+            try:
+                ensure_auto_domain_column(conn)
+            except Exception:
+                pass
+            tid = current_tenant_id()
+            snap = tenant_domain_capacity_snapshot(conn, int(tid) if tid else None)
+            try:
+                conn.commit()
+            except Exception:
+                pass
+        return jsonify(snap)
 
     @bp.route("/domains/<int:domain_id>", methods=["PATCH"])
     @mail_perm(*MAIL_SET)

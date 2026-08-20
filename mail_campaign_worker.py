@@ -403,21 +403,57 @@ def _process_campaign(campaign_id):
 
         # Domain pause / cap — kampanya başında
         try:
+            from mail_domain_pick import campaign_is_auto, ensure_auto_domain_column, pick_tenant_domain
             from mail_domain_health import domain_is_send_blocked
-            blocked, block_reason = domain_is_send_blocked(conn, camp.get("domain_id"))
-            if blocked:
-                execute(
-                    conn,
-                    """
-                    UPDATE mail_campaigns
-                    SET status = 'paused', updated_at = ?, error = ?
-                    WHERE id = ?
-                    """,
-                    (now, f"Domain engeli: {block_reason}"[:400], campaign_id),
-                )
-                conn.commit()
-                print(f"✉️  campaign #{campaign_id} paused — {block_reason}")
-                return
+
+            ensure_auto_domain_column(conn)
+            is_auto = campaign_is_auto(camp)
+            tid = camp.get("tenant_id")
+            if is_auto:
+                picked = pick_tenant_domain(conn, int(tid) if tid else None)
+                if not picked:
+                    execute(
+                        conn,
+                        """
+                        UPDATE mail_campaigns
+                        SET status = 'paused', updated_at = ?, error = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            now,
+                            "Otomatik domain: bugün gönderilebilir domain yok "
+                            "(cap dolu / paused).",
+                            campaign_id,
+                        ),
+                    )
+                    conn.commit()
+                    print(f"✉️  campaign #{campaign_id} paused — auto domain pool empty")
+                    return
+                camp["domain_id"] = picked
+                try:
+                    execute(
+                        conn,
+                        "UPDATE mail_campaigns SET domain_id = ?, updated_at = ? WHERE id = ?",
+                        (picked, now, campaign_id),
+                    )
+                    conn.commit()
+                except Exception:
+                    safe_rollback(conn)
+            else:
+                blocked, block_reason = domain_is_send_blocked(conn, camp.get("domain_id"))
+                if blocked:
+                    execute(
+                        conn,
+                        """
+                        UPDATE mail_campaigns
+                        SET status = 'paused', updated_at = ?, error = ?
+                        WHERE id = ?
+                        """,
+                        (now, f"Domain engeli: {block_reason}"[:400], campaign_id),
+                    )
+                    conn.commit()
+                    print(f"✉️  campaign #{campaign_id} paused — {block_reason}")
+                    return
         except Exception as dex:
             print(f"⚠️  domain gate: {dex}")
             safe_rollback(conn)
@@ -487,6 +523,13 @@ def _process_campaign(campaign_id):
         except Exception:
             pass
 
+        try:
+            from mail_domain_pick import campaign_is_auto as _cia
+            is_auto_camp = _cia(camp)
+        except Exception:
+            is_auto_camp = False
+        tenant_id_camp = camp.get("tenant_id")
+
         while True:
             if _campaign_cancelled(conn, campaign_id):
                 counts = reconcile_campaign_counts(conn, campaign_id)
@@ -505,6 +548,65 @@ def _process_campaign(campaign_id):
                 reconcile_campaign_counts(conn, campaign_id)
                 conn.commit()
                 return
+
+            # Auto: her batch başında havuzu yenile — bir domain dolunca diğerine geç
+            if is_auto_camp:
+                try:
+                    from mail_domain_pick import pick_tenant_domain
+                    batch_dom = pick_tenant_domain(
+                        conn, int(tenant_id_camp) if tenant_id_camp else None
+                    )
+                    if not batch_dom:
+                        reconcile_campaign_counts(conn, campaign_id)
+                        execute(
+                            conn,
+                            """
+                            UPDATE mail_campaigns
+                            SET status = 'paused', updated_at = ?, error = ?
+                            WHERE id = ?
+                            """,
+                            (
+                                iso(utcnow()),
+                                "Otomatik domain: günlük kapasite bitti — yarın devam.",
+                                campaign_id,
+                            ),
+                        )
+                        conn.commit()
+                        print(f"✉️  campaign #{campaign_id} paused — auto pool empty mid-run")
+                        return
+                    if int(camp.get("domain_id") or 0) != int(batch_dom):
+                        camp["domain_id"] = batch_dom
+                        try:
+                            execute(
+                                conn,
+                                "UPDATE mail_campaigns SET domain_id = ?, updated_at = ? WHERE id = ?",
+                                (batch_dom, iso(utcnow()), campaign_id),
+                            )
+                            conn.commit()
+                        except Exception:
+                            safe_rollback(conn)
+                        try:
+                            drow = fetchone(
+                                conn,
+                                "SELECT rate_per_minute FROM mail_domains WHERE id = ?",
+                                (batch_dom,),
+                            )
+                            dom_rate = int((drow or {}).get("rate_per_minute") or 0) if drow else 0
+                            camp_rate = int(camp.get("rate_per_minute") or 0)
+                            mode = (get_mail_setting(conn, "provider_mode", "stub") or "stub").strip().lower()
+                            base = camp_rate
+                            if mode != "smtp":
+                                base = max(base, 6000)
+                            if dom_rate > 0:
+                                rate = min(base, dom_rate) if base > 0 else dom_rate
+                            else:
+                                rate = base
+                            delay = (60.0 / rate) if rate and rate > 0 else 0.0
+                        except Exception:
+                            pass
+                except Exception as pick_exc:
+                    print(f"⚠️  auto domain pick: {pick_exc}")
+                    safe_rollback(conn)
 
             recipients = fetchall(
                 conn,
@@ -559,21 +661,86 @@ def _process_campaign(campaign_id):
                         tpl.get("html_body") or _plain_to_html(tpl.get("text_body") or ""), contact
                     )
                     text_body = _render_template(tpl.get("text_body") or "", contact)
-                    send_id, status, err = deliver_mail(
-                        conn,
-                        channel="bulk",
-                        to_email=rec["email"],
-                        subject=subject,
-                        contact=contact,
-                        campaign_id=campaign_id,
-                        contact_id=rec["contact_id"],
-                        template_id=camp["template_id"],
-                        domain_id=camp["domain_id"],
-                        to_phone=rec.get("phone") or "",
-                        html_body=html_body,
-                        text_body=text_body,
-                        inject_tracking=_inject_tracking,
-                    )
+
+                    send_domain_id = camp.get("domain_id")
+                    exclude_doms = set()
+                    send_id, status, err = None, "failed", "domain"
+                    if is_auto_camp:
+                        from mail_domain_pick import pick_tenant_domain
+                        for _attempt in range(5):
+                            send_domain_id = pick_tenant_domain(
+                                conn,
+                                int(tenant_id_camp) if tenant_id_camp else None,
+                                exclude_ids=exclude_doms,
+                            )
+                            if not send_domain_id:
+                                # Havuz boş — alıcıyı pending’e geri al, kampanyayı duraklat
+                                execute(
+                                    conn,
+                                    "UPDATE mail_campaign_recipients SET status = 'pending' WHERE id = ?",
+                                    (rec["recipient_id"],),
+                                )
+                                execute(
+                                    conn,
+                                    """
+                                    UPDATE mail_campaigns
+                                    SET status = 'paused', updated_at = ?, error = ?
+                                    WHERE id = ?
+                                    """,
+                                    (
+                                        iso(utcnow()),
+                                        "Otomatik domain: günlük kapasite bitti — yarın devam.",
+                                        campaign_id,
+                                    ),
+                                )
+                                conn.commit()
+                                print(
+                                    f"✉️  campaign #{campaign_id} paused mid-recipient — auto pool empty"
+                                )
+                                return
+                            send_id, status, err = deliver_mail(
+                                conn,
+                                channel="bulk",
+                                to_email=rec["email"],
+                                subject=subject,
+                                contact=contact,
+                                campaign_id=campaign_id,
+                                contact_id=rec["contact_id"],
+                                template_id=camp["template_id"],
+                                domain_id=send_domain_id,
+                                to_phone=rec.get("phone") or "",
+                                html_body=html_body,
+                                text_body=text_body,
+                                inject_tracking=_inject_tracking,
+                            )
+                            err_l = (err or "").lower()
+                            if status == "skipped" and (
+                                "daily_cap" in err_l
+                                or "domain" in err_l
+                                or "paused" in err_l
+                                or "burned" in err_l
+                            ):
+                                exclude_doms.add(int(send_domain_id))
+                                continue
+                            break
+                        camp["domain_id"] = send_domain_id
+                    else:
+                        send_id, status, err = deliver_mail(
+                            conn,
+                            channel="bulk",
+                            to_email=rec["email"],
+                            subject=subject,
+                            contact=contact,
+                            campaign_id=campaign_id,
+                            contact_id=rec["contact_id"],
+                            template_id=camp["template_id"],
+                            domain_id=send_domain_id,
+                            to_phone=rec.get("phone") or "",
+                            html_body=html_body,
+                            text_body=text_body,
+                            inject_tracking=_inject_tracking,
+                        )
+
                     recip_status = status if status in ("simulated", "sent", "queued", "failed", "skipped") else "failed"
                     execute(
                         conn,

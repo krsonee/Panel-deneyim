@@ -628,20 +628,34 @@
           </div>
         </div>
         <p class="hint" id="mail-credit-hint" style="margin:0.5rem 0 0;">Prepaid mail kredisi; her başarılı gönderimde düşer.</p>
+        <div id="mail-domain-cap-meter" class="mail-quota-meter" style="margin-top:0.85rem;">
+          <div class="mail-quota-bar"><div class="mail-quota-fill" id="mail-domain-cap-fill" style="width:0%"></div></div>
+          <div class="mail-quota-meta">
+            <strong id="mail-domain-cap-remaining">Domain kapasitesi —</strong>
+            <span class="muted" id="mail-domain-cap-domains">— domain</span>
+          </div>
+        </div>
+        <p class="hint" id="mail-domain-cap-note" style="margin:0.5rem 0 0;">Bugün gönderilebilir toplam slot (tahsisli domainler).</p>
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
       <div class="card-head">
         <span class="mm-label-row" style="margin:0;">
           Yeni toplu kampanya
-          <span class="mm-tip" tabindex="0" data-tip="Hemen gönder = oluştur + kuyruk. Zamanla = seçilen saatte gider. Domain listesi Eski / Yeni gruplu.">?</span>
+          <span class="mm-tip" tabindex="0" data-tip="Hemen gönder = oluştur + kuyruk. Zamanla = seçilen saatte gider. Domain varsayılan otomatik (cap + sağlık rotasyonu). Superadmin sabit domain zorlayabilir.">?</span>
         </span>
       </div>
       <div class="card-body">
         <form id="mail-camp-form" class="form-row-4">
           <div><label>Kampanya adı</label><input type="text" id="mail-camp-name" required placeholder="Mart VIP / Davet batch 1"></div>
           <div><label>Şablon</label><select id="mail-camp-tpl" required></select></div>
-          <div><label>Gönderen domain</label><select id="mail-camp-domain" required></select></div>
+          <div>
+            <label>Gönderen domain</label>
+            <select id="mail-camp-domain"></select>
+            <p class="hint" id="mail-domain-cap-hint" style="margin:0.35rem 0 0;">
+              Varsayılan: otomatik — sağlık + günlük cap’e göre domainler arasında döner.
+            </p>
+          </div>
           <div style="grid-column:1/-1;">
             <label>Alıcı kaynağı</label>
             <div style="display:flex;flex-wrap:wrap;gap:0.85rem;margin-top:0.35rem;">

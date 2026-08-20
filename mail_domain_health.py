@@ -107,12 +107,20 @@ def pause_domain(conn, domain_id: int, reason: str) -> bool:
         (int(domain_id),),
     )
     try:
+        # Otomatik domain kampanyaları tek domain pause’ta durmaz — worker başka domain’e döner
+        try:
+            from mail_domain_pick import ensure_auto_domain_column
+            ensure_auto_domain_column(conn)
+        except Exception:
+            pass
         execute(
             conn,
             """
             UPDATE mail_campaigns
             SET status = 'paused', updated_at = ?, error = ?
-            WHERE domain_id = ? AND status IN ('queued', 'sending', 'scheduled')
+            WHERE domain_id = ?
+              AND status IN ('queued', 'sending', 'scheduled')
+              AND COALESCE(auto_domain, 0) = 0
             """,
             (now, f"Domain auto-pause: {reason}"[:400], int(domain_id)),
         )
