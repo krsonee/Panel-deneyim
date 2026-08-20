@@ -10,7 +10,7 @@ from database import get_db
 
 MODULE_ACCESS = ("tracking.smartico",)
 
-_VALID_PERIODS = {"all", "today", "yesterday", "7days", "30days"}
+_VALID_PERIODS = {"all", "today", "yesterday", "7days", "30days", "6months"}
 _CUSTOM_PERIOD_RE = re.compile(r"^custom:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$")
 
 

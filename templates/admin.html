@@ -4306,8 +4306,23 @@
         showEmpty("empty-games", !games.length);
 
         var total = channels.reduce(function(a,c){ return a+c.members; }, 0) || 1;
-        var affLabels = channels.map(function(c){ return c.channel+" ("+Math.round(c.members/total*100)+"%)"; });
-        var affData = channels.map(function(c){ return c.members; });
+        var AFF_MAX_SLICES = 9;
+        var affChannels = channels;
+        if (channels.length > AFF_MAX_SLICES) {
+          var sorted = channels.slice().sort(function(a,b){ return b.members - a.members; });
+          var top = sorted.slice(0, AFF_MAX_SLICES - 1);
+          var restMembers = sorted.slice(AFF_MAX_SLICES - 1).reduce(function(a,c){ return a+c.members; }, 0);
+          affChannels = top.concat([{ channel: "Diğer (" + (sorted.length - (AFF_MAX_SLICES - 1)) + ")", members: restMembers }]);
+        }
+        var affLabels = affChannels.map(function(c){ return c.channel+" ("+Math.round(c.members/total*100)+"%)"; });
+        var affData = affChannels.map(function(c){ return c.members; });
+        var affWrap = document.getElementById("chart-affiliate");
+        if (affWrap && affWrap.parentElement) {
+          var affRowH = 20;
+          var affPadH = 190;
+          var affNextH = Math.max(190, Math.ceil(affLabels.length / 2) * affRowH + affPadH);
+          affWrap.parentElement.style.height = affNextH + "px";
+        }
 
         var affLegendOpts = {
           position: "bottom",
@@ -4327,6 +4342,7 @@
           if (charts.affiliate.options && charts.affiliate.options.plugins) {
             charts.affiliate.options.plugins.legend = affLegendOpts;
           }
+          charts.affiliate.resize();
           charts.affiliate.update("none");
         } else {
           charts.affiliate = new Chart(document.getElementById("chart-affiliate"), {

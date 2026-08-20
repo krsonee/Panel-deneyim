@@ -17,6 +17,7 @@ SEED_PROVIDERS = [
     ("sport", "Ultraplay", 16, 50),
     ("sport", "Binary", 20, 60),
     ("sport", "Beter E-Sports", 16, 65),
+    ("sport", "Saba Sports", 15, 66),
     # Casino
     ("casino", "Canlı Casino (Xprogaming) + Tips", 25, 100),
     ("casino", "Evolution Canlı Casino", 25, 110),
@@ -62,6 +63,7 @@ SEED_PROVIDERS = [
     ("casino", "KA Gaming", 17, 500),
     ("casino", "Spade Gaming", 20, 510),
     ("casino", "Red Tiger", 22, 520),
+    ("casino", "Foxi", 20, 525),
     ("casino", "Fazi", 20, 530),
     ("casino", "Nucleus Gaming", 19, 540),
     ("casino", "MrSlotty", 17, 550),
@@ -126,6 +128,12 @@ SEED_PROVIDERS = [
     ("casino", "Gemini", 16, 915),
     ("casino", "Cosmo Play", 15, 916),
     ("casino", "Ruby Play (V)", 16, 917),
+    ("casino", "EEAI", 14, 918),
+    ("casino", "Peter And Sons", 17, 920),
+    ("casino", "Toucan Royale", 16, 921),
+    ("casino", "Happy Duck", 16, 922),
+    ("casino", "Clutch Gaming", 16, 923),
+    ("casino", "Backseat Gaming", 16, 924),
     ("special", "ProClub Jackpot", 0, 999),
 ]
 
@@ -382,6 +390,14 @@ def ensure_period_lines(conn, period, eur_try_rate=45.436):
     if count:
         return
 
+    from accounting_pronet_seed_data import PERIOD_META
+
+    if period in PERIOD_META and period != "2025-06":
+        # Bu dönem için PDF'ten okunmuş gerçek veri var — sıfır şablon yerine
+        # doğrudan geçmiş veriden oluştur (ilk açılışta bile doğru rakamlar görünsün).
+        if reseed_period_from_history(conn, period):
+            return
+
     now = iso(utcnow())
     meta_exists = scalar(
         conn,
@@ -602,6 +618,10 @@ def build_invoice_payload(conn, period):
     eur_rate = float(meta["eur_try_rate"]) if meta else 45.436
     ensure_period_lines(conn, period, eur_rate)
     meta = fetchone(conn, "SELECT * FROM acc_pronet_period_meta WHERE period = ?", (period,))
+    # ensure_period_lines/reseed_period_from_history meta satırını ilk kez oluşturmuş
+    # olabilir (soğuk başlangıç) — güncel eur_try_rate'i yeniden oku, eski varsayılanla kalma.
+    if meta:
+        eur_rate = float(meta["eur_try_rate"] or eur_rate)
 
     providers = fetchall(conn, "SELECT * FROM acc_pronet_providers")
     fees = fetchall(conn, "SELECT * FROM acc_pronet_fixed_fees")

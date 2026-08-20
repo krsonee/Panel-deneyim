@@ -1801,7 +1801,7 @@ def create_accounting_blueprint(permission_required, superadmin_required=None):
                 conn,
                 """
                 SELECT * FROM acc_invoice_debt_entries
-                ORDER BY entry_date ASC, id ASC
+                ORDER BY entry_date DESC, id DESC
                 """,
             ) or []
             summary = _invoice_debt_summary(conn)
