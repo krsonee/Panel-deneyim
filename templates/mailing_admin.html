@@ -6,7 +6,7 @@
   <title>Mikromail</title>
   <meta name="theme-color" content="#090D16">
   <link rel="stylesheet" href="/static/mailing_shell.css?v=20260722mm11">
-  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260819mm16">
+  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260820mm17">
   <style>
     :root { --accent: #38bdf8; --accent-soft: rgba(56,189,248,0.14); --accent-ink: #041018; }
     #module-mailing-panel { display:block !important; }
@@ -120,11 +120,11 @@
           <div class="live-pill" id="mail-provider-pill" style="background:var(--amber);border-color:rgba(245,158,11,0.35);color:var(--amber);">Stub mod</div>
         </div>
       </header>
-      <div id="mm-warmup-banner" class="mm-warmup-banner" hidden>
+      <div id="mm-warmup-banner" class="mm-warmup-banner" hidden {% if not is_superadmin %}style="display:none!important"{% endif %}>
         <span id="mm-warmup-banner-text">Isıtma görevleri bekliyor</span>
         <button type="button" class="btn btn-sm btn-primary" id="mm-warmup-banner-go">Programa git</button>
       </div>
-      <div id="mm-weekly-banner" class="mm-weekly-banner" hidden>
+      <div id="mm-weekly-banner" class="mm-weekly-banner" hidden {% if not is_superadmin %}style="display:none!important"{% endif %}>
         <span id="mm-weekly-banner-text">Pazar bakımı bekliyor</span>
         <button type="button" class="btn btn-sm btn-primary" id="mm-weekly-banner-go">Bakıma git</button>
       </div>
@@ -163,8 +163,8 @@
                 </div>
                 <form id="mm-aq-form" class="form-row-4" style="align-items:flex-end;">
                   <div>
-                    <div class="mm-label-row"><label>Günlük limit</label><span class="mm-tip" tabindex="0" data-tip="Alibaba konsoldaki Daily quota ile aynı tut (örn. 50000)">?</span></div>
-                    <input id="mm-aq-limit" type="number" min="100" step="1000" value="50000">
+                    <div class="mm-label-row"><label>Günlük limit</label><span class="mm-tip" tabindex="0" data-tip="Alibaba konsoldaki Daily quota ile aynı tut (örn. 20000)">?</span></div>
+                    <input id="mm-aq-limit" type="number" min="100" step="1000" value="20000">
                   </div>
                   <div>
                     <div class="mm-label-row"><label>Timezone</label><span class="mm-tip" tabindex="0" data-tip="Kotanın sıfırlandığı gün sınırı (genelde UTC)">?</span></div>
@@ -433,8 +433,8 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260819mm25"></script>
-  <script src="/static/mailing_platform.js?v=20260819mm13"></script>
+  <script src="/static/mailing.js?v=20260820mm26"></script>
+  <script src="/static/mailing_platform.js?v=20260820mm14"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

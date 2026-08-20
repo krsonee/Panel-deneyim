@@ -998,8 +998,22 @@ def _contact_has_exclude_exempt_tag_sql(custom_exempt=None):
     return "(" + " OR ".join(parts) + ")", tuple(params)
 
 
+def _in_flight_recipient_sql():
+    """Zamanlanmış / kuyruktaki / gönderilmekte olan kampanya alıcıları."""
+    return """
+    NOT EXISTS (
+      SELECT 1 FROM mail_campaign_recipients r
+      INNER JOIN mail_campaigns c ON c.id = r.campaign_id
+      WHERE r.contact_id = mail_contacts.id
+        AND LOWER(COALESCE(c.status, '')) IN ('draft', 'scheduled', 'queued', 'sending', 'paused')
+        AND LOWER(COALESCE(r.status, '')) IN ('pending', 'sending')
+    )
+    """
+
+
 def _campaign_selection_where(
     tag_filter, exclude_previously_sent, only_verified=False, custom_exempt=None,
+    tenant_id=None,
 ):
     """Kampanya alıcı seçiminde kullanılan WHERE + params — hem sayım
     önizlemesinde hem gerçek eklemede aynı filtre mantığı kullanılsın diye.
@@ -1007,39 +1021,40 @@ def _campaign_selection_where(
     tag_filter: tek etiket, 'a, b' veya liste — birden fazla ise OR (birleşim).
     test / qa / sandbox / deneme (+ önekler) ve Ayarlar exclude_sent_exempt_tags
     etiketleri «önceden gönderilmiş» filtresinden muaf.
+    exclude_previously_sent ayrıca diğer kampanyalarda bekleyen (in-flight)
+    alıcıları da dışlar — sıradaki kampanya aynı kişiyi kapmasın.
     """
     clauses = [
         "unsubscribed = 0",
         "NOT EXISTS (SELECT 1 FROM mail_suppressions s WHERE s.email = LOWER(mail_contacts.email))",
     ]
     params = []
+    if tenant_id:
+        clauses.append("tenant_id = ?")
+        params.append(int(tenant_id))
     tags = _parse_tag_filter_list(tag_filter)
     if tags:
         clause, tparams = _tag_match_any_clause(tags)
         clauses.append(clause)
         params.extend(tparams)
     if exclude_previously_sent:
+        in_flight = _in_flight_recipient_sql()
+        sent_sql = "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
+        # Hem geçmiş gönderim hem başka kampanyada bekleyen alıcı
+        pool_block = f"(({sent_sql}) AND ({in_flight}))"
         exempt_tags = [t for t in tags if _tag_is_exclude_sent_exempt(t, custom_exempt)]
         non_exempt_tags = [t for t in tags if not _tag_is_exclude_sent_exempt(t, custom_exempt)]
         if not tags:
-            # Etiketsiz sorgu (nadir) — klasik filtre
-            clauses.append(
-                "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
-            )
+            clauses.append(pool_block)
         elif not non_exempt_tags:
             # Sadece test/muaf etiketler — filtre yok
             pass
         elif not exempt_tags:
-            clauses.append(
-                "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
-            )
+            clauses.append(pool_block)
         else:
-            # Karışık: muaf etiketi olanlar geçer; diğerleri daha önce gönderildiyse elenir
+            # Karışık: muaf etiketi olanlar geçer; diğerleri elenir
             ex_clause, ex_params = _tag_match_any_clause(exempt_tags)
-            clauses.append(
-                f"(({ex_clause}) OR NOT EXISTS ("
-                f"SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id))"
-            )
+            clauses.append(f"(({ex_clause}) OR {pool_block})")
             params.extend(ex_params)
     if only_verified:
         # SMTP ile valid + (SMTP kapalıyken) mx_ok kabul
@@ -1049,6 +1064,7 @@ def _campaign_selection_where(
 
 def _count_tag_campaign_match(
     conn, tag, *, exclude_previously_sent=False, only_verified=False, custom_exempt=None,
+    tenant_id=None,
 ):
     """Tek etiket için kampanya filtreleriyle eşleşen kontak sayısı.
 
@@ -1060,13 +1076,13 @@ def _count_tag_campaign_match(
     if custom_exempt is None:
         custom_exempt = _load_exclude_sent_exempt_custom(conn)
     # Ek filtre yoksa registry hızlı; unsub/suppression farkı için approx=True
-    if not exclude_previously_sent and not only_verified:
+    if not exclude_previously_sent and not only_verified and not tenant_id:
         n = _registry_tag_count(conn, tag)
         if n is not None:
             return int(n), True
     where_sql, params = _campaign_selection_where(
         tag, exclude_previously_sent, only_verified=only_verified,
-        custom_exempt=custom_exempt,
+        custom_exempt=custom_exempt, tenant_id=tenant_id,
     )
     try:
         n = int(scalar(
@@ -1082,7 +1098,7 @@ def _count_tag_campaign_match(
 
 def _tag_breakdown_for_campaign(
     conn, tags, *, exclude_previously_sent=False, only_verified=False, limit=25,
-    custom_exempt=None,
+    custom_exempt=None, tenant_id=None,
 ):
     """Seçilen etiketler için etiket başına sayı.
 
@@ -1096,7 +1112,7 @@ def _tag_breakdown_for_campaign(
     out = []
     # Filtreliyse bile breakdown için önce registry (UI donmasın);
     # birleşim toplamı select-preview'da ayrı exact COUNT ile gelir.
-    use_exact = bool(exclude_previously_sent or only_verified) and len(tags) <= 3
+    use_exact = bool(exclude_previously_sent or only_verified or tenant_id) and len(tags) <= 3
     for tag in tags:
         if use_exact:
             count, approx = _count_tag_campaign_match(
@@ -1104,6 +1120,7 @@ def _tag_breakdown_for_campaign(
                 exclude_previously_sent=exclude_previously_sent,
                 only_verified=only_verified,
                 custom_exempt=custom_exempt,
+                tenant_id=tenant_id,
             )
         else:
             n = _registry_tag_count(conn, tag)
@@ -1113,6 +1130,7 @@ def _tag_breakdown_for_campaign(
                     exclude_previously_sent=False,
                     only_verified=False,
                     custom_exempt=custom_exempt,
+                    tenant_id=tenant_id,
                 )
             else:
                 count, approx = int(n), True
@@ -1207,6 +1225,7 @@ def _insert_campaign_recipient_ids(conn, campaign_id, contact_ids, now):
 
 def _filter_sendable_contact_ids(
     conn, ids, *, exclude_previously_sent=False, only_verified=False, custom_exempt=None,
+    tenant_id=None,
 ):
     """Verilen ID listesini unsub/suppression/(opsiyonel) verify filtrelerinden geçir."""
     from database import _table_columns
@@ -1228,6 +1247,9 @@ def _filter_sendable_contact_ids(
             "unsubscribed = 0",
         ]
         params = list(chunk)
+        if tenant_id:
+            clauses.append("tenant_id = ?")
+            params.append(int(tenant_id))
         # suppression tablosu yoksa transaction öldürmesin
         try:
             from database import uses_postgres
@@ -1252,9 +1274,10 @@ def _filter_sendable_contact_ids(
             pass
         if exclude_previously_sent:
             ex_sql, ex_params = _contact_has_exclude_exempt_tag_sql(custom_exempt)
+            in_flight = _in_flight_recipient_sql()
             clauses.append(
-                f"(NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id) "
-                f"OR {ex_sql})"
+                f"((NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id) "
+                f"AND ({in_flight})) OR {ex_sql})"
             )
             params.extend(ex_params)
         if only_verified and has_verify:
@@ -1335,7 +1358,7 @@ def _ensure_contacts_from_emails(conn, emails, now):
 
 def _attach_campaign_recipients(
     conn, campaign_id, *, tag_filter, max_recipients, exclude_previously_sent, now,
-    only_verified=False, contact_ids=None, emails=None,
+    only_verified=False, contact_ids=None, emails=None, tenant_id=None,
 ):
     """Etiket / seçili ID / elle e-posta ile kampanya alıcılarını ekler.
 
@@ -1374,7 +1397,7 @@ def _attach_campaign_recipients(
             return []
         where_sql, params = _campaign_selection_where(
             tag_list, exclude_previously_sent, only_verified=only_verified,
-            custom_exempt=custom_exempt,
+            custom_exempt=custom_exempt, tenant_id=tenant_id,
         )
         sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
         return [r["id"] for r in fetchall(conn, sql, tuple(params))]
@@ -1387,6 +1410,7 @@ def _attach_campaign_recipients(
             exclude_previously_sent=exclude_previously_sent,
             only_verified=only_verified,
             custom_exempt=custom_exempt,
+            tenant_id=tenant_id,
         ))
 
     tags = _parse_tag_filter_list(tag_filter)
@@ -2396,7 +2420,19 @@ def create_mailing_click_blueprint():
                                 (now, row["send_id"]),
                             )
                         if row["contact_id"]:
-                            _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
+                            opened = False
+                            if row.get("send_id"):
+                                srow = fetchone(
+                                    conn,
+                                    "SELECT opened_at FROM mail_sends WHERE id = ?",
+                                    (row["send_id"],),
+                                )
+                                opened = bool(srow and srow.get("opened_at"))
+                            try:
+                                from mail_ops import tag_click_outcome
+                                tag_click_outcome(conn, row["contact_id"], opened=opened, now=now)
+                            except Exception:
+                                _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
                     elif signed.get("c"):
                         try:
                             _tag_contact(conn, int(signed["c"]), "mail_tiklayan", now)
@@ -2438,7 +2474,19 @@ def create_mailing_click_blueprint():
                     (now, row["send_id"]),
                 )
             if row["contact_id"]:
-                _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
+                opened = False
+                if row.get("send_id"):
+                    srow = fetchone(
+                        conn,
+                        "SELECT opened_at FROM mail_sends WHERE id = ?",
+                        (row["send_id"],),
+                    )
+                    opened = bool(srow and srow.get("opened_at"))
+                try:
+                    from mail_ops import tag_click_outcome
+                    tag_click_outcome(conn, row["contact_id"], opened=opened, now=now)
+                except Exception:
+                    _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
             conn.commit()
         return redirect(dest, code=302)
 
@@ -2729,6 +2777,12 @@ def create_mailing_blueprint(permission_required):
                 conn.commit()
             except Exception as ten_exc:
                 print(f"⚠️  mail tenant schema: {ten_exc}")
+            try:
+                from mail_account_quota import ensure_quota_defaults
+                ensure_quota_defaults(conn)
+                conn.commit()
+            except Exception as q_exc:
+                print(f"⚠️  account quota defaults: {q_exc}")
             try:
                 from mail_template_wipe import ensure_templates_wiped_once
                 wiped = ensure_templates_wiped_once(conn)
@@ -3647,8 +3701,19 @@ def create_mailing_blueprint(permission_required):
         except (TypeError, ValueError):
             return jsonify({"error": "contact_ids geçersiz."}), 400
         scope = "selected" if contact_ids else ("filter" if tag_filter else "all")
+        _tid = None
         try:
-            job_id = start_scrub_job(tag_filter=tag_filter, contact_ids=contact_ids, scope=scope)
+            from mail_tenant import current_tenant_id
+            _tid = current_tenant_id()
+        except Exception:
+            _tid = None
+        try:
+            job_id = start_scrub_job(
+                tag_filter=tag_filter,
+                contact_ids=contact_ids,
+                scope=scope,
+                tenant_id=_tid,
+            )
         except RuntimeError as exc:
             return jsonify({"error": str(exc)}), 409
         except Exception as exc:
@@ -4143,7 +4208,20 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_TPL)
     def list_templates():
         with closing(get_db()) as conn:
-            rows = _rows(fetchall(conn, "SELECT * FROM mail_templates ORDER BY id DESC"))
+            _tid = None
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+            except Exception:
+                _tid = None
+            if _tid:
+                rows = _rows(fetchall(
+                    conn,
+                    "SELECT * FROM mail_templates WHERE tenant_id = ? ORDER BY id DESC",
+                    (int(_tid),),
+                ))
+            else:
+                rows = _rows(fetchall(conn, "SELECT * FROM mail_templates ORDER BY id DESC"))
         return jsonify({"templates": rows})
 
     @bp.route("/templates/reseed", methods=["POST"])
@@ -4266,21 +4344,48 @@ def create_mailing_blueprint(permission_required):
         if not html_body.strip() and text_body.strip():
             html_body = _plain_to_html(text_body)
         with closing(get_db()) as conn:
-            tid = insert_returning_id(
-                conn,
-                """
-                INSERT INTO mail_templates (name, subject, html_body, text_body, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    name,
-                    (data.get("subject") or "").strip(),
-                    html_body,
-                    text_body,
-                    now,
-                    now,
-                ),
-            )
+            from database import _table_columns
+            _tid = None
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+            except Exception:
+                _tid = None
+            tpl_cols = _table_columns(conn, "mail_templates") or set()
+            if _tid and "tenant_id" in tpl_cols:
+                tid = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_templates
+                    (name, subject, html_body, text_body, created_at, updated_at, tenant_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        name,
+                        (data.get("subject") or "").strip(),
+                        html_body,
+                        text_body,
+                        now,
+                        now,
+                        int(_tid),
+                    ),
+                )
+            else:
+                tid = insert_returning_id(
+                    conn,
+                    """
+                    INSERT INTO mail_templates (name, subject, html_body, text_body, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        name,
+                        (data.get("subject") or "").strip(),
+                        html_body,
+                        text_body,
+                        now,
+                        now,
+                    ),
+                )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_templates WHERE id = ?", (tid,))
         return jsonify({"template": _row(row)}), 201
@@ -4294,6 +4399,13 @@ def create_mailing_blueprint(permission_required):
             row = fetchone(conn, "SELECT * FROM mail_templates WHERE id = ?", (template_id,))
             if not row:
                 return jsonify({"error": "Şablon bulunamadı."}), 404
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and row.get("tenant_id") and int(row["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu şablon başka firmaya ait."}), 403
+            except Exception:
+                pass
             text_body = data.get("text_body") if "text_body" in data else row["text_body"] or ""
             html_body = data.get("html_body") if "html_body" in data else row["html_body"] or ""
             # Basit yazı kaydı: html boşsa veya sync_html istenirse üret
@@ -4557,14 +4669,27 @@ def create_mailing_blueprint(permission_required):
                 only_verified = bool(scrub_cfg.get("scrub_campaign_only_valid"))
             else:
                 only_verified = bool(only_verified)
+            _tid = None
+            try:
+                from mail_tenant import current_tenant_id as _ctid
+                _tid = _ctid()
+            except Exception:
+                _tid = None
             if not fetchone(conn, "SELECT id FROM mail_templates WHERE id = ?", (template_id,)):
                 return jsonify({"error": "Şablon bulunamadı."}), 404
+            if _tid:
+                tpl_own = fetchone(
+                    conn,
+                    "SELECT id, tenant_id FROM mail_templates WHERE id = ?",
+                    (template_id,),
+                )
+                if tpl_own and tpl_own.get("tenant_id") and int(tpl_own["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Şablon başka firmaya ait."}), 403
             if not fetchone(conn, "SELECT id FROM mail_domains WHERE id = ?", (domain_id,)):
                 return jsonify({"error": "Domain bulunamadı."}), 404
             # Managed send: tenant sadece tahsisli domain kullanır
             try:
-                from mail_tenant import assert_tenant_domain, current_tenant_id, tenant_send_allowed
-                _tid = current_tenant_id()
+                from mail_tenant import assert_tenant_domain, tenant_send_allowed
                 if _tid:
                     assert_tenant_domain(conn, int(domain_id), int(_tid))
                     ok_send, send_err = tenant_send_allowed(conn, int(_tid))
@@ -4583,12 +4708,6 @@ def create_mailing_blueprint(permission_required):
                     notes_extra = f"[{recipient_mode}] {notes_extra}"
                 else:
                     notes_extra = f"[{recipient_mode}]"
-            _tid = None
-            try:
-                from mail_tenant import current_tenant_id as _ctid
-                _tid = _ctid()
-            except Exception:
-                _tid = None
             from database import _table_columns, migrate_mail_campaigns_pro
 
             # Mikromail DB'de pro kolonlar eksik kalmış olabilir — insert öncesi garanti et
@@ -4662,6 +4781,7 @@ def create_mailing_blueprint(permission_required):
                     exclude_previously_sent=exclude_sent, now=now, only_verified=only_verified,
                     contact_ids=attach_ids,
                     emails=emails if recipient_mode == "manual" else None,
+                    tenant_id=_tid,
                 )
             except Exception as attach_exc:
                 print(f"⚠️  campaign attach: {attach_exc}")
@@ -4688,6 +4808,7 @@ def create_mailing_blueprint(permission_required):
                     conn, tag_filter,
                     exclude_previously_sent=exclude_sent,
                     only_verified=only_verified,
+                    tenant_id=_tid,
                 )
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (cid,))
@@ -4744,6 +4865,12 @@ def create_mailing_blueprint(permission_required):
             approx = True
             mixed_selected = 0
             custom_exempt = _load_exclude_sent_exempt_custom(conn)
+            _tid = None
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+            except Exception:
+                _tid = None
             if recipient_mode == "manual":
                 total = len(emails)
                 approx = False
@@ -4753,6 +4880,7 @@ def create_mailing_blueprint(permission_required):
                     exclude_previously_sent=exclude_sent,
                     only_verified=only_verified,
                     custom_exempt=custom_exempt,
+                    tenant_id=_tid,
                 )
                 total = len(filtered)
                 approx = False
@@ -4765,11 +4893,12 @@ def create_mailing_blueprint(permission_required):
                         exclude_previously_sent=exclude_sent,
                         only_verified=only_verified,
                         custom_exempt=custom_exempt,
+                        tenant_id=_tid,
                     )
                     mixed_selected = len(filtered)
                 where_sql, params = _campaign_selection_where(
                     tag_filter, exclude_sent, only_verified=only_verified,
-                    custom_exempt=custom_exempt,
+                    custom_exempt=custom_exempt, tenant_id=_tid,
                 )
                 if tags_list and filtered:
                     ph = ",".join(["?"] * len(filtered))
@@ -4785,7 +4914,7 @@ def create_mailing_blueprint(permission_required):
                         approx = True
                 elif tags_list:
                     total = None
-                    if len(tags_list) == 1 and not exclude_sent and not only_verified:
+                    if len(tags_list) == 1 and not exclude_sent and not only_verified and not _tid:
                         total = _registry_tag_count(conn, tags_list[0])
                     if total is None:
                         try:
@@ -4820,6 +4949,7 @@ def create_mailing_blueprint(permission_required):
                         exclude_previously_sent=exclude_sent,
                         only_verified=only_verified,
                         custom_exempt=custom_exempt,
+                        tenant_id=_tid,
                     )
         will_attach = min(total, max_recipients) if max_recipients else total
         exempt_selected = [
@@ -5351,6 +5481,17 @@ def create_mailing_blueprint(permission_required):
                 """,
                 (f"{kind}: {reason}", email),
             )
+            try:
+                from mail_ops import tag_send_outcome
+                crow = fetchone(
+                    conn,
+                    "SELECT id FROM mail_contacts WHERE LOWER(email) = ? ORDER BY id DESC LIMIT 1",
+                    (email,),
+                )
+                if crow and crow.get("id"):
+                    tag_send_outcome(conn, crow["id"], "bounced", iso(utcnow()))
+            except Exception:
+                pass
             audit(conn, "webhook", kind, email)
             # Metrik spike → domain auto-pause
             try:

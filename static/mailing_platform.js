@@ -1043,7 +1043,7 @@
         api("/api/platform/account-quota", {
           method: "PATCH",
           body: {
-            limit: Number(document.getElementById("mm-aq-limit").value) || 50000,
+            limit: Number(document.getElementById("mm-aq-limit").value) || 20000,
             tz: (document.getElementById("mm-aq-tz").value || "UTC").trim()
           }
         }).then(function (res) {

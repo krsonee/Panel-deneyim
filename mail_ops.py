@@ -301,7 +301,11 @@ def apply_unsubscribe(conn, token):
 
 def record_open(conn, send_id):
     now = iso(utcnow())
-    row = fetchone(conn, "SELECT id, opened_at, contact_id FROM mail_sends WHERE id = ?", (int(send_id),))
+    row = fetchone(
+        conn,
+        "SELECT id, opened_at, clicked_at, contact_id FROM mail_sends WHERE id = ?",
+        (int(send_id),),
+    )
     if not row:
         return False
     if not row.get("opened_at"):
@@ -309,10 +313,45 @@ def record_open(conn, send_id):
         if row.get("contact_id"):
             try:
                 from mailing_routes import _tag_contact
-                _tag_contact(conn, row["contact_id"], "mail_acan", now)
+                cid = row["contact_id"]
+                _tag_contact(conn, cid, "mail_acan", now)
+                # Açıp tıklayan havuzu — daha önce tıklamışsa
+                if row.get("clicked_at"):
+                    _tag_contact(conn, cid, "mail_tiklayan", now)
+                    _tag_contact(conn, cid, "mail_acan_tiklayan", now)
             except Exception:
                 pass
     return True
+
+
+def tag_send_outcome(conn, contact_id, status, now=None):
+    """Gönderim sonucu otomatik etiket havuzları."""
+    if not contact_id:
+        return
+    now = now or iso(utcnow())
+    try:
+        from mailing_routes import _tag_contact
+        st = (status or "").strip().lower()
+        if st in ("sent", "simulated", "queued"):
+            _tag_contact(conn, contact_id, "mail_gonderilen", now)
+        elif st in ("failed", "bounced", "error"):
+            _tag_contact(conn, contact_id, "mail_hata", now)
+    except Exception:
+        pass
+
+
+def tag_click_outcome(conn, contact_id, *, opened=False, now=None):
+    if not contact_id:
+        return
+    now = now or iso(utcnow())
+    try:
+        from mailing_routes import _tag_contact
+        _tag_contact(conn, contact_id, "mail_tiklayan", now)
+        if opened:
+            _tag_contact(conn, contact_id, "mail_acan", now)
+            _tag_contact(conn, contact_id, "mail_acan_tiklayan", now)
+    except Exception:
+        pass
 
 
 def inject_ops_footer(conn, body, *, send_id, contact_id=None, email="", as_html=True):

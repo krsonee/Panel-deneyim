@@ -418,6 +418,11 @@ def deliver_mail(
             """,
             (msg_id, now, send_id),
         )
+        try:
+            from mail_ops import tag_send_outcome
+            tag_send_outcome(conn, contact_id, "simulated", now)
+        except Exception:
+            pass
         return send_id, "simulated", ""
 
     host = (get_mail_setting(conn, "smtp_host", "") or "").strip()
@@ -430,6 +435,11 @@ def deliver_mail(
             "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?",
             ("SMTP host tanımlı değil (Ayarlar → Gönderim sağlayıcı).", send_id),
         )
+        try:
+            from mail_ops import tag_send_outcome
+            tag_send_outcome(conn, contact_id, "failed", now)
+        except Exception:
+            pass
         return send_id, "failed", "SMTP host tanımlı değil"
 
     from_email, from_name = _domain_from(conn, domain_id)
@@ -477,6 +487,11 @@ def deliver_mail(
             f"SMTP şifresi set et → Platform → bu domain Düzenle → şifreyi kaydet."
         )
         execute(conn, "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?", (err, send_id))
+        try:
+            from mail_ops import tag_send_outcome
+            tag_send_outcome(conn, contact_id, "failed", now)
+        except Exception:
+            pass
         return send_id, "failed", err
     else:
         user = from_email_l or settings_user
@@ -489,6 +504,11 @@ def deliver_mail(
             "DirectMail SMTP şifresini kaydet (her domain ayrı)."
         )
         execute(conn, "UPDATE mail_sends SET status = 'failed', error = ? WHERE id = ?", (err, send_id))
+        try:
+            from mail_ops import tag_send_outcome
+            tag_send_outcome(conn, contact_id, "failed", now)
+        except Exception:
+            pass
         return send_id, "failed", err
 
     extra = list_unsubscribe_headers(unsub_http) if unsub_http else None
@@ -537,6 +557,11 @@ def deliver_mail(
                 """,
                 (msg_id or "", now, send_id),
             )
+            try:
+                from mail_ops import tag_send_outcome
+                tag_send_outcome(conn, contact_id, "sent", now)
+            except Exception:
+                pass
             return send_id, "sent", ""
         except Exception as exc:
             last_err = str(exc).strip()[:400] or "SMTP gönderim hatası"
@@ -555,4 +580,9 @@ def deliver_mail(
         """,
         (err, send_id),
     )
+    try:
+        from mail_ops import tag_send_outcome
+        tag_send_outcome(conn, contact_id, "failed", now)
+    except Exception:
+        pass
     return send_id, "failed", err

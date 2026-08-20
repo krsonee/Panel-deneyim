@@ -543,6 +543,13 @@ def _process_scrub_job(job_id: int):
         })
         tag_filter = (_row_get(job, "tag_filter") or "").strip()
         resume_after = int(_row_get(job, "last_contact_id") or 0)
+        job_tenant_id = None
+        try:
+            raw_tid = _row_get(job, "tenant_id")
+            if raw_tid not in (None, "", 0, "0"):
+                job_tenant_id = int(raw_tid)
+        except Exception:
+            job_tenant_id = None
         processed = int(_row_get(job, "processed") or 0)
         counts = {
             "valid": int(_row_get(job, "valid_count") or 0),
@@ -567,10 +574,15 @@ def _process_scrub_job(job_id: int):
             try:
                 tag_sql, tag_params = _scrub_tag_match_sql(tag_filter)
                 if tag_sql:
+                    t_clause = "unsubscribed = 0 AND " + tag_sql
+                    t_params = list(tag_params)
+                    if job_tenant_id:
+                        t_clause += " AND tenant_id = ?"
+                        t_params.append(int(job_tenant_id))
                     total = int(scalar(
                         conn,
-                        f"SELECT COUNT(*) FROM mail_contacts WHERE unsubscribed = 0 AND {tag_sql}",
-                        tag_params,
+                        f"SELECT COUNT(*) FROM mail_contacts WHERE {t_clause}",
+                        tuple(t_params),
                     ) or 0)
                 else:
                     total = 0
@@ -582,7 +594,13 @@ def _process_scrub_job(job_id: int):
             # Exact COUNT(*) 200k+ satırda dakikalar sürebilir → UI 0'da kalır.
             # Postgres istatistiği veya hızlı üst sınır; iş bitince gerçek total yazılır.
             try:
-                if uses_postgres():
+                if job_tenant_id:
+                    total = int(scalar(
+                        conn,
+                        "SELECT COUNT(*) FROM mail_contacts WHERE unsubscribed = 0 AND tenant_id = ?",
+                        (int(job_tenant_id),),
+                    ) or 0)
+                elif uses_postgres():
                     est = scalar(
                         conn,
                         """
@@ -592,7 +610,7 @@ def _process_scrub_job(job_id: int):
                         """,
                     )
                     total = max(0, int(est or 0))
-                if not total:
+                if not total and not job_tenant_id:
                     total = int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts WHERE unsubscribed = 0") or 0)
             except Exception:
                 with suppress(Exception):
@@ -635,6 +653,9 @@ def _process_scrub_job(job_id: int):
             with closing(get_db()) as conn:
                 clauses = ["unsubscribed = 0", "id > ?"]
                 params = [cursor]
+                if job_tenant_id:
+                    clauses.append("tenant_id = ?")
+                    params.append(int(job_tenant_id))
                 tag_sql, tag_params = _scrub_tag_match_sql(tag_filter)
                 if tag_sql:
                     clauses.append(tag_sql)
@@ -854,7 +875,7 @@ def _cancel_stale_scrub_jobs(conn, *, older_seconds: int = 180) -> int:
     return n
 
 
-def start_scrub_job(*, tag_filter="", contact_ids=None, scope="filter") -> int:
+def start_scrub_job(*, tag_filter="", contact_ids=None, scope="filter", tenant_id=None) -> int:
     now = iso(utcnow())
     ids = list(contact_ids or [])
     ids_json = json.dumps([int(x) for x in ids], ensure_ascii=False)
@@ -863,28 +884,50 @@ def start_scrub_job(*, tag_filter="", contact_ids=None, scope="filter") -> int:
         ensure_mail_scrub_schema(conn)
         _cancel_stale_scrub_jobs(conn, older_seconds=120)
         conn.commit()
-        # Aynı anda tek aktif iş
-        active = scalar(
-            conn,
-            "SELECT COUNT(*) FROM mail_scrub_jobs WHERE status IN ('pending', 'running', 'cancelling')",
-        ) or 0
+        # Aynı anda tek aktif iş (tenant bazlı)
+        active_sql = "SELECT COUNT(*) FROM mail_scrub_jobs WHERE status IN ('pending', 'running', 'cancelling')"
+        active_params = ()
+        cols = set()
+        try:
+            from database import _table_columns
+            cols = _table_columns(conn, "mail_scrub_jobs") or set()
+        except Exception:
+            cols = set()
+        if tenant_id and "tenant_id" in cols:
+            active_sql += " AND tenant_id = ?"
+            active_params = (int(tenant_id),)
+        active = scalar(conn, active_sql, active_params) or 0
         if int(active) > 0:
             raise RuntimeError(
                 "Zaten devam eden bir liste temizliği var. "
                 "İptal’e bas veya 2 dk bekle (takılı işler otomatik temizlenir)."
             )
-        job_id = insert_returning_id(
-            conn,
-            """
-            INSERT INTO mail_scrub_jobs
-            (status, scope, tag_filter, contact_ids_json, total, processed,
-             valid_count, invalid_count, unknown_count, catch_all_count,
-             disposable_count, role_count, suppressed_count, skipped_count,
-             error, last_contact_id, created_at, updated_at)
-            VALUES ('pending', ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, ?, ?)
-            """,
-            (scope or "filter", tag_filter, ids_json, now, now),
-        )
+        if tenant_id and "tenant_id" in cols:
+            job_id = insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_scrub_jobs
+                (status, scope, tag_filter, contact_ids_json, total, processed,
+                 valid_count, invalid_count, unknown_count, catch_all_count,
+                 disposable_count, role_count, suppressed_count, skipped_count,
+                 error, last_contact_id, created_at, updated_at, tenant_id)
+                VALUES ('pending', ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, ?, ?, ?)
+                """,
+                (scope or "filter", tag_filter, ids_json, now, now, int(tenant_id)),
+            )
+        else:
+            job_id = insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_scrub_jobs
+                (status, scope, tag_filter, contact_ids_json, total, processed,
+                 valid_count, invalid_count, unknown_count, catch_all_count,
+                 disposable_count, role_count, suppressed_count, skipped_count,
+                 error, last_contact_id, created_at, updated_at)
+                VALUES ('pending', ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, ?, ?)
+                """,
+                (scope or "filter", tag_filter, ids_json, now, now),
+            )
         conn.commit()
     # Web process'te hemen başlat (external worker olsa bile).
     # Worker reclaim sadece web düşerse / thread ölürse devreye girer.

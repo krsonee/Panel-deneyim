@@ -693,12 +693,15 @@
             <label class="mm-switch">
               <input type="checkbox" id="mail-camp-exclude-sent" checked>
               <span class="mm-switch-track"></span>
-              <span>Önceden mail atılmışları hariç tut</span>
+              <span>Önceden / kuyruktaki alıcıları hariç tut</span>
             </label>
             <p class="hint" style="margin:0;flex-basis:100%;">
+              Daha önce gönderilenler + başka kampanyada bekleyen (zamanlanmış / kuyruk / gönderiliyor) alıcılar havuzdan düşer.
               Muaf test etiketleri: <code>tolgatest</code>, <code>test</code>, <code>qa</code>, <code>sandbox</code>, <code>deneme</code>
               veya bunlarla başlayan / içinde <code>tolgatest</code> geçen isimler —
-              «önceden gönderilmiş» filtresi bu etiketlere uygulanmaz (her zaman gönderilir).
+              bu filtreye takılmaz (her zaman gönderilir).
+              Otomatik havuz etiketleri: <code>mail_gonderilen</code>, <code>mail_acan</code>,
+              <code>mail_tiklayan</code>, <code>mail_acan_tiklayan</code>, <code>mail_hata</code>.
             </p>
             <label class="mm-switch">
               <input type="checkbox" id="mail-camp-only-verified">

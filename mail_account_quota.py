@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover
 
 SETTING_LIMIT = "alibaba_daily_quota_limit"
 SETTING_TZ = "alibaba_daily_quota_tz"
-DEFAULT_LIMIT = 50000
+DEFAULT_LIMIT = 20000
 # DirectMail SG / global hesaplarda günlük reset genelde UTC gece yarısı
 DEFAULT_TZ = "UTC"
 
@@ -59,6 +59,16 @@ def set_quota_tz(conn, tz_name: str) -> str:
             raise ValueError(f"Geçersiz timezone: {name}") from exc
     upsert_mail_setting(conn, SETTING_TZ, name)
     return name
+
+
+def ensure_quota_defaults(conn) -> None:
+    """Eski 50k varsayılanını / boş ayarı 20k’ya çeker (bir kez)."""
+    raw = (get_mail_setting(conn, SETTING_LIMIT, "") or "").strip()
+    if not raw or raw in ("50000", "5000"):
+        set_quota_limit(conn, DEFAULT_LIMIT)
+    tz_raw = (get_mail_setting(conn, SETTING_TZ, "") or "").strip()
+    if not tz_raw:
+        set_quota_tz(conn, DEFAULT_TZ)
 
 
 def _day_window(conn) -> tuple[str, str, datetime, str]:
