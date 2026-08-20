@@ -180,9 +180,10 @@
       "</div>";
   }
 
-  function mmHealthGauge(score) {
+  function mmHealthGauge(score, note) {
     var n = Math.max(0, Math.min(100, Number(score) || 0));
-    return '<span class="mm-gauge-wrap"><span class="mm-gauge" style="--p:' + n + '"></span>' +
+    var title = note ? (' title="' + esc(note) + '"') : "";
+    return '<span class="mm-gauge-wrap"' + title + '><span class="mm-gauge" style="--p:' + n + '"></span>' +
       "<span>" + esc(n) + "</span></span>";
   }
 
@@ -475,13 +476,16 @@
       }
       function domainActions(d) {
         var hasAlloc = (d.allocations || []).length > 0;
+        var isPaused = d.warm_status === "paused" || d.warm_status === "burned";
         return '<td class="mm-actions-cell">' +
           mmIconBtn("mm-edit-domain", "Domain düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
           mmIconBtn("mm-alloc", hasAlloc ? "Tahsis değiştir / kaldır" : "Firmaya tahsis et", "alloc", 'data-id="' + esc(d.id) + '"') +
           (hasAlloc
             ? mmIconBtn("mm-dealloc-all btn-danger", "Tüm tahsisleri kaldır", "unlink", 'data-id="' + esc(d.id) + '"')
             : "") +
-          mmIconBtn("mm-warm", "Isınmaya al", "warm", 'data-id="' + esc(d.id) + '"') +
+          (isPaused
+            ? mmIconBtn("mm-unpause-domain btn-primary", "Pause'u geri al (health sıfırlanır)", "play", 'data-id="' + esc(d.id) + '"')
+            : mmIconBtn("mm-warm", "Isınmaya al", "warm", 'data-id="' + esc(d.id) + '"')) +
           "</td>";
       }
       tbody.innerHTML = rows.map(function (d) {
@@ -505,7 +509,7 @@
           "<td>" + fromAddr + smtpTag + "</td>" +
           "<td>" + mmWarmProgress(d) + "</td>" +
           "<td>" + esc(d.daily_cap) + "/g · " + esc(d.hourly_cap) + "/s</td>" +
-          "<td>" + mmHealthGauge(d.health_score) + "</td>" +
+          "<td>" + mmHealthGauge(d.health_score, d.health_note) + "</td>" +
           "<td>" + alloc + "</td>" +
           domainActions(d) +
           "</tr>";
@@ -514,16 +518,23 @@
       var wbody = document.getElementById("mm-warmup-table");
       if (wbody) {
         wbody.innerHTML = rows.map(function (d) {
+          var isPaused = d.warm_status === "paused" || d.warm_status === "burned";
           return "<tr>" +
             "<td>" + esc(d.domain) + "</td>" +
-            "<td>" + mmStatusBadge(d.warm_status || "cold") + "</td>" +
+            "<td>" + mmStatusBadge(d.warm_status || "cold") +
+              (isPaused && d.health_note
+                ? ' <span class="mm-tip" tabindex="0" data-tip="' + esc(d.health_note) + '">?</span>'
+                : "") +
+              "</td>" +
             "<td>" + mmWarmProgress(d) + "</td>" +
-            "<td>" + mmHealthGauge(d.health_score) + "</td>" +
+            "<td>" + mmHealthGauge(d.health_score, d.health_note) + "</td>" +
             "<td>" + esc(d.daily_cap) + "/gün</td>" +
             '<td class="mm-actions-cell">' +
             mmIconBtn("mm-edit-domain", "Domain düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
             mmIconBtn("mm-alloc", "Firmaya tahsis et", "alloc", 'data-id="' + esc(d.id) + '"') +
-            mmIconBtn("mm-warm", "Isınmaya al", "warm", 'data-id="' + esc(d.id) + '"') +
+            (isPaused
+              ? mmIconBtn("mm-unpause-domain btn-primary", "Pause'u geri al (health sıfırlanır)", "play", 'data-id="' + esc(d.id) + '"')
+              : mmIconBtn("mm-warm", "Isınmaya al", "warm", 'data-id="' + esc(d.id) + '"')) +
             "</td></tr>";
         }).join("");
       }
@@ -1315,6 +1326,23 @@
           var did = Number(warm.getAttribute("data-id"));
           api("/api/platform/domains/" + did, { method: "PATCH", body: { warm_status: "warming", warm_day: 0 } })
             .then(refreshDomains);
+          return;
+        }
+        var unpause = e.target.closest(".mm-unpause-domain");
+        if (unpause) {
+          var upId = Number(unpause.getAttribute("data-id"));
+          if (!confirm(
+            "Bu domainin pause'unu geri al? Health 100'e sıfırlanır.\n\n" +
+            "Not: gerçek bounce/fail/complaint sorunu çözülmediyse domain " +
+            "yeniden otomatik pause olabilir."
+          )) return;
+          api("/api/platform/domains/" + upId + "/unpause", { method: "POST" }).then(function (res) {
+            if (!res.ok) {
+              alert((res.data && res.data.error) || "Geri alınamadı");
+              return;
+            }
+            refreshDomains();
+          });
           return;
         }
         var alloc = e.target.closest(".mm-alloc");

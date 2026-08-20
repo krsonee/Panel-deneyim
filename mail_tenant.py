@@ -266,6 +266,10 @@ def ensure_tenant_schema(conn) -> None:
         ("platform_owned", "INTEGER NOT NULL DEFAULT 1"),
         # legacy = mevcut ısınmış havuz; new = yeni eklenen ısıtma domainleri
         ("warmup_cohort", "TEXT NOT NULL DEFAULT 'new'"),
+        # Otomatik pause'un NEDENİ (bounce_rate=... / fail_rate=... vb.) —
+        # önceden sadece server log'una yazılıyordu, panelde hiç görünmüyordu;
+        # bir domain paused olduğunda kullanıcı NEDEN olduğunu göremiyordu.
+        ("health_note", "TEXT NOT NULL DEFAULT ''"),
     ):
         if col not in dom_cols:
             _add_column(conn, "mail_domains", f"{col} {typ}")

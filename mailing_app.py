@@ -701,6 +701,31 @@ def platform_patch_domain(domain_id):
     return jsonify({"ok": True, "domain": _platform_domain_public(updated)})
 
 
+@app.post("/api/platform/domains/<int:domain_id>/unpause")
+@require_superadmin
+def platform_unpause_domain(domain_id):
+    """Otomatik pause'u geri al (health_score sıfırdan 100'e, warm_status='warming').
+
+    Gerçek sorun (bounce/fail/complaint spike) çözülmediyse health tekrar
+    düşer ve domain otomatik olarak yeniden pause olur — bu buton bir
+    "hile" değil, sadece false-positive/çözülmüş durumları geri açmak için.
+    """
+    from mail_domain_health import unpause_domain
+
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT id, domain, warm_status FROM mail_domains WHERE id = ?", (domain_id,))
+        if not row:
+            return jsonify({"error": "Domain yok."}), 404
+        ok = unpause_domain(conn, domain_id)
+        if not ok:
+            conn.commit()
+            return jsonify({"error": f"Zaten paused/burned değil: {row['warm_status']}"}), 400
+        conn.commit()
+        updated = fetchone(conn, "SELECT * FROM mail_domains WHERE id = ?", (domain_id,))
+    _platform_audit("domain_unpause", f"domain_id={domain_id} domain={row['domain']}")
+    return jsonify({"ok": True, "domain": _platform_domain_public(updated)})
+
+
 @app.post("/api/platform/domains/<int:domain_id>/allocate")
 @require_superadmin
 def platform_allocate(domain_id):

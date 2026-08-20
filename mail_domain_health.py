@@ -97,6 +97,7 @@ def pause_domain(conn, domain_id: int, reason: str) -> bool:
     if st in ("paused", "burned"):
         return False
     now = iso(utcnow())
+    note = f"{now} — otomatik pause: {reason}"[:500]
     execute(
         conn,
         """
@@ -105,10 +106,11 @@ def pause_domain(conn, domain_id: int, reason: str) -> bool:
             health_score = CASE
                 WHEN COALESCE(health_score, 100) > 20 THEN 20
                 ELSE COALESCE(health_score, 20)
-            END
+            END,
+            health_note = ?
         WHERE id = ?
         """,
-        (int(domain_id),),
+        (note, int(domain_id)),
     )
     try:
         # Otomatik domain kampanyaları tek domain pause’ta durmaz — worker başka domain’e döner
@@ -136,6 +138,33 @@ def pause_domain(conn, domain_id: int, reason: str) -> bool:
         except Exception:
             pass
     print(f"✉️  AUTO-PAUSE domain #{domain_id} ({row_get(row, 'domain')}): {reason}")
+    return True
+
+
+def unpause_domain(conn, domain_id: int) -> bool:
+    """Manuel superadmin aksiyonu — auto-pause'u geri alır.
+
+    health_score önceden hiçbir yerde 100'e geri yazılmıyordu (bkz. pause_domain);
+    bir domain gerçek sorunu çözüldükten sonra bile sürekli 'paused' + health=20
+    kalıyordu ve panelde geri alacak bir buton yoktu. Bu, warm_day'i (kaldığı
+    yerden devam) ve daily_cap/hourly_cap'i KORUR — sadece durumu ve sağlığı
+    sıfırlar; gerçek sorun düzelmediyse health tekrar düşüp yeniden pause olur.
+    """
+    row = fetchone(conn, "SELECT id, warm_status FROM mail_domains WHERE id = ?", (int(domain_id),))
+    if not row:
+        return False
+    st = (row_get(row, "warm_status") or "").strip().lower()
+    if st not in ("paused", "burned"):
+        return False
+    execute(
+        conn,
+        """
+        UPDATE mail_domains
+        SET warm_status = 'warming', health_score = 100, health_note = ''
+        WHERE id = ?
+        """,
+        (int(domain_id),),
+    )
     return True
 
 
