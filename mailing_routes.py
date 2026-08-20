@@ -953,9 +953,13 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
 
 
 # «Önceden mail atılmışları hariç tut» — bu etiketler / önekler muaf (test QA).
+# «Makro Test» — bu etiketteki kontaklar hariç tut kutusu açık olsa da HER
+# kampanyada mutlaka gönderilir (kullanıcı isteği: domain rotasyon testi için
+# kalıcı test havuzu, checkbox durumundan bağımsız).
 _EXCLUDE_SENT_EXEMPT_EXACT = frozenset({
     "test", "qa", "sandbox", "deneme",
     "tolgatest", "tolga test", "tolga-test", "tolga_test",
+    "makrotest", "makro test", "makro-test", "makro_test",
 })
 _EXCLUDE_SENT_EXEMPT_PREFIXES = (
     "test-", "test_", "test:", "test/", "test ",
@@ -963,9 +967,10 @@ _EXCLUDE_SENT_EXEMPT_PREFIXES = (
     "sandbox-", "sandbox_", "sandbox:", "sandbox/", "sandbox ",
     "deneme-", "deneme_", "deneme:", "deneme/", "deneme ",
     "tolgatest", "tolga test", "tolga-test", "tolga_test", "tolga-",
+    "makrotest", "makro test", "makro-test", "makro_test", "makro-",
 )
 # İsim içinde geçen sabit parçalar (örn. «tolgatest2», «xx-tolgatest»)
-_EXCLUDE_SENT_EXEMPT_CONTAINS = ("tolgatest",)
+_EXCLUDE_SENT_EXEMPT_CONTAINS = ("tolgatest", "makrotest")
 
 
 def _load_exclude_sent_exempt_custom(conn=None):
@@ -1002,27 +1007,29 @@ def _tag_is_exclude_sent_exempt(tag, custom_exempt=None):
 
 
 def _contact_has_exclude_exempt_tag_sql(custom_exempt=None):
-    """Kontak tags alanında muaf etiket var mı? (manuel seçim / karışık kampanya)."""
+    """Kontak tags alanında muaf etiket var mı? (manuel seçim / karışık kampanya).
+
+    Case-insensitive: kontak "Makro Test", "makro test" veya "MAKRO TEST"
+    etiketiyle kaydedilmiş olabilir — hepsi eşleşsin diye LOWER(tags) LIKE
+    LOWER(...) kullanılır (düz _tag_match_clause case-sensitive)."""
     parts = []
     params = []
     seen = set()
     for name in sorted(_EXCLUDE_SENT_EXEMPT_EXACT):
-        clause, tparams = _tag_match_clause(name)
-        parts.append(f"({clause})")
-        params.extend(tparams)
+        parts.append("LOWER(tags) LIKE ? ESCAPE '\\'")
+        params.append(f'%"{_like_literal(name.lower())}"%')
         seen.add(name.lower())
     for name in (custom_exempt or []):
         name = (name or "").strip()
         if not name or name.lower() in seen:
             continue
         seen.add(name.lower())
-        clause, tparams = _tag_match_clause(name)
-        parts.append(f"({clause})")
-        params.extend(tparams)
+        parts.append("LOWER(tags) LIKE ? ESCAPE '\\'")
+        params.append(f'%"{_like_literal(name.lower())}"%')
     for prefix in _EXCLUDE_SENT_EXEMPT_PREFIXES:
         # JSON elemanı önek ile başlar: ..."test-foo"...
-        parts.append("tags LIKE ? ESCAPE '\\'")
-        params.append(f'%"{_like_literal(prefix)}%')
+        parts.append("LOWER(tags) LIKE ? ESCAPE '\\'")
+        params.append(f'%"{_like_literal(prefix.lower())}%')
     for needle in _EXCLUDE_SENT_EXEMPT_CONTAINS:
         # ..."…tolgatest…"… — JSON içinde geçsin yeter
         parts.append("LOWER(tags) LIKE ? ESCAPE '\\'")
