@@ -935,8 +935,15 @@ def _mail_permission_required(*required_perms):
         def wrapped(*args, **kwargs):
             if session.get("mail_is_superadmin"):
                 tid = current_tenant_id()
-                # Tenant seçilmemişse makro'ya düş — kampanya/API takılmasın
-                if tid is None and (request.path or "").startswith("/api/mailing"):
+                is_read = request.method in ("GET", "HEAD", "OPTIONS")
+                # GET'te tid=None BİLİNÇLİ "Tümü" seçimidir (bkz. Aktif tenant
+                # dropdown) — dashboard/rapor/istatistik endpoint'leri bunu tüm
+                # firmaların genel toplamı + firma firma dağılım olarak render
+                # eder. Önceden burada HER superadmin GET'i sessizce makro'ya
+                # zorlanıyordu ve "Tümü" görünümüne hiçbir zaman ulaşılamıyordu.
+                # Yazma (POST/PUT/PATCH/DELETE) işlemleri hâlâ somut bir tenant
+                # gerektirir — kampanya/kontak gibi veriler sahipsiz kalmasın.
+                if tid is None and not is_read and (request.path or "").startswith("/api/mailing"):
                     try:
                         with closing(get_db()) as conn:
                             makro = fetchone(conn, "SELECT id FROM mail_tenants WHERE slug = ?", ("makro",))
@@ -945,7 +952,7 @@ def _mail_permission_required(*required_perms):
                                 session["mail_tenant_id"] = tid
                     except Exception:
                         pass
-                if tid is None and request.method not in ("GET", "HEAD", "OPTIONS"):
+                if tid is None and not is_read:
                     if (request.path or "").startswith("/api/mailing"):
                         return jsonify({
                             "error": "Süper admin: üstten Aktif tenant seç (örn. makro), sonra tekrar dene."

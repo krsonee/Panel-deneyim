@@ -413,22 +413,28 @@ def _process_campaign(campaign_id):
             if is_auto:
                 picked = pick_tenant_domain(conn, int(tid) if tid else None)
                 if not picked:
+                    # Kalıcı dur (status='stopped') — 'paused' değil: kullanıcı isteği
+                    # üzerine kapasite dolunca kampanya TEKRAR BAŞLATILAMAZ / ertesi
+                    # gün otomatik devam etmez. Alıcılar zaten 'pending' — bu status
+                    # _in_flight_recipient_sql'in blok listesinde OLMADIĞI için
+                    # kontaklar otomatik olarak yeni bir kampanya için havuza döner.
                     execute(
                         conn,
                         """
                         UPDATE mail_campaigns
-                        SET status = 'paused', updated_at = ?, error = ?
+                        SET status = 'stopped', updated_at = ?, error = ?
                         WHERE id = ?
                         """,
                         (
                             now,
                             "Otomatik domain: bugün gönderilebilir domain yok "
-                            "(cap dolu / paused).",
+                            "(cap dolu / paused) — kampanya durduruldu, tekrar "
+                            "başlatılamaz. Gönderilmeyen kişiler havuza geri döndü.",
                             campaign_id,
                         ),
                     )
                     conn.commit()
-                    print(f"✉️  campaign #{campaign_id} paused — auto domain pool empty")
+                    print(f"✉️  campaign #{campaign_id} stopped — auto domain pool empty at start")
                     return
                 camp["domain_id"] = picked
                 try:
@@ -559,21 +565,24 @@ def _process_campaign(campaign_id):
                     )
                     if not batch_dom:
                         reconcile_campaign_counts(conn, campaign_id)
+                        # 'stopped' — kalıcı, tekrar başlatılamaz. Bkz. yukarıdaki not.
                         execute(
                             conn,
                             """
                             UPDATE mail_campaigns
-                            SET status = 'paused', updated_at = ?, error = ?
+                            SET status = 'stopped', updated_at = ?, error = ?
                             WHERE id = ?
                             """,
                             (
                                 iso(utcnow()),
-                                "Otomatik domain: günlük kapasite bitti — yarın devam.",
+                                "Otomatik domain: günlük kapasite bitti — kampanya "
+                                "durduruldu, tekrar başlatılamaz. Gönderilmeyen "
+                                "kişiler havuza geri döndü.",
                                 campaign_id,
                             ),
                         )
                         conn.commit()
-                        print(f"✉️  campaign #{campaign_id} paused — auto pool empty mid-run")
+                        print(f"✉️  campaign #{campaign_id} stopped — auto pool empty mid-run")
                         return
                     if int(camp.get("domain_id") or 0) != int(batch_dom):
                         camp["domain_id"] = batch_dom
@@ -680,28 +689,33 @@ def _process_campaign(campaign_id):
                                 exclude_ids=exclude_doms,
                             )
                             if not send_domain_id:
-                                # Havuz boş — alıcıyı pending’e geri al, kampanyayı duraklat
+                                # Havuz boş — alıcıyı pending'e geri al (havuza döner),
+                                # kampanyayı KALICI durdur (status='stopped', tekrar
+                                # başlatılamaz / ertesi gün devam etmez).
                                 execute(
                                     conn,
                                     "UPDATE mail_campaign_recipients SET status = 'pending' WHERE id = ?",
                                     (rec["recipient_id"],),
                                 )
+                                reconcile_campaign_counts(conn, campaign_id)
                                 execute(
                                     conn,
                                     """
                                     UPDATE mail_campaigns
-                                    SET status = 'paused', updated_at = ?, error = ?
+                                    SET status = 'stopped', updated_at = ?, error = ?
                                     WHERE id = ?
                                     """,
                                     (
                                         iso(utcnow()),
-                                        "Otomatik domain: günlük kapasite bitti — yarın devam.",
+                                        "Otomatik domain: günlük kapasite bitti — kampanya "
+                                        "durduruldu, tekrar başlatılamaz. Gönderilmeyen "
+                                        "kişiler havuza geri döndü.",
                                         campaign_id,
                                     ),
                                 )
                                 conn.commit()
                                 print(
-                                    f"✉️  campaign #{campaign_id} paused mid-recipient — auto pool empty"
+                                    f"✉️  campaign #{campaign_id} stopped mid-recipient — auto pool empty"
                                 )
                                 return
                             send_id, status, err = deliver_mail(

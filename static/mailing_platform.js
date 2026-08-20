@@ -205,25 +205,16 @@
     if (!sel) return;
     var cur = sel.value || (window.MAIL_TENANT_ID ? String(window.MAIL_TENANT_ID) : "");
     var active = (tenants || []).filter(function (t) { return t.status !== "deleted"; });
-    sel.innerHTML = '<option value="">— seç / impersonate —</option>' +
+    // Boş değer = "Tümü" — TÜM firmaların genel toplamı + firma firma kartlar
+    // (bkz. mailLoadDashboard). Önceden burada otomatik "makro" seçiliyordu ve
+    // "Tümü" görünümüne hiç geçilemiyordu; artık bilinçli/sticky bir seçim.
+    sel.innerHTML = '<option value="">— Tümü (genel) —</option>' +
       active.map(function (t) {
         return '<option value="' + esc(String(t.id)) + '">' +
           esc(t.slug) + " — " + esc(t.name) + " (" + esc(t.status) + ")</option>";
       }).join("");
-    if (cur) sel.value = cur;
-    if (!sel.value && active.length) {
-      var makro = active.find(function (t) { return t.slug === "makro"; }) || active[0];
-      if (makro) {
-        sel.value = String(makro.id);
-        api("/api/mail-auth/select-tenant", { method: "POST", body: { tenant_id: Number(makro.id) } })
-          .then(function () {
-            window.MAIL_TENANT_ID = Number(makro.id);
-            syncOperatorBadge(makro.id);
-          });
-      }
-    } else {
-      syncOperatorBadge(sel.value || window.MAIL_TENANT_ID);
-    }
+    sel.value = cur || "";
+    syncOperatorBadge(sel.value || window.MAIL_TENANT_ID);
   }
 
   function fillAllocTenantSelect(tenants) {
@@ -1109,6 +1100,13 @@
           api("/api/mail-auth/select-tenant", { method: "POST", body: { tenant_id: tid } }).then(function () {
             window.MAIL_TENANT_ID = tid;
             syncOperatorBadge(tid);
+            var hint = document.getElementById("mm-tenant-hint");
+            if (hint) {
+              var t = (window._mmTenantsCache || []).find(function (x) { return Number(x.id) === tid; });
+              hint.textContent = tid
+                ? ("Tenant #" + tid + (t ? " (" + t.slug + ")" : "") + " seçildi")
+                : "Tümü (genel) — tüm firmaların rakamları";
+            }
             if (window.MakroMailing && window.MakroMailing.refreshImports) {
               window.MakroMailing.refreshImports();
             } else if (window.MakroMailing && typeof window.MakroMailing.onShow === "function") {

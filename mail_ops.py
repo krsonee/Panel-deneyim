@@ -490,13 +490,21 @@ def _smartico_by_contact(conn):
         return {}
 
 
-def campaign_analytics(conn, campaign_id=None):
-    """Kampanya bazlı open/click/fail + Smartico (register/yatırım/FTD/çekim/bonus)."""
+def campaign_analytics(conn, campaign_id=None, tenant_id=None):
+    """Kampanya bazlı open/click/fail + Smartico (register/yatırım/FTD/çekim/bonus).
+
+    tenant_id verilirse SADECE o tenant'ın kampanyaları döner — önceden bu
+    filtre yoktu ve bir firma başka firmaların kampanya raporlarını görebiliyordu.
+    """
     params = []
-    where = ""
+    clauses = []
     if campaign_id:
-        where = "WHERE c.id = ?"
+        clauses.append("c.id = ?")
         params.append(int(campaign_id))
+    if tenant_id:
+        clauses.append("c.tenant_id = ?")
+        params.append(int(tenant_id))
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     rows = fetchall(
         conn,
         f"""

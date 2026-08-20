@@ -125,6 +125,7 @@
     else if (s === "pending" || s === "queued" || s === "scheduled" || s === "draft" || s === "warming" || s === "sending" || s === "skipped") cls = "mm-badge-warn";
     else if (s === "error" || s === "failed" || s === "burned" || s === "suspended" || s === "invalid" || s === "unconfigured" || s === "cancelled") cls = "mm-badge-danger";
     else if (s === "paused") cls = "mm-badge-muted";
+    else if (s.indexOf("durduruldu") === 0) cls = "mm-badge-warn";
     return '<span class="mm-badge ' + cls + '">' + esc(label) + "</span>";
   }
 
@@ -1271,7 +1272,39 @@
       renderDomainChips(mailDomains);
       updateProviderPill(res.data.provider_mode);
       mailShowDeliveryAlert(res.data.delivery_health, res.data.provider_mode);
+      renderTenantBreakdown(res.data.by_tenant);
     });
+  }
+
+  // "Tümü" seçiliyken (superadmin, aktif tenant = boş) yukarıdaki KPI'lar
+  // platform toplamıdır; bu kart bloğu her firmanın kendi rakamlarını
+  // ayrı ayrı gösterir. Belirli bir firma seçiliyse gizli kalır.
+  function renderTenantBreakdown(byTenant) {
+    var card = document.getElementById("mail-tenant-breakdown-card");
+    var box = document.getElementById("mail-tenant-breakdown");
+    if (!card || !box) return;
+    if (!byTenant || !byTenant.length) {
+      card.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    card.hidden = false;
+    box.innerHTML = byTenant.map(function (t) {
+      var k = t.kpi || {};
+      var sr = (t.success_rate && t.success_rate.last_7d) || {};
+      var rateTxt = sr.rate != null ? ("%" + sr.rate) : "—";
+      var statusBadge = t.status && t.status !== "active"
+        ? (' <span class="mm-badge mm-badge-warn" style="font-size:0.62rem;">' + esc(t.status) + "</span>")
+        : "";
+      return '<div class="mm-tenant-card">' +
+        '<div class="mm-tenant-card-name">' + esc(t.name || t.slug || ("#" + t.tenant_id)) + statusBadge + '</div>' +
+        '<div class="mm-tenant-card-row"><span>Kontak</span><strong>' + fmtNum(k.contacts) + '</strong></div>' +
+        '<div class="mm-tenant-card-row"><span>Kampanya</span><strong>' + fmtNum(k.campaigns) + '</strong></div>' +
+        '<div class="mm-tenant-card-row"><span>Gerçek SMTP</span><strong>' + fmtNum(k.sends_real) + '</strong></div>' +
+        '<div class="mm-tenant-card-row"><span>Hata</span><strong>' + fmtNum(k.sends_failed) + '</strong></div>' +
+        '<div class="mm-tenant-card-row"><span>Başarı oranı (7g)</span><strong>' + rateTxt + '</strong></div>' +
+        '</div>';
+    }).join("");
   }
 
   function updateProviderPill(mode) {
@@ -2989,6 +3022,7 @@
       cancelling: "İptal…",
       cancelled: "İptal",
       paused: "Duraklatıldı",
+      stopped: "Durduruldu (kapasite doldu)",
       error: "Hata"
     };
     return map[status] || status || "—";
@@ -3006,6 +3040,12 @@
       done = total;
     }
     var pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : (c.status === "done" ? 100 : 0);
+    // 'stopped' — kapasite dolunca kalıcı durmuş; kalan pending, ayrı raporlanan
+    // "gönderilmeden havuza döndü" sayısıdır (yeni bir kampanyada tekrar seçilebilir).
+    var poolReturnedLine = (c.status === "stopped" && pending > 0)
+      ? ('<div class="muted" style="font-size:0.68rem;color:var(--amber,#f59e0b);">' +
+          fmtNum(pending) + " kişi gönderilmeden havuza geri döndü</div>")
+      : "";
     return '<div class="mail-camp-progress">' +
       '<div class="mail-camp-progress-bar"><div class="mail-camp-progress-fill" style="width:' + pct + '%"></div></div>' +
       '<div class="mail-camp-progress-meta">' + fmtNum(sent) + " gönderildi" +
@@ -3013,7 +3053,7 @@
         (skipped ? (" · " + fmtNum(skipped) + " atlandı") : "") +
         (total ? (" / " + fmtNum(total)) : "") +
         " · %" + pct +
-      "</div></div>";
+      "</div>" + poolReturnedLine + "</div>";
   }
 
   function mailEnsureCampPoll(rows) {
@@ -3067,11 +3107,15 @@
           actions += mmIconBtn("mail-cancel-camp btn-danger", "İptal", "trash", 'data-id="' + c.id + '"') + " ";
         }
         if (c.status === "done" || c.status === "error" || c.status === "cancelled" || c.status === "paused") {
+          // 'stopped' burada YOK — retry-failed campaign'i 'queued' yaparak TÜM
+          // pending'i (kapasite dolunca havuza dönenler dahil) tekrar işler; bu
+          // "tekrar başlatılamaz" kuralını bozar. Yeni kampanya kurup havuzdan
+          // (hiç gönderilmeyen / etiketli) seçim yapmaları gerekir.
           if (Number(c.failed_count || 0) > 0) {
             actions += mmIconBtn("mail-retry-camp", "Fail retry", "retry", 'data-id="' + c.id + '"') + " ";
           }
         }
-        if (c.status === "draft" || c.status === "scheduled" || c.status === "done" || c.status === "cancelled" || c.status === "error") {
+        if (c.status === "draft" || c.status === "scheduled" || c.status === "done" || c.status === "cancelled" || c.status === "error" || c.status === "stopped") {
           actions += mmIconBtn("mail-del-camp btn-danger", "Sil", "trash", 'data-id="' + c.id + '"');
         }
         var tagLine = esc(c.tag_filter || "tümü");

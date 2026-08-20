@@ -786,7 +786,7 @@ def _untag_contact(conn, contact_id, tag, now=None):
         )
 
 
-def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=None, match_tag="", limit=None):
+def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=None, match_tag="", limit=None, tenant_id=None):
     """Toplu etiket işlemleri — eşleşen ID'leri belleğe yüklemez, parça parça işler.
 
     action:
@@ -794,6 +794,11 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
       - remove: from_tag kaldır
       - move: from_tag kaldır + to_tag ekle
     Kapsam: contact_ids listesi veya match_tag ile eşleşen kontaklar.
+
+    tenant_id verilirse (tenant login veya superadmin impersonate) hem
+    contact_ids hem match_tag taraması SADECE o tenant'ın kontaklarıyla
+    sınırlanır — önceden bu filtre yoktu, bir firma başka firmanın
+    kontaklarını toplu etiketleyip/segmentleyebiliyordu (veri sızıntısı).
     """
     action = (action or "").strip().lower()
     from_tag = (from_tag or "").strip()
@@ -858,17 +863,21 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
         updated += 1
         return True
 
+    tid_clause = " AND tenant_id = ?" if tenant_id else ""
+    tid_param = (int(tenant_id),) if tenant_id else ()
+
     if ids:
-        matched = len(ids)
+        matched = 0
         for i in range(0, len(ids), batch_size):
             part = ids[i : i + batch_size]
             placeholders = ",".join(["?"] * len(part))
             rows = fetchall(
                 conn,
-                f"SELECT id, tags FROM mail_contacts WHERE id IN ({placeholders})",
-                tuple(part),
-            )
-            for row in rows or []:
+                f"SELECT id, tags FROM mail_contacts WHERE id IN ({placeholders}){tid_clause}",
+                tuple(part) + tid_param,
+            ) or []
+            matched += len(rows)
+            for row in rows:
                 _apply_row(row)
             try:
                 conn.commit()
@@ -877,6 +886,8 @@ def _bulk_retag_contacts(conn, *, action, from_tag="", to_tag="", contact_ids=No
     else:
         # match_tag: tüm id'leri çekme — etiket kalktıkça eşleşenler azalır
         clause, params = _tag_match_clause(match_tag)
+        clause = clause + tid_clause
+        params = tuple(params) + tid_param
         for _ in range(max_batches):
             take = batch_size
             if hard_limit is not None:
@@ -1988,17 +1999,24 @@ def _ensure_tag(conn, name, now=None):
     return False
 
 
-def _tag_usage_count(conn, name, *, live=True):
-    """Etiket kullanım sayısı. live=True: gerçek COUNT (LIKE); False: yalnız registry."""
+def _tag_usage_count(conn, name, *, live=True, tenant_id=None):
+    """Etiket kullanım sayısı. live=True: gerçek COUNT (LIKE); False: yalnız registry.
+
+    tenant_id verilirse SADECE o tenant'ın kontakları sayılır (registry global
+    olduğu için tenant_id verildiğinde live=False cache'i kullanılamaz).
+    """
     name = (name or "").strip()
     if not name:
         return 0
-    if not live:
+    if not live and not tenant_id:
         cached = _registry_tag_count(conn, name)
         if cached is not None:
             return int(cached)
         return 0
     clause, params = _tag_match_clause(name)
+    if tenant_id:
+        clause += " AND tenant_id = ?"
+        params = tuple(params) + (int(tenant_id),)
     try:
         return int(scalar(conn, f"SELECT COUNT(*) FROM mail_contacts WHERE {clause}", params) or 0)
     except Exception:
@@ -2064,10 +2082,27 @@ _STATS_CACHE = {"ts": 0.0, "payload": None}
 _STATS_LOCK = threading.Lock()
 _TAG_COUNT_CACHE = {"ts": 0.0, "rows": None}
 _TAG_SYNC_STATE = {"ts": 0.0, "running": False, "last_added": 0}
+# Tenant-scoped varyantlar — global cache'ler tüm platform içindir, tenant login
+# olduğunda / superadmin impersonate ettiğinde bunlar kullanılır (bkz. veri
+# sızıntısı fix'i: contacts/stats artık tenant_id'ye göre ayrı cache'lenir).
+_TENANT_STATS_CACHE = {}
+_TENANT_TAG_COUNT_CACHE = {}
 
 
-def _approx_contact_total(conn):
-    """Kontak toplamı — önce canlı istatistik, 0 ise exact COUNT (import sonrası kartlar boş kalmasın)."""
+def _approx_contact_total(conn, tenant_id=None):
+    """Kontak toplamı — önce canlı istatistik, 0 ise exact COUNT (import sonrası kartlar boş kalmasın).
+
+    tenant_id verilirse yaklaşık pg istatistiği (tüm tablo) atlanır — SADECE o
+    tenant'ın satırları exact COUNT ile sayılır (önceden tenant_id hiç
+    kullanılmıyordu, her firma platform genelindeki kontak sayısını görüyordu).
+    """
+    if tenant_id:
+        try:
+            return int(scalar(
+                conn, "SELECT COUNT(*) FROM mail_contacts WHERE tenant_id = ?", (int(tenant_id),)
+            ) or 0), False
+        except Exception:
+            return 0, False
     if uses_postgres():
         for sql in (
             "SELECT n_live_tup::bigint FROM pg_stat_user_tables WHERE relname = 'mail_contacts'",
@@ -2090,8 +2125,13 @@ def _approx_contact_total(conn):
         return 0, False
 
 
-def _approx_mailed_contacts(conn, total):
-    """En az 1 mail gitmiş kontak sayısı — timeout ile; olmazsa None."""
+def _approx_mailed_contacts(conn, total, tenant_id=None):
+    """En az 1 mail gitmiş kontak sayısı — timeout ile; olmazsa None.
+
+    tenant_id verilirse SADECE o tenant'ın gönderimleri sayılır.
+    """
+    tid_clause = " AND tenant_id = ?" if tenant_id else ""
+    tid_params = (int(tenant_id),) if tenant_id else ()
     try:
         if uses_postgres():
             try:
@@ -2100,12 +2140,14 @@ def _approx_mailed_contacts(conn, total):
                 pass
             n = scalar(
                 conn,
-                "SELECT COUNT(DISTINCT contact_id) FROM mail_sends WHERE contact_id IS NOT NULL",
+                f"SELECT COUNT(DISTINCT contact_id) FROM mail_sends WHERE contact_id IS NOT NULL{tid_clause}",
+                tid_params,
             )
             return int(n or 0)
         return int(scalar(
             conn,
-            "SELECT COUNT(DISTINCT contact_id) FROM mail_sends WHERE contact_id IS NOT NULL",
+            f"SELECT COUNT(DISTINCT contact_id) FROM mail_sends WHERE contact_id IS NOT NULL{tid_clause}",
+            tid_params,
         ) or 0)
     except Exception:
         return None
@@ -2312,9 +2354,35 @@ def _recount_all_tags(conn, *, limit=300):
     return out
 
 
-def _contact_tag_counts(conn, *, force=False, live=False):
-    """Etiket sayıları — registry; live=True ise önce recount."""
+def _contact_tag_counts(conn, *, force=False, live=False, tenant_id=None):
+    """Etiket sayıları — registry; live=True ise önce recount.
+
+    tenant_id verilirse registry (global, tüm tenant'lar paylaşır) kullanılmaz —
+    her etiket için SADECE o tenant'ın kontakları canlı COUNT ile sayılır ve
+    ayrı bir tenant-scoped cache'te tutulur (önceden tenant filtresi yoktu,
+    bir firma tüm platformun etiket dağılımını görebiliyordu).
+    """
     import time
+
+    if tenant_id:
+        tkey = int(tenant_id)
+        now = time.time()
+        cached = _TENANT_TAG_COUNT_CACHE.get(tkey)
+        if not force and not live and cached and (now - cached["ts"]) < 180:
+            return cached["rows"]
+        names = [
+            (r["name"] or "").strip()
+            for r in (fetchall(conn, "SELECT name FROM mail_contact_tags ORDER BY name ASC") or [])
+            if (r["name"] or "").strip()
+        ]
+        rows = []
+        for name in names:
+            n = _tag_usage_count(conn, name, live=True, tenant_id=tkey)
+            if n:
+                rows.append({"name": name, "count": int(n)})
+        rows.sort(key=lambda item: (-item["count"], item["name"].lower()))
+        _TENANT_TAG_COUNT_CACHE[tkey] = {"ts": now, "rows": rows}
+        return rows
 
     if live:
         _recount_all_tags(conn)
@@ -2350,6 +2418,8 @@ def _invalidate_mail_stats_cache():
     _STATS_CACHE["payload"] = None
     _TAG_COUNT_CACHE["ts"] = 0.0
     _TAG_COUNT_CACHE["rows"] = None
+    _TENANT_STATS_CACHE.clear()
+    _TENANT_TAG_COUNT_CACHE.clear()
 
 
 _TAG_RECOUNT_STATE = {"running": False, "queued": set()}
@@ -2701,8 +2771,12 @@ def _purge_all_mail_contacts_once():
         return -1
 
 
-def _delivery_health_snapshot(conn):
-    """Gerçek SMTP mi, stub/simüle mi — son 7 gün özeti (şifre yazmaz)."""
+def _delivery_health_snapshot(conn, tenant_id=None):
+    """Gerçek SMTP mi, stub/simüle mi — son 7 gün özeti (şifre yazmaz).
+
+    tenant_id verilirse SADECE o tenant'ın gönderimleri sayılır — önceden bu
+    filtre yoktu, her firma platformun toplam success-rate'ini görebiliyordu.
+    """
     provider = (get_mail_setting(conn, "provider_mode", "stub") or "stub").strip().lower()
     smtp_host = (get_mail_setting(conn, "smtp_host", "") or "").strip()
     smtp_user = (get_mail_setting(conn, "smtp_user", "") or "").strip()
@@ -2718,6 +2792,9 @@ def _delivery_health_snapshot(conn):
             params.append(status)
         if stub_msgid:
             clauses.append("provider_msg_id LIKE 'stub-%'")
+        if tenant_id:
+            clauses.append("tenant_id = ?")
+            params.append(int(tenant_id))
         try:
             return int(scalar(
                 conn,
@@ -2745,6 +2822,9 @@ def _delivery_health_snapshot(conn):
         if status:
             clauses.append("status = ?")
             params.append(status)
+        if tenant_id:
+            clauses.append("tenant_id = ?")
+            params.append(int(tenant_id))
         try:
             return int(scalar(
                 conn,
@@ -2784,13 +2864,19 @@ def _delivery_health_snapshot(conn):
     }
     samples = []
     try:
+        # to_email göstermek başka firmanın alıcı adreslerini sızdırabilir —
+        # tenant_id verilmişse SADECE o firmanın gönderim örnekleri gelir.
+        sample_where = "WHERE tenant_id = ?" if tenant_id else ""
+        sample_params = (int(tenant_id),) if tenant_id else ()
         rows = fetchall(
             conn,
-            """
+            f"""
             SELECT id, to_email, status, provider_msg_id, error, created_at, channel
             FROM mail_sends
+            {sample_where}
             ORDER BY id DESC LIMIT 12
             """,
+            sample_params,
         ) or []
         for r in rows:
             d = dict(r) if not isinstance(r, dict) else r
@@ -2814,14 +2900,31 @@ def _delivery_health_snapshot(conn):
     domains_pw = 0
     domains_total = 0
     try:
-        domains_total = int(scalar(conn, "SELECT COUNT(*) FROM mail_domains") or 0)
-        domains_pw = int(scalar(
-            conn,
-            """
-            SELECT COUNT(*) FROM mail_domains
-            WHERE (COALESCE(smtp_password,'') != '' OR COALESCE(smtp_password_enc,'') != '')
-            """,
-        ) or 0)
+        if tenant_id:
+            domains_total = int(scalar(
+                conn,
+                "SELECT COUNT(*) FROM mail_domain_allocations WHERE tenant_id = ?",
+                (int(tenant_id),),
+            ) or 0)
+            domains_pw = int(scalar(
+                conn,
+                """
+                SELECT COUNT(*) FROM mail_domains d
+                JOIN mail_domain_allocations a ON a.domain_id = d.id
+                WHERE a.tenant_id = ?
+                  AND (COALESCE(d.smtp_password,'') != '' OR COALESCE(d.smtp_password_enc,'') != '')
+                """,
+                (int(tenant_id),),
+            ) or 0)
+        else:
+            domains_total = int(scalar(conn, "SELECT COUNT(*) FROM mail_domains") or 0)
+            domains_pw = int(scalar(
+                conn,
+                """
+                SELECT COUNT(*) FROM mail_domains
+                WHERE (COALESCE(smtp_password,'') != '' OR COALESCE(smtp_password_enc,'') != '')
+                """,
+            ) or 0)
     except Exception:
         pass
 
@@ -3031,63 +3134,128 @@ def create_mailing_blueprint(permission_required):
     # ── Dashboard ──────────────────────────────────────────────
     # (delivery health helper is module-level — see _delivery_health_snapshot)
 
+    def _dashboard_kpi_for_tenant(conn, tid):
+        """Bir tenant (None = platform genel) için dashboard KPI seti.
+
+        tid verilirse TÜM sorgular tenant_id ile filtrelenir — önceden hiçbir
+        filtre yoktu, her firma platformun toplam rakamlarını görüyordu.
+        """
+        tid_clause = " WHERE tenant_id = ?" if tid else ""
+        tid_and = " AND tenant_id = ?" if tid else ""
+        tid_params = (int(tid),) if tid else ()
+
+        contacts, contacts_approx = _approx_contact_total(conn, tenant_id=tid)
+        active_contacts = contacts
+        templates = scalar(conn, f"SELECT COUNT(*) FROM mail_templates{tid_clause}", tid_params) or 0
+        campaigns = scalar(conn, f"SELECT COUNT(*) FROM mail_campaigns{tid_clause}", tid_params) or 0
+        if tid:
+            sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE tenant_id = ?", tid_params) or 0
+        elif uses_postgres():
+            try:
+                sends_total = int(scalar(
+                    conn,
+                    "SELECT reltuples::bigint FROM pg_class WHERE relname = 'mail_sends'",
+                ) or 0)
+                if sends_total < 0:
+                    sends_total = 0
+            except Exception:
+                sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends") or 0
+        else:
+            sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends") or 0
+        sends_real = int(scalar(
+            conn, f"SELECT COUNT(*) FROM mail_sends WHERE status = 'sent'{tid_and}", tid_params
+        ) or 0)
+        sends_simulated = int(scalar(
+            conn, f"SELECT COUNT(*) FROM mail_sends WHERE status = 'simulated'{tid_and}", tid_params
+        ) or 0)
+        sends_sim = sends_real + sends_simulated
+        sends_queued = int(scalar(
+            conn, f"SELECT COUNT(*) FROM mail_sends WHERE status = 'queued'{tid_and}", tid_params
+        ) or 0)
+        sends_failed = int(scalar(
+            conn, f"SELECT COUNT(*) FROM mail_sends WHERE status = 'failed'{tid_and}", tid_params
+        ) or 0)
+        delivery_health = _delivery_health_snapshot(conn, tenant_id=tid)
+        opened = int(scalar(
+            conn, f"SELECT COUNT(*) FROM mail_sends WHERE opened_at IS NOT NULL{tid_and}", tid_params
+        ) or 0)
+        clicked = int(scalar(
+            conn, f"SELECT COUNT(*) FROM mail_sends WHERE clicked_at IS NOT NULL{tid_and}", tid_params
+        ) or 0)
+        try:
+            if tid:
+                link_clicked = int(scalar(
+                    conn,
+                    """
+                    SELECT COUNT(DISTINCT cl.send_id) FROM mail_click_links cl
+                    JOIN mail_sends s ON s.id = cl.send_id
+                    WHERE cl.send_id IS NOT NULL AND COALESCE(cl.click_count, 0) > 0
+                      AND s.tenant_id = ?
+                    """,
+                    tid_params,
+                ) or 0)
+            else:
+                link_clicked = int(scalar(
+                    conn,
+                    """
+                    SELECT COUNT(DISTINCT send_id) FROM mail_click_links
+                    WHERE send_id IS NOT NULL AND COALESCE(click_count, 0) > 0
+                    """,
+                ) or 0)
+            if link_clicked > clicked:
+                clicked = link_clicked
+        except Exception:
+            pass
+        ivr_events = scalar(
+            conn, f"SELECT COUNT(*) FROM mail_ivr_events{tid_clause}", tid_params
+        ) or 0
+        try:
+            suppressed = int(scalar(
+                conn, f"SELECT COUNT(*) FROM mail_suppressions{tid_clause}", tid_params
+            ) or 0)
+        except Exception:
+            suppressed = 0
+        return {
+            "contacts": contacts,
+            "contacts_approx": bool(contacts_approx),
+            "active_contacts": active_contacts,
+            "templates": templates,
+            "campaigns": campaigns,
+            "sends_total": sends_total,
+            "sends_delivered": sends_sim,
+            "sends_real": sends_real,
+            "sends_simulated": sends_simulated,
+            "sends_queued": sends_queued,
+            "sends_failed": sends_failed,
+            "opened": opened,
+            "clicked": clicked,
+            "ivr_events": ivr_events,
+            "suppressed": suppressed,
+        }, delivery_health
+
     @bp.route("/dashboard", methods=["GET"])
     @mail_perm(*MAIL_DASH)
     def dashboard():
+        from flask import session as _sess
+        from mail_tenant import current_tenant_id
+
+        _tid = current_tenant_id()
         with closing(get_db()) as conn:
-            # Milyonlarca kontak/sends üzerinde exact COUNT paneli kitler
-            contacts, contacts_approx = _approx_contact_total(conn)
-            active_contacts = contacts  # exact unsubscribed COUNT pahalı — KPI'da approx
-            templates = scalar(conn, "SELECT COUNT(*) FROM mail_templates") or 0
-            campaigns = scalar(conn, "SELECT COUNT(*) FROM mail_campaigns") or 0
-            if uses_postgres():
-                try:
-                    sends_total = int(scalar(
-                        conn,
-                        "SELECT reltuples::bigint FROM pg_class WHERE relname = 'mail_sends'",
-                    ) or 0)
-                    if sends_total < 0:
-                        sends_total = 0
-                except Exception:
-                    sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends") or 0
-            else:
-                sends_total = scalar(conn, "SELECT COUNT(*) FROM mail_sends") or 0
-            sends_real = int(scalar(
-                conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'sent'"
-            ) or 0)
-            sends_simulated = int(scalar(
-                conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'simulated'"
-            ) or 0)
-            sends_sim = sends_real + sends_simulated
-            sends_queued = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'queued'") or 0)
-            sends_failed = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE status = 'failed'") or 0)
-            # Son 7 gün — boş/stub çalışıyor muyuz?
-            delivery_health = _delivery_health_snapshot(conn)
-            opened = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE opened_at IS NOT NULL") or 0)
-            clicked = int(scalar(conn, "SELECT COUNT(*) FROM mail_sends WHERE clicked_at IS NOT NULL") or 0)
+            kpi, delivery_health = _dashboard_kpi_for_tenant(conn, _tid)
             try:
-                link_clicked = int(
-                    scalar(
-                        conn,
-                        """
-                        SELECT COUNT(DISTINCT send_id) FROM mail_click_links
-                        WHERE send_id IS NOT NULL AND COALESCE(click_count, 0) > 0
-                        """,
-                    )
-                    or 0
-                )
-                if link_clicked > clicked:
-                    clicked = link_clicked
-            except Exception:
-                pass
-            ivr_events = scalar(conn, "SELECT COUNT(*) FROM mail_ivr_events") or 0
-            try:
-                from mail_tenant import enrich_domain_public, heal_ready_domains
+                from mail_tenant import enrich_domain_public, heal_ready_domains, list_allocated_domains
 
                 heal_ready_domains(conn)
             except Exception:
                 pass
-            raw_domains = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC") or []
+            # Domainler: tenant seçiliyse SADECE o firmaya atanmış domainler —
+            # önceden filtre yoktu, her firma platformdaki TÜM domainleri
+            # (başka firmalara ait olanlar dahil) görebiliyordu.
+            if _tid:
+                from mail_tenant import list_allocated_domains
+                raw_domains = list_allocated_domains(conn, int(_tid)) or []
+            else:
+                raw_domains = fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC") or []
             try:
                 from mail_tenant import enrich_domain_public
 
@@ -3095,30 +3263,34 @@ def create_mailing_blueprint(permission_required):
             except Exception:
                 domains = _rows(raw_domains)
             provider = get_mail_setting(conn, "provider_mode", "stub")
-            try:
-                suppressed = int(scalar(conn, "SELECT COUNT(*) FROM mail_suppressions") or 0)
-            except Exception:
-                suppressed = 0
             from mail_ops import smartico_dashboard_summary
 
             sc = smartico_dashboard_summary(conn)
+
+            by_tenant = None
+            if not _tid and _sess.get("mail_is_superadmin"):
+                # "Tümü" görünümü — superadmin genel toplamların yanında
+                # firma firma (isim isim) ayrı kartlar da görür.
+                tenants = fetchall(
+                    conn,
+                    "SELECT id, slug, name, status FROM mail_tenants "
+                    "WHERE status != 'deleted' ORDER BY name ASC",
+                ) or []
+                by_tenant = []
+                for t in tenants:
+                    t = _row(t)
+                    t_kpi, t_health = _dashboard_kpi_for_tenant(conn, int(t["id"]))
+                    by_tenant.append({
+                        "tenant_id": t["id"],
+                        "slug": t.get("slug"),
+                        "name": t.get("name"),
+                        "status": t.get("status"),
+                        "kpi": t_kpi,
+                        "success_rate": t_health.get("success_rate"),
+                    })
         return jsonify({
             "kpi": {
-                "contacts": contacts,
-                "contacts_approx": bool(contacts_approx),
-                "active_contacts": active_contacts,
-                "templates": templates,
-                "campaigns": campaigns,
-                "sends_total": sends_total,
-                "sends_delivered": sends_sim,
-                "sends_real": sends_real,
-                "sends_simulated": sends_simulated,
-                "sends_queued": sends_queued,
-                "sends_failed": sends_failed,
-                "opened": opened,
-                "clicked": clicked,
-                "ivr_events": ivr_events,
-                "suppressed": suppressed,
+                **kpi,
                 "sc_register": sc.get("register"),
                 "sc_deposit_total": sc.get("deposit_total"),
                 "sc_ftd_count": sc.get("ftd_count"),
@@ -3131,6 +3303,8 @@ def create_mailing_blueprint(permission_required):
             "domains": domains,
             "provider_mode": provider,
             "delivery_health": delivery_health,
+            "by_tenant": by_tenant,
+            "view_scope": "tenant" if _tid else "all",
             "note": (
                 "SMTP (DirectMail) aktif — domainler gönderime hazır."
                 if (provider or "").strip().lower() == "smtp"
@@ -3142,27 +3316,42 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_DASH, *MAIL_REP)
     def delivery_health():
         """Son gönderimlerin gerçek SMTP mi yoksa stub/simüle mi olduğunu özetler."""
+        from mail_tenant import current_tenant_id
         with closing(get_db()) as conn:
-            snap = _delivery_health_snapshot(conn)
+            snap = _delivery_health_snapshot(conn, tenant_id=current_tenant_id())
         return jsonify(snap)
 
     # ── Contacts / CRM ─────────────────────────────────────────
     @bp.route("/contacts/stats", methods=["GET"])
     @mail_perm(*MAIL_CRM)
     def contact_stats():
-        """CRM özet — hızlı path. ?refresh=1 ile etiket sayıları canlı yenilenir."""
+        """CRM özet — hızlı path. ?refresh=1 ile etiket sayıları canlı yenilenir.
+
+        tenant_id set ise (tenant login veya superadmin impersonate) SADECE o
+        tenant'ın kontakları/gönderimleri/etiketleri sayılır ve ayrı bir
+        tenant-scoped cache kullanılır — önceden bu filtre yoktu, her firma
+        platformun toplam kontak/etiket sayısını görebiliyordu.
+        """
         import time
+        from mail_tenant import current_tenant_id
 
         refresh = (request.args.get("refresh") or "").strip() in ("1", "true", "yes")
         sync_tags = (request.args.get("sync_tags") or "").strip() in ("1", "true", "yes")
+        _tid = current_tenant_id()
         now = time.time()
-        if not refresh and not sync_tags and _STATS_CACHE["payload"] and (now - _STATS_CACHE["ts"]) < 60:
-            # Cache hit — arka plan sync/recount YOK (milyonluk LIKE taramaları paneli kitler)
-            return jsonify(_STATS_CACHE["payload"])
+
+        if _tid:
+            cached = _TENANT_STATS_CACHE.get(int(_tid))
+            if not refresh and not sync_tags and cached and (now - cached["ts"]) < 60:
+                return jsonify(cached["payload"])
+        else:
+            if not refresh and not sync_tags and _STATS_CACHE["payload"] and (now - _STATS_CACHE["ts"]) < 60:
+                # Cache hit — arka plan sync/recount YOK (milyonluk LIKE taramaları paneli kitler)
+                return jsonify(_STATS_CACHE["payload"])
 
         with closing(get_db()) as conn:
-            total, total_approx = _approx_contact_total(conn)
-            mailed = _approx_mailed_contacts(conn, total)
+            total, total_approx = _approx_contact_total(conn, tenant_id=_tid)
+            mailed = _approx_mailed_contacts(conn, total, tenant_id=_tid)
             if mailed is None:
                 mailed = 0
                 never_mailed = total
@@ -3171,20 +3360,22 @@ def create_mailing_blueprint(permission_required):
                 mailed = min(int(mailed), int(total or 0))
                 never_mailed = max(int(total or 0) - mailed, 0)
                 mailed_approx = False
-            if sync_tags:
+            if sync_tags and not _tid:
                 _maybe_sync_missing_tags_async(force=True)
-            by_tag = _contact_tag_counts(conn, live=False)
+            by_tag = _contact_tag_counts(conn, live=False, tenant_id=_tid)
             pending_recount = []
             # Registry 0 kaldıysa (import sonrası) — küçük/orta listelerde canlı say
             need_live = False
-            if by_tag and int(total or 0) > 0:
+            if by_tag and int(total or 0) > 0 and not _tid:
                 zeros = sum(1 for t in by_tag if int(t.get("count") or 0) == 0)
                 if zeros > 0 and int(total or 0) <= 200000:
                     need_live = True
                 if refresh and int(total or 0) <= 500000:
                     need_live = True
             if need_live:
-                by_tag = _contact_tag_counts(conn, force=True, live=True)
+                by_tag = _contact_tag_counts(conn, force=True, live=True, tenant_id=_tid)
+            elif _tid and refresh:
+                by_tag = _contact_tag_counts(conn, force=True, live=False, tenant_id=_tid)
         payload = {
             "total": total,
             "total_approx": bool(total_approx),
@@ -3197,8 +3388,11 @@ def create_mailing_blueprint(permission_required):
             "cached": not refresh,
         }
         with _STATS_LOCK:
-            _STATS_CACHE["ts"] = time.time()
-            _STATS_CACHE["payload"] = payload
+            if _tid:
+                _TENANT_STATS_CACHE[int(_tid)] = {"ts": time.time(), "payload": payload}
+            else:
+                _STATS_CACHE["ts"] = time.time()
+                _STATS_CACHE["payload"] = payload
         return jsonify(payload)
 
     @bp.route("/contacts", methods=["GET"])
@@ -4447,6 +4641,8 @@ def create_mailing_blueprint(permission_required):
         """Toplu etiket ekle / kaldır / taşı (segment kaydırma)."""
         data = request.get_json(silent=True) or {}
         try:
+            from mail_tenant import current_tenant_id
+            _tid = current_tenant_id()
             with closing(get_db()) as conn:
                 result = _bulk_retag_contacts(
                     conn,
@@ -4456,6 +4652,7 @@ def create_mailing_blueprint(permission_required):
                     contact_ids=data.get("contact_ids"),
                     match_tag=data.get("match_tag") or "",
                     limit=data.get("limit"),
+                    tenant_id=_tid,
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -4842,7 +5039,7 @@ def create_mailing_blueprint(permission_required):
                     )
                     total = int(r.get("total_count") or r.get("recipient_count") or 0)
                     if (
-                        r.get("status") in ("done", "cancelled", "error", "paused")
+                        r.get("status") in ("done", "cancelled", "error", "paused", "stopped")
                         and total > 0
                         and processed < total
                         and int(r.get("pending_count") or 0) == 0
@@ -5774,9 +5971,11 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_REP)
     def report_campaigns():
         from mail_ops import campaign_analytics
+        from mail_tenant import current_tenant_id
         cid = request.args.get("campaign_id")
+        _tid = current_tenant_id()
         with closing(get_db()) as conn:
-            rows = campaign_analytics(conn, int(cid) if cid else None)
+            rows = campaign_analytics(conn, int(cid) if cid else None, tenant_id=_tid)
         return jsonify({"campaigns": rows})
 
     @bp.route("/reports/engagement-timeline", methods=["GET"])
@@ -5790,26 +5989,33 @@ def create_mailing_blueprint(permission_required):
         from datetime import datetime, timedelta, timezone
 
         since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        from mail_tenant import current_tenant_id
+        _tid = current_tenant_id()
+        # tenant_id verilmişse (tenant login VEYA superadmin impersonate) SADECE o
+        # firmanın gönderimleri sayılır — önceden filtre yoktu, her firma platform
+        # genelindeki açılma/tıklama grafiğini görebiliyordu.
+        tid_clause = " AND tenant_id = ?" if _tid else ""
+        tid_params = (int(_tid),) if _tid else ()
         with closing(get_db()) as conn:
             opens = fetchall(
                 conn,
-                """
+                f"""
                 SELECT substr(CAST(opened_at AS TEXT), 1, 10) AS d, COUNT(*) AS n
                 FROM mail_sends
-                WHERE opened_at IS NOT NULL AND CAST(opened_at AS TEXT) >= ?
+                WHERE opened_at IS NOT NULL AND CAST(opened_at AS TEXT) >= ?{tid_clause}
                 GROUP BY 1 ORDER BY 1
                 """,
-                (since,),
+                (since,) + tid_params,
             )
             clicks = fetchall(
                 conn,
-                """
+                f"""
                 SELECT substr(CAST(clicked_at AS TEXT), 1, 10) AS d, COUNT(*) AS n
                 FROM mail_sends
-                WHERE clicked_at IS NOT NULL AND CAST(clicked_at AS TEXT) >= ?
+                WHERE clicked_at IS NOT NULL AND CAST(clicked_at AS TEXT) >= ?{tid_clause}
                 GROUP BY 1 ORDER BY 1
                 """,
-                (since,),
+                (since,) + tid_params,
             )
         open_map = {str(r["d"]): int(r["n"] or 0) for r in (opens or [])}
         click_map = {str(r["d"]): int(r["n"] or 0) for r in (clicks or [])}
