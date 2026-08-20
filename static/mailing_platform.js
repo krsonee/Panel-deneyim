@@ -739,7 +739,10 @@
         if (_wuSelected[k]) ids.push(Number(k));
       });
     }
-    return ids.filter(function (n) { return n > 0; }).slice(0, 20);
+    // Önceden 20'ye sessizce kırpılıyordu (bkz. backend MAX_WARMUP_DOMAINS notu) —
+    // 20'den fazla domain seçilince kalanı hiç ısıtma programına girmiyordu ve
+    // kullanıcı bunu fark edemiyordu. Backend'deki gerçek üst sınırla eşleşsin.
+    return ids.filter(function (n) { return n > 0; }).slice(0, 300);
   }
 
   function applyWeeklyBanner(maint) {

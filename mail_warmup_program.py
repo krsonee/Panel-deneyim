@@ -24,6 +24,9 @@ from database import (
 
 SETTING_KEY = "warmup_program_v1"
 TOTAL_DAYS = 30
+# Tek ısıtma programına (bir cohort track'ine) alınabilecek üst sınır — önceden
+# 20'ye SESSİZCE kırpılıyordu (bkz. start_program/patch_program eski hali).
+MAX_WARMUP_DOMAINS = 300
 # Operatör günü: Türkiye gece yarısı (00:00) sonrası yeni checklist
 OP_TZ = ZoneInfo("Europe/Istanbul") if ZoneInfo else timezone.utc
 # Test/ Tolga Test gibi 3–5’lik denemeler «son bulk günü» sayılmasın
@@ -863,7 +866,15 @@ def start_program(conn, domain_ids, notes="", *, cohort: str | None = None) -> d
             ids.append(int(x))
         except (TypeError, ValueError):
             continue
-    ids = ids[:20]
+    # Önceden 20'ye sessizce kırpılıyordu (hiçbir uyarı/hata olmadan) — 20'den
+    # fazla yeni domain birden ısıtmaya alınmak istendiğinde kalanı programa
+    # hiç girmiyor, warm_status/day/cap hiç güncellenmiyordu ve kullanıcı bunu
+    # fark edemiyordu. Gerçek üst sınır MAX_WARMUP_DOMAINS; aşılırsa açık hata.
+    if len(ids) > MAX_WARMUP_DOMAINS:
+        raise ValueError(
+            f"Tek programda en fazla {MAX_WARMUP_DOMAINS} domain olabilir "
+            f"({len(ids)} seçildi) — birden fazla programa böl."
+        )
     if len(ids) < 1:
         raise ValueError("En az 1 domain seç.")
     inferred = _infer_cohort_for_ids(conn, ids)
@@ -945,7 +956,12 @@ def patch_program(conn, data: dict) -> dict:
                 continue
         if ids:
             _infer_cohort_for_ids(conn, ids)  # aynı cohort doğrula
-        tr["domain_ids"] = ids[:20]
+        if len(ids) > MAX_WARMUP_DOMAINS:
+            raise ValueError(
+                f"Tek programda en fazla {MAX_WARMUP_DOMAINS} domain olabilir "
+                f"({len(ids)} seçildi)."
+            )
+        tr["domain_ids"] = ids
     if data.get("pause"):
         tr["active"] = False
     if data.get("resume") and tr.get("started_on") and tr.get("domain_ids"):
