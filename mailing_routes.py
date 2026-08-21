@@ -5961,9 +5961,26 @@ def create_mailing_blueprint(permission_required):
                 pass
             if row["status"] in ("sending", "queued"):
                 return jsonify({"error": "Gönderimdeki kampanya silinemez — önce iptal edin."}), 400
-            execute(conn, "DELETE FROM mail_campaign_recipients WHERE campaign_id = ?", (campaign_id,))
-            execute(conn, "DELETE FROM mail_campaigns WHERE id = ?", (campaign_id,))
-            conn.commit()
+            try:
+                # mail_campaign_recipients.campaign_id NOT NULL FK — bu satırlar
+                # silinmeden kampanya silinemez.
+                execute(conn, "DELETE FROM mail_campaign_recipients WHERE campaign_id = ?", (campaign_id,))
+                # mail_sends / mail_click_links geçmiş gönderim kayıtlarını
+                # (domain sağlığı, raporlar, tıklama istatistikleri) SİLMEDEN
+                # sadece kampanya referansını kopar — aksi halde bu kampanyada
+                # gerçek gönderim varsa (mail_sends satırı varsa) FK ihlaliyle
+                # silme sessizce/500 ile patlıyordu (kullanıcı "silinemiyor"
+                # diye şikayet ediyordu).
+                execute(conn, "UPDATE mail_click_links SET campaign_id = NULL WHERE campaign_id = ?", (campaign_id,))
+                execute(conn, "UPDATE mail_sends SET campaign_id = NULL WHERE campaign_id = ?", (campaign_id,))
+                execute(conn, "DELETE FROM mail_campaigns WHERE id = ?", (campaign_id,))
+                conn.commit()
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                return jsonify({"error": f"Kampanya silinemedi: {exc}"}), 500
         return jsonify({"ok": True})
 
     @bp.route("/campaigns/<int:campaign_id>/queue", methods=["POST"])
@@ -6125,9 +6142,18 @@ def create_mailing_blueprint(permission_required):
                     return jsonify({"error": "Bu kampanya başka firmaya ait."}), 403
             except Exception:
                 pass
-            if camp["status"] not in ("scheduled", "queued", "sending", "cancelling"):
+            # 'paused' (elle veya domain auto-pause ile duraklamış) da iptal
+            # edilebilmeli — önceden burada YOKTU, frontend'de "İptal" butonu
+            # duraklatılmış kampanyalarda görünüyordu ama backend her zaman
+            # "İptal edilemez: paused" ile reddediyordu (sessiz/kafa karıştırıcı
+            # bir kilitlenme — kullanıcı ne cancel ne delete yapabiliyordu).
+            if camp["status"] not in ("scheduled", "queued", "sending", "cancelling", "paused"):
                 return jsonify({"error": f"İptal edilemez: {camp['status']}"}), 400
-            new_status = "cancelled" if camp["status"] == "scheduled" else "cancelling"
+            # scheduled/paused'da aktif bir worker döngüsü yok (paused'da worker
+            # zaten döngüden çıkmış durumda) → direkt 'cancelled'; queued/sending
+            # hâlâ arka planda çalışıyor olabilir → async 'cancelling' (worker bir
+            # sonraki kontrolde durur).
+            new_status = "cancelled" if camp["status"] in ("scheduled", "paused") else "cancelling"
             execute(
                 conn,
                 "UPDATE mail_campaigns SET status = ?, updated_at = ? WHERE id = ?",

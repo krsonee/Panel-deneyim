@@ -3134,7 +3134,11 @@
             actions += mmIconBtn("mail-retry-camp", "Fail retry", "retry", 'data-id="' + c.id + '"') + " ";
           }
         }
-        if (c.status === "draft" || c.status === "scheduled" || c.status === "done" || c.status === "cancelled" || c.status === "error" || c.status === "stopped") {
+        if (c.status === "draft" || c.status === "scheduled" || c.status === "done" || c.status === "cancelled" || c.status === "error" || c.status === "stopped" || c.status === "paused") {
+          // 'paused' burada da VAR — backend (delete_campaign) zaten paused'u
+          // engellemiyordu, ama bu buton hiç gösterilmiyordu; domain
+          // auto-pause ile duraklamış "çöp" kampanyaları silmek için önce
+          // iptal etmeye gerek yok, direkt silinebilsin.
           actions += mmIconBtn("mail-del-camp btn-danger", "Sil", "trash", 'data-id="' + c.id + '"');
         }
         var tagLine = esc(c.tag_filter || "tümü");
@@ -4238,7 +4242,14 @@
       if (delCamp) {
         if (!confirm("Kampanya silinsin mi?")) return;
         mailApi("/api/mailing/campaigns/" + delCamp.getAttribute("data-id"), { method: "DELETE" })
-          .then(function () { mailLoadCampaigns(); });
+          .then(function (res) {
+            if (!res || !res.ok) {
+              mailToast((res && res.data && res.data.error) || "Kampanya silinemedi.");
+              return;
+            }
+            mailToast("Kampanya silindi");
+            mailLoadCampaigns();
+          });
         return;
       }
       var editD = e.target.closest(".mail-edit-domain");
