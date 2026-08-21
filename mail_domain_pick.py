@@ -42,8 +42,12 @@ def ensure_auto_domain_column(conn) -> None:
                 conn,
                 "ALTER TABLE mail_campaigns ADD COLUMN auto_domain INTEGER NOT NULL DEFAULT 0",
             )
+            conn.commit()
         except Exception:
-            pass
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
 
 def domain_sent_today(conn, domain_id: int) -> int:

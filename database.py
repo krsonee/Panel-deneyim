@@ -3256,7 +3256,17 @@ def ensure_mail_click_links_table(conn):
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_click_token ON mail_click_links(token)")
     cols = _table_columns(conn, "mail_click_links")
     if cols and "is_smartico" not in cols:
-        execute(conn, "ALTER TABLE mail_click_links ADD COLUMN is_smartico INTEGER NOT NULL DEFAULT 0")
+        # Bu ALTER'ın try/except'siz olması, başarısız olduğunda (aborted
+        # transaction) alttaki migrate_mail_campaigns_pro çağrısının HİÇ
+        # çalışmamasına yol açabiliyordu (kampanya zamanlama/hız/iptal
+        # kolonları gibi kritik migration'lar atlanırdı) — artık izole.
+        try:
+            execute(conn, "ALTER TABLE mail_click_links ADD COLUMN is_smartico INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
     conn.commit()
     migrate_mail_campaigns_pro(conn)
 
@@ -3373,24 +3383,34 @@ def ensure_mail_import_jobs_table(conn):
             """,
         )
     cols = _table_columns(conn, "mail_import_jobs")
-    if cols and "inserted_count" not in cols:
-        execute(conn, "ALTER TABLE mail_import_jobs ADD COLUMN inserted_count INTEGER NOT NULL DEFAULT 0")
-    if cols and "updated_count" not in cols:
-        execute(conn, "ALTER TABLE mail_import_jobs ADD COLUMN updated_count INTEGER NOT NULL DEFAULT 0")
-    if cols and "tenant_id" not in cols:
+    # ÖNEMLİ: her ALTER kendi try/except/commit'ine sahip olmalı. Eskiden bir
+    # ALTER (örn. tenant_id) sessizce başarısız olursa Postgres transaction'ı
+    # "aborted" durumuna düşüyordu ve rollback yapılmadığı için AYNI conn ile
+    # denenen SONRAKİ ALTER'lar da (rejected_count dahil) "current transaction
+    # is aborted" ile art arda patlıyordu — sonuçta rejected_count kolonu hiç
+    # eklenmiyor, ama hiçbir yerde görünür bir hata da basılmıyordu. Bu yüzden
+    # production'da kontak import'u "column rejected_count does not exist"
+    # ile tamamen kırılmıştı.
+    for col, coldef in (
+        ("inserted_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("updated_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("tenant_id", "INTEGER"),
+        ("rejected_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("rejected_invalid", "INTEGER NOT NULL DEFAULT 0"),
+        ("rejected_disposable", "INTEGER NOT NULL DEFAULT 0"),
+        ("rejected_role", "INTEGER NOT NULL DEFAULT 0"),
+        ("rejected_no_mx", "INTEGER NOT NULL DEFAULT 0"),
+    ):
+        if cols and col in cols:
+            continue
         try:
-            execute(conn, "ALTER TABLE mail_import_jobs ADD COLUMN tenant_id INTEGER")
+            execute(conn, f"ALTER TABLE mail_import_jobs ADD COLUMN {col} {coldef}")
+            conn.commit()
         except Exception:
-            pass
-    # Insert-öncesi hızlı süzgeç (syntax/disposable/role/MX) — reddedilen satır
-    # sayaçları, import sonrası özet toast'ı için (bkz mailing_routes._run_import_job).
-    for col in ("rejected_count", "rejected_invalid", "rejected_disposable", "rejected_role", "rejected_no_mx"):
-        if cols and col not in cols:
             try:
-                execute(conn, f"ALTER TABLE mail_import_jobs ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
+                conn.rollback()
             except Exception:
                 pass
-    conn.commit()
 
 
 def ensure_mail_mx_cache_table(conn):

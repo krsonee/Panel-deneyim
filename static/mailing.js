@@ -4139,7 +4139,14 @@
       if (delC) {
         if (!confirm("Kontak silinsin mi?")) return;
         mailApi("/api/mailing/contacts/" + delC.getAttribute("data-id"), { method: "DELETE" })
-          .then(function () { mailLoadContactStats(); mailLoadContacts(); });
+          .then(function (res) {
+            if (!res || !res.ok) {
+              mailToast((res && res.data && res.data.error) || "Kontak silinemedi.");
+              return;
+            }
+            mailLoadContactStats();
+            mailLoadContacts();
+          });
         return;
       }
       var viewT = e.target.closest(".mail-view-tpl");

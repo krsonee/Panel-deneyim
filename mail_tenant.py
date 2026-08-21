@@ -71,8 +71,18 @@ def _table_columns(conn, table: str) -> set:
 def _add_column(conn, table: str, col_def: str):
     try:
         execute(conn, f"ALTER TABLE {table} ADD COLUMN {col_def}")
+        conn.commit()
     except Exception:
-        pass
+        # ROLLBACK ÇOK ÖNEMLİ: bu helper ensure_tenant_schema içinde onlarca
+        # kolon eklemek için art arda çağrılıyor (mail_domains, mail_tenant_users,
+        # mail_tenants, TENANT_TABLES döngüsü...). Rollback yapılmadan sadece
+        # exception yutulursa Postgres transaction'ı "aborted" kalır ve AYNI
+        # conn ile yapılan SONRAKİ tüm sorgular (default tenant bootstrap dahil)
+        # "current transaction is aborted" ile sessizce arka arkaya patlar.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
 
 def mailing_secret_key() -> bytes:
@@ -251,7 +261,16 @@ def ensure_tenant_schema(conn) -> None:
     for sql in stmts:
         try:
             execute(conn, sql)
+            conn.commit()
         except Exception as exc:
+            # Rollback şart — aksi halde bu CREATE TABLE başarısız olursa
+            # (örn. FK referansı henüz yoksa) transaction "aborted" kalır ve
+            # aşağıdaki TÜM kolon migration'ları + tenant bootstrap sessizce
+            # "current transaction is aborted" ile art arda başarısız olur.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             print(f"⚠️  tenant schema: {exc}")
 
     # Domain pool columns on mail_domains
@@ -325,24 +344,43 @@ def ensure_tenant_schema(conn) -> None:
             _add_column(conn, table, "tenant_id INTEGER NOT NULL DEFAULT 1")
             try:
                 execute(conn, f"UPDATE {table} SET tenant_id = 1 WHERE tenant_id IS NULL OR tenant_id = 0")
+                conn.commit()
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
         try:
             execute(conn, f"CREATE INDEX IF NOT EXISTS idx_{table}_tenant ON {table}(tenant_id)")
+            conn.commit()
         except Exception:
-            pass
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
     # Bootstrap default tenant
     if not fetchone(conn, "SELECT id FROM mail_tenants WHERE slug = ?", ("makro",)):
-        insert_returning_id(
-            conn,
-            """
-            INSERT INTO mail_tenants
-            (slug, name, status, plan, max_contacts, max_sends_day, max_domains, notes, created_at, updated_at)
-            VALUES (?, ?, 'active', 'platform', 5000000, 500000, 50, ?, ?, ?)
-            """,
-            ("makro", "Makro", "Platform tenant (migrated)", now, now),
-        )
+        try:
+            insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_tenants
+                (slug, name, status, plan, max_contacts, max_sends_day, max_domains, notes, created_at, updated_at)
+                VALUES (?, ?, 'active', 'platform', 5000000, 500000, 50, ?, ?, ?)
+                """,
+                ("makro", "Makro", "Platform tenant (migrated)", now, now),
+            )
+            conn.commit()
+        except Exception as exc:
+            # Birden fazla worker aynı anda boot ederse (slug UNIQUE) ikinci
+            # INSERT çakışabilir — rollback yapılmazsa altındaki superadmin
+            # bootstrap / repair çağrıları da sessizce patlardı.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            print(f"⚠️  makro tenant bootstrap: {exc}")
     # ESKİ BUG: her ensure’da “makro tahsisi yoksa ekle” → X ile silinen makro geri geliyordu.
     # Artık otomatik tahsis YOK; operatör Domain havuzu’ndan elle bağlar.
     try:
@@ -359,8 +397,12 @@ def ensure_tenant_schema(conn) -> None:
             conn,
             "UPDATE mail_domains SET warm_status = COALESCE(NULLIF(warm_status, ''), 'cold')",
         )
+        conn.commit()
     except Exception:
-        pass
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     try:
         heal_ready_domains(conn)
     except Exception as exc:
@@ -372,15 +414,23 @@ def ensure_tenant_schema(conn) -> None:
 
         user = (os.environ.get("MAILING_SUPERADMIN_USER") or os.environ.get("ADMIN_USERNAME") or "tolgakt").strip()
         pw = (os.environ.get("MAILING_SUPERADMIN_PASSWORD") or os.environ.get("ADMIN_PASSWORD") or "changeme").strip()
-        insert_returning_id(
-            conn,
-            """
-            INSERT INTO mail_superadmins (username, password_hash, display_name, active, created_at)
-            VALUES (?, ?, ?, 1, ?)
-            """,
-            (user.lower(), generate_password_hash(pw, method="pbkdf2:sha256"), user, now),
-        )
-        print(f"✉️  Mikromail superadmin bootstrap: {user}")
+        try:
+            insert_returning_id(
+                conn,
+                """
+                INSERT INTO mail_superadmins (username, password_hash, display_name, active, created_at)
+                VALUES (?, ?, ?, 1, ?)
+                """,
+                (user.lower(), generate_password_hash(pw, method="pbkdf2:sha256"), user, now),
+            )
+            conn.commit()
+            print(f"✉️  Mikromail superadmin bootstrap: {user}")
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            print(f"⚠️  superadmin bootstrap: {exc}")
 
     _strip_settings_permission_from_tenant_users(conn)
     _repair_bizzo_template_ownership(conn)
