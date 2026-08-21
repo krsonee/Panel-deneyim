@@ -3659,6 +3659,26 @@ def init_db():
     with closing(get_db()) as conn:
         init_schema(conn)
         migrate_schema(conn)
+        # Savunma hattı: init_schema/migrate_schema büyük, legacy fonksiyonlar —
+        # içlerindeki bir ALTER/CREATE rollback'siz sessizce yutulmuş olabilir
+        # (bkz. bu dosyadaki diğer ensure_* fonksiyonlarında düzeltilen aynı
+        # desen). Böyle bir durumda conn "aborted transaction" halinde kalır ve
+        # aşağıdaki TÜM mail-specific migration'lar (ensure_mail_import_jobs_table
+        # dahil) ilk denemede "current transaction is aborted" ile art arda
+        # başarısız olur — rejected_count kolonu asla eklenemez, kontak import'u
+        # kırılır ve bu HİÇBİR yerde görünür bir hata basmadan tekrarlar (çünkü
+        # her ensure_* kendi try/except'i ile bunu yutup rollback yapar, ama bir
+        # daha kolonu eklemeyi denemez). commit() burada başarısız olursa conn
+        # zaten aborted demektir → rollback ile mail migration'larına temiz bir
+        # başlangıç garanti edilir.
+        try:
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            print("⚠️  init_db: init_schema/migrate_schema sonrası transaction aborted kalmıştı — rollback yapıldı")
         try:
             from panel_config import feature_enabled
             mailing_on = feature_enabled("mailing")

@@ -1879,6 +1879,49 @@ def _iter_xlsx_rows(path):
         wb.close()
 
 
+def _safe_update_import_job(conn, job_id, **fields):
+    """mail_import_jobs ilerleme güncellemesi — ASLA job'ı çökertmemeli.
+
+    rejected_count vb. kolonlar bir migration aksaklığı yüzünden production'da
+    eksik kalırsa (bkz. database.ensure_mail_import_jobs_table yorumu) bu
+    UPDATE "column ... does not exist" ile patlıyordu ve rollback yapılmadan
+    devam edildiği için AYNI conn üzerindeki TÜM sonraki işlemler (asıl kontak
+    insert'leri dahil!) "current transaction is aborted" ile art arda
+    çöküyordu — sadece ilerleme sayacı için tüm yükleme iptal oluyordu.
+    Artık: (1) eksik kolon varsa bir kez ensure_mail_import_jobs_table ile
+    kendini onarmayı dener, (2) yine de başarısız olursa sessizce rollback
+    yapıp devam eder — ilerleme yüzdesi eksik kalabilir ama kontaklar
+    yüklenmeye devam eder."""
+    if not fields:
+        return
+    cols = list(fields.keys())
+    set_sql = ", ".join(f"{c} = ?" for c in cols)
+    params = [fields[c] for c in cols] + [job_id]
+    try:
+        execute(conn, f"UPDATE mail_import_jobs SET {set_sql} WHERE id = ?", tuple(params))
+        conn.commit()
+        return
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        if "does not exist" in str(exc).lower():
+            try:
+                from database import ensure_mail_import_jobs_table
+                ensure_mail_import_jobs_table(conn)
+                conn.commit()
+                execute(conn, f"UPDATE mail_import_jobs SET {set_sql} WHERE id = ?", tuple(params))
+                conn.commit()
+                return
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+        print(f"⚠️  import job progress update atlandı (job={job_id}): {exc}")
+
+
 def _run_import_job(job_id, path, tag, tenant_id=None):
     """Arka plan thread: dosyayı satır satır okuyup IMPORT_CHUNK_SIZE'lık
     gruplar halinde bulk upsert eder — HTTP isteğinden bağımsız çalışır,
@@ -1982,45 +2025,29 @@ def _run_import_job(job_id, path, tag, tenant_id=None):
                         last_batch_err = str(batch_exc)[:300]
                         print(f"⚠️  mail import batch fail job={job_id}: {batch_exc}")
                     batch = []
-                    execute(
-                        conn,
-                        """
-                        UPDATE mail_import_jobs
-                        SET processed_rows = ?, upserted_count = ?, inserted_count = ?, updated_count = ?,
-                            skipped_count = ?, rejected_count = ?, rejected_invalid = ?, rejected_disposable = ?,
-                            rejected_role = ?, rejected_no_mx = ?, updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (
-                            processed, upserted, inserted, updated, skipped,
-                            rejected_invalid + rejected_disposable + rejected_role + rejected_no_mx,
-                            rejected_invalid, rejected_disposable, rejected_role, rejected_no_mx,
-                            iso(utcnow()), job_id,
-                        ),
+                    _safe_update_import_job(
+                        conn, job_id,
+                        processed_rows=processed, upserted_count=upserted, inserted_count=inserted,
+                        updated_count=updated, skipped_count=skipped,
+                        rejected_count=rejected_invalid + rejected_disposable + rejected_role + rejected_no_mx,
+                        rejected_invalid=rejected_invalid, rejected_disposable=rejected_disposable,
+                        rejected_role=rejected_role, rejected_no_mx=rejected_no_mx,
+                        updated_at=iso(utcnow()),
                     )
-                    conn.commit()
                     status_row = fetchone(conn, "SELECT status FROM mail_import_jobs WHERE id = ?", (job_id,))
                     if status_row and status_row["status"] == "cancelling":
                         cancelled = True
                         break
                 elif processed % 5000 == 0:
-                    execute(
-                        conn,
-                        """
-                        UPDATE mail_import_jobs
-                        SET processed_rows = ?, upserted_count = ?, inserted_count = ?, updated_count = ?,
-                            skipped_count = ?, rejected_count = ?, rejected_invalid = ?, rejected_disposable = ?,
-                            rejected_role = ?, rejected_no_mx = ?, updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (
-                            processed, upserted, inserted, updated, skipped,
-                            rejected_invalid + rejected_disposable + rejected_role + rejected_no_mx,
-                            rejected_invalid, rejected_disposable, rejected_role, rejected_no_mx,
-                            iso(utcnow()), job_id,
-                        ),
+                    _safe_update_import_job(
+                        conn, job_id,
+                        processed_rows=processed, upserted_count=upserted, inserted_count=inserted,
+                        updated_count=updated, skipped_count=skipped,
+                        rejected_count=rejected_invalid + rejected_disposable + rejected_role + rejected_no_mx,
+                        rejected_invalid=rejected_invalid, rejected_disposable=rejected_disposable,
+                        rejected_role=rejected_role, rejected_no_mx=rejected_no_mx,
+                        updated_at=iso(utcnow()),
                     )
-                    conn.commit()
             if batch and not cancelled:
                 try:
                     batch_upserted, batch_inserted, batch_updated = _bulk_upsert_contacts(
@@ -2039,23 +2066,15 @@ def _run_import_job(job_id, path, tag, tenant_id=None):
             final_now = iso(utcnow())
             rejected_total = rejected_invalid + rejected_disposable + rejected_role + rejected_no_mx
             if cancelled:
-                execute(
-                    conn,
-                    """
-                    UPDATE mail_import_jobs
-                    SET status = 'cancelled', total_rows = ?, processed_rows = ?, upserted_count = ?,
-                        inserted_count = ?, updated_count = ?, skipped_count = ?, rejected_count = ?,
-                        rejected_invalid = ?, rejected_disposable = ?, rejected_role = ?, rejected_no_mx = ?,
-                        updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        processed, processed, upserted, inserted, updated, skipped, rejected_total,
-                        rejected_invalid, rejected_disposable, rejected_role, rejected_no_mx,
-                        final_now, job_id,
-                    ),
+                _safe_update_import_job(
+                    conn, job_id,
+                    status="cancelled", total_rows=processed, processed_rows=processed,
+                    upserted_count=upserted, inserted_count=inserted, updated_count=updated,
+                    skipped_count=skipped, rejected_count=rejected_total,
+                    rejected_invalid=rejected_invalid, rejected_disposable=rejected_disposable,
+                    rejected_role=rejected_role, rejected_no_mx=rejected_no_mx,
+                    updated_at=final_now,
                 )
-                conn.commit()
                 return
             if tag:
                 _ensure_tag(conn, tag, final_now)
@@ -2067,23 +2086,15 @@ def _run_import_job(job_id, path, tag, tenant_id=None):
                     "Hiç geçerli e-posta yazılamadı. Dosyada e-posta sütunu / satır formatını kontrol et "
                     "(başlık: email). Aktif tenant ile aynı firmaya yazılır."
                 )
-            execute(
-                conn,
-                """
-                UPDATE mail_import_jobs
-                SET status = 'done', total_rows = ?, processed_rows = ?, upserted_count = ?,
-                    inserted_count = ?, updated_count = ?, skipped_count = ?, rejected_count = ?,
-                    rejected_invalid = ?, rejected_disposable = ?, rejected_role = ?, rejected_no_mx = ?,
-                    error = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    processed, processed, upserted, inserted, updated, skipped, rejected_total,
-                    rejected_invalid, rejected_disposable, rejected_role, rejected_no_mx,
-                    done_err, final_now, job_id,
-                ),
+            _safe_update_import_job(
+                conn, job_id,
+                status="done", total_rows=processed, processed_rows=processed,
+                upserted_count=upserted, inserted_count=inserted, updated_count=updated,
+                skipped_count=skipped, rejected_count=rejected_total,
+                rejected_invalid=rejected_invalid, rejected_disposable=rejected_disposable,
+                rejected_role=rejected_role, rejected_no_mx=rejected_no_mx,
+                error=done_err, updated_at=final_now,
             )
-            conn.commit()
             _invalidate_mail_stats_cache()
             if tag:
                 try:
