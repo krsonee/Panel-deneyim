@@ -733,10 +733,16 @@
               <code>mail_tiklayan</code>, <code>mail_acan_tiklayan</code>, <code>mail_hata</code>.
             </p>
             <label class="mm-switch">
-              <input type="checkbox" id="mail-camp-only-verified">
+              <input type="checkbox" id="mail-camp-only-verified" checked>
               <span class="mm-switch-track"></span>
               <span>Sadece doğrulanmış</span>
             </label>
+            <p class="hint" style="margin:0;flex-basis:100%;">
+              Kapalıysa hiç temizlenmemiş / doğrulaması "geçersiz" çıkmış adreslere de
+              gönderim yapılır — başarı oranını düşürür. Panel açılışında sunucudaki
+              varsayılana göre otomatik ayarlanır, ama JS yüklenmeden önce güvenli
+              taraf (açık) olarak başlar.
+            </p>
           </div>
           <div style="display:flex;align-items:flex-end;gap:0.5rem;flex-wrap:wrap;">
             <button type="button" class="btn btn-sm btn-secondary" id="mail-camp-preview">Kaç kişi?</button>

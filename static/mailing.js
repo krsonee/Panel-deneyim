@@ -5256,6 +5256,15 @@
       mailBindFloatingTips();
       setTplMode("simple");
       mailResumeScrubIfActive();
+      // ÖNEMLİ: "Sadece doğrulanmış" (mail-camp-only-verified) checkbox'ı
+      // eskiden SADECE "Sistem Ayarları" sekmesi açıldığında (mailLoadSettings)
+      // doğru varsayılana (scrub_campaign_only_valid) çekiliyordu. Kullanıcı
+      // son açık sekmesi hep "Kampanyalar" olduğu için (localStorage restore)
+      // Ayarlar'ı hiç açmadan kampanya kuruyordu ve checkbox HTML'deki çıplak
+      // "unchecked" halinde kalıyordu — yani doğrulanmamış/fail adreslere de
+      // gönderim yapılıp başarı oranı düşüyordu. Artık panel ilk açılışta bir
+      // kez ayarları önceden çekip checkbox'ı doğru varsayılana getiriyor.
+      mailLoadSettings();
     },
     ensureTenant: mailEnsureTenant,
     navigate: mailNavigate,
