@@ -236,17 +236,41 @@ def ensure_campaign_scheduler():
     t.start()
 
 
+def _reconcile_credit_counters():
+    with closing(get_db()) as conn:
+        try:
+            from mail_credit import reconcile_credit_used, reconcile_tenant_credit_used
+            before = reconcile_credit_used(conn)
+            reconcile_tenant_credit_used(conn)
+            conn.commit()
+            print(f"✉️  credit reconcile: mail_credit_used → {before}")
+        except Exception as exc:
+            print(f"⚠️  credit reconcile: {exc}")
+
+
 def _scheduler_loop():
     _tick_n = 0
+    # Deploy/restart sonrası ~15dk beklemeden hemen bir kez çalıştır — 21.08
+    # olayında olduğu gibi mevcut bir enkaz/drift varsa, restart sonrası
+    # panelin yanlış rakam göstermesi dakikalar değil saatler sürebiliyordu.
+    try:
+        _sweep_stuck_queued_sends()
+    except Exception as exc:
+        print(f"⚠️  mail stuck-queued sweep (ilk çalıştırma): {exc}")
+    try:
+        _reconcile_credit_counters()
+    except Exception as exc:
+        print(f"⚠️  credit reconcile (ilk çalıştırma): {exc}")
     while True:
         try:
             _tick_scheduled()
         except Exception as exc:
             print(f"⚠️  mail campaign scheduler: {exc}")
         _tick_n += 1
-        # ~her 15 dakikada bir (8s * 112 ≈ 15dk) — sık sık taramaya gerek yok,
-        # bu sadece nadir bir crash-window'u kapatan bir güvenlik ağı.
-        if _tick_n % 112 == 0:
+        # ~her 5 dakikada bir (8s * 37) — eskiden 15dk idi; silinen kampanya
+        # enkazının / crash-window kayıtlarının panel raporlarını (başarı oranı,
+        # kredi sayacı) saatlerce yanıltmasını önlemek için sıklaştırıldı.
+        if _tick_n % 37 == 0:
             try:
                 _sweep_stuck_queued_sends()
             except Exception as exc:
@@ -259,34 +283,56 @@ def _scheduler_loop():
                 _sweep_quota_stopped_campaigns()
             except Exception as exc:
                 print(f"⚠️  mail quota-stopped sweep: {exc}")
+        # ~her 10 dakikada bir (8s * 75) — kredi sayacını gerçek mail_sends
+        # verisiyle senkron tutar (self-heal), stuck-queued sweep'ten bağımsız
+        # olarak da drift ihtimaline karşı ekstra güvenlik ağı.
+        if _tick_n % 75 == 0:
+            try:
+                _reconcile_credit_counters()
+            except Exception as exc:
+                print(f"⚠️  credit reconcile: {exc}")
         time.sleep(8)
 
 
 def _sweep_stuck_queued_sends():
-    """Kampanyası zaten bitmiş (done/cancelled) olduğu halde mail_sends'te
-    24 saatten uzun süredir 'queued' kalan kayıtları 'failed'e çevirir.
+    """Kampanyası zaten bitmiş/silinmiş (done/cancelled/campaign_id NULL) olduğu
+    halde mail_sends'te uzun süredir 'queued' kalan kayıtları 'failed'e çevirir.
 
     Bu SADECE mail_delivery.py'deki bilinen crash-window'u (SMTP gönderildi
-    ama commit'ten önce süreç çökerse kayıt sonsuza dek 'queued' kalır) temizler
-    — devam eden veya duraklatılmış (paused) kampanyalara HİÇ dokunmaz, çünkü
-    onlarda 'queued' normal/beklenen bir durumdur."""
+    ama commit'ten önce süreç çökerse kayıt sonsuza dek 'queued' kalır) veya
+    silinen (delete_campaign → campaign_id=NULL) bir kampanyanın enkaz kalan
+    satırlarını temizler — devam eden veya duraklatılmış (paused) kampanyalara
+    HİÇ dokunmaz, çünkü onlarda 'queued' normal/beklenen bir durumdur.
+
+    ÖNEMLİ (21.08 olayı): eşik eskiden 24 SAATTİ — bir kampanya silinip
+    ~10.9k satır campaign_id=NULL + 'queued' enkaz olarak kaldığında, bu
+    satırlar tam 24 saat boyunca "queued" (ne başarı ne başarısızlık) olarak
+    görünmeye devam etti ve panel başarı-oranı bunları hesaba HİÇ katmadığı
+    için (bkz _success_rate: sadece sent/simulated/failed/bounced sayılır)
+    gerçekte Alibaba konsolunda ~%60 olan başarı oranı panelde ~%97 gibi
+    yanıltıcı gözüktü. campaign_id NULL olan satırlar ZATEN hiçbir zaman
+    devam ettirilemez (silinmiş kampanya) — bunlar için bekleme süresi YOK,
+    hemen çözülür. Hâlâ var olan ama done/cancelled bir kampanyaya bağlı
+    satırlar için 1 saatlik kısa bir tampon yeterli (worker zaten dakikalar
+    içinde her satırı işler, saatlerce 'queued' kalması anormaldir)."""
     now = utcnow()
-    cutoff = iso(now - timedelta(hours=24))
-    now_iso = iso(now)
+    orphan_cutoff = iso(now - timedelta(minutes=10))
+    dead_campaign_cutoff = iso(now - timedelta(hours=1))
     with closing(get_db()) as conn:
         rows = fetchall(
             conn,
             """
             SELECT s.id FROM mail_sends s
             WHERE s.status = 'queued'
-              AND s.created_at < ?
               AND (
-                    s.campaign_id IS NULL
-                    OR s.campaign_id IN (SELECT id FROM mail_campaigns WHERE status IN ('done', 'cancelled'))
+                    (s.campaign_id IS NULL AND s.created_at < ?)
+                    OR (s.created_at < ? AND s.campaign_id IN (
+                        SELECT id FROM mail_campaigns WHERE status IN ('done', 'cancelled')
+                    ))
                   )
-            LIMIT 500
+            LIMIT 2000
             """,
-            (cutoff,),
+            (orphan_cutoff, dead_campaign_cutoff),
         ) or []
         if not rows:
             return
@@ -297,13 +343,20 @@ def _sweep_stuck_queued_sends():
                 """
                 UPDATE mail_sends
                 SET status = 'failed',
-                    error = '24 saatten uzun süre queued kaldı — kampanya bitmişti, sistem tarafından failed işaretlendi (olası crash-window)'
+                    error = 'Kampanya bitmiş/silinmişti, gönderim durumu doğrulanamadı — sistem tarafından failed işaretlendi (olası crash-window / yarıda kesilen kampanya)'
                 WHERE id = ? AND status = 'queued'
                 """,
                 (sid,),
             )
         conn.commit()
         print(f"✉️  stuck-queued sweep: {len(ids)} kayıt failed'e çevrildi")
+        try:
+            from mail_credit import reconcile_credit_used, reconcile_tenant_credit_used
+            reconcile_credit_used(conn)
+            reconcile_tenant_credit_used(conn)
+            conn.commit()
+        except Exception as exc:
+            print(f"⚠️  credit reconcile (stuck-queued sonrası): {exc}")
 
 
 def _sweep_quota_stopped_campaigns():

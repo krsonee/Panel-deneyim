@@ -3019,6 +3019,15 @@ def _delivery_health_snapshot(conn, tenant_id=None):
     def _success_rate(since_ts):
         accepted = _count_since(since_ts, "sent") + _count_since(since_ts, "simulated")
         rejected = _count_since(since_ts, "failed") + _count_since(since_ts, "bounced")
+        # "queued" kasıtlı olarak orana dahil edilmiyor (hâlâ işlenmeyi bekleyen
+        # normal bir durum olabilir) — AMA 21.08 olayında silinen bir kampanyanın
+        # ~10,9k "queued" enkazı, sweep eşiği (eskiden 24s) geçene kadar bu orana
+        # hiç girmediği için panel ~%97 gösterirken Alibaba konsolu ~%60'taydı.
+        # Artık en azından SAYISINI banner'a ekliyoruz ki büyük bir askıda yığın
+        # varken oran sessizce "iyi" görünmesin — sweep artık çok daha hızlı
+        # (bkz mail_campaign_worker._sweep_stuck_queued_sends) ama bu alan ek
+        # bir görünürlük/uyarı katmanı.
+        pending_unresolved = _count_since(since_ts, "queued")
         total = accepted + rejected
         rate = round(100.0 * accepted / total, 2) if total else None
         if rate is None:
@@ -3029,10 +3038,13 @@ def _delivery_health_snapshot(conn, tenant_id=None):
             tier = "warn"
         else:
             tier = "danger"
+        if pending_unresolved > 200 and tier == "good":
+            tier = "warn"
         return {
             "accepted": accepted,
             "rejected": rejected,
             "total": total,
+            "pending_unresolved": pending_unresolved,
             "rate": rate,
             "tier": tier,
         }

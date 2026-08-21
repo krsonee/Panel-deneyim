@@ -186,6 +186,12 @@
         if (d7.tier === "danger") msg += "⚠️ %80 sürdürme eşiğinin altında — Alibaba limiti kısabilir. Liste temizliği (scrub) yap.";
         else if (d7.tier === "warn") msg += "%90 limit-artış eşiğinin altında ama %80 üstünde — artış istemeden önce scrub + doğrulanmış liste kullan.";
         else msg += "Alibaba'nın limit artırma eşiğinin (%90) üzerinde — iyi durumda.";
+        // Askıda/doğrulanamamış (queued) gönderim sayısı — büyükse oran henüz
+        // güvenilir değil demektir (bkz 21.08: silinen kampanya enkazı 24s
+        // boyunca bu orana hiç girmemişti). Şeffaflık için ayrıca gösterilir.
+        if (d7.pending_unresolved > 200) {
+          msg += " ⏳ " + fmtNum(d7.pending_unresolved) + " gönderim hâlâ 'queued' — bu oran henüz bunları içermiyor, sistem bunları otomatik çözümleyecek.";
+        }
         note.textContent = msg;
       } else {
         note.textContent = "Son 7 günde ölçülebilir gönderim yok.";

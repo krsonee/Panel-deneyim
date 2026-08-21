@@ -30,6 +30,59 @@ def get_credit_used(conn) -> int:
     return _clamp_int(get_mail_setting(conn, SETTING_USED, "0"), 0)
 
 
+def real_sent_count(conn, tenant_id: int | None = None) -> int:
+    """mail_sends'ten GERÇEK başarılı gönderim sayısı (sent + simulated) —
+    kredi tüketiminin tek doğruluk kaynağı budur."""
+    try:
+        if tenant_id:
+            n = scalar(
+                conn,
+                "SELECT COUNT(*) FROM mail_sends WHERE status IN ('sent', 'simulated') AND tenant_id = ?",
+                (int(tenant_id),),
+            )
+        else:
+            n = scalar(
+                conn,
+                "SELECT COUNT(*) FROM mail_sends WHERE status IN ('sent', 'simulated')",
+            )
+        return max(0, int(n or 0))
+    except Exception:
+        return 0
+
+
+def reconcile_credit_used(conn) -> int:
+    """mail_credit_used sayacını mail_sends'teki GERÇEK gönderim sayısına eşitler
+    (self-heal).
+
+    consume_credit() her başarılı gönderimde +1 atomik artış yapar, ama worker
+    crash / restart sırasında "SMTP'ye gönderildi ama status güncellemesi hiç
+    commit edilemedi" durumunda (mail_sends satırı sonsuza dek 'queued' kalır —
+    bkz _sweep_stuck_queued_sends) veya silinen bir kampanyanın enkaz kalan
+    satırlarında bu sayaç gerçek gönderimden SESSİZCE sürüklenebiliyordu.
+    Panelde "kullanılan: 2" görünürken gerçekte binlerce mail atılmış olabiliyordu.
+    Bu fonksiyon periyodik (worker tick) çağrılarak sayaç her zaman gerçeğe
+    eşitlenir — bir daha asla günlerce fark edilmeden yanlış kalamaz."""
+    real = real_sent_count(conn)
+    current = get_credit_used(conn)
+    if real != current:
+        upsert_mail_setting(conn, SETTING_USED, str(real))
+    return real
+
+
+def reconcile_tenant_credit_used(conn) -> None:
+    """Her tenant için credit_used kolonunu mail_sends'teki gerçek sayıya eşitler."""
+    rows = fetchall(
+        conn, "SELECT id FROM mail_tenants WHERE COALESCE(status, '') != 'deleted'"
+    ) or []
+    for r in rows:
+        tid = int(row_get(r, "id"))
+        real = real_sent_count(conn, tenant_id=tid)
+        try:
+            execute(conn, "UPDATE mail_tenants SET credit_used = ? WHERE id = ?", (real, tid))
+        except Exception:
+            pass
+
+
 def set_credit_total(conn, total: int) -> int:
     n = _clamp_int(total, DEFAULT_TOTAL, lo=0)
     used = get_credit_used(conn)
