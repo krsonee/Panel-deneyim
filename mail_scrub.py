@@ -348,6 +348,18 @@ def has_mx_cached(conn, domain: str, ttl_hours: int = 168, local_cache: dict | N
     try:
         row = fetchone(conn, "SELECT has_mx, checked_at FROM mail_mx_cache WHERE domain = ?", (domain,))
     except Exception:
+        # KRİTİK: Postgres'te başarısız BİR sorgu bile connection'ı "aborted"
+        # transaction durumuna sokar — rollback yapılmazsa bu satırdan sonra
+        # AYNI conn ile yapılan (bulk import job'ı boyunca paylaşılan tek
+        # connection) her şey "current transaction is aborted, commands
+        # ignored until end of transaction block" ile art arda patlar ve
+        # tüm import job'ı (binlerce satır) tek bir satırdaki geçici hata
+        # yüzünden çöker. Kullanıcının yaşadığı "dosya yüklenemiyor" hatasının
+        # kök nedeni buydu.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         row = None
     if row is not None:
         try:
@@ -380,7 +392,12 @@ def has_mx_cached(conn, domain: str, ttl_hours: int = 168, local_cache: dict | N
                 (domain, found, now),
             )
     except Exception:
-        pass
+        # Aynı transaction-poisoning riski — bu INSERT/ON CONFLICT başarısız
+        # olursa rollback yapılmadan devam edilirse job'ın kalanı çöker.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     if local_cache is not None:
         local_cache[domain] = found
     return found

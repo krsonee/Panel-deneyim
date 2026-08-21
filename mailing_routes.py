@@ -1672,7 +1672,13 @@ def _bulk_upsert_contacts(conn, batch, tag, now, tenant_id=None):
     try:
         ensure_mail_contacts_unique_email(conn)
     except Exception:
-        pass
+        # Aynı transaction-poisoning riski — bu başarısız olursa rollback
+        # yapılmadan devam edilirse hemen altındaki INSERT ... ON CONFLICT
+        # "current transaction is aborted" ile patlar (her batch'te çağrılıyor).
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
     tag = (tag or "").strip()
     tag_json_single = json.dumps([tag], ensure_ascii=False) if tag else "[]"
@@ -1951,6 +1957,14 @@ def _run_import_job(job_id, path, tag, tenant_id=None):
                     name = (row.get("name") or row.get("Name") or "").strip()
                     batch.append((email, name))
                 except Exception:
+                    # Defense-in-depth: bu satırdaki hata bir DB sorgusundan
+                    # geliyorsa (örn. verify_email_fast → has_mx_cached) ve
+                    # Postgres transaction'ı "aborted" bıraktıysa, rollback
+                    # yapılmadan devam etmek job'ın kalanını da çökertir.
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
                     skipped += 1
                     continue
                 if len(batch) >= IMPORT_CHUNK_SIZE:
@@ -4179,8 +4193,12 @@ def create_mailing_blueprint(permission_required):
     @mail_perm(*MAIL_CRM)
     def download_contact_import_template():
         """Örnek .xlsx şablonu — sürükle-bırak yükleme kutusunun yanındaki
-        'Örnek şablon indir' butonu için. E-posta sütunu zorunlu; ad/etiket
-        opsiyonel örnek satırlarla gösterilir."""
+        'Örnek şablon indir' butonu için. Sadece email (zorunlu) + name
+        (opsiyonel) — gerçek toplu yükleme (_run_import_job) satır başına
+        BAŞKA hiçbir sütunu okumuyor; etiket dosyada değil, yükleme kutusunun
+        üstündeki "Etiket" seçiminden TÜM dosyaya tek seferde uygulanıyor.
+        Eskiden şablonda bir "tags" sütunu da vardı ama bu sütun fiilen hiç
+        işlenmiyordu — kullanıcıyı yanıltıyordu, kaldırıldı."""
         import openpyxl
         from io import BytesIO
         from openpyxl.styles import Alignment, Font, PatternFill
@@ -4189,7 +4207,7 @@ def create_mailing_blueprint(permission_required):
         ws = wb.active
         ws.title = "Kontaklar"
 
-        headers = ["email", "name", "tags"]
+        headers = ["email", "name"]
         header_fill = PatternFill("solid", fgColor="1F2937")
         header_font = Font(bold=True, color="FFFFFF")
         for col, title in enumerate(headers, 1):
@@ -4199,14 +4217,14 @@ def create_mailing_blueprint(permission_required):
             cell.alignment = Alignment(horizontal="center")
 
         sample_rows = [
-            ["ornek1@example.com", "Ahmet Yılmaz", "vip"],
-            ["ornek2@example.com", "Ayşe Kaya", ""],
+            ["ornek1@example.com", "Ahmet Yılmaz"],
+            ["ornek2@example.com", "Ayşe Kaya"],
         ]
         for r_idx, row_vals in enumerate(sample_rows, start=2):
             for c_idx, val in enumerate(row_vals, start=1):
                 ws.cell(row=r_idx, column=c_idx, value=val)
 
-        widths = [30, 22, 18]
+        widths = [30, 22]
         for i, w in enumerate(widths, start=1):
             ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 
