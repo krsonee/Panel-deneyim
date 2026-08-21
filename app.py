@@ -2315,6 +2315,16 @@ def get_audit_log():
 @app.route("/api/settings", methods=["GET"])
 @admin_only_required
 def get_settings():
+    tracked_domain_count = 0
+    unique_domain_count = 0
+    try:
+        with closing(get_db()) as conn:
+            tracked_domain_count = scalar(conn, "SELECT COUNT(*) FROM tracked_links") or 0
+            unique_domain_count = scalar(
+                conn, "SELECT COUNT(DISTINCT domain) FROM tracked_links"
+            ) or 0
+    except Exception:
+        pass
     return jsonify({
         "public_base_url": get_server_base_url(),
         "database": "postgresql" if uses_postgres() else "sqlite",
@@ -2331,6 +2341,8 @@ def get_settings():
             "Render → Settings → Custom Domain ekleyin, "
             "sonra PUBLIC_BASE_URL ortam değişkenini ayarlayın."
         ),
+        "tracked_links_total": tracked_domain_count,
+        "tracked_domains_unique": unique_domain_count,
     })
 
 
