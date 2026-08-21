@@ -325,8 +325,8 @@
                 <div class="mm-label-row" style="margin:0 0 0.5rem;"><label>Firma kullanıcıları</label></div>
                 <div class="table-wrap"><div class="table-scroll">
                   <table>
-                    <thead><tr><th>Kullanıcı</th><th>Görünen ad</th><th>Durum</th><th>Yetki</th><th></th></tr></thead>
-                    <tbody id="mm-act-user-rows"><tr><td colspan="5" class="empty">—</td></tr></tbody>
+                    <thead><tr><th>Kullanıcı</th><th>Görünen ad</th><th>Durum</th><th>Güvenlik</th><th>Yetki</th><th></th></tr></thead>
+                    <tbody id="mm-act-user-rows"><tr><td colspan="6" class="empty">—</td></tr></tbody>
                   </table>
                 </div></div>
                 <form id="mm-user-add-form" class="form-row-4" style="margin-top:0.75rem;">
@@ -606,8 +606,8 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260821mm31"></script>
-  <script src="/static/mailing_platform.js?v=20260821mm19"></script>
+  <script src="/static/mailing.js?v=20260821mm32"></script>
+  <script src="/static/mailing_platform.js?v=20260821mm20"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

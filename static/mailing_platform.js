@@ -180,7 +180,7 @@
     var tbody = document.getElementById("mm-act-user-rows");
     if (!tbody) return;
     if (!users || !users.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty">Henüz panel kullanıcısı yok</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">Henüz panel kullanıcısı yok</td></tr>';
       return;
     }
     tbody.innerHTML = users.map(function (u) {
@@ -188,15 +188,27 @@
       var activeBadge = u.active
         ? '<span class="mm-badge mm-badge-ok">aktif</span>'
         : '<span class="mm-badge mm-badge-danger">pasif</span>';
+      // Güvenlik durumu: ilk girişte zorunlu şifre değişikliği + zorunlu
+      // Google Authenticator (TOTP) — ikisi de tamamlanmadan panele giremez.
+      var secBadges = "";
+      if (u.must_change_password) {
+        secBadges += '<span class="mm-badge mm-badge-warn" title="Kullanıcı ilk girişte şifresini değiştirmek zorunda">şifre bekliyor</span> ';
+      }
+      secBadges += u.totp_enabled
+        ? '<span class="mm-badge mm-badge-ok" title="Google Authenticator kurulu">2FA aktif</span>'
+        : '<span class="mm-badge mm-badge-danger" title="Kullanıcı ilk girişte Authenticator kurmak zorunda">2FA bekliyor</span>';
       return "<tr>" +
         "<td>" + esc(u.username) + "</td>" +
         "<td>" + esc(u.display_name || "") + "</td>" +
         "<td>" + activeBadge + "</td>" +
+        '<td style="white-space:nowrap;">' + secBadges + "</td>" +
         "<td>" + permCount + " / " + MAILING_PERM_KEYS.length + "</td>" +
         '<td class="mm-actions-cell">' +
         mmIconBtn("mm-user-edit", "Düzenle / yetkiler", "edit",
           'data-tid="' + esc(tenantId) + '" data-uid="' + esc(u.id) + '"') +
         mmIconBtn("mm-user-reset-pass", "Şifre sıfırla", "key",
+          'data-tid="' + esc(tenantId) + '" data-uid="' + esc(u.id) + '" data-username="' + esc(u.username) + '"') +
+        mmIconBtn("mm-user-reset-totp", "2FA sıfırla (Authenticator'ı yeniden kurmaya zorla)", "shield",
           'data-tid="' + esc(tenantId) + '" data-uid="' + esc(u.id) + '" data-username="' + esc(u.username) + '"') +
         mmIconBtn(u.active ? "mm-user-del btn-danger" : "mm-user-del",
           u.active ? "Devre dışı bırak" : "Yeniden aktif et", u.active ? "trash" : "play",
@@ -1746,7 +1758,23 @@
             body: { password: newPass }
           }).then(function (res) {
             if (!res.ok) { alert((res.data && res.data.error) || "Sıfırlanamadı"); return; }
-            alert("Şifre güncellendi: " + rpUsername);
+            alert("Şifre güncellendi: " + rpUsername + " — bir dahaki girişte yeni şifre belirlemek zorunda kalacak.");
+            refreshTenantUsersTable(rpTid);
+          });
+          return;
+        }
+        var userResetTotp = e.target.closest(".mm-user-reset-totp");
+        if (userResetTotp) {
+          var rtTid = userResetTotp.getAttribute("data-tid");
+          var rtUid = userResetTotp.getAttribute("data-uid");
+          var rtUsername = userResetTotp.getAttribute("data-username") || "";
+          if (!confirm("«" + rtUsername + "» için 2FA (Authenticator) sıfırlansın mı? Kullanıcı bir dahaki girişte QR kodu tekrar okutup yeniden kurmak zorunda kalacak.")) return;
+          apiRetry("/api/platform/tenants/" + rtTid + "/users/" + rtUid + "/reset-totp", {
+            method: "POST"
+          }).then(function (res) {
+            if (!res.ok) { alert((res.data && res.data.error) || "Sıfırlanamadı"); return; }
+            alert("2FA sıfırlandı: " + rtUsername);
+            refreshTenantUsersTable(rtTid);
           });
           return;
         }

@@ -101,7 +101,8 @@
       copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
       warm: '<path d="M12 2v6"/><path d="M12 18v4"/><path d="m4.9 4.9 4.2 4.2"/><path d="m14.9 14.9 4.2 4.2"/><path d="M2 12h6"/><path d="M16 12h6"/>',
       alloc: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11h-6"/><path d="M19 8v6"/>',
-      eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>'
+      eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
+      shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
     };
     return '<svg class="mm-ico" viewBox="0 0 24 24" aria-hidden="true">' + (p[name] || "") + "</svg>";
   }
@@ -3027,7 +3028,10 @@
     mailSyncCampTagHidden();
   }
 
-  function mailCampStatusLabel(status) {
+  function mailCampStatusLabel(status, errText) {
+    if (status === "stopped" && String(errText || "").indexOf("[quota_stop]") === 0) {
+      return "Kota bekliyor (otomatik devam edecek)";
+    }
     var map = {
       draft: "Taslak",
       scheduled: "Zamanlandı",
@@ -3140,9 +3144,10 @@
           : esc(fmtTime(c.created_at));
         return "<tr>" +
           "<td><strong>" + esc(c.name) + "</strong>" +
-            (c.error ? ('<div class="muted" style="font-size:0.68rem;color:var(--rose);">' + esc(c.error) + "</div>") : "") +
+            (c.error ? ('<div class="muted" style="font-size:0.68rem;color:var(--rose);">' +
+              esc(String(c.error).replace(/^\[quota_stop\]\s*/, "")) + "</div>") : "") +
           "</td>" +
-          "<td>" + mmStatusBadge(mailCampStatusLabel(c.status)) + "</td>" +
+          "<td>" + mmStatusBadge(mailCampStatusLabel(c.status, c.error)) + "</td>" +
           "<td>" + mailCampProgressHtml(c) + "</td>" +
           "<td>" + tagLine + '<div class="muted" style="font-size:0.68rem;">' + esc(rate) + "</div></td>" +
           "<td>" + when + "</td>" +

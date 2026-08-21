@@ -15,6 +15,7 @@ from functools import wraps
 from flask import Flask, g, jsonify, redirect, render_template, request, session
 from werkzeug.security import check_password_hash
 
+import totp
 from database import (
     execute,
     fetchall,
@@ -43,6 +44,7 @@ from mail_tenant import (
     normalize_slug,
     require_mail_login,
     require_superadmin,
+    reset_tenant_user_totp,
     set_data_visible_from,
     set_tenant_user_password,
     tenant_active,
@@ -122,6 +124,52 @@ def login_page():
     return render_template("mailing_login.html")
 
 
+def _grant_tenant_session(user) -> None:
+    """Şifre değişikliği + 2FA adımlarının HEPSİ tamamlandıktan sonra tam
+    oturumu açar. Bundan önce sadece 'pending' (kısıtlı) session vardır —
+    require_mail_login bunu 'giriş yapılmamış' sayar, hiçbir /api/mailing/*
+    rotasına erişim vermez."""
+    try:
+        perms = json.loads(user["permissions"] or "[]")
+    except Exception:
+        perms = ["module.mailing"]
+    tenant_id = int(user["tenant_id"])
+    session.clear()
+    session.permanent = True
+    session["mail_logged_in"] = True
+    session["mail_is_superadmin"] = False
+    session["mail_username"] = user["username"]
+    session["mail_display_name"] = user["display_name"] or user["username"]
+    session["mail_tenant_id"] = tenant_id
+    session["mail_user_id"] = int(user["id"])
+    session["mail_permissions"] = perms
+    session["mail_role"] = user["role"]
+
+
+def _tenant_login_step_payload(conn, user, tenant_id: int, account_label: str) -> dict:
+    """Şifre doğrulandıktan (veya önceki adım tamamlandıktan) SONRA kalan
+    adımı belirler: zorunlu şifre değişikliği → zorunlu 2FA kurulumu/kodu.
+    Tam oturum SADECE api_totp_verify içinde açılır — bu fonksiyon hiçbir
+    zaman doğrudan giriş vermez, hep bir 'step' döner. Pending session'ı
+    burada (yeniden) yazar ki sayfa yenilense de akış kaybolmasın."""
+    session["mail_pending_user_id"] = int(user["id"])
+    session["mail_pending_tenant_id"] = int(tenant_id)
+    if bool(int(user["must_change_password"] or 0)):
+        return {"ok": False, "step": "change_password"}
+    if not bool(int(user["totp_enabled"] or 0)):
+        secret = (user["totp_secret"] or "").strip()
+        if not secret:
+            secret = totp.generate_secret()
+            execute(conn, "UPDATE mail_tenant_users SET totp_secret = ? WHERE id = ?", (secret, user["id"]))
+            conn.commit()
+        uri = totp.build_otpauth_uri(secret, account_label)
+        return {
+            "ok": False, "step": "totp_setup",
+            "secret": secret, "otpauth_uri": uri, "qr_svg": totp.qr_svg_data_uri(uri),
+        }
+    return {"ok": False, "step": "totp_code"}
+
+
 @app.post("/api/mail-auth/login")
 def api_login():
     data = request.get_json(silent=True) or {}
@@ -139,6 +187,8 @@ def api_login():
             (username,),
         )
         if sa and check_password_hash(sa["password_hash"], password):
+            # Süper adminin KENDİ hesabı — zorunlu şifre değişikliği / 2FA
+            # kuralı SADECE firma kullanıcıları içindir, bu akışı etkilemez.
             session.clear()
             session.permanent = True
             session["mail_logged_in"] = True
@@ -182,22 +232,99 @@ def api_login():
         if not tenant_active(conn, tenant_id):
             return jsonify({"error": "Firma askıda."}), 403
 
-        try:
-            perms = json.loads(user["permissions"] or "[]")
-        except Exception:
-            perms = ["module.mailing"]
-
+        t_row = fetchone(conn, "SELECT slug FROM mail_tenants WHERE id = ?", (tenant_id,))
+        label = f"{t_row['slug']}/{user['username']}" if t_row else user["username"]
         session.clear()
         session.permanent = True
-        session["mail_logged_in"] = True
-        session["mail_is_superadmin"] = False
-        session["mail_username"] = user["username"]
-        session["mail_display_name"] = user["display_name"] or user["username"]
-        session["mail_tenant_id"] = tenant_id
-        session["mail_user_id"] = int(user["id"])
-        session["mail_permissions"] = perms
-        session["mail_role"] = user["role"]
-    return jsonify({"ok": True, "role": "tenant", "tenant_id": tenant_id, "redirect": "/app"})
+        payload = _tenant_login_step_payload(conn, user, tenant_id, label)
+    return jsonify(payload)
+
+
+@app.post("/api/mail-auth/change-password")
+def api_change_password():
+    """İlk-giriş zorunlu şifre değişikliği — sadece api_login'in bıraktığı
+    'pending' session ile çağrılabilir, tam oturum vermez, sıradaki adımı
+    (2FA kurulumu/kodu) döner."""
+    uid = session.get("mail_pending_user_id")
+    tid = session.get("mail_pending_tenant_id")
+    if not uid or not tid:
+        return jsonify({"error": "Oturum süresi doldu, tekrar giriş yapın."}), 401
+    data = request.get_json(silent=True) or {}
+    new_password = data.get("new_password") or ""
+    confirm_password = data.get("confirm_password") or ""
+    if not new_password or not confirm_password:
+        return jsonify({"error": "Yeni şifre ve tekrarı gerekli."}), 400
+    if new_password != confirm_password:
+        return jsonify({"error": "Şifreler eşleşmiyor."}), 400
+    with closing(get_db()) as conn:
+        try:
+            set_tenant_user_password(conn, tid, uid, new_password, force_change=False)
+            conn.commit()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        user = fetchone(
+            conn, "SELECT * FROM mail_tenant_users WHERE id = ? AND tenant_id = ? AND active = 1", (uid, tid)
+        )
+        if not user:
+            session.clear()
+            return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+        t_row = fetchone(conn, "SELECT slug FROM mail_tenants WHERE id = ?", (tid,))
+        label = f"{t_row['slug']}/{user['username']}" if t_row else user["username"]
+        payload = _tenant_login_step_payload(conn, user, tid, label)
+    return jsonify(payload)
+
+
+@app.post("/api/mail-auth/totp-verify")
+def api_totp_verify():
+    """2FA kurulum kodu VEYA her-giriş kodu — ikisi de aynı uç: kod doğruysa
+    (kurulumdaysa) totp_enabled=1 yapar ve tam oturumu burada açar."""
+    uid = session.get("mail_pending_user_id")
+    tid = session.get("mail_pending_tenant_id")
+    if not uid or not tid:
+        return jsonify({"error": "Oturum süresi doldu, tekrar giriş yapın."}), 401
+    if not _login_rate_ok(f"totp:{uid}"):
+        return jsonify({"error": "Çok fazla deneme. 5 dk bekleyin."}), 429
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
+    with closing(get_db()) as conn:
+        user = fetchone(
+            conn, "SELECT * FROM mail_tenant_users WHERE id = ? AND tenant_id = ? AND active = 1", (uid, tid)
+        )
+        if not user:
+            session.clear()
+            return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+        if bool(int(user["must_change_password"] or 0)):
+            return jsonify({"error": "Önce şifre değiştirilmeli.", "step": "change_password"}), 400
+        secret = (user["totp_secret"] or "").strip()
+        if not secret or not totp.verify_code(secret, code):
+            return jsonify({"error": "Kod hatalı veya süresi geçmiş, tekrar dene."}), 401
+        if not int(user["totp_enabled"] or 0):
+            execute(conn, "UPDATE mail_tenant_users SET totp_enabled = 1 WHERE id = ?", (user["id"],))
+        conn.commit()
+        _grant_tenant_session(user)
+    return jsonify({"ok": True, "role": "tenant", "tenant_id": tid, "redirect": "/app"})
+
+
+@app.get("/api/mail-auth/pending-status")
+def api_pending_status():
+    """Sayfa yenilenirse (parola/2FA adımı ortasında) akışı kaybetmemek için
+    — hâlâ hangi adımda olunduğunu (ve gerekiyorsa QR'ı) tekrar döner."""
+    uid = session.get("mail_pending_user_id")
+    tid = session.get("mail_pending_tenant_id")
+    if not uid or not tid:
+        return jsonify({"pending": False})
+    with closing(get_db()) as conn:
+        user = fetchone(
+            conn, "SELECT * FROM mail_tenant_users WHERE id = ? AND tenant_id = ? AND active = 1", (uid, tid)
+        )
+        if not user:
+            session.clear()
+            return jsonify({"pending": False})
+        t_row = fetchone(conn, "SELECT slug FROM mail_tenants WHERE id = ?", (tid,))
+        label = f"{t_row['slug']}/{user['username']}" if t_row else user["username"]
+        payload = _tenant_login_step_payload(conn, user, tid, label)
+    payload["pending"] = True
+    return jsonify(payload)
 
 
 @app.post("/api/mail-auth/logout")
@@ -531,6 +658,21 @@ def platform_reset_tenant_user_password(tenant_id, user_id):
     except Exception as exc:
         return jsonify({"error": f"Sıfırlanamadı: {exc}"}), 400
     _platform_audit("tenant_user_reset_password", f"tenant_id={tenant_id} user_id={user_id}")
+    return jsonify({"ok": True})
+
+
+@app.post("/api/platform/tenants/<int:tenant_id>/users/<int:user_id>/reset-totp")
+@require_superadmin
+def platform_reset_tenant_user_totp(tenant_id, user_id):
+    try:
+        with closing(get_db()) as conn:
+            reset_tenant_user_totp(conn, tenant_id, user_id)
+            conn.commit()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Sıfırlanamadı: {exc}"}), 400
+    _platform_audit("tenant_user_reset_totp", f"tenant_id={tenant_id} user_id={user_id}")
     return jsonify({"ok": True})
 
 

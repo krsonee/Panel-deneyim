@@ -295,6 +295,20 @@ def ensure_tenant_schema(conn) -> None:
     except Exception as exc:
         print(f"⚠️  warmup_cohort bootstrap: {exc}")
 
+    # Firma kullanıcı güvenliği: her hesap ilk girişte şifre değiştirmeye VE
+    # Google Authenticator (TOTP) kurmaya zorlanır — must_change_password /
+    # totp_enabled ikisi de 1'e ulaşmadan tam oturum (mail_logged_in) hiç
+    # açılmaz (bkz mailing_app.py api_login / partial-session akışı).
+    # DEFAULT 1 / DEFAULT 0 ekleme sırasında MEVCUT satırlara da uygulanır —
+    # bu kasıtlı: süper adminin açtığı her hesap için istenen kural.
+    tu_cols = _table_columns(conn, "mail_tenant_users")
+    if "must_change_password" not in tu_cols:
+        _add_column(conn, "mail_tenant_users", "must_change_password INTEGER NOT NULL DEFAULT 1")
+    if "totp_secret" not in tu_cols:
+        _add_column(conn, "mail_tenant_users", "totp_secret TEXT NOT NULL DEFAULT ''")
+    if "totp_enabled" not in tu_cols:
+        _add_column(conn, "mail_tenant_users", "totp_enabled INTEGER NOT NULL DEFAULT 0")
+
     # Gecmis veri gizleme kesim noktasi — set edilirse (NULL degilse) o tenant'in
     # NON-superadmin oturumlari SADECE created_at >= data_visible_from olan
     # kampanya/rapor/gonderim/dashboard rakamlarini gorur. Superadmin/impersonation
@@ -733,8 +747,9 @@ def create_tenant_user(conn, tenant_id: int, username: str, password: str, *,
         conn,
         """
         INSERT INTO mail_tenant_users
-        (tenant_id, username, password_hash, display_name, role, permissions, active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+        (tenant_id, username, password_hash, display_name, role, permissions, active,
+         must_change_password, totp_secret, totp_enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 1, '', 0, ?, ?)
         """,
         (
             tenant_id,
@@ -753,6 +768,7 @@ def list_tenant_users(conn, tenant_id: int):
     return fetchall(
         conn,
         "SELECT id, tenant_id, username, display_name, role, permissions, active, "
+        "must_change_password, totp_enabled, "
         "created_at, updated_at FROM mail_tenant_users WHERE tenant_id = ? ORDER BY id ASC",
         (int(tenant_id),),
     )
@@ -797,7 +813,13 @@ def update_tenant_user(conn, tenant_id: int, user_id: int, *, username: str | No
     )
 
 
-def set_tenant_user_password(conn, tenant_id: int, user_id: int, new_password: str) -> None:
+def set_tenant_user_password(conn, tenant_id: int, user_id: int, new_password: str, *,
+                             force_change: bool = True) -> None:
+    """force_change=True (superadmin'in elle sıfırlaması): kullanıcı bir
+    dahaki girişte YENİDEN zorunlu şifre değiştirme adımından geçer — verilen
+    şifre sadece geçici bir "anahtar", kullanıcının kendi belirlediği şifre
+    değil. Kullanıcının kendi isteğiyle (ilk giriş akışında) şifresini
+    değiştirdiği self-service çağrıda force_change=False verilir."""
     from werkzeug.security import generate_password_hash
 
     if not new_password or len(new_password) < 8:
@@ -812,8 +834,35 @@ def set_tenant_user_password(conn, tenant_id: int, user_id: int, new_password: s
     now = iso(utcnow())
     execute(
         conn,
-        "UPDATE mail_tenant_users SET password_hash = ?, updated_at = ? WHERE id = ? AND tenant_id = ?",
-        (generate_password_hash(new_password, method="pbkdf2:sha256"), now, int(user_id), int(tenant_id)),
+        "UPDATE mail_tenant_users SET password_hash = ?, must_change_password = ?, updated_at = ? "
+        "WHERE id = ? AND tenant_id = ?",
+        (
+            generate_password_hash(new_password, method="pbkdf2:sha256"),
+            1 if force_change else 0,
+            now,
+            int(user_id),
+            int(tenant_id),
+        ),
+    )
+
+
+def reset_tenant_user_totp(conn, tenant_id: int, user_id: int) -> None:
+    """Süper admin bir kullanıcının 2FA'sını sıfırlar (telefon değişti/kaybetti
+    vb.) — secret temizlenir, totp_enabled=0 olur; kullanıcı bir dahaki girişte
+    QR kodu tekrar okutup Authenticator'ı yeniden kurmak ZORUNDA kalır."""
+    row = fetchone(
+        conn,
+        "SELECT id FROM mail_tenant_users WHERE id = ? AND tenant_id = ?",
+        (int(user_id), int(tenant_id)),
+    )
+    if not row:
+        raise ValueError("Kullanıcı bulunamadı.")
+    now = iso(utcnow())
+    execute(
+        conn,
+        "UPDATE mail_tenant_users SET totp_secret = '', totp_enabled = 0, updated_at = ? "
+        "WHERE id = ? AND tenant_id = ?",
+        (now, int(user_id), int(tenant_id)),
     )
 
 

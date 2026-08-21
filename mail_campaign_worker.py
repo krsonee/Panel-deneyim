@@ -25,6 +25,13 @@ _lock = threading.Lock()
 _running = set()
 _scheduler_started = False
 
+# mail_campaigns.error alanına yazılan bu önek, kampanyanın "Alibaba günlük
+# kota doldu" yüzünden durdurulduğunu işaretler — domain-havuzu tükenmesiyle
+# aynı 'stopped' durumunu paylaşır ama BUNUN aksine kota kesin bir zamanda
+# (UTC gece yarısı) yenilendiği için _sweep_quota_stopped_campaigns bu
+# markerlı kampanyaları kota açılınca otomatik tekrar başlatır.
+QUOTA_STOP_MARKER = "[quota_stop] "
+
 # Panel datetime-local = operatör saati (TR). Naive değerler UTC sanılmasın.
 try:
     from zoneinfo import ZoneInfo
@@ -244,6 +251,14 @@ def _scheduler_loop():
                 _sweep_stuck_queued_sends()
             except Exception as exc:
                 print(f"⚠️  mail stuck-queued sweep: {exc}")
+        # ~her 1 dakikada bir (8s * 8) — Alibaba kotası dolduğu için durdurulmuş
+        # kampanyaları, kota yenilenir yenilenmez (ya da superadmin limiti elle
+        # yükseltirse) otomatik devam ettirir.
+        if _tick_n % 8 == 0:
+            try:
+                _sweep_quota_stopped_campaigns()
+            except Exception as exc:
+                print(f"⚠️  mail quota-stopped sweep: {exc}")
         time.sleep(8)
 
 
@@ -289,6 +304,49 @@ def _sweep_stuck_queued_sends():
             )
         conn.commit()
         print(f"✉️  stuck-queued sweep: {len(ids)} kayıt failed'e çevrildi")
+
+
+def _sweep_quota_stopped_campaigns():
+    """Alibaba hesap kotası dolduğu için QUOTA_STOP_MARKER ile 'stopped'
+    işaretlenmiş kampanyaları, kota tekrar müsait olur olmaz (UTC gece
+    yarısı yenilenince ya da superadmin limiti elle yükseltince) otomatik
+    devam ettirir — bekleyen alıcılar zaten 'pending' bırakılmıştı."""
+    with closing(get_db()) as conn:
+        rows = fetchall(
+            conn,
+            "SELECT id FROM mail_campaigns WHERE status = 'stopped' AND error LIKE ? LIMIT 50",
+            (f"{QUOTA_STOP_MARKER}%",),
+        ) or []
+        if not rows:
+            return
+        try:
+            from mail_account_quota import account_quota_blocks_send
+            blocked, _ = account_quota_blocks_send(conn)
+        except Exception as exc:
+            print(f"⚠️  quota sweep check: {exc}")
+            return
+        if blocked:
+            return
+        resumed = 0
+        for row in rows:
+            cid = int(row_get(row, "id"))
+            pending = scalar(
+                conn,
+                "SELECT COUNT(*) FROM mail_campaign_recipients WHERE campaign_id = ? AND status = 'pending'",
+                (cid,),
+            ) or 0
+            if pending <= 0:
+                execute(
+                    conn,
+                    "UPDATE mail_campaigns SET status = 'done', finished_at = ?, updated_at = ? WHERE id = ?",
+                    (iso(utcnow()), iso(utcnow()), cid),
+                )
+                continue
+            resumed += 1
+            start_campaign_send(cid)
+        conn.commit()
+        if resumed:
+            print(f"✉️  quota sweep: {resumed} kampanya kota yenilendi diye otomatik devam ettirildi")
 
 
 def _tick_scheduled():
@@ -516,6 +574,33 @@ def _process_campaign(campaign_id):
                     return
         except Exception as dex:
             print(f"⚠️  domain gate: {dex}")
+            safe_rollback(conn)
+
+        # Alibaba hesap bazlı günlük kota — kampanya başında da kontrol et
+        # (mid-batch kontrolü aşağıda da var). Domain havuzu tükenmesinden
+        # FARKLI olarak bu kota tam olarak ne zaman yenileneceği bilinen
+        # (UTC gece yarısı) bir kısıt — o yüzden 'stopped' + QUOTA_STOP_MARKER
+        # ile işaretleyip _sweep_quota_stopped_campaigns'in otomatik devam
+        # ettirmesine izin veriyoruz (kalıcı/asla-devam-etmez domain-havuzu
+        # durdurmasından farklı olarak).
+        try:
+            from mail_account_quota import account_quota_blocks_send
+            q_blocked, q_reason = account_quota_blocks_send(conn)
+            if q_blocked:
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_campaigns
+                    SET status = 'stopped', updated_at = ?, error = ?
+                    WHERE id = ?
+                    """,
+                    (now, f"{QUOTA_STOP_MARKER}{q_reason}"[:400], campaign_id),
+                )
+                conn.commit()
+                print(f"✉️  campaign #{campaign_id} stopped — Alibaba quota exhausted at start")
+                return
+        except Exception as qex:
+            print(f"⚠️  account quota gate: {qex}")
             safe_rollback(conn)
 
         tpl = fetchone(conn, "SELECT * FROM mail_templates WHERE id = ?", (camp["template_id"],))
@@ -813,6 +898,31 @@ def _process_campaign(campaign_id):
                             text_body=text_body,
                             inject_tracking=_inject_tracking,
                         )
+
+                    # Alibaba HESAP kotası mid-batch'te dolduysa domain-özel bir
+                    # sorun değil (başka domain denemek işe yaramaz) — bu alıcıyı
+                    # kalıcı 'skipped' yapmak yerine 'pending'e geri koy, kampanyayı
+                    # kota-marker'lı 'stopped' yap; _sweep_quota_stopped_campaigns
+                    # kota yenilenince otomatik devam ettirir.
+                    if status == "skipped" and "kota doldu" in (err or "").lower():
+                        execute(
+                            conn,
+                            "UPDATE mail_campaign_recipients SET status = 'pending' WHERE id = ?",
+                            (rec["recipient_id"],),
+                        )
+                        reconcile_campaign_counts(conn, campaign_id)
+                        execute(
+                            conn,
+                            """
+                            UPDATE mail_campaigns
+                            SET status = 'stopped', updated_at = ?, error = ?
+                            WHERE id = ?
+                            """,
+                            (iso(utcnow()), f"{QUOTA_STOP_MARKER}{err}"[:400], campaign_id),
+                        )
+                        conn.commit()
+                        print(f"✉️  campaign #{campaign_id} stopped mid-recipient — Alibaba quota exhausted")
+                        return
 
                     recip_status = status if status in ("simulated", "sent", "queued", "failed", "skipped") else "failed"
                     execute(
