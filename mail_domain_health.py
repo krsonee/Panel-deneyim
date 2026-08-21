@@ -24,6 +24,19 @@ except Exception:
     OP_TZ = timezone(timedelta(hours=3))
 
 
+def _daily_cap_tz(conn):
+    """daily_cap günlük penceresi Ayarlar'daki 'alibaba_daily_quota_tz' ile hizalı —
+    eskiden burada sabit Europe/Istanbul kullanılıyordu, hesap bazlı Alibaba kotası
+    (mail_account_quota) ayrı/yapılandırılabilir bir TZ kullanıyordu; bu ikisi arası
+    uyumsuzluk domain günlük sayaçlarının Alibaba'nın kendi günüyle örtüşmemesine
+    yol açabiliyordu (bkz mail_domain_pick._op_tz — aynı mantık)."""
+    try:
+        from mail_domain_pick import _op_tz
+        return _op_tz(conn)
+    except Exception:
+        return OP_TZ
+
+
 def _domain_send_stats(conn, domain_id: int, *, hours: int = WINDOW_HOURS) -> dict:
     since = iso(utcnow() - timedelta(hours=max(1, int(hours))))
     rows = fetchall(
@@ -220,7 +233,7 @@ def domain_is_send_blocked(conn, domain_id) -> tuple[bool, str]:
         return True, f"Domain {st}"
     daily_cap = int(row_get(row, "daily_cap") or 0)
     if daily_cap > 0:
-        now_local = datetime.now(OP_TZ)
+        now_local = datetime.now(_daily_cap_tz(conn))
         day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
         since = day_start.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         sent_today = int(

@@ -3087,6 +3087,12 @@
         var pane = document.getElementById("mail-pane-campaigns");
         if (!pane || pane.hidden) return;
         mailLoadCampaigns();
+        // Kota/kredi widget'ları eskiden SADECE sekmeye ilk giriş / queue-resume-
+        // retry tıklamasında yenileniyordu — saatlerce süren aktif bir gönderim
+        // boyunca (kullanıcı sekmeden ayrılmadan) donmuş görünüyorlardı, sanki
+        // gönderilen mailler hiçbir sayaçtan düşmüyormuş gibi. Artık kampanya
+        // "sending/queued" olduğu her poll turunda da tazeleniyor.
+        refreshAccountQuota();
       }, 15000);
     }
     if (!need && mailCampPollTimer) {

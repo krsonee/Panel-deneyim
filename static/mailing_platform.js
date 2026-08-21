@@ -1878,6 +1878,19 @@
       bindWarmupProgramUi();
       bindWeeklyMaintenanceUi();
       this.refresh();
+      // Isıtma programı / kota / kredi sayaçları eskiden SADECE bu sayfaya
+      // (yeniden) girildiğinde veya bir aksiyon butonuna tıklandığında
+      // tazeleniyordu — kullanıcı sayfada kalıp saatlerce süren bir kampanyayı
+      // izlerken rakamlar donmuş görünüyordu (aslında arka planda güncelleniyor,
+      // sadece ekran yenilenmiyordu). Isıtma sekmesi görünürken periyodik tazele.
+      setInterval(function () {
+        if (document.hidden) return;
+        var pane = document.getElementById("mm-plat-warmup");
+        if (!pane || !pane.classList.contains("active")) return;
+        refreshWarmupProgram();
+        refreshAccountQuota();
+        refreshMailCredit();
+      }, 20000);
     },
     refresh: function () {
       return Promise.all([

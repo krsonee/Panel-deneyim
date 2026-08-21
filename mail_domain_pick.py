@@ -12,9 +12,32 @@ from database import execute, fetchall, fetchone, scalar
 
 try:
     from zoneinfo import ZoneInfo
-    OP_TZ = ZoneInfo("Europe/Istanbul")
-except Exception:
-    OP_TZ = timezone(timedelta(hours=3))
+except Exception:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
+
+_FALLBACK_TZ = timezone(timedelta(hours=3))  # Europe/Istanbul sabit offset yedeği
+
+
+def _op_tz(conn=None):
+    """Domain günlük cap penceresi artık Ayarlar'daki 'alibaba_daily_quota_tz' ile
+    hizalı — eskiden burada sabit Europe/Istanbul kullanılıyordu, hesap bazlı Alibaba
+    kotası (mail_account_quota) ise ayrı/yapılandırılabilir bir TZ kullanıyordu; bu
+    ikisi arası uyumsuzluk "gün başlangıcı" saatini kaydırıp günlük sayaçların
+    Alibaba'nın kendi günüyle örtüşmemesine yol açabiliyordu."""
+    name = "Europe/Istanbul"
+    if conn is not None:
+        try:
+            from mail_account_quota import get_quota_tz_name
+            name = get_quota_tz_name(conn) or name
+        except Exception:
+            pass
+    if ZoneInfo is not None:
+        try:
+            return ZoneInfo(name)
+        except Exception:
+            pass
+    return _FALLBACK_TZ
+
 
 WARM_RANK = {
     "warm": 3,
@@ -25,9 +48,10 @@ WARM_RANK = {
 }
 
 
-def day_since_iso_utc() -> str:
-    """Europe/Istanbul gün başlangıcı → UTC ISO (domain_is_send_blocked ile aynı)."""
-    now_local = datetime.now(OP_TZ)
+def day_since_iso_utc(conn=None) -> str:
+    """Ayarlar'daki Alibaba kota TZ'sine göre gün başlangıcı → UTC ISO
+    (domain_is_send_blocked ile aynı mantık/aynı TZ kaynağı)."""
+    now_local = datetime.now(_op_tz(conn))
     day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
     return day_start.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -51,7 +75,7 @@ def ensure_auto_domain_column(conn) -> None:
 
 
 def domain_sent_today(conn, domain_id: int) -> int:
-    since = day_since_iso_utc()
+    since = day_since_iso_utc(conn)
     return int(
         scalar(
             conn,
@@ -87,7 +111,7 @@ def _sent_today_by_domain(conn, domain_ids: list[int]) -> dict[int, int]:
     ids = [int(i) for i in domain_ids]
     if not ids:
         return {}
-    since = day_since_iso_utc()
+    since = day_since_iso_utc(conn)
     ph = ",".join(["?"] * len(ids))
     rows = fetchall(
         conn,
