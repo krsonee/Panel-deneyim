@@ -258,6 +258,13 @@ def _scheduler_loop():
     except Exception as exc:
         print(f"⚠️  mail stuck-queued sweep (ilk çalıştırma): {exc}")
     try:
+        # 22.08 olayı: önceki sweep sürümü hiç gönderilmemiş kayıtları 'failed'
+        # yazıp başarı oranını yapay şekilde çökertmişti — deploy sonrası ilk
+        # açılışta bir kez geriye dönük düzeltilir.
+        _reconcile_misclassified_stuck_sends()
+    except Exception as exc:
+        print(f"⚠️  misclassified stuck-sweep reconcile (ilk çalıştırma): {exc}")
+    try:
         _reconcile_credit_counters()
     except Exception as exc:
         print(f"⚠️  credit reconcile (ilk çalıştırma): {exc}")
@@ -291,30 +298,50 @@ def _scheduler_loop():
                 _reconcile_credit_counters()
             except Exception as exc:
                 print(f"⚠️  credit reconcile: {exc}")
+        # ~her 1 saatte bir (8s * 450) — düşük frekans yeterli, sadece ekstra
+        # güvenlik ağı (çoklu worker/restart senaryolarına karşı).
+        if _tick_n % 450 == 0:
+            try:
+                _reconcile_misclassified_stuck_sends()
+            except Exception as exc:
+                print(f"⚠️  misclassified stuck-sweep reconcile: {exc}")
         time.sleep(8)
+
+
+_STUCK_SWEEP_CANCEL_MARK = "Kampanya iptal/silinmişti — bu alıcıya gönderim HİÇ denenmedi, sistem tarafından 'skipped' (atlandı) işaretlendi. Bu bir Alibaba reddi DEĞİLDİR."
+_STUCK_SWEEP_DONE_MARK = "Kampanya bitmiş görünüyor ama bu kayıt queued kalmıştı — gönderim durumu doğrulanamadı, 'skipped' işaretlendi (olası crash-window). Bu bir Alibaba reddi DEĞİLDİR."
+# Eski (hatalı) sürümün yazdığı mesaj — geriye dönük düzeltme (bkz
+# _reconcile_misclassified_stuck_sends) bu prefix'i arıyor.
+_STUCK_SWEEP_LEGACY_FAILED_MARK = "Kampanya bitmiş/silinmişti, gönderim durumu doğrulanamadı"
 
 
 def _sweep_stuck_queued_sends():
     """Kampanyası zaten bitmiş/silinmiş (done/cancelled/campaign_id NULL) olduğu
-    halde mail_sends'te uzun süredir 'queued' kalan kayıtları 'failed'e çevirir.
+    halde mail_sends'te uzun süredir 'queued' kalan kayıtları 'skipped'e çevirir.
 
     Bu SADECE mail_delivery.py'deki bilinen crash-window'u (SMTP gönderildi
     ama commit'ten önce süreç çökerse kayıt sonsuza dek 'queued' kalır) veya
-    silinen (delete_campaign → campaign_id=NULL) bir kampanyanın enkaz kalan
-    satırlarını temizler — devam eden veya duraklatılmış (paused) kampanyalara
-    HİÇ dokunmaz, çünkü onlarda 'queued' normal/beklenen bir durumdur.
+    silinen (delete_campaign → campaign_id=NULL) / iptal edilen (cancel_campaign)
+    bir kampanyanın enkaz kalan satırlarını temizler — devam eden veya
+    duraklatılmış (paused) kampanyalara HİÇ dokunmaz, çünkü onlarda 'queued'
+    normal/beklenen bir durumdur.
 
-    ÖNEMLİ (21.08 olayı): eşik eskiden 24 SAATTİ — bir kampanya silinip
-    ~10.9k satır campaign_id=NULL + 'queued' enkaz olarak kaldığında, bu
-    satırlar tam 24 saat boyunca "queued" (ne başarı ne başarısızlık) olarak
-    görünmeye devam etti ve panel başarı-oranı bunları hesaba HİÇ katmadığı
-    için (bkz _success_rate: sadece sent/simulated/failed/bounced sayılır)
-    gerçekte Alibaba konsolunda ~%60 olan başarı oranı panelde ~%97 gibi
-    yanıltıcı gözüktü. campaign_id NULL olan satırlar ZATEN hiçbir zaman
-    devam ettirilemez (silinmiş kampanya) — bunlar için bekleme süresi YOK,
-    hemen çözülür. Hâlâ var olan ama done/cancelled bir kampanyaya bağlı
-    satırlar için 1 saatlik kısa bir tampon yeterli (worker zaten dakikalar
-    içinde her satırı işler, saatlerce 'queued' kalması anormaldir)."""
+    KRİTİK (21.08 gece → 22.08 sabah olayı): bu fonksiyon eskiden bu satırları
+    'failed' olarak işaretliyordu. Ama bir kullanıcı bir kampanyayı DURAKLATIP
+    sonra İPTAL ederse (örn. düşük başarı oranı yüzünden), o kampanyaya bağlı
+    binlerce 'queued' satır aslında HİÇ Alibaba'ya gönderilmemiştir — kullanıcı
+    bilerek durdurmuştur. Bunları 'failed' yapmak, hiç denenmemiş binlerce
+    kaydı gerçek Alibaba reddiymiş gibi başarı-oranı hesabına (bkz
+    mailing_routes._success_rate: sent/simulated=accepted, failed/bounced=
+    rejected) sokup oranı YAPAY olarak çökertiyordu (örn. %96 → %16, "10 bin
+    fail" diye görünen ama gerçekte hiç gönderilmemiş kayıtlar). Artık nötr
+    'skipped' durumuna alınıyor — bu durum ne accepted ne rejected sayılır
+    (queued gibi), sadece sonsuza dek 'queued' görünmekten kurtarır.
+
+    campaign_id NULL olan satırlar ZATEN hiçbir zaman devam ettirilemez
+    (silinmiş kampanya) — bunlar için bekleme süresi YOK, hemen çözülür.
+    Hâlâ var olan ama done/cancelled bir kampanyaya bağlı satırlar için
+    1 saatlik kısa bir tampon yeterli."""
     now = utcnow()
     orphan_cutoff = iso(now - timedelta(minutes=10))
     dead_campaign_cutoff = iso(now - timedelta(hours=1))
@@ -322,7 +349,9 @@ def _sweep_stuck_queued_sends():
         rows = fetchall(
             conn,
             """
-            SELECT s.id FROM mail_sends s
+            SELECT s.id, s.campaign_id, c.status AS camp_status
+            FROM mail_sends s
+            LEFT JOIN mail_campaigns c ON c.id = s.campaign_id
             WHERE s.status = 'queued'
               AND (
                     (s.campaign_id IS NULL AND s.created_at < ?)
@@ -336,20 +365,23 @@ def _sweep_stuck_queued_sends():
         ) or []
         if not rows:
             return
-        ids = [int(row_get(r, "id")) for r in rows]
-        for sid in ids:
+        n = 0
+        for r in rows:
+            sid = int(row_get(r, "id"))
+            camp_status = row_get(r, "camp_status")
+            msg = _STUCK_SWEEP_DONE_MARK if camp_status == "done" else _STUCK_SWEEP_CANCEL_MARK
             execute(
                 conn,
                 """
                 UPDATE mail_sends
-                SET status = 'failed',
-                    error = 'Kampanya bitmiş/silinmişti, gönderim durumu doğrulanamadı — sistem tarafından failed işaretlendi (olası crash-window / yarıda kesilen kampanya)'
+                SET status = 'skipped', error = ?
                 WHERE id = ? AND status = 'queued'
                 """,
-                (sid,),
+                (msg, sid),
             )
+            n += 1
         conn.commit()
-        print(f"✉️  stuck-queued sweep: {len(ids)} kayıt failed'e çevrildi")
+        print(f"✉️  stuck-queued sweep: {n} kayıt skipped'e çevrildi (accepted/rejected sayılmaz)")
         try:
             from mail_credit import reconcile_credit_used, reconcile_tenant_credit_used
             reconcile_credit_used(conn)
@@ -357,6 +389,43 @@ def _sweep_stuck_queued_sends():
             conn.commit()
         except Exception as exc:
             print(f"⚠️  credit reconcile (stuck-queued sonrası): {exc}")
+
+
+def _reconcile_misclassified_stuck_sends():
+    """Bir önceki (hatalı) sweep sürümünün 'failed' olarak yanlış işaretlediği
+    — ama gerçekte HİÇ Alibaba'ya gönderilmemiş — kayıtları geriye dönük
+    olarak 'skipped'e çevirir (self-heal, tek seferlik + periyodik güvenlik).
+
+    Sadece TAM OLARAK bizim sweep'imizin yazdığı sentetik mesajla eşleşen
+    kayıtlara dokunur — gerçek Alibaba/SMTP hata mesajlı satırlara ASLA
+    dokunmaz, o yüzden gerçek başarısız gönderimler etkilenmez."""
+    with closing(get_db()) as conn:
+        try:
+            n = execute(
+                conn,
+                """
+                UPDATE mail_sends
+                SET status = 'skipped',
+                    error = 'Geriye dönük düzeltme: bu kayıt hiç gönderilmemişti, önceki sürüm yanlışlıkla failed işaretlemişti — skipped olarak düzeltildi.'
+                WHERE status = 'failed' AND error LIKE ?
+                """,
+                (f"%{_STUCK_SWEEP_LEGACY_FAILED_MARK}%",),
+            )
+            conn.commit()
+            try:
+                from mail_credit import reconcile_credit_used, reconcile_tenant_credit_used
+                reconcile_credit_used(conn)
+                reconcile_tenant_credit_used(conn)
+                conn.commit()
+            except Exception:
+                pass
+            print("✉️  yanlış-sınıflandırılmış stuck-sweep kayıtları düzeltildi (failed→skipped)")
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            print(f"⚠️  misclassified stuck-sweep reconcile: {exc}")
 
 
 def _sweep_quota_stopped_campaigns():
