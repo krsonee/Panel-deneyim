@@ -640,6 +640,56 @@ def _make_click_token(conn, *, dest_url, send_id=None, contact_id=None, campaign
     return token
 
 
+_REDIRECT_RESOLVE_CACHE: dict[str, tuple[str, float]] = {}
+_REDIRECT_RESOLVE_TTL = 6 * 3600  # saat
+
+
+def _resolve_redirect_chain(url: str, *, timeout: float = 3.0) -> str:
+    """HTTP 3xx zincirini takip edip GERÇEK son URL'i döner (best-effort, cache'li).
+
+    Kritik bug: bazı marka kısa-link / domain-forwarding servisleri (örn.
+    registrar/Cloudflare "URL forwarding" — bizim durumda makrovip.com/Vipmail
+    → go.aff.makroaffi.com/xxx) kendi redirect'inde query string'i (afp1=
+    contact_id) SESSİZCE YUTUYOR. Sonuç: Smartico hiçbir zaman sub-id görmüyor,
+    kayıt/FTD Mail Rehber'deki kontakla ASLA eşleşmiyor (kullanıcı gerçek bir
+    üyelik oluşturdu ama hiçbir yerde yansımadı — kök neden buydu).
+    Çözüm: afp1'i ara adıma değil, zincirin gerçek son adresine ekleriz —
+    ara adım query'yi yutsa bile sorun ortadan kalkar. Ağ hatası / timeout'ta
+    orijinal url'e sessizce düşer (davranış bozulmaz, sadece afp1 eklenemez).
+    """
+    import time as _time
+
+    url = (url or "").strip()
+    if not url:
+        return url
+    now = _time.monotonic()
+    cached = _REDIRECT_RESOLVE_CACHE.get(url)
+    if cached and cached[1] > now:
+        return cached[0]
+
+    import urllib.error
+    import urllib.request
+
+    resolved = url
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; MikromailLinkResolver/1.0)"}
+    try:
+        req = urllib.request.Request(url, method="HEAD", headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            resolved = resp.geturl() or url
+    except urllib.error.HTTPError as he:
+        # ÖNEMLİ: urlopen 3xx zincirini KENDİ İÇİNDE takip eder — son adım bot/UA
+        # koruması yüzünden 403/405 dönse bile he.geturl() zincirin GERÇEK son
+        # adresini verir (biz sadece hedefi öğrenmek istiyoruz, sayfayı açmıyoruz).
+        try:
+            resolved = he.geturl() or url
+        except Exception:
+            resolved = url
+    except Exception:
+        resolved = url
+    _REDIRECT_RESOLVE_CACHE[url] = (resolved, now + _REDIRECT_RESOLVE_TTL)
+    return resolved
+
+
 def _append_query_param(url, key, value):
     """URL'e query param ekle/güncelle — mevcut parametreleri korur."""
     try:
@@ -2639,7 +2689,11 @@ def create_mailing_click_blueprint():
                         subid_param = (get_mail_setting(c2, "smartico_subid_param", "afp1") or "afp1").strip() or "afp1"
                 except Exception:
                     subid_param = "afp1"
-                dest = _append_query_param(dest, subid_param, contact_id)
+                # Marka kısa linki (örn. makrovip.com/Vipmail) kendi redirect'inde
+                # query string'i yutabiliyor — afp1'i ara adıma değil, zincirin
+                # GERÇEK son adresine (örn. go.aff.makroaffi.com/xxx) ekle.
+                real_dest = _resolve_redirect_chain(dest)
+                dest = _append_query_param(real_dest, subid_param, contact_id)
             return dest
 
         # 1) İmzalı v2 token — DB şart değil

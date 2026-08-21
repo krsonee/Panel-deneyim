@@ -5271,6 +5271,24 @@
       // gönderim yapılıp başarı oranı düşüyordu. Artık panel ilk açılışta bir
       // kez ayarları önceden çekip checkbox'ı doğru varsayılana getiriyor.
       mailLoadSettings();
+      // "Smartico" ve "İlişki CRM" sekmeleri eskiden SADECE tab'a ilk girişte
+      // veya arama kutusuna elle yazınca tazeleniyordu — kullanıcı sekmede
+      // kalırken arka planda gerçekleşen yeni kayıt / FTD / skor güncellemeleri
+      // ekrana hiç yansımıyordu ("veri akışında sorun var" izlenimi). Artık bu
+      // iki sekme açıkken kendiliğinden periyodik tazeleniyor (aktif kampanya
+      // kota/kredi widget'larına eklenen tazeleme ile aynı desen).
+      setInterval(function () {
+        if (document.hidden) return;
+        var modulePane = document.getElementById("module-mailing-panel");
+        if (modulePane && modulePane.hidden) return;
+        if (mailActiveTab === "smartico") {
+          var scPane = document.getElementById("mail-pane-smartico");
+          if (!scPane || !scPane.hidden) mailLoadSmarticoPlayers(false);
+        } else if (mailActiveTab === "relations") {
+          var relPane = document.getElementById("mail-pane-relations");
+          if (!relPane || !relPane.hidden) mailLoadRelationsPipeline();
+        }
+      }, 20000);
     },
     ensureTenant: mailEnsureTenant,
     navigate: mailNavigate,
