@@ -5332,6 +5332,13 @@ def create_mailing_blueprint(permission_required):
                 }), 409
             try:
                 execute(conn, "UPDATE mail_campaigns SET template_id = NULL WHERE template_id = ?", (template_id,))
+                # mail_sends.template_id ve mail_ivr_rules.template_id da mail_templates'e
+                # FK'lı — bunlar unutulmuştu, gerçek gönderimi olan (mail_sends satırı
+                # üretmiş) bir şablonu silmek "update or delete... violates foreign key
+                # constraint mail_sends_template_id_fkey" ile patlıyordu. Geçmiş gönderim
+                # kayıtlarını silmiyoruz, sadece şablon referansını koparıyoruz.
+                execute(conn, "UPDATE mail_sends SET template_id = NULL WHERE template_id = ?", (template_id,))
+                execute(conn, "UPDATE mail_ivr_rules SET template_id = NULL WHERE template_id = ?", (template_id,))
                 execute(conn, "DELETE FROM mail_templates WHERE id = ?", (template_id,))
                 conn.commit()
             except Exception as exc:
