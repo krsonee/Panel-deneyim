@@ -230,12 +230,65 @@ def ensure_campaign_scheduler():
 
 
 def _scheduler_loop():
+    _tick_n = 0
     while True:
         try:
             _tick_scheduled()
         except Exception as exc:
             print(f"⚠️  mail campaign scheduler: {exc}")
+        _tick_n += 1
+        # ~her 15 dakikada bir (8s * 112 ≈ 15dk) — sık sık taramaya gerek yok,
+        # bu sadece nadir bir crash-window'u kapatan bir güvenlik ağı.
+        if _tick_n % 112 == 0:
+            try:
+                _sweep_stuck_queued_sends()
+            except Exception as exc:
+                print(f"⚠️  mail stuck-queued sweep: {exc}")
         time.sleep(8)
+
+
+def _sweep_stuck_queued_sends():
+    """Kampanyası zaten bitmiş (done/cancelled) olduğu halde mail_sends'te
+    24 saatten uzun süredir 'queued' kalan kayıtları 'failed'e çevirir.
+
+    Bu SADECE mail_delivery.py'deki bilinen crash-window'u (SMTP gönderildi
+    ama commit'ten önce süreç çökerse kayıt sonsuza dek 'queued' kalır) temizler
+    — devam eden veya duraklatılmış (paused) kampanyalara HİÇ dokunmaz, çünkü
+    onlarda 'queued' normal/beklenen bir durumdur."""
+    now = utcnow()
+    cutoff = iso(now - timedelta(hours=24))
+    now_iso = iso(now)
+    with closing(get_db()) as conn:
+        rows = fetchall(
+            conn,
+            """
+            SELECT s.id FROM mail_sends s
+            WHERE s.status = 'queued'
+              AND s.created_at < ?
+              AND (
+                    s.campaign_id IS NULL
+                    OR s.campaign_id IN (SELECT id FROM mail_campaigns WHERE status IN ('done', 'cancelled'))
+                  )
+            LIMIT 500
+            """,
+            (cutoff,),
+        ) or []
+        if not rows:
+            return
+        ids = [int(row_get(r, "id")) for r in rows]
+        for sid in ids:
+            execute(
+                conn,
+                """
+                UPDATE mail_sends
+                SET status = 'failed',
+                    error = '24 saatten uzun süre queued kaldı — kampanya bitmişti, sistem tarafından failed işaretlendi (olası crash-window)'
+                WHERE id = ? AND status = 'queued'
+                """,
+                (sid,),
+            )
+        conn.commit()
+        print(f"✉️  stuck-queued sweep: {len(ids)} kayıt failed'e çevrildi")
 
 
 def _tick_scheduled():

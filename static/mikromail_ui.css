@@ -401,11 +401,49 @@ button[hidden] {
 }
 .mm-dropzone input[type="file"] { display: none; }
 
+/* —— Dropzone (hero variant — büyük, tek giriş yöntemi olan kontak yükleme) —— */
+.mm-dropzone-hero {
+  padding: 2.25rem 1.5rem; border-width: 2px; border-radius: 16px;
+  display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+}
+.mm-dropzone-hero .mm-dropzone-icon {
+  color: #38bdf8; margin-bottom: 0.4rem; opacity: 0.85;
+}
+.mm-dropzone-hero .mm-dropzone-title { font-size: 1rem; }
+.mm-dropzone-hero .mm-dropzone-title .muted { font-weight: 400; color: var(--muted); }
+.mm-dropzone-hero .mm-dropzone-sub { margin-bottom: 0.15rem; }
+.mm-dropzone-hero .mm-dropzone-files { width: 100%; max-width: 480px; }
+.mm-dropzone-hero.dragover {
+  border-color: #38bdf8; background: rgba(56, 189, 248, 0.1);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+}
+
 /* —— Paste live counter —— */
 .mm-paste-meta {
   display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; align-items: center;
 }
 .mm-paste-meta .mm-badge { font-weight: 600; }
+
+/* —— Generic modal (kontak düzenle vb.) —— */
+.mm-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(6, 10, 16, 0.72); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center; padding: 1.25rem;
+}
+.mm-modal-overlay[hidden] { display: none; }
+.mm-modal {
+  width: 100%; max-width: 620px; max-height: 88vh; overflow-y: auto;
+  background: var(--surface, #0f1623); border: 1px solid var(--border, #243044);
+  border-radius: 14px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.mm-modal-wide { max-width: 780px; }
+.mm-modal .card-head {
+  position: sticky; top: 0; background: var(--surface, #0f1623); z-index: 1;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.mm-modal .card-head #mail-c-close-x {
+  font-size: 1.1rem; line-height: 1; padding: 0.2rem 0.6rem;
+}
 
 /* —— Tag move wizard —— */
 .mail-tag-move {
@@ -541,6 +579,51 @@ button[hidden] {
   font-size: 0.78rem; line-height: 1.45;
 }
 .mm-wu-rules li { margin-bottom: 0.25rem; }
+
+/* —— Segmented control (Eski/Yeni domainler) —— */
+.mm-segmented {
+  display: inline-flex; padding: 0.2rem; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border); gap: 0.15rem;
+}
+.mm-segmented-btn {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.82rem; font-weight: 600;
+  transition: background 0.15s, color 0.15s;
+}
+.mm-segmented-btn:hover { color: var(--text); }
+.mm-segmented-btn.is-active { background: var(--accent, #38bdf8); color: var(--accent-ink, #041018); }
+
+/* —— Status dots (task/domain durum göstergesi) —— */
+.mm-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  margin-top: 0.3rem;
+}
+.mm-dot-green { background: #34d399; box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.18); }
+.mm-dot-amber { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.18); }
+.mm-dot-rose { background: #fb7185; box-shadow: 0 0 0 3px rgba(251, 113, 133, 0.18); }
+
+/* —— Warm-up progress cards (ısınan domainler) —— */
+.mm-wu-progress-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.65rem;
+}
+.mm-wu-progress-card {
+  border: 1px solid var(--border); border-radius: 12px; padding: 0.75rem 0.85rem;
+  background: var(--surface);
+}
+.mm-wu-progress-card-head {
+  display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.55rem; font-size: 0.85rem;
+}
+.mm-wu-progress-card-head .mm-dot { margin-top: 0; }
+.mm-wu-progress-card-bar {
+  height: 8px; border-radius: 999px; background: rgba(148, 163, 184, 0.18); overflow: hidden;
+}
+.mm-wu-progress-card-bar div {
+  height: 100%; background: linear-gradient(90deg, #38bdf8, #34d399); transition: width 0.35s;
+}
+.mm-wu-progress-card-meta {
+  display: flex; gap: 0.6rem; margin-top: 0.5rem; font-size: 0.7rem; color: var(--muted);
+  flex-wrap: wrap;
+}
 
 .mail-quota-meter { display: grid; gap: 0.45rem; }
 .mail-quota-bar {

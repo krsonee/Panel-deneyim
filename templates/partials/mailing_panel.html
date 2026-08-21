@@ -272,86 +272,33 @@
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head"><span id="mail-contact-form-title">Kontak ekle</span></div>
+      <div class="card-head">
+        <span>Kontak ekle</span>
+        <button type="button" class="btn btn-sm" id="mail-tpl-download-btn">Örnek şablon indir (.xlsx)</button>
+      </div>
       <div class="card-body">
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;align-items:start;">
-          <div>
-            <p class="hint" style="margin:0 0 0.65rem;font-weight:600;color:var(--text,#e2e8f0);" id="mail-contact-form-sub">Tek tek ekle / düzenle</p>
-            <form id="mail-contact-form" class="form-row-4" style="grid-template-columns:1fr 1fr;">
-              <input type="hidden" id="mail-c-id" value="">
-              <div style="grid-column:1/-1;"><label>E-posta</label><input type="email" id="mail-c-email" required placeholder="ornek@mail.com"></div>
-              <div><label>Ad</label><input type="text" id="mail-c-name" placeholder="Ad Soyad"></div>
-              <div><label>Telefon</label><input type="text" id="mail-c-phone" placeholder="+90…"></div>
-              <div>
-                <label>Etiket (hızlı seç)</label>
-                <select id="mail-c-tags" class="mail-tag-select"><option value="">Etiket yok</option></select>
-              </div>
-              <div><label>Etiketler (virgülle çoklu)</label><input type="text" id="mail-c-tags-text" placeholder="vip, davet, uye_oldu"></div>
-              <div><label>Kaynak</label><input type="text" id="mail-c-source" placeholder="manual / csv / ivr…"></div>
-              <div>
-                <label>Doğrulama durumu</label>
-                <select id="mail-c-verify">
-                  <option value="">—</option>
-                  <option value="valid">valid</option>
-                  <option value="mx_ok">mx_ok</option>
-                  <option value="invalid">invalid</option>
-                  <option value="unknown">unknown</option>
-                  <option value="catch_all">catch_all</option>
-                  <option value="disposable">disposable</option>
-                  <option value="role">role</option>
-                </select>
-              </div>
-              <div>
-                <label>CRM aşama</label>
-                <select id="mail-c-lifecycle">
-                  <option value="lead">Aday</option>
-                  <option value="contacted">Temas edildi</option>
-                  <option value="engaged">İlgili</option>
-                  <option value="converted">Dönüşen</option>
-                  <option value="vip">VIP</option>
-                  <option value="dormant">Uyuyan</option>
-                  <option value="lost">Kayıp</option>
-                </select>
-              </div>
-              <div><label>CRM sahip</label><input type="text" id="mail-c-owner" placeholder="operatör"></div>
-              <div style="grid-column:1/-1;"><label>Notlar</label><textarea id="mail-c-notes" rows="2" placeholder="opsiyonel not"></textarea></div>
-              <div style="grid-column:1/-1;">
-                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
-                  <input type="checkbox" id="mail-c-unsub"> Abonelikten çıkmış (unsubscribed)
-                </label>
-              </div>
-              <div style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;">
-                <button type="submit" class="btn btn-primary" id="mail-c-submit">Ekle</button>
-                <button type="button" class="btn btn-sm" id="mail-c-cancel" hidden>Düzenlemeyi iptal</button>
-              </div>
-            </form>
+        <form id="mail-bulk-import-form">
+          <div class="mm-dropzone mm-dropzone-hero" id="mail-bulk-dropzone">
+            <div class="mm-dropzone-icon" aria-hidden="true">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="mm-dropzone-title">Dosyaları buraya sürükle bırak <span class="muted">veya tıklayıp seç</span></div>
+            <div class="mm-dropzone-sub">CSV veya XLSX · birden fazla dosya birden · 20MB üstü otomatik parçalanır</div>
+            <div class="mm-dropzone-files" id="mail-bulk-file-list"></div>
+            <input type="file" id="mail-bulk-file" multiple accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
           </div>
-          <div>
-            <p class="hint" style="margin:0 0 0.65rem;font-weight:600;color:var(--text,#e2e8f0);">Çoklu dosya ekle</p>
-            <form id="mail-bulk-import-form" class="form-row-4" style="grid-template-columns:1fr;">
-              <div>
-                <div class="mm-label-row">
-                  <label>CSV / XLSX</label>
-                  <span class="mm-tip" tabindex="0" data-tip="CSV ~100M satıra kadar (max 5GB). 20MB üstü otomatik parçalanır. Excel ~1M satır.">?</span>
-                </div>
-                <div class="mm-dropzone" id="mail-bulk-dropzone">
-                  <div class="mm-dropzone-title">Sürükle bırak veya tıkla</div>
-                  <div class="mm-dropzone-sub">CSV, XLSX · birden fazla dosya</div>
-                  <div class="mm-dropzone-files" id="mail-bulk-file-list"></div>
-                  <input type="file" id="mail-bulk-file" multiple accept=".csv,.xlsx,.xlsm,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-                </div>
-              </div>
-              <div>
-                <div class="mm-label-row">
-                  <label>Etiket</label>
-                  <span class="mm-tip" tabindex="0" data-tip="Yüklenen tüm satırlara uygulanacak varsayılan etiket">?</span>
-                </div>
-                <select id="mail-bulk-tag" class="mail-tag-select"><option value="">Etiket yok</option></select>
-              </div>
-              <div><button type="submit" class="btn btn-primary">Yüklemeyi başlat</button></div>
-            </form>
+          <div style="display:flex;gap:0.75rem;align-items:end;margin-top:0.85rem;flex-wrap:wrap;">
+            <div style="min-width:220px;">
+              <div class="mm-label-row"><label>Etiket</label><span class="mm-tip" tabindex="0" data-tip="Yüklenen tüm satırlara uygulanacak varsayılan etiket">?</span></div>
+              <select id="mail-bulk-tag" class="mail-tag-select"><option value="">Etiket yok</option></select>
+            </div>
+            <button type="submit" class="btn btn-primary">Yüklemeyi başlat</button>
+            <p class="hint" style="margin:0;flex:1;min-width:220px;">
+              Yükleme öncesi otomatik hızlı süzgeç çalışır: syntax + tek-kullanımlık/role adresler + MX kaydı kontrolü.
+              Geçersiz satırlar veritabanına asla yazılmaz.
+            </p>
           </div>
-        </div>
+        </form>
         <div id="mail-import-dashboard" hidden style="margin-top:1rem;padding:1rem 1.1rem;border-radius:12px;border:1px solid rgba(148,163,184,0.22);background:rgba(15,23,42,0.35);">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
             <div style="min-width:0;flex:1;">
@@ -379,49 +326,75 @@
               <button type="button" class="btn btn-sm" id="mail-bulk-cancel" hidden>İptal et</button>
             </div>
           </div>
+          <div id="mail-import-summary" hidden style="margin-top:0.85rem;padding:0.75rem 0.85rem;border-radius:8px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);">
+            <p id="mail-import-summary-text" class="hint" style="margin:0;color:#bbf7d0;line-height:1.5;">—</p>
+          </div>
           <div id="mail-import-history" hidden style="margin-top:0.85rem;">
             <p class="hint" style="margin:0 0 0.4rem;font-weight:600;">Son yüklemeler</p>
             <div id="mail-import-history-list" class="hint" style="display:grid;gap:0.35rem;">—</div>
           </div>
         </div>
-        <details style="margin-top:0.85rem;">
-          <summary class="hint" style="cursor:pointer;">Küçük CSV yapıştır (birkaç bin satıra kadar)</summary>
-          <div id="mail-csv-box" style="margin-top:0.65rem;">
-            <label>CSV (email, name, tags)</label>
-            <textarea id="mail-csv-input" rows="4" placeholder="email,name,tags&#10;a@b.com,Ali,vip"></textarea>
-            <div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end;">
-              <div style="min-width:180px;">
-                <label>Varsayılan etiket</label>
-                <select id="mail-csv-tag" class="mail-tag-select"><option value="">Etiket yok</option></select>
-              </div>
-              <button type="button" class="btn btn-primary" id="mail-csv-submit">İçe aktar</button>
+      </div>
+    </section>
+    <div class="mm-modal-overlay" id="mail-contact-edit-overlay" hidden>
+      <div class="mm-modal mm-modal-wide" role="dialog" aria-modal="true">
+        <div class="card-head">
+          <span id="mail-contact-form-title">Kontak düzenle</span>
+          <button type="button" class="btn btn-sm" id="mail-c-close-x" aria-label="Kapat">×</button>
+        </div>
+        <div class="card-body">
+          <p class="hint" style="margin:0 0 0.65rem;" id="mail-contact-form-sub">Düzenleme modu</p>
+          <form id="mail-contact-form" class="form-row-4" style="grid-template-columns:1fr 1fr;">
+            <input type="hidden" id="mail-c-id" value="">
+            <div style="grid-column:1/-1;"><label>E-posta</label><input type="email" id="mail-c-email" required placeholder="ornek@mail.com"></div>
+            <div><label>Ad</label><input type="text" id="mail-c-name" placeholder="Ad Soyad"></div>
+            <div><label>Telefon</label><input type="text" id="mail-c-phone" placeholder="+90…"></div>
+            <div>
+              <label>Etiket (hızlı seç)</label>
+              <select id="mail-c-tags" class="mail-tag-select"><option value="">Etiket yok</option></select>
             </div>
-          </div>
-        </details>
-      </div>
-    </section>
-    <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head">
-        <span>Sadece e-posta listesi yapıştır</span>
-        <span class="mm-tip" tabindex="0" data-tip="Virgül / noktalı virgül / satır satır. Yapıştırınca otomatik kuyruğa eklenir (max ~10M).">?</span>
-      </div>
-      <div class="card-body">
-        <textarea id="mail-paste-box" rows="4" style="width:100%;font-family:inherit;" placeholder="Sadece e-posta — satır başına bir tane&#10;ali@mail.com&#10;veli@mail.com&#10;(isim/telefon karışık liste de olur; @ olan hücreler alınır)"></textarea>
-        <div class="mm-paste-meta">
-          <span class="mm-badge mm-badge-info" id="mail-paste-count">0 geçerli</span>
-          <span class="mm-badge mm-badge-danger" id="mail-paste-invalid" hidden>0 hatalı</span>
-          <span class="hint" id="mail-paste-invalid-sample" style="margin:0;"></span>
+            <div><label>Etiketler (virgülle çoklu)</label><input type="text" id="mail-c-tags-text" placeholder="vip, davet, uye_oldu"></div>
+            <div><label>Kaynak</label><input type="text" id="mail-c-source" placeholder="manual / csv / ivr…"></div>
+            <div>
+              <label>Doğrulama durumu</label>
+              <select id="mail-c-verify">
+                <option value="">—</option>
+                <option value="valid">valid</option>
+                <option value="mx_ok">mx_ok</option>
+                <option value="invalid">invalid</option>
+                <option value="unknown">unknown</option>
+                <option value="catch_all">catch_all</option>
+                <option value="disposable">disposable</option>
+                <option value="role">role</option>
+              </select>
+            </div>
+            <div>
+              <label>CRM aşama</label>
+              <select id="mail-c-lifecycle">
+                <option value="lead">Aday</option>
+                <option value="contacted">Temas edildi</option>
+                <option value="engaged">İlgili</option>
+                <option value="converted">Dönüşen</option>
+                <option value="vip">VIP</option>
+                <option value="dormant">Uyuyan</option>
+                <option value="lost">Kayıp</option>
+              </select>
+            </div>
+            <div><label>CRM sahip</label><input type="text" id="mail-c-owner" placeholder="operatör"></div>
+            <div style="grid-column:1/-1;"><label>Notlar</label><textarea id="mail-c-notes" rows="2" placeholder="opsiyonel not"></textarea></div>
+            <div style="grid-column:1/-1;">
+              <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
+                <input type="checkbox" id="mail-c-unsub"> Abonelikten çıkmış (unsubscribed)
+              </label>
+            </div>
+            <div style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;">
+              <button type="submit" class="btn btn-primary" id="mail-c-submit">Güncelle</button>
+              <button type="button" class="btn btn-sm" id="mail-c-cancel">Kapat</button>
+            </div>
+          </form>
         </div>
-        <div style="display:flex;gap:0.6rem;align-items:flex-end;margin-top:0.5rem;flex-wrap:wrap;">
-          <div style="min-width:200px;">
-            <div class="mm-label-row"><label>Etiket</label><span class="mm-tip" tabindex="0" data-tip="Yapıştırılan maillere uygulanacak etiket">?</span></div>
-            <select id="mail-paste-tag" class="mail-tag-select"><option value="">Etiket yok</option></select>
-          </div>
-          <button type="button" class="btn btn-sm btn-secondary" id="mail-paste-submit">Kuyruğa ekle</button>
-        </div>
-        <p class="hint" id="mail-paste-status" style="margin-top:0.5rem;">—</p>
       </div>
-    </section>
+    </div>
     <section class="card" style="margin-bottom:1rem;">
       <div class="card-head"><span>Liste temizle (gönderim öncesi süzgeç)</span></div>
       <div class="card-body">
@@ -830,12 +803,39 @@
 
   <!-- Raporlar -->
   <div class="acc-pane" id="mail-pane-reports" data-mail-pane="reports" hidden>
+    <section class="card mm-daterange-card" style="margin-bottom:1rem;">
+      <div class="card-body" style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
+        <div class="mm-daterange-presets" role="group" aria-label="Hazır tarih aralıkları">
+          <button type="button" class="btn btn-sm" data-mail-rep-preset="today">Bugün</button>
+          <button type="button" class="btn btn-sm is-active" data-mail-rep-preset="7d">Son 7 gün</button>
+          <button type="button" class="btn btn-sm" data-mail-rep-preset="month">Bu ay</button>
+        </div>
+        <input type="text" id="mail-rep-daterange" placeholder="Özel tarih aralığı seç…" readonly style="max-width:230px;cursor:pointer;">
+        <span class="hint" id="mail-rep-range-label" style="margin:0;">—</span>
+      </div>
+    </section>
     <section class="kpi-grid acc-kpi-grid" style="margin-bottom:1rem;">
-      <div class="kpi green"><div class="val" id="mail-rep-delivered">—</div><div class="lbl">İletilen / Simüle</div></div>
-      <div class="kpi amber"><div class="val" id="mail-rep-queued">—</div><div class="lbl">Kuyruk</div></div>
-      <div class="kpi rose"><div class="val" id="mail-rep-failed">—</div><div class="lbl">Başarısız</div></div>
-      <div class="kpi cyan"><div class="val" id="mail-rep-opened">—</div><div class="lbl">Açılma</div></div>
-      <div class="kpi"><div class="val" id="mail-rep-clicked">—</div><div class="lbl">Tıklama</div></div>
+      <div class="kpi">
+        <div class="val" id="mail-kpi-gonderilen">—</div>
+        <div class="lbl">Gönderilen</div>
+        <div class="mm-kpi-chg" id="mail-kpi-gonderilen-chg">—</div>
+      </div>
+      <div class="kpi green">
+        <div class="val" id="mail-kpi-iletilen">—</div>
+        <div class="lbl">İletilen</div>
+        <div class="mm-kpi-chg" id="mail-kpi-iletilen-chg">—</div>
+        <div class="hint" id="mail-kpi-iletilen-sub" style="margin:0.2rem 0 0;font-size:0.68rem;">—</div>
+      </div>
+      <div class="kpi cyan">
+        <div class="val" id="mail-kpi-acilan">—</div>
+        <div class="lbl">Açılan</div>
+        <div class="mm-kpi-chg" id="mail-kpi-acilan-chg">—</div>
+      </div>
+      <div class="kpi amber">
+        <div class="val" id="mail-kpi-tiklanan">—</div>
+        <div class="lbl">Tıklanan</div>
+        <div class="mm-kpi-chg" id="mail-kpi-tiklanan-chg">—</div>
+      </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
       <div class="card-head"><span>Kampanya analitiği</span>
@@ -844,7 +844,7 @@
       <div class="card-body">
         <div class="mm-label-row" style="margin-bottom:0.35rem;">
           <strong style="font-size:0.85rem;">Zamana göre açılma / tıklama</strong>
-          <span class="mm-tip" tabindex="0" data-tip="Son 14 günün günlük open ve click sayıları">?</span>
+          <span class="mm-tip" tabindex="0" data-tip="Seçili tarih aralığındaki günlük open ve click sayıları">?</span>
         </div>
         <div class="mm-chart-wrap">
           <canvas id="mail-rep-engagement-chart" aria-label="Açılma ve tıklama grafiği"></canvas>

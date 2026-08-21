@@ -497,7 +497,7 @@ def _smartico_by_contact(conn):
         return {}
 
 
-def campaign_analytics(conn, campaign_id=None, tenant_id=None, created_since=None):
+def campaign_analytics(conn, campaign_id=None, tenant_id=None, created_since=None, date_from=None, date_to=None):
     """Kampanya bazlı open/click/fail + Smartico (register/yatırım/FTD/çekim/bonus).
 
     tenant_id verilirse SADECE o tenant'ın kampanyaları döner — önceden bu
@@ -506,6 +506,10 @@ def campaign_analytics(conn, campaign_id=None, tenant_id=None, created_since=Non
     created_since verilirse (firma kullanıcısına atanmış geçmiş veri kesim
     tarihi) SADECE bu tarihten sonra oluşturulan kampanyalar döner — superadmin
     her zaman None gönderir, tam geçmişi görür.
+
+    date_from/date_to (YYYY-MM-DD) — Raporlar sekmesindeki tarih aralığı
+    seçicisinden gelen MUTLAK aralık; created_since'ten (tenant kesim tarihi)
+    bağımsız, ikisi birlikte uygulanabilir.
     """
     params = []
     clauses = []
@@ -518,6 +522,14 @@ def campaign_analytics(conn, campaign_id=None, tenant_id=None, created_since=Non
     if created_since:
         clauses.append("c.created_at >= ?")
         params.append(created_since)
+    if date_from:
+        clauses.append("CAST(c.created_at AS TEXT) >= ?")
+        params.append(str(date_from)[:10])
+    if date_to:
+        from datetime import datetime, timedelta
+        until = (datetime.strptime(str(date_to)[:10], "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        clauses.append("CAST(c.created_at AS TEXT) < ?")
+        params.append(until)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     rows = fetchall(
         conn,

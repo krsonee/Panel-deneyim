@@ -3382,6 +3382,43 @@ def ensure_mail_import_jobs_table(conn):
             execute(conn, "ALTER TABLE mail_import_jobs ADD COLUMN tenant_id INTEGER")
         except Exception:
             pass
+    # Insert-öncesi hızlı süzgeç (syntax/disposable/role/MX) — reddedilen satır
+    # sayaçları, import sonrası özet toast'ı için (bkz mailing_routes._run_import_job).
+    for col in ("rejected_count", "rejected_invalid", "rejected_disposable", "rejected_role", "rejected_no_mx"):
+        if cols and col not in cols:
+            try:
+                execute(conn, f"ALTER TABLE mail_import_jobs ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
+            except Exception:
+                pass
+    conn.commit()
+
+
+def ensure_mail_mx_cache_table(conn):
+    """Domain başına MX-var-mı sonucu cache'i — büyük listelerde (20k+ satır)
+    her satır için tekrar DNS sorgusu yapmamak için (aynı domain'i paylaşan
+    binlerce satır tek sorguyla halledilir). TTL ile periyodik tazelenir."""
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mail_mx_cache (
+                domain TEXT PRIMARY KEY,
+                has_mx BOOLEAN NOT NULL DEFAULT FALSE,
+                checked_at TEXT NOT NULL
+            )
+            """,
+        )
+    else:
+        execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mail_mx_cache (
+                domain TEXT PRIMARY KEY,
+                has_mx INTEGER NOT NULL DEFAULT 0,
+                checked_at TEXT NOT NULL
+            )
+            """,
+        )
     conn.commit()
 
 
@@ -3624,6 +3661,14 @@ def init_db():
                 except Exception:
                     pass
                 print(f"⚠️  ensure_mail_import_jobs_table hata: {exc}")
+            try:
+                ensure_mail_mx_cache_table(conn)
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                print(f"⚠️  ensure_mail_mx_cache_table hata: {exc}")
             try:
                 ensure_mail_contacts_unique_email(conn)
             except Exception as exc:

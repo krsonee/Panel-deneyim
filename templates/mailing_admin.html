@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Mikromail</title>
   <meta name="theme-color" content="#090D16">
-  <link rel="stylesheet" href="/static/mailing_shell.css?v=20260722mm11">
-  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260820mm17">
+  <link rel="stylesheet" href="/static/mailing_shell.css?v=20260821mm12">
+  <link rel="stylesheet" href="/static/mikromail_ui.css?v=20260821mm18">
   <style>
     :root { --accent: #38bdf8; --accent-soft: rgba(56,189,248,0.14); --accent-ink: #041018; }
     #module-mailing-panel { display:block !important; }
@@ -33,6 +33,11 @@
     .toast.show { opacity: 1; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js" defer></script>
+  <style>
+    .flatpickr-calendar { z-index: 3000; }
+  </style>
 </head>
 <body>
   <div id="toast" class="toast" aria-live="polite"></div>
@@ -423,12 +428,19 @@
                 </form>
                 <p class="hint" id="mm-domain-edit-hint" style="margin:0 0 0.75rem;"></p>
               </div>
-              <div class="table-wrap"><div class="table-scroll">
+              <div class="mm-stat-badges" id="mm-domains-stats">
+                <span class="mm-stat-badge"><strong id="mm-domains-stat-total">0</strong> Toplam</span>
+                <span class="mm-stat-badge mm-stat-green"><strong id="mm-domains-stat-active">0</strong> Aktif</span>
+                <span class="mm-stat-badge mm-stat-amber"><strong id="mm-domains-stat-warming">0</strong> Isınmada</span>
+                <span class="mm-stat-badge mm-stat-muted"><strong id="mm-domains-stat-passive">0</strong> Pasif</span>
+              </div>
+              <div class="table-wrap"><div class="mm-domains-scroll">
                 <table>
                   <thead><tr><th>Domain</th><th>From</th><th>Warm</th><th>Cap</th><th>Health</th><th>Tahsis</th><th></th></tr></thead>
                   <tbody id="mm-domains-table"><tr><td colspan="7" class="empty">—</td></tr></tbody>
                 </table>
               </div></div>
+              <div class="mm-pager" id="mm-domains-pager"></div>
             </section>
           </div>
 
@@ -462,11 +474,14 @@
                 </div>
               </div>
               <div class="card-body">
-                <div class="mm-wu-cohort-tabs" style="display:flex;gap:0.4rem;margin:0 0 0.75rem;flex-wrap:wrap;">
-                  <button type="button" class="btn btn-sm btn-primary" id="mm-wu-tab-legacy" data-wu-cohort="legacy">Eski domainler</button>
-                  <button type="button" class="btn btn-sm btn-secondary" id="mm-wu-tab-new" data-wu-cohort="new">Yeni domainler</button>
+                <div class="mm-segmented" id="mm-wu-cohort-tabs" role="tablist" aria-label="Isıtma grubu">
+                  <button type="button" class="mm-segmented-btn is-active" id="mm-wu-tab-legacy" data-wu-cohort="legacy" role="tab" aria-selected="true">Eski domainler</button>
+                  <button type="button" class="mm-segmented-btn" id="mm-wu-tab-new" data-wu-cohort="new" role="tab" aria-selected="false">Yeni domainler</button>
                 </div>
-                <p class="hint" id="mm-wu-status" style="margin:0 0 0.75rem;">—</p>
+                <div style="display:flex;align-items:center;gap:0.5rem;margin:0.75rem 0;flex-wrap:wrap;">
+                  <p class="hint" id="mm-wu-status" style="margin:0;flex:1;">—</p>
+                  <button type="button" class="btn btn-sm" id="mm-wu-info-btn" title="Program kuralları ve nasıl çalıştığı">Kurallar / Bilgi</button>
+                </div>
                 <div id="mm-wu-setup" style="margin-bottom:1rem;">
                   <p class="hint" style="margin:0 0 0.45rem;">Bu gruptan ısıtılacak domainleri seç (eski + yeni karıştırma):</p>
                   <div id="mm-wu-domain-pick" class="mm-wu-domain-pick"></div>
@@ -478,13 +493,12 @@
                       <div class="mm-wu-title" id="mm-wu-title">—</div>
                       <div class="hint" id="mm-wu-targets" style="margin:0.35rem 0 0;">—</div>
                     </div>
-                    <div class="mm-wu-progress-ring">
+                    <div class="mm-wu-progress-ring" id="mm-wu-progress-ring">
                       <span id="mm-wu-progress-label">0/0</span>
                     </div>
                   </div>
-                  <div id="mm-wu-domains" class="mm-wu-chips" style="margin:0.75rem 0;"></div>
+                  <div id="mm-wu-domains" class="mm-wu-progress-cards" style="margin:0.75rem 0;"></div>
                   <div id="mm-wu-tasks" class="mm-wu-tasks"></div>
-                  <ul id="mm-wu-rules" class="mm-wu-rules"></ul>
                   <div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.85rem;">
                     <button type="button" class="btn btn-sm btn-secondary" id="mm-wu-pause">Programı duraklat</button>
                     <button type="button" class="btn btn-sm btn-secondary" id="mm-wu-resume" hidden>Devam</button>
@@ -493,6 +507,17 @@
                 </div>
               </div>
             </section>
+            <div class="mm-modal-overlay" id="mm-wu-info-overlay" hidden>
+              <div class="mm-modal" role="dialog" aria-modal="true">
+                <div class="card-head">
+                  <span>Isıtma programı kuralları</span>
+                  <button type="button" class="btn btn-sm" id="mm-wu-info-close" aria-label="Kapat">×</button>
+                </div>
+                <div class="card-body">
+                  <ul id="mm-wu-rules" class="mm-wu-rules"></ul>
+                </div>
+              </div>
+            </div>
             <section class="card">
               <div class="card-head">
                 <span class="mm-label-row" style="margin:0;">
@@ -581,8 +606,8 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260820mm29"></script>
-  <script src="/static/mailing_platform.js?v=20260821mm18"></script>
+  <script src="/static/mailing.js?v=20260821mm30"></script>
+  <script src="/static/mailing_platform.js?v=20260821mm19"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

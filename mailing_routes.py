@@ -14,7 +14,7 @@ import time
 import urllib.parse
 from contextlib import closing
 
-from flask import Blueprint, jsonify, redirect, request
+from flask import Blueprint, jsonify, redirect, request, send_file
 
 import smartico_api
 from database import (
@@ -1852,8 +1852,19 @@ def _run_import_job(job_id, path, tag, tenant_id=None):
             inserted = 0
             updated = 0
             skipped = 0
+            rejected_invalid = 0
+            rejected_disposable = 0
+            rejected_role = 0
+            rejected_no_mx = 0
             batch = []
             cancelled = False
+            # Insert-ÖNCESİ hızlı süzgeç (syntax/disposable/role/MX) — çöp
+            # adresler hiçbir zaman mail_contacts'a girmesin. SMTP-probe YOK
+            # (yavaş, dakikada ~30) — o hâlâ ayrı "Liste temizle" işidir.
+            # local_mx_cache: aynı domain (gmail.com vb.) tekrar tekrar DNS'e
+            # gitmesin, tek job içinde bellekte tutulur.
+            from mail_scrub import verify_email_fast
+            local_mx_cache: dict = {}
             # Manuel next() döngüsü kullanıyoruz ki satırı ÜRETİRKEN (örn. bozuk
             # encoding, tutarsız sütun sayısı) bir hata çıksa bile o satırı
             # geçersiz sayıp devam edebilelim — tek bozuk satır tüm job'ı
@@ -1873,6 +1884,19 @@ def _run_import_job(job_id, path, tag, tenant_id=None):
                     email = _extract_email_from_row(row)
                     if not email:
                         skipped += 1
+                        continue
+                    check = verify_email_fast(conn, email, local_mx_cache)
+                    if check["status"] != "valid_fast":
+                        skipped += 1
+                        reason = check["status"]
+                        if reason == "disposable":
+                            rejected_disposable += 1
+                        elif reason == "role":
+                            rejected_role += 1
+                        elif reason == "invalid" and check.get("detail") == "no_mx":
+                            rejected_no_mx += 1
+                        else:
+                            rejected_invalid += 1
                         continue
                     name = (row.get("name") or row.get("Name") or "").strip()
                     batch.append((email, name))
@@ -1899,10 +1923,16 @@ def _run_import_job(job_id, path, tag, tenant_id=None):
                         """
                         UPDATE mail_import_jobs
                         SET processed_rows = ?, upserted_count = ?, inserted_count = ?, updated_count = ?,
-                            skipped_count = ?, updated_at = ?
+                            skipped_count = ?, rejected_count = ?, rejected_invalid = ?, rejected_disposable = ?,
+                            rejected_role = ?, rejected_no_mx = ?, updated_at = ?
                         WHERE id = ?
                         """,
-                        (processed, upserted, inserted, updated, skipped, iso(utcnow()), job_id),
+                        (
+                            processed, upserted, inserted, updated, skipped,
+                            rejected_invalid + rejected_disposable + rejected_role + rejected_no_mx,
+                            rejected_invalid, rejected_disposable, rejected_role, rejected_no_mx,
+                            iso(utcnow()), job_id,
+                        ),
                     )
                     conn.commit()
                     status_row = fetchone(conn, "SELECT status FROM mail_import_jobs WHERE id = ?", (job_id,))
@@ -1915,10 +1945,16 @@ def _run_import_job(job_id, path, tag, tenant_id=None):
                         """
                         UPDATE mail_import_jobs
                         SET processed_rows = ?, upserted_count = ?, inserted_count = ?, updated_count = ?,
-                            skipped_count = ?, updated_at = ?
+                            skipped_count = ?, rejected_count = ?, rejected_invalid = ?, rejected_disposable = ?,
+                            rejected_role = ?, rejected_no_mx = ?, updated_at = ?
                         WHERE id = ?
                         """,
-                        (processed, upserted, inserted, updated, skipped, iso(utcnow()), job_id),
+                        (
+                            processed, upserted, inserted, updated, skipped,
+                            rejected_invalid + rejected_disposable + rejected_role + rejected_no_mx,
+                            rejected_invalid, rejected_disposable, rejected_role, rejected_no_mx,
+                            iso(utcnow()), job_id,
+                        ),
                     )
                     conn.commit()
             if batch and not cancelled:
@@ -1937,16 +1973,23 @@ def _run_import_job(job_id, path, tag, tenant_id=None):
                     print(f"⚠️  mail import batch fail job={job_id}: {batch_exc}")
 
             final_now = iso(utcnow())
+            rejected_total = rejected_invalid + rejected_disposable + rejected_role + rejected_no_mx
             if cancelled:
                 execute(
                     conn,
                     """
                     UPDATE mail_import_jobs
                     SET status = 'cancelled', total_rows = ?, processed_rows = ?, upserted_count = ?,
-                        inserted_count = ?, updated_count = ?, skipped_count = ?, updated_at = ?
+                        inserted_count = ?, updated_count = ?, skipped_count = ?, rejected_count = ?,
+                        rejected_invalid = ?, rejected_disposable = ?, rejected_role = ?, rejected_no_mx = ?,
+                        updated_at = ?
                     WHERE id = ?
                     """,
-                    (processed, processed, upserted, inserted, updated, skipped, final_now, job_id),
+                    (
+                        processed, processed, upserted, inserted, updated, skipped, rejected_total,
+                        rejected_invalid, rejected_disposable, rejected_role, rejected_no_mx,
+                        final_now, job_id,
+                    ),
                 )
                 conn.commit()
                 return
@@ -1965,10 +2008,16 @@ def _run_import_job(job_id, path, tag, tenant_id=None):
                 """
                 UPDATE mail_import_jobs
                 SET status = 'done', total_rows = ?, processed_rows = ?, upserted_count = ?,
-                    inserted_count = ?, updated_count = ?, skipped_count = ?, error = ?, updated_at = ?
+                    inserted_count = ?, updated_count = ?, skipped_count = ?, rejected_count = ?,
+                    rejected_invalid = ?, rejected_disposable = ?, rejected_role = ?, rejected_no_mx = ?,
+                    error = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (processed, processed, upserted, inserted, updated, skipped, done_err, final_now, job_id),
+                (
+                    processed, processed, upserted, inserted, updated, skipped, rejected_total,
+                    rejected_invalid, rejected_disposable, rejected_role, rejected_no_mx,
+                    done_err, final_now, job_id,
+                ),
             )
             conn.commit()
             _invalidate_mail_stats_cache()
@@ -2620,23 +2669,24 @@ def create_mailing_click_blueprint():
                             (first, now, row["id"]),
                         )
                         if row["send_id"]:
+                            # Tıklama = açılma demektir (pixel ateşlenmemiş olsa
+                            # bile) — önceden clicked_at yazılırken opened_at hiç
+                            # set edilmiyordu, "tıkladı ama açmadı" gibi yanlış
+                            # bir görünüme yol açıyordu.
                             execute(
                                 conn,
-                                "UPDATE mail_sends SET clicked_at = COALESCE(clicked_at, ?) WHERE id = ?",
-                                (now, row["send_id"]),
+                                """
+                                UPDATE mail_sends SET
+                                    clicked_at = COALESCE(clicked_at, ?),
+                                    opened_at = COALESCE(opened_at, ?)
+                                WHERE id = ?
+                                """,
+                                (now, now, row["send_id"]),
                             )
                         if row["contact_id"]:
-                            opened = False
-                            if row.get("send_id"):
-                                srow = fetchone(
-                                    conn,
-                                    "SELECT opened_at FROM mail_sends WHERE id = ?",
-                                    (row["send_id"],),
-                                )
-                                opened = bool(srow and srow.get("opened_at"))
                             try:
                                 from mail_ops import tag_click_outcome
-                                tag_click_outcome(conn, row["contact_id"], opened=opened, now=now)
+                                tag_click_outcome(conn, row["contact_id"], opened=True, now=now)
                             except Exception:
                                 _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
                     elif signed.get("c"):
@@ -2679,21 +2729,18 @@ def create_mailing_click_blueprint():
                 if row.get("send_id"):
                     execute(
                         conn,
-                        "UPDATE mail_sends SET clicked_at = COALESCE(clicked_at, ?) WHERE id = ?",
-                        (now, row["send_id"]),
+                        """
+                        UPDATE mail_sends SET
+                            clicked_at = COALESCE(clicked_at, ?),
+                            opened_at = COALESCE(opened_at, ?)
+                        WHERE id = ?
+                        """,
+                        (now, now, row["send_id"]),
                     )
                 if row.get("contact_id"):
-                    opened = False
-                    if row.get("send_id"):
-                        srow = _row(fetchone(
-                            conn,
-                            "SELECT opened_at FROM mail_sends WHERE id = ?",
-                            (row["send_id"],),
-                        ))
-                        opened = bool(srow and srow.get("opened_at"))
                     try:
                         from mail_ops import tag_click_outcome
-                        tag_click_outcome(conn, row["contact_id"], opened=opened, now=now)
+                        tag_click_outcome(conn, row["contact_id"], opened=True, now=now)
                     except Exception:
                         _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
                 conn.commit()
@@ -4061,6 +4108,51 @@ def create_mailing_blueprint(permission_required):
                     _ensure_tag(conn, t, now)
             conn.commit()
         return jsonify({"created": created, "updated": updated, "skipped": skipped})
+
+    @bp.route("/contacts/import/template", methods=["GET"])
+    @mail_perm(*MAIL_CRM)
+    def download_contact_import_template():
+        """Örnek .xlsx şablonu — sürükle-bırak yükleme kutusunun yanındaki
+        'Örnek şablon indir' butonu için. E-posta sütunu zorunlu; ad/etiket
+        opsiyonel örnek satırlarla gösterilir."""
+        import openpyxl
+        from io import BytesIO
+        from openpyxl.styles import Alignment, Font, PatternFill
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Kontaklar"
+
+        headers = ["email", "name", "tags"]
+        header_fill = PatternFill("solid", fgColor="1F2937")
+        header_font = Font(bold=True, color="FFFFFF")
+        for col, title in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=title)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+
+        sample_rows = [
+            ["ornek1@example.com", "Ahmet Yılmaz", "vip"],
+            ["ornek2@example.com", "Ayşe Kaya", ""],
+        ]
+        for r_idx, row_vals in enumerate(sample_rows, start=2):
+            for c_idx, val in enumerate(row_vals, start=1):
+                ws.cell(row=r_idx, column=c_idx, value=val)
+
+        widths = [30, 22, 18]
+        for i, w in enumerate(widths, start=1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name="kontak-import-sablonu.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
     @bp.route("/contacts/import/start", methods=["POST"])
     @mail_perm(*MAIL_CRM)
@@ -6196,23 +6288,43 @@ def create_mailing_blueprint(permission_required):
         from mail_ops import campaign_analytics
         from mail_tenant import current_tenant_id
         cid = request.args.get("campaign_id")
+        date_from = (request.args.get("date_from") or "").strip()[:10] or None
+        date_to = (request.args.get("date_to") or "").strip()[:10] or None
         _tid = current_tenant_id()
         with closing(get_db()) as conn:
             _cutoff = _restricted_cutoff(_tid, conn=conn)
-            rows = campaign_analytics(conn, int(cid) if cid else None, tenant_id=_tid, created_since=_cutoff)
+            rows = campaign_analytics(
+                conn, int(cid) if cid else None, tenant_id=_tid, created_since=_cutoff,
+                date_from=date_from, date_to=date_to,
+            )
         return jsonify({"campaigns": rows})
 
     @bp.route("/reports/engagement-timeline", methods=["GET"])
     @mail_perm(*MAIL_REP)
     def report_engagement_timeline():
-        """Son N gün için günlük açılma / tıklama sayıları (grafik)."""
-        try:
-            days = min(max(int(request.args.get("days") or 14), 1), 90)
-        except (TypeError, ValueError):
-            days = 14
+        """Günlük açılma / tıklama sayıları (grafik).
+
+        date_from/date_to (YYYY-MM-DD) verilirse o mutlak aralık kullanılır
+        (Raporlar sekmesindeki tarih aralığı seçici); verilmezse eski davranış
+        (son N gün, days param) devam eder — geriye dönük uyumluluk için.
+        """
         from datetime import datetime, timedelta, timezone
 
-        since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        date_from = (request.args.get("date_from") or "").strip()[:10]
+        date_to = (request.args.get("date_to") or "").strip()[:10]
+        if date_from and date_to:
+            since = date_from
+            end = datetime.strptime(date_to, "%Y-%m-%d").date()
+            days = (end - datetime.strptime(date_from, "%Y-%m-%d").date()).days + 1
+            days = max(1, min(days, 366))
+        else:
+            try:
+                days = min(max(int(request.args.get("days") or 14), 1), 90)
+            except (TypeError, ValueError):
+                days = 14
+            since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+            end = datetime.now(timezone.utc).date()
+        until = (end + timedelta(days=1)).isoformat()
         from mail_tenant import current_tenant_id
         _tid = current_tenant_id()
         # tenant_id verilmişse (tenant login VEYA superadmin impersonate) SADECE o
@@ -6226,24 +6338,23 @@ def create_mailing_blueprint(permission_required):
                 f"""
                 SELECT substr(CAST(opened_at AS TEXT), 1, 10) AS d, COUNT(*) AS n
                 FROM mail_sends
-                WHERE opened_at IS NOT NULL AND CAST(opened_at AS TEXT) >= ?{tid_clause}
+                WHERE opened_at IS NOT NULL AND CAST(opened_at AS TEXT) >= ? AND CAST(opened_at AS TEXT) < ?{tid_clause}
                 GROUP BY 1 ORDER BY 1
                 """,
-                (since,) + tid_params,
+                (since, until) + tid_params,
             )
             clicks = fetchall(
                 conn,
                 f"""
                 SELECT substr(CAST(clicked_at AS TEXT), 1, 10) AS d, COUNT(*) AS n
                 FROM mail_sends
-                WHERE clicked_at IS NOT NULL AND CAST(clicked_at AS TEXT) >= ?{tid_clause}
+                WHERE clicked_at IS NOT NULL AND CAST(clicked_at AS TEXT) >= ? AND CAST(clicked_at AS TEXT) < ?{tid_clause}
                 GROUP BY 1 ORDER BY 1
                 """,
-                (since,) + tid_params,
+                (since, until) + tid_params,
             )
         open_map = {str(r["d"]): int(r["n"] or 0) for r in (opens or [])}
         click_map = {str(r["d"]): int(r["n"] or 0) for r in (clicks or [])}
-        end = datetime.now(timezone.utc).date()
         labels = []
         open_series = []
         click_series = []
@@ -6487,6 +6598,8 @@ def create_mailing_blueprint(permission_required):
     def list_sends():
         status = (request.args.get("status") or "").strip()
         channel = (request.args.get("channel") or "").strip()
+        date_from = (request.args.get("date_from") or "").strip()[:10]
+        date_to = (request.args.get("date_to") or "").strip()[:10]
         try:
             limit = min(int(request.args.get("limit") or 200), 1000)
         except (TypeError, ValueError):
@@ -6515,14 +6628,83 @@ def create_mailing_blueprint(permission_required):
             if channel:
                 sql += " AND channel = ?"
                 params.append(channel)
+            if date_from:
+                sql += " AND CAST(created_at AS TEXT) >= ?"
+                params.append(date_from)
+            if date_to:
+                sql += " AND CAST(created_at AS TEXT) < ?"
+                from datetime import datetime, timedelta
+                params.append((datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d"))
             sql += " ORDER BY id DESC LIMIT ?"
             params.append(limit)
             rows = _rows(fetchall(conn, sql, tuple(params)))
         return jsonify({"sends": rows, "count": len(rows)})
 
+    @bp.route("/reports/kpi", methods=["GET"])
+    @mail_perm(*MAIL_REP)
+    def reports_kpi():
+        """4 KPI kartı (Gönderilen/İletilen/Açılan/Tıklanan) + önceki eşit
+        uzunluktaki döneme göre % değişim. date_from/date_to verilmezse son
+        7 gün kullanılır."""
+        from datetime import datetime, timedelta
+
+        date_from = (request.args.get("date_from") or "").strip()[:10]
+        date_to = (request.args.get("date_to") or "").strip()[:10]
+        if date_from and date_to:
+            d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
+            d_to = datetime.strptime(date_to, "%Y-%m-%d").date()
+        else:
+            d_to = datetime.utcnow().date()
+            d_from = d_to - timedelta(days=6)
+        span_days = (d_to - d_from).days + 1
+        prev_to = d_from - timedelta(days=1)
+        prev_from = prev_to - timedelta(days=span_days - 1)
+
+        def _period_counts(conn, tenant_clause, tenant_params, start, end):
+            until = (end + timedelta(days=1)).isoformat()
+            clause = tenant_clause + (" AND" if tenant_clause else " WHERE")
+            clause += " CAST(created_at AS TEXT) >= ? AND CAST(created_at AS TEXT) < ?"
+            p = tenant_params + (start.isoformat(), until)
+            gonderilen = int(scalar(conn, f"SELECT COUNT(*) FROM mail_sends{clause}", p) or 0)
+            iletilen = int(scalar(
+                conn, f"SELECT COUNT(*) FROM mail_sends{clause} AND status IN ('sent','simulated')", p
+            ) or 0)
+            acilan = int(scalar(conn, f"SELECT COUNT(*) FROM mail_sends{clause} AND opened_at IS NOT NULL", p) or 0)
+            tiklanan = int(scalar(conn, f"SELECT COUNT(*) FROM mail_sends{clause} AND clicked_at IS NOT NULL", p) or 0)
+            return {"gonderilen": gonderilen, "iletilen": iletilen, "acilan": acilan, "tiklanan": tiklanan}
+
+        def _pct_change(cur, prev):
+            if prev <= 0:
+                return None if cur <= 0 else 100.0
+            return round(((cur - prev) / prev) * 100, 1)
+
+        with closing(get_db()) as conn:
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+            except Exception:
+                _tid = None
+            tenant_clause = ""
+            tenant_params = ()
+            if _tid:
+                tenant_clause = (
+                    " WHERE (campaign_id IN (SELECT id FROM mail_campaigns WHERE tenant_id = ?)"
+                    " OR contact_id IN (SELECT id FROM mail_contacts WHERE tenant_id = ?))"
+                )
+                tenant_params = (int(_tid), int(_tid))
+            current = _period_counts(conn, tenant_clause, tenant_params, d_from, d_to)
+            previous = _period_counts(conn, tenant_clause, tenant_params, prev_from, prev_to)
+        change = {k: _pct_change(current[k], previous[k]) for k in current}
+        return jsonify({
+            "date_from": d_from.isoformat(), "date_to": d_to.isoformat(),
+            "current": current, "previous": previous, "change_pct": change,
+        })
+
     @bp.route("/reports/summary", methods=["GET"])
     @mail_perm(*MAIL_REP)
     def reports_summary():
+        date_from = (request.args.get("date_from") or "").strip()[:10]
+        date_to = (request.args.get("date_to") or "").strip()[:10]
         with closing(get_db()) as conn:
             try:
                 from mail_tenant import current_tenant_id
@@ -6541,6 +6723,14 @@ def create_mailing_blueprint(permission_required):
                 if _cutoff:
                     tenant_clause += " AND created_at >= ?"
                     tenant_params = tenant_params + (_cutoff,)
+            if date_from:
+                tenant_clause += (" WHERE" if not tenant_clause else " AND") + " CAST(created_at AS TEXT) >= ?"
+                tenant_params = tenant_params + (date_from,)
+            if date_to:
+                from datetime import datetime, timedelta
+                until = (datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+                tenant_clause += (" WHERE" if not tenant_clause else " AND") + " CAST(created_at AS TEXT) < ?"
+                tenant_params = tenant_params + (until,)
             by_status = _rows(fetchall(
                 conn,
                 f"SELECT status, COUNT(*) AS cnt FROM mail_sends{tenant_clause} GROUP BY status ORDER BY cnt DESC",

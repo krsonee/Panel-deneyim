@@ -330,6 +330,91 @@ def _smtp_probe(email: str, mx_hosts: list[str], mail_from: str, timeout: float 
     return "unknown", last_detail
 
 
+def has_mx_cached(conn, domain: str, ttl_hours: int = 168, local_cache: dict | None = None) -> bool:
+    """MX var mı — mail_mx_cache tablosunda TTL içinde taze sonuç varsa DNS'e
+    hiç gitmeden onu döner. Bulk import'ta aynı domain (gmail.com, hotmail.com
+    vb.) binlerce satırda tekrar ediyor — her satır için DNS sorgusu yapmak
+    20k'lık bir dosyada dakikalarca sürer, domain bazında cache ile bu tek
+    sorguya iner.
+
+    local_cache verilirse (tek import job'ı sürerken kullanılan process-içi
+    dict), aynı domain için tekrar tekrar DB'ye gidilmez — sadece ilk görülüşte
+    DB/DNS'e bakılır, sonrası bellekten döner."""
+    domain = (domain or "").strip().lower().rstrip(".")
+    if not domain:
+        return False
+    if local_cache is not None and domain in local_cache:
+        return local_cache[domain]
+    try:
+        row = fetchone(conn, "SELECT has_mx, checked_at FROM mail_mx_cache WHERE domain = ?", (domain,))
+    except Exception:
+        row = None
+    if row is not None:
+        try:
+            checked = row["checked_at"]
+            from datetime import datetime, timedelta
+            checked_dt = datetime.fromisoformat(str(checked).replace("Z", "+00:00"))
+            if utcnow() - checked_dt.replace(tzinfo=None) < timedelta(hours=ttl_hours):
+                result = bool(row["has_mx"])
+                if local_cache is not None:
+                    local_cache[domain] = result
+                return result
+        except Exception:
+            pass
+    found = bool(_mx_hosts(domain))
+    now = iso(utcnow())
+    try:
+        if uses_postgres():
+            execute(
+                conn,
+                """
+                INSERT INTO mail_mx_cache (domain, has_mx, checked_at) VALUES (?, ?, ?)
+                ON CONFLICT (domain) DO UPDATE SET has_mx = EXCLUDED.has_mx, checked_at = EXCLUDED.checked_at
+                """,
+                (domain, found, now),
+            )
+        else:
+            execute(
+                conn,
+                "INSERT OR REPLACE INTO mail_mx_cache (domain, has_mx, checked_at) VALUES (?, ?, ?)",
+                (domain, found, now),
+            )
+    except Exception:
+        pass
+    if local_cache is not None:
+        local_cache[domain] = found
+    return found
+
+
+def verify_email_fast(conn, email: str, local_mx_cache: dict | None = None) -> dict:
+    """Insert-ÖNCESİ hızlı süzgeç: syntax + disposable + role + MX-var-mı.
+    SMTP RCPT probe YOK (dakikada ~30 adres hızıyla sınırlı, büyük dosyalarda
+    insert'i saatlerce/günlerce bloklar) — bu sadece çöp adresleri hiç DB'ye
+    girmeden eleyen ucuz/hızlı bir kapı. Derin (SMTP) doğrulama hâlâ ayrı,
+    isteğe bağlı "Liste temizle" işidir (bkz verify_email/start_scrub_job).
+    status: valid_fast | invalid | disposable | role"""
+    raw = (email or "").strip()
+    _, addr = parseaddr(raw)
+    addr = (addr or raw).strip().lower()
+    if not addr or not EMAIL_RE.match(addr) or ".." in addr or addr.startswith(".") or addr.endswith("."):
+        return {"email": addr, "status": "invalid", "detail": "bad_syntax"}
+
+    local, _, domain = addr.partition("@")
+    if not local or not domain or "." not in domain:
+        return {"email": addr, "status": "invalid", "detail": "bad_parts"}
+
+    if domain in DISPOSABLE_DOMAINS:
+        return {"email": addr, "status": "disposable", "detail": "disposable_domain"}
+
+    if local.lower() in ROLE_LOCALS:
+        return {"email": addr, "status": "role", "detail": f"role:{local}"}
+
+    if not has_mx_cached(conn, domain, local_cache=local_mx_cache):
+        return {"email": addr, "status": "invalid", "detail": "no_mx"}
+
+    return {"email": addr, "status": "valid_fast", "detail": f"mx_ok:{domain}"}
+
+
 def verify_email(email: str, *, smtp_verify: bool = True, mail_from: str = "") -> dict:
     """Tek adres doğrula. status: valid|invalid|unknown|catch_all|disposable|role|mx_ok"""
     raw = (email or "").strip()

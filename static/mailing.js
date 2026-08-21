@@ -2124,15 +2124,19 @@
     if (form) form.reset();
     var idEl = document.getElementById("mail-c-id");
     if (idEl) idEl.value = "";
-    setText("mail-contact-form-title", "Kontak ekle");
-    var sub = document.getElementById("mail-contact-form-sub");
-    if (sub) sub.textContent = "Tek tek ekle / düzenle";
-    var submit = document.getElementById("mail-c-submit");
-    if (submit) submit.textContent = "Ekle";
-    var cancel = document.getElementById("mail-c-cancel");
-    if (cancel) cancel.hidden = true;
     var life = document.getElementById("mail-c-lifecycle");
     if (life) life.value = "lead";
+    mailCloseContactModal();
+  }
+
+  function mailOpenContactModal() {
+    var overlay = document.getElementById("mail-contact-edit-overlay");
+    if (overlay) overlay.hidden = false;
+  }
+
+  function mailCloseContactModal() {
+    var overlay = document.getElementById("mail-contact-edit-overlay");
+    if (overlay) overlay.hidden = true;
   }
 
   function mailCollectContactFormBody() {
@@ -2180,13 +2184,7 @@
     setText("mail-contact-form-title", "Kontak düzenle #" + c.id);
     var sub = document.getElementById("mail-contact-form-sub");
     if (sub) sub.textContent = "Düzenleme modu — kaydetince güncellenir";
-    var submit = document.getElementById("mail-c-submit");
-    if (submit) submit.textContent = "Güncelle";
-    var cancel = document.getElementById("mail-c-cancel");
-    if (cancel) cancel.hidden = false;
-    try {
-      document.getElementById("mail-contact-form").scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (e) { /* ignore */ }
+    mailOpenContactModal();
   }
 
   function mailEditContact(id) {
@@ -2461,6 +2459,23 @@
             showError: !!(jobErr && Number(j.upserted_count || 0) === 0),
             errorText: jobErr || ""
           });
+          var summaryBox = document.getElementById("mail-import-summary");
+          var summaryText = document.getElementById("mail-import-summary-text");
+          if (summaryBox && summaryText) {
+            var rejTotal = Number(j.rejected_count || 0);
+            var msg = fmtNum(j.processed_rows || 0) + " satır işlendi: " +
+              fmtNum(j.upserted_count || 0) + " başarıyla eklendi/güncellendi";
+            if (rejTotal > 0) {
+              var parts = [];
+              if (j.rejected_invalid) parts.push(fmtNum(j.rejected_invalid) + " geçersiz syntax");
+              if (j.rejected_disposable) parts.push(fmtNum(j.rejected_disposable) + " tek-kullanımlık");
+              if (j.rejected_role) parts.push(fmtNum(j.rejected_role) + " role-adres");
+              if (j.rejected_no_mx) parts.push(fmtNum(j.rejected_no_mx) + " MX kaydı yok");
+              msg += ", " + fmtNum(rejTotal) + " geçersiz filtrelendi (" + parts.join(" · ") + ")";
+            }
+            summaryText.textContent = msg;
+            summaryBox.hidden = false;
+          }
           if (progBar) { progBar.style.width = "100%"; mailBulkResetBar(); }
           mailClearImportSession();
           mailLoadContactStats();
@@ -3283,29 +3298,115 @@
     });
   }
 
+  // —— Raporlar: tarih aralığı state'i (varsayılan: son 7 gün) ——
+  // NOT: toISOString() UTC'ye çevirir — UTC+3 (TR) gibi dilimlerde gece
+  // yarısına yakın anlarda tarihi 1 gün geriye kaydırabilir. Yerel takvim
+  // bileşenleriyle (getFullYear/getMonth/getDate) string oluşturuyoruz.
+  function mailLocalDateStr(x) {
+    var mm = String(x.getMonth() + 1).padStart(2, "0");
+    var dd = String(x.getDate()).padStart(2, "0");
+    return x.getFullYear() + "-" + mm + "-" + dd;
+  }
+  var mailRepRange = (function () {
+    var to = new Date();
+    var from = new Date(); from.setDate(from.getDate() - 6);
+    return { from: mailLocalDateStr(from), to: mailLocalDateStr(to), preset: "7d" };
+  })();
+  var mailRepFlatpickr = null;
+
+  function mailRepDateParams() {
+    return "&date_from=" + encodeURIComponent(mailRepRange.from) + "&date_to=" + encodeURIComponent(mailRepRange.to);
+  }
+
+  function mailRepFmtChange(pct) {
+    if (pct === null || pct === undefined) return '<span class="muted">—</span>';
+    var arrow = pct > 0 ? "▲" : (pct < 0 ? "▼" : "—");
+    var cls = pct > 0 ? "mm-kpi-up" : (pct < 0 ? "mm-kpi-down" : "mm-kpi-flat");
+    return '<span class="' + cls + '">' + arrow + " %" + Math.abs(pct).toFixed(1) + "</span> <span class=\"muted\">önceki döneme göre</span>";
+  }
+
+  function mailInitRepDateRangeUI() {
+    var input = document.getElementById("mail-rep-daterange");
+    if (input && typeof flatpickr !== "undefined" && !mailRepFlatpickr) {
+      mailRepFlatpickr = flatpickr(input, {
+        mode: "range",
+        dateFormat: "Y-m-d",
+        altInput: true,
+        altFormat: "d.m.Y",
+        defaultDate: [mailRepRange.from, mailRepRange.to],
+        onChange: function (selectedDates) {
+          if (selectedDates.length !== 2) return;
+          mailRepRange = { from: mailLocalDateStr(selectedDates[0]), to: mailLocalDateStr(selectedDates[1]), preset: "custom" };
+          document.querySelectorAll("[data-mail-rep-preset]").forEach(function (b) { b.classList.remove("is-active"); });
+          mailLoadReports();
+        }
+      });
+    }
+    var presetBar = document.getElementById("mail-pane-reports");
+    if (presetBar && !presetBar._mailRepPresetBound) {
+      presetBar._mailRepPresetBound = true;
+      presetBar.addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-mail-rep-preset]");
+        if (!btn) return;
+        var preset = btn.getAttribute("data-mail-rep-preset");
+        var to = new Date();
+        var from = new Date();
+        if (preset === "today") { /* from = to */ }
+        else if (preset === "7d") { from.setDate(from.getDate() - 6); }
+        else if (preset === "month") { from = new Date(to.getFullYear(), to.getMonth(), 1); }
+        mailRepRange = { from: mailLocalDateStr(from), to: mailLocalDateStr(to), preset: preset };
+        document.querySelectorAll("[data-mail-rep-preset]").forEach(function (b) {
+          b.classList.toggle("is-active", b === btn);
+        });
+        if (mailRepFlatpickr) mailRepFlatpickr.setDate([mailRepRange.from, mailRepRange.to], false);
+        mailLoadReports();
+      });
+    }
+  }
+
   function mailLoadReports() {
+    mailInitRepDateRangeUI();
     var channel = (document.getElementById("mail-rep-channel") || {}).value || "";
     var status = (document.getElementById("mail-rep-status") || {}).value || "";
-    var url = "/api/mailing/sends?limit=300";
+    var dateParams = mailRepDateParams();
+    var url = "/api/mailing/sends?limit=300" + dateParams;
     if (channel) url += "&channel=" + encodeURIComponent(channel);
     if (status) url += "&status=" + encodeURIComponent(status);
+    setText("mail-rep-range-label", mailRepRange.from === mailRepRange.to
+      ? mailRepRange.from : (mailRepRange.from + " → " + mailRepRange.to));
     return Promise.all([
-      mailApi("/api/mailing/dashboard"),
+      mailApi("/api/mailing/reports/kpi?date_from=" + mailRepRange.from + "&date_to=" + mailRepRange.to),
       mailApi(url),
-      mailApi("/api/mailing/reports/campaigns"),
-      mailApi("/api/mailing/reports/engagement-timeline?days=14")
+      mailApi("/api/mailing/reports/campaigns?" + dateParams.slice(1)),
+      mailApi("/api/mailing/reports/engagement-timeline?" + dateParams.slice(1)),
+      mailApi("/api/mailing/reports/summary?" + dateParams.slice(1))
     ]).then(function (results) {
-      var dash = results[0];
+      var kpiRes = results[0];
       var sendsRes = results[1];
       var analyticsRes = results[2];
       var timelineRes = results[3];
-      if (dash && dash.ok) {
-        var k = dash.data.kpi || {};
-        setText("mail-rep-delivered", k.sends_delivered);
-        setText("mail-rep-queued", k.sends_queued);
-        setText("mail-rep-failed", k.sends_failed);
-        setText("mail-rep-opened", k.opened);
-        setText("mail-rep-clicked", k.clicked);
+      var summaryRes = results[4];
+      if (kpiRes && kpiRes.ok) {
+        var cur = kpiRes.data.current || {};
+        var chg = kpiRes.data.change_pct || {};
+        setText("mail-kpi-gonderilen", fmtNum(cur.gonderilen));
+        setText("mail-kpi-iletilen", fmtNum(cur.iletilen));
+        setText("mail-kpi-acilan", fmtNum(cur.acilan));
+        setText("mail-kpi-tiklanan", fmtNum(cur.tiklanan));
+        var chgEl;
+        chgEl = document.getElementById("mail-kpi-gonderilen-chg"); if (chgEl) chgEl.innerHTML = mailRepFmtChange(chg.gonderilen);
+        chgEl = document.getElementById("mail-kpi-iletilen-chg"); if (chgEl) chgEl.innerHTML = mailRepFmtChange(chg.iletilen);
+        chgEl = document.getElementById("mail-kpi-acilan-chg"); if (chgEl) chgEl.innerHTML = mailRepFmtChange(chg.acilan);
+        chgEl = document.getElementById("mail-kpi-tiklanan-chg"); if (chgEl) chgEl.innerHTML = mailRepFmtChange(chg.tiklanan);
+      }
+      if (summaryRes && summaryRes.ok) {
+        var byStatus = summaryRes.data.by_status || [];
+        var realN = 0, simN = 0;
+        byStatus.forEach(function (s) {
+          if (s.status === "sent") realN = Number(s.cnt || 0);
+          if (s.status === "simulated") simN = Number(s.cnt || 0);
+        });
+        setText("mail-kpi-iletilen-sub", "gerçek SMTP " + fmtNum(realN) + " · simüle " + fmtNum(simN));
       }
       if (timelineRes && timelineRes.ok) mailRenderEngagementChart(timelineRes.data);
       var atbody = document.getElementById("mail-rep-analytics");
@@ -3594,6 +3695,9 @@
         var body = mailCollectContactFormBody();
         if (!body.email) { mailToast("E-posta gerekli"); return; }
         var editId = (document.getElementById("mail-c-id").value || "").trim();
+        // Modal artık SADECE mevcut kontak düzenlemek için açılır (yeni kontak
+        // ekleme sürükle-bırak dosya yükleme üzerinden yapılır) — editId her
+        // zaman set olmalı, ama savunmacı olarak POST fallback'i bırakıldı.
         var req = editId
           ? mailApi("/api/mailing/contacts/" + editId, { method: "PATCH", body: body })
           : mailApi("/api/mailing/contacts", { method: "POST", body: body });
@@ -3611,24 +3715,15 @@
       });
     }
     bindClick("mail-c-cancel", mailResetContactForm);
-
-    bindClick("mail-csv-submit", function () {
-      mailApi("/api/mailing/contacts/import", {
-        method: "POST",
-        body: {
-          csv: document.getElementById("mail-csv-input").value,
-          tag: document.getElementById("mail-csv-tag").value.trim()
-        }
-      }).then(function (res) {
-        if (!res || !res.ok) {
-          mailToast((res && res.data && res.data.error) || "Import başarısız");
-          return;
-        }
-        mailToast("Yeni: " + res.data.created + " · Güncellenen: " + res.data.updated + " · Atlanan: " + res.data.skipped);
-        mailLoadContactStats();
-        mailLoadContacts();
-        mailLoadTags();
+    bindClick("mail-c-close-x", mailResetContactForm);
+    var contactOverlay = document.getElementById("mail-contact-edit-overlay");
+    if (contactOverlay) {
+      contactOverlay.addEventListener("click", function (e) {
+        if (e.target === contactOverlay) mailResetContactForm();
       });
+    }
+    bindClick("mail-tpl-download-btn", function () {
+      window.open("/api/mailing/contacts/import/template", "_blank");
     });
     var bulkForm = document.getElementById("mail-bulk-import-form");
     var dropzone = document.getElementById("mail-bulk-dropzone");
@@ -3704,101 +3799,6 @@
         mailRenderDropFiles();
       });
     }
-    var pasteBox = document.getElementById("mail-paste-box");
-    var pasteStatusEl = document.getElementById("mail-paste-status");
-    function mailUpdatePasteMeta(text) {
-      var info = mailAnalyzeEmails(text);
-      var countEl = document.getElementById("mail-paste-count");
-      var invEl = document.getElementById("mail-paste-invalid");
-      var sampleEl = document.getElementById("mail-paste-invalid-sample");
-      if (countEl) countEl.textContent = fmtNum(info.valid.length) + " geçerli";
-      if (invEl) {
-        invEl.hidden = !info.invalid.length;
-        invEl.textContent = fmtNum(info.invalid.length) + " hatalı";
-      }
-      if (sampleEl) {
-        sampleEl.textContent = info.invalid.length
-          ? ("örn: " + info.invalid.slice(0, 3).join(", "))
-          : "";
-      }
-      return info;
-    }
-    function mailHandlePastedText(text) {
-      var info = mailUpdatePasteMeta(text);
-      var tag = (document.getElementById("mail-paste-tag") || {}).value || "";
-      tag = tag.trim();
-      if (!info.valid.length) {
-        if (pasteStatusEl) {
-          pasteStatusEl.textContent = info.invalid.length
-            ? ("Geçerli e-posta yok. " + fmtNum(info.invalid.length) +
-              " satırda @ var ama format bozuk (örn: " + (info.invalid[0] || "") +
-              "). Sadece e-posta yapıştır veya Excel’den e-posta kolonunu kopyala.")
-            : "Geçerli e-posta bulunamadı. Satır başına bir e-posta yapıştır (isim/telefon karışmasın).";
-        }
-        return Promise.resolve(false);
-      }
-      if (window._mailPasteBusy) {
-        if (pasteStatusEl) pasteStatusEl.textContent = "Önceki kayıt bitiyor…";
-        return Promise.resolve(false);
-      }
-      window._mailPasteBusy = true;
-      if (pasteStatusEl) {
-        pasteStatusEl.textContent = fmtNum(info.valid.length) + " e-posta kaydediliyor…";
-      }
-      var pasteBtn = document.getElementById("mail-paste-submit");
-      if (pasteBtn) pasteBtn.disabled = true;
-      return mailEnsureTenant().then(function (tid) {
-        if (window.MAIL_STANDALONE && window.MAIL_IS_SUPERADMIN && !tid && !window.MAIL_TENANT_ID) {
-          mailToast("Üstten tenant (makro) seç — sonra tekrar dene");
-          if (pasteStatusEl) pasteStatusEl.textContent = "Tenant seçilmedi";
-          return null;
-        }
-        return mailPasteEmailsDirect(info.valid, tag);
-      }).then(function (res) {
-        window._mailPasteBusy = false;
-        if (pasteBtn) pasteBtn.disabled = false;
-        if (!res) return false;
-        if (!res.ok) {
-          var err = (res.data && res.data.error) || "Kayıt başarısız — tekrar dene";
-          if (pasteStatusEl) pasteStatusEl.textContent = "Hata: " + err;
-          mailToast(err);
-          return false;
-        }
-        var msg = (res.data && res.data.message) ||
-          (fmtNum(res.data.created) + " yeni · " + fmtNum(res.data.updated) + " güncellendi");
-        if (info.invalid.length) msg += " · " + fmtNum(info.invalid.length) + " hatalı atlandı";
-        if (pasteStatusEl) pasteStatusEl.textContent = msg;
-        mailToast(msg);
-        if (pasteBox) {
-          pasteBox.value = "";
-          mailUpdatePasteMeta("");
-        }
-        if (typeof mailLoadContacts === "function") mailLoadContacts();
-        else if (typeof mailLoadCrm === "function") mailLoadCrm();
-        return true;
-      }).catch(function () {
-        window._mailPasteBusy = false;
-        if (pasteBtn) pasteBtn.disabled = false;
-        if (pasteStatusEl) pasteStatusEl.textContent = "Bağlantı hatası — tekrar dene";
-        return false;
-      });
-    }
-    if (pasteBox) {
-      pasteBox.addEventListener("input", function () { mailUpdatePasteMeta(pasteBox.value); });
-      pasteBox.addEventListener("paste", function (e) {
-        e.preventDefault();
-        var text = (e.clipboardData || window.clipboardData).getData("text");
-        pasteBox.value = text;
-        mailUpdatePasteMeta(text);
-        // Otomatik kaydet — kutuyu başarıdan önce silme (ilk tık kaçmasın)
-        mailHandlePastedText(text);
-      });
-    }
-    bindClick("mail-paste-submit", function () {
-      var text = pasteBox ? pasteBox.value : "";
-      if (!text || !text.trim()) { mailToast("Önce bir şey yapıştır veya yaz"); return; }
-      mailHandlePastedText(text);
-    });
     var contactsSub = document.getElementById("mail-contacts-subnav");
     if (contactsSub) {
       contactsSub.addEventListener("click", function (e) {
@@ -3851,6 +3851,8 @@
       if (mailImportCurrentJobId) mailDismissImportJob(mailImportCurrentJobId);
       var errBox = document.getElementById("mail-import-error-box");
       if (errBox) errBox.hidden = true;
+      var summaryBox = document.getElementById("mail-import-summary");
+      if (summaryBox) summaryBox.hidden = true;
       if (!mailImportBusy) {
         mailSetImportDashboard({ phase: "idle" });
         var progBox = document.getElementById("mail-bulk-progress");
@@ -4065,7 +4067,7 @@
           mailToast("Etiket oluşturuldu: " + name);
           document.getElementById("mail-tag-create-name").value = "";
           mailLoadTags().then(function () {
-            ["mail-bulk-tag", "mail-paste-tag", "mail-c-tags", "mail-csv-tag", "mail-tag-move-to"].forEach(function (id) {
+            ["mail-bulk-tag", "mail-c-tags", "mail-tag-move-to"].forEach(function (id) {
               var el = document.getElementById(id);
               if (el) el.value = name;
             });

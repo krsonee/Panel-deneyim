@@ -106,6 +106,20 @@
     .kpi .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
     .kpi.rose::after { background: var(--rose); }
     .kpi.rose .val { color: var(--rose); }
+    .mm-kpi-chg { font-size: 0.72rem; margin-top: 0.4rem; font-weight: 600; }
+    .mm-kpi-up { color: var(--green); }
+    .mm-kpi-down { color: var(--rose); }
+    .mm-kpi-flat { color: var(--muted); }
+
+    .mm-daterange-card .card-body { padding: 0.85rem 1.1rem; }
+    .mm-daterange-presets { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+    .mm-daterange-presets .btn.is-active {
+      background: var(--accent); border-color: var(--accent); color: var(--accent-ink, #041018);
+    }
+    #mail-rep-daterange {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); padding: 0.45rem 0.7rem; font-size: 0.82rem;
+    }
 
     .module-panel[hidden] { display: none !important; }
     .nav-item[data-module] { width: 100%; border: none; background: none; cursor: pointer; font: inherit; text-align: left; }
@@ -1069,6 +1083,31 @@
       min-width: 28px; height: 28px; padding: 0 0.4rem; font-size: 0.85rem;
     }
     .makrolink-pager span { font-size: 0.72rem; color: var(--muted); min-width: 4.5rem; text-align: center; }
+
+    /* —— Domain havuzu: sabit yükseklik/scroll kutusu yok, sayfalama + rozetler —— */
+    .mm-domains-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .mm-domains-scroll table tbody tr:nth-child(odd) { background: rgba(148, 163, 184, 0.035); }
+    .mm-domains-scroll table tbody tr:hover { background: rgba(56, 189, 248, 0.07); }
+    .mm-domains-scroll table th:nth-child(1), .mm-domains-scroll table td:nth-child(1) { min-width: 160px; }
+    .mm-domains-scroll table th:nth-child(2), .mm-domains-scroll table td:nth-child(2) { min-width: 190px; }
+    .mm-domains-scroll table th:nth-child(6), .mm-domains-scroll table td:nth-child(6) { min-width: 130px; }
+    .mm-stat-badges { display: flex; gap: 0.55rem; flex-wrap: wrap; margin-bottom: 0.85rem; }
+    .mm-stat-badge {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.35rem 0.75rem; border-radius: 999px; font-size: 0.76rem;
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
+    }
+    .mm-stat-badge strong { font-size: 0.92rem; color: var(--text); font-variant-numeric: tabular-nums; }
+    .mm-stat-badge.mm-stat-green { border-color: rgba(52, 211, 153, 0.35); }
+    .mm-stat-badge.mm-stat-green strong { color: var(--green); }
+    .mm-stat-badge.mm-stat-amber { border-color: rgba(251, 191, 36, 0.35); }
+    .mm-stat-badge.mm-stat-amber strong { color: var(--amber); }
+    .mm-stat-badge.mm-stat-muted strong { color: var(--muted); }
+    .mm-pager {
+      display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+      padding: 0.75rem 0; flex-wrap: wrap;
+    }
+    .mm-pager-info { font-size: 0.76rem; color: var(--muted); }
     .scroll-hint {
       display: none; font-size: 0.68rem; color: var(--muted); padding: 0.35rem 0.85rem;
       background: var(--surface-2); border-bottom: 1px solid var(--border);

@@ -570,6 +570,106 @@
     hint.style.color = isError ? "#fb7185" : "";
   }
 
+  var MM_DOMAINS_PAGE_SIZE = 25;
+  window._mmDomainsPage = window._mmDomainsPage || 1;
+
+  function domainActions(d) {
+    var hasAlloc = (d.allocations || []).length > 0;
+    var isPaused = d.warm_status === "paused" || d.warm_status === "burned";
+    return '<td class="mm-actions-cell">' +
+      mmIconBtn("mm-edit-domain", "Domain düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
+      mmIconBtn("mm-alloc", hasAlloc ? "Tahsis değiştir / kaldır" : "Firmaya tahsis et", "alloc", 'data-id="' + esc(d.id) + '"') +
+      (hasAlloc
+        ? mmIconBtn("mm-dealloc-all btn-danger", "Tüm tahsisleri kaldır", "unlink", 'data-id="' + esc(d.id) + '"')
+        : "") +
+      (isPaused
+        ? mmIconBtn("mm-unpause-domain btn-primary", "Pause'u geri al (health sıfırlanır)", "play", 'data-id="' + esc(d.id) + '"')
+        : mmIconBtn("mm-warm", "Isınmaya al", "warm", 'data-id="' + esc(d.id) + '"')) +
+      "</td>";
+  }
+
+  function mmDomainRowHtml(d) {
+    var alloc = (d.allocations || []).map(function (a) {
+      return '<span class="mm-badge mm-badge-info" style="margin:0 0.15rem 0.15rem 0;">' +
+        esc(a.slug || a.name || ("#" + a.tenant_id)) +
+        ' <button type="button" class="mm-dealloc-one" data-domain-id="' + esc(d.id) +
+        '" data-tenant-id="' + esc(a.tenant_id) + '" title="Bu firmadan kaldır" ' +
+        'style="border:0;background:transparent;color:inherit;cursor:pointer;padding:0 0 0 0.15rem;">×</button></span>';
+    }).join(" ") || '<span class="muted">—</span>';
+    var fromAddr = esc(d.from_local || "info") + "@" + esc(d.domain);
+    var smtpTag = d.smtp_password_set
+      ? ' <span class="mm-badge mm-badge-ok">SMTP</span>'
+      : ' <span class="mm-badge mm-badge-danger">SMTP yok</span>';
+    return "<tr>" +
+      '<td style="max-width:220px;word-break:break-word;">' + esc(d.domain) +
+      (d.warmup_cohort === "legacy"
+        ? ' <span class="mm-badge mm-badge-info">eski</span>'
+        : ' <span class="mm-badge mm-badge-warn">yeni</span>') +
+      "</td>" +
+      "<td>" + fromAddr + smtpTag + "</td>" +
+      "<td>" + mmWarmProgress(d) + "</td>" +
+      "<td>" + esc(d.daily_cap) + "/g · " + esc(d.hourly_cap) + "/s</td>" +
+      "<td>" + mmHealthGauge(d.health_score, d.health_note) + "</td>" +
+      '<td style="min-width:140px;">' + alloc + "</td>" +
+      domainActions(d) +
+      "</tr>";
+  }
+
+  function mmRenderDomainsStats(rows) {
+    var total = rows.length, active = 0, warming = 0, passive = 0;
+    rows.forEach(function (d) {
+      var s = d.warm_status || "cold";
+      if (s === "warm") active++;
+      else if (s === "warming" || s === "cold") warming++;
+      else if (s === "paused" || s === "burned") passive++;
+    });
+    setText2("mm-domains-stat-total", total);
+    setText2("mm-domains-stat-active", active);
+    setText2("mm-domains-stat-warming", warming);
+    setText2("mm-domains-stat-passive", passive);
+  }
+
+  function setText2(id, val) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = String(val);
+  }
+
+  function mmRenderDomainsPager(totalRows) {
+    var pager = document.getElementById("mm-domains-pager");
+    if (!pager) return;
+    var pageCount = Math.max(1, Math.ceil(totalRows / MM_DOMAINS_PAGE_SIZE));
+    if (window._mmDomainsPage > pageCount) window._mmDomainsPage = pageCount;
+    if (pageCount <= 1) { pager.innerHTML = ""; return; }
+    var page = window._mmDomainsPage;
+    pager.innerHTML =
+      '<button type="button" class="btn btn-sm" id="mm-domains-prev"' + (page <= 1 ? " disabled" : "") + '>‹ Önceki</button>' +
+      '<span class="mm-pager-info">Sayfa ' + page + ' / ' + pageCount + ' · ' + totalRows + ' domain</span>' +
+      '<button type="button" class="btn btn-sm" id="mm-domains-next"' + (page >= pageCount ? " disabled" : "") + '>Sonraki ›</button>';
+    var prevBtn = document.getElementById("mm-domains-prev");
+    var nextBtn = document.getElementById("mm-domains-next");
+    if (prevBtn) prevBtn.addEventListener("click", function () {
+      if (window._mmDomainsPage > 1) { window._mmDomainsPage--; mmRenderDomainsTable(); }
+    });
+    if (nextBtn) nextBtn.addEventListener("click", function () {
+      if (window._mmDomainsPage < pageCount) { window._mmDomainsPage++; mmRenderDomainsTable(); }
+    });
+  }
+
+  function mmRenderDomainsTable() {
+    var tbody = document.getElementById("mm-domains-table");
+    if (!tbody) return;
+    var rows = window._mmDomainsCache || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">Domain yok</td></tr>';
+      mmRenderDomainsPager(0);
+      return;
+    }
+    var start = (window._mmDomainsPage - 1) * MM_DOMAINS_PAGE_SIZE;
+    var pageRows = rows.slice(start, start + MM_DOMAINS_PAGE_SIZE);
+    tbody.innerHTML = pageRows.map(mmDomainRowHtml).join("");
+    mmRenderDomainsPager(rows.length);
+  }
+
   function refreshDomains() {
     return api("/api/platform/domains").then(function (res) {
       var tbody = document.getElementById("mm-domains-table");
@@ -580,50 +680,11 @@
       }
       var rows = res.data.domains || [];
       window._mmDomainsCache = rows;
+      mmRenderDomainsStats(rows);
+      mmRenderDomainsTable();
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty">Domain yok</td></tr>';
         return;
       }
-      function domainActions(d) {
-        var hasAlloc = (d.allocations || []).length > 0;
-        var isPaused = d.warm_status === "paused" || d.warm_status === "burned";
-        return '<td class="mm-actions-cell">' +
-          mmIconBtn("mm-edit-domain", "Domain düzenle", "edit", 'data-id="' + esc(d.id) + '"') +
-          mmIconBtn("mm-alloc", hasAlloc ? "Tahsis değiştir / kaldır" : "Firmaya tahsis et", "alloc", 'data-id="' + esc(d.id) + '"') +
-          (hasAlloc
-            ? mmIconBtn("mm-dealloc-all btn-danger", "Tüm tahsisleri kaldır", "unlink", 'data-id="' + esc(d.id) + '"')
-            : "") +
-          (isPaused
-            ? mmIconBtn("mm-unpause-domain btn-primary", "Pause'u geri al (health sıfırlanır)", "play", 'data-id="' + esc(d.id) + '"')
-            : mmIconBtn("mm-warm", "Isınmaya al", "warm", 'data-id="' + esc(d.id) + '"')) +
-          "</td>";
-      }
-      tbody.innerHTML = rows.map(function (d) {
-        var alloc = (d.allocations || []).map(function (a) {
-          return '<span class="mm-badge mm-badge-info" style="margin:0 0.15rem 0.15rem 0;">' +
-            esc(a.slug || a.name || ("#" + a.tenant_id)) +
-            ' <button type="button" class="mm-dealloc-one" data-domain-id="' + esc(d.id) +
-            '" data-tenant-id="' + esc(a.tenant_id) + '" title="Bu firmadan kaldır" ' +
-            'style="border:0;background:transparent;color:inherit;cursor:pointer;padding:0 0 0 0.15rem;">×</button></span>';
-        }).join(" ") || '<span class="muted">—</span>';
-        var fromAddr = esc(d.from_local || "info") + "@" + esc(d.domain);
-        var smtpTag = d.smtp_password_set
-          ? ' <span class="mm-badge mm-badge-ok">SMTP</span>'
-          : ' <span class="mm-badge mm-badge-danger">SMTP yok</span>';
-        return "<tr>" +
-          "<td>" + esc(d.domain) +
-          (d.warmup_cohort === "legacy"
-            ? ' <span class="mm-badge mm-badge-info">eski</span>'
-            : ' <span class="mm-badge mm-badge-warn">yeni</span>') +
-          "</td>" +
-          "<td>" + fromAddr + smtpTag + "</td>" +
-          "<td>" + mmWarmProgress(d) + "</td>" +
-          "<td>" + esc(d.daily_cap) + "/g · " + esc(d.hourly_cap) + "/s</td>" +
-          "<td>" + mmHealthGauge(d.health_score, d.health_note) + "</td>" +
-          "<td>" + alloc + "</td>" +
-          domainActions(d) +
-          "</tr>";
-      }).join("");
 
       var wbody = document.getElementById("mm-warmup-table");
       if (wbody) {
@@ -666,12 +727,12 @@
     var leg = document.getElementById("mm-wu-tab-legacy");
     var neu = document.getElementById("mm-wu-tab-new");
     if (leg) {
-      leg.classList.toggle("btn-primary", _wuCohort === "legacy");
-      leg.classList.toggle("btn-secondary", _wuCohort !== "legacy");
+      leg.classList.toggle("is-active", _wuCohort === "legacy");
+      leg.setAttribute("aria-selected", _wuCohort === "legacy" ? "true" : "false");
     }
     if (neu) {
-      neu.classList.toggle("btn-primary", _wuCohort === "new");
-      neu.classList.toggle("btn-secondary", _wuCohort !== "new");
+      neu.classList.toggle("is-active", _wuCohort === "new");
+      neu.setAttribute("aria-selected", _wuCohort === "new" ? "true" : "false");
     }
     _wuSelected = {};
     if (_wuProgramFull) renderWarmupProgram(_wuProgramFull);
@@ -763,11 +824,14 @@
     var titleEl = document.getElementById("mm-wu-title");
     var targetsEl = document.getElementById("mm-wu-targets");
     var progLabel = document.getElementById("mm-wu-progress-label");
-    var chips = document.getElementById("mm-wu-domains");
+    var ringEl = document.getElementById("mm-wu-progress-ring");
+    var cards = document.getElementById("mm-wu-domains");
     var tasksEl = document.getElementById("mm-wu-tasks");
     var rulesEl = document.getElementById("mm-wu-rules");
     if (track.active || (track.domains && track.domains.length)) {
-      if (dayEl) dayEl.textContent = "Gün " + (track.day || "—") + "/" + (track.total_days || 30);
+      var day = track.day || 1;
+      var totalDays = track.total_days || 30;
+      if (dayEl) dayEl.textContent = "Gün " + day + "/" + totalDays;
       if (titleEl) titleEl.textContent = (track.plan && track.plan.title) || "—";
       if (targetsEl) {
         targetsEl.textContent =
@@ -778,15 +842,44 @@
       var tasks = (track.plan && track.plan.tasks) || [];
       var doneN = tasks.filter(function (t) { return t.done; }).length;
       if (progLabel) progLabel.textContent = doneN + "/" + tasks.length;
-      if (chips) {
-        chips.innerHTML = (track.domains || []).map(function (d) {
-          return '<span class="mm-wu-chip">' + esc(d.domain) +
-            " · cap " + esc(d.daily_cap) + "</span>";
+      // Dekoratif progress ring — önceden conic-gradient açısı hep 0deg sabitti
+      // (hiçbir zaman güncellenmiyordu, görsel olarak hep "boş" görünüyordu).
+      // Burada bugünün görev tamamlanma % üzerinden gerçek zamanlı çiziliyor.
+      if (ringEl) {
+        var pct = tasks.length ? Math.round((doneN / tasks.length) * 100) : 0;
+        var deg = Math.round(pct * 3.6);
+        ringEl.style.background =
+          "radial-gradient(circle at 30% 30%, rgba(56,189,248,0.25), transparent 60%), " +
+          "conic-gradient(#38bdf8 " + deg + "deg, rgba(148,163,184,0.2) " + deg + "deg)";
+      }
+      if (cards) {
+        var domainMeta = {};
+        (window._mmDomainsCache || []).forEach(function (d) { domainMeta[String(d.id)] = d; });
+        cards.innerHTML = (track.domains || []).map(function (d) {
+          var meta = domainMeta[String(d.id)] || {};
+          var status = meta.warm_status || "warming";
+          var dayPct = Math.min(100, Math.round((day / totalDays) * 100));
+          var health = meta.health_score != null ? meta.health_score : null;
+          var dotClass = status === "warm" ? "mm-dot-green" : (status === "paused" || status === "burned" ? "mm-dot-rose" : "mm-dot-amber");
+          return '<div class="mm-wu-progress-card">' +
+            '<div class="mm-wu-progress-card-head">' +
+              '<span class="mm-dot ' + dotClass + '"></span>' +
+              '<strong>' + esc(d.domain) + "</strong>" +
+              '<span class="mm-badge mm-badge-info" style="margin-left:auto;">' + esc(status) + "</span>" +
+            "</div>" +
+            '<div class="mm-wu-progress-card-bar"><div style="width:' + dayPct + '%;"></div></div>' +
+            '<div class="mm-wu-progress-card-meta">' +
+              "<span>Gün " + day + "/" + totalDays + "</span>" +
+              "<span>cap " + esc(d.daily_cap) + "</span>" +
+              (health != null ? ("<span>health " + esc(health) + "</span>") : "") +
+            "</div>" +
+          "</div>";
         }).join("") || '<span class="muted">Domain yok</span>';
       }
       if (tasksEl) {
         tasksEl.innerHTML = tasks.map(function (t) {
           return '<label class="mm-wu-task' + (t.done ? " is-done" : "") + '">' +
+            '<span class="mm-dot ' + (t.done ? "mm-dot-green" : "mm-dot-amber") + '"></span>' +
             '<input type="checkbox" data-wu-task="' + esc(t.key) + '"' + (t.done ? " checked" : "") + ">" +
             '<span class="mm-wu-task-body"><strong>' + esc(t.title) + "</strong>" +
             "<small>" + esc(t.hint || "") + "</small></span></label>";
@@ -869,6 +962,7 @@
       tasksEl.innerHTML = (maint.tasks || []).map(function (t) {
         var autoTag = t.auto ? ' <span class="muted">(otomatik)</span>' : "";
         return '<label class="mm-wu-task' + (t.done ? " is-done" : "") + '">' +
+          '<span class="mm-dot ' + (t.done ? "mm-dot-green" : "mm-dot-amber") + '"></span>' +
           '<input type="checkbox" data-weekly-task="' + esc(t.key) + '"' + (t.done ? " checked" : "") + ">" +
           '<span class="mm-wu-task-body"><strong>' + esc(t.title) + autoTag + "</strong>" +
           '<small>' + esc(t.hint) + "</small></span></label>";
@@ -971,6 +1065,12 @@
     var tabN = document.getElementById("mm-wu-tab-new");
     if (tabL) tabL.addEventListener("click", function () { setWuCohortTab("legacy"); });
     if (tabN) tabN.addEventListener("click", function () { setWuCohortTab("new"); });
+    var infoOverlay = document.getElementById("mm-wu-info-overlay");
+    var infoBtn = document.getElementById("mm-wu-info-btn");
+    var infoClose = document.getElementById("mm-wu-info-close");
+    if (infoBtn && infoOverlay) infoBtn.addEventListener("click", function () { infoOverlay.hidden = false; });
+    if (infoClose && infoOverlay) infoClose.addEventListener("click", function () { infoOverlay.hidden = true; });
+    if (infoOverlay) infoOverlay.addEventListener("click", function (e) { if (e.target === infoOverlay) infoOverlay.hidden = true; });
     var startBtn = document.getElementById("mm-wu-start");
     if (startBtn) {
       startBtn.addEventListener("click", function () {
