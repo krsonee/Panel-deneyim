@@ -86,8 +86,13 @@ def seed_bizzo_mail_templates(
     force_missing=False,
     overwrite=False,
     allow_when_skipped=False,
+    insert_missing=True,
 ):
-    """Seed Bizzo templates. Wipe sonrası auto-seed kapalıysa atlanır (allow_when_skipped ile açılır)."""
+    """Seed Bizzo templates. Wipe sonrası auto-seed kapalıysa atlanır (allow_when_skipped ile açılır).
+
+    insert_missing=False: sadece isim eşleşen MEVCUT şablonları güncelle,
+    kullanıcının bilerek sildiği şablonu asla geri ekleme.
+    """
     _ = force_missing
     if not allow_when_skipped:
         try:
@@ -121,6 +126,8 @@ def seed_bizzo_mail_templates(
                     ),
                 )
                 updated += 1
+            continue
+        if not insert_missing:
             continue
         insert_returning_id(
             conn,

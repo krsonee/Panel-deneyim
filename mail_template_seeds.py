@@ -487,10 +487,15 @@ Makrobet
 ]
 
 
-def seed_makrobet_mail_templates(conn, force_missing=False, overwrite=False, allow_when_skipped=False):
+def seed_makrobet_mail_templates(conn, force_missing=False, overwrite=False, allow_when_skipped=False, insert_missing=True):
     """Eksik şablonları ekler; overwrite=True ise seed HTML’lerini günceller.
 
     v4 flag yoksa ilk boot’ta HTML seed’leri otomatik yenilenir.
+
+    insert_missing=False: sadece isim eşleşen MEVCUT şablonları güncelle,
+    kullanıcının bilerek sildiği şablonları asla geri ekleme (panel'deki
+    "…stiline güncelle" butonu bunu kullanır — "güncelle" demek "sil"eni
+    diriltmek değildir).
     """
     if not allow_when_skipped:
         try:
@@ -527,6 +532,8 @@ def seed_makrobet_mail_templates(conn, force_missing=False, overwrite=False, all
                     ),
                 )
                 updated += 1
+            continue
+        if not insert_missing:
             continue
         insert_returning_id(
             conn,

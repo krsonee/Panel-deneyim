@@ -4987,11 +4987,18 @@ def create_mailing_blueprint(permission_required):
         from mail_template_seeds_bizzo import seed_bizzo_mail_templates
 
         with closing(get_db()) as conn:
+            # insert_missing=False: bu buton "şablonları Makrobet stiline
+            # GÜNCELLE" — sadece isim eşleşen MEVCUT şablonların HTML/subject'ini
+            # tazeler. Kullanıcının bilerek sildiği (tek tek ya da "Tüm
+            # şablonları sil" ile) şablonları asla geri getirmez — önceden
+            # insert_missing hiç yoktu ve bu buton silinen her şeyi diriltiyordu.
             result = seed_makrobet_mail_templates(
-                conn, force_missing=True, overwrite=True, allow_when_skipped=True
+                conn, force_missing=True, overwrite=True, allow_when_skipped=True,
+                insert_missing=False,
             )
             bizzo = seed_bizzo_mail_templates(
-                conn, force_missing=True, overwrite=True, allow_when_skipped=True
+                conn, force_missing=True, overwrite=True, allow_when_skipped=True,
+                insert_missing=False,
             )
             # Seed INSERT'leri tenant_id belirtmeden yapılır (sütun DEFAULT'u
             # yüzünden yanlış firmaya — genelde Makro'ya — düşebilir); bu
