@@ -4161,7 +4161,14 @@
       if (delT) {
         if (!confirm("Şablon silinsin mi?")) return;
         mailApi("/api/mailing/templates/" + delT.getAttribute("data-id"), { method: "DELETE" })
-          .then(function () { mailLoadTemplates(); });
+          .then(function (res) {
+            if (!res || !res.ok) {
+              mailToast((res && res.data && res.data.error) || "Şablon silinemedi.");
+              return;
+            }
+            mailToast("Şablon silindi");
+            mailLoadTemplates();
+          });
         return;
       }
       var queueC = e.target.closest(".mail-queue-camp");

@@ -4993,6 +4993,15 @@ def create_mailing_blueprint(permission_required):
             bizzo = seed_bizzo_mail_templates(
                 conn, force_missing=True, overwrite=True, allow_when_skipped=True
             )
+            # Seed INSERT'leri tenant_id belirtmeden yapılır (sütun DEFAULT'u
+            # yüzünden yanlış firmaya — genelde Makro'ya — düşebilir); bu
+            # on-demand route'ta hemen ardından düzeltmezsek sunucu yeniden
+            # başlayana kadar Bizzo şablonu Makro tarafında görünür kalırdı.
+            try:
+                from mail_tenant import _repair_bizzo_template_ownership
+                _repair_bizzo_template_ownership(conn)
+            except Exception:
+                pass
         if not isinstance(result, dict):
             result = {"added": int(result or 0), "updated": 0}
         if not isinstance(bizzo, dict):
@@ -5097,6 +5106,11 @@ def create_mailing_blueprint(permission_required):
 
         with closing(get_db()) as conn:
             result = seed_bizzo_davet_1x_sinirsiz_template(conn, overwrite=True)
+            try:
+                from mail_tenant import _repair_bizzo_template_ownership
+                _repair_bizzo_template_ownership(conn)
+            except Exception:
+                pass
         action = result.get("action") or "kept"
         if action == "added":
             msg = f"{result.get('name')} eklendi"
@@ -5299,8 +5313,33 @@ def create_mailing_blueprint(permission_required):
                     return jsonify({"error": "Bu şablon başka firmaya ait."}), 403
             except Exception:
                 pass
-            execute(conn, "DELETE FROM mail_templates WHERE id = ?", (template_id,))
-            conn.commit()
+            # Bu şablonu şu an kullanan aktif/kuyrukta bir kampanya varsa silmeyi
+            # engelle (net bir mesajla) — geçmiş/taslak kampanyalar şablon
+            # referansından ayrılıp (template_id NULL) silmeye izin verilir.
+            # Önceden mail_campaigns.template_id FK'si yüzünden DELETE sessizce
+            # Postgres'te FK ihlaliyle patlıyordu ve frontend hatayı hiç
+            # göstermeden listeyi yeniliyordu → "silme butonu işlevsiz" görünümü.
+            active = fetchone(
+                conn,
+                "SELECT id FROM mail_campaigns WHERE template_id = ? "
+                "AND status IN ('queued', 'sending', 'scheduled', 'paused') LIMIT 1",
+                (template_id,),
+            )
+            if active:
+                return jsonify({
+                    "error": "Bu şablon şu anda aktif/kuyrukta bir kampanyada kullanılıyor. "
+                             "Önce o kampanyayı durdurun, sonra şablonu silin."
+                }), 409
+            try:
+                execute(conn, "UPDATE mail_campaigns SET template_id = NULL WHERE template_id = ?", (template_id,))
+                execute(conn, "DELETE FROM mail_templates WHERE id = ?", (template_id,))
+                conn.commit()
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                return jsonify({"error": f"Şablon silinemedi: {exc}"}), 500
         return jsonify({"ok": True})
 
     # ── Campaigns ──────────────────────────────────────────────
