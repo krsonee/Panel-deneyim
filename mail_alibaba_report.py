@@ -239,10 +239,39 @@ def _match_send_id(conn, to_email: str, utc_ts, window_hours=72):
     return best_id
 
 
-def sync_delivery_reports(conn, *, hours_back=48, max_pages=40):
+def _mail_detail_list(payload: dict) -> list:
+    """Alibaba bazen tek kaydı dict, çokluyu list döner; key de data/Data olabilir."""
+    if not isinstance(payload, dict):
+        return []
+    block = payload.get("data") or payload.get("Data") or {}
+    if isinstance(block, list):
+        return [x for x in block if isinstance(x, dict)]
+    if not isinstance(block, dict):
+        return []
+    details = block.get("mailDetail") or block.get("MailDetail") or []
+    if isinstance(details, dict):
+        return [details]
+    if isinstance(details, list):
+        return [x for x in details if isinstance(x, dict)]
+    return []
+
+
+def sync_delivery_reports(conn, *, hours_back=48, max_pages=8):
     """Son senkrondan bugüne (üst sınır 30 gün, Alibaba kısıtı) mailDetail
     çeker, mail_sends.real_status alanını doldurur. Sadece okuma — Alibaba
-    tarafında hiçbir değişiklik yapılmaz."""
+    tarafında hiçbir değişiklik yapılmaz.
+
+    max_pages varsayılan 8: HTTP isteği Render 30s timeout'una çarpmasın
+    (ilk senkron 500 Internal Server Error oluyordu). Worker periyodik
+    çağrıda daha yüksek sayfa ile devam eder."""
+    try:
+        from database import ensure_mail_sends_real_status_columns
+        ensure_mail_sends_real_status_columns(conn)
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     cfg = get_config(conn)
     if not cfg["enabled"] or not cfg["configured"] or not cfg["verified"]:
         return {"skipped": True, "reason": "devre dışı veya doğrulanmamış"}
@@ -277,7 +306,7 @@ def sync_delivery_reports(conn, *, hours_back=48, max_pages=40):
         except AlibabaReportError as exc:
             errors.append(str(exc))
             break
-        details = ((data.get("data") or {}).get("mailDetail") or [])
+        details = _mail_detail_list(data)
         if not details:
             break
         for d in details:

@@ -7532,8 +7532,11 @@ def create_mailing_blueprint(permission_required):
         if not _sess.get("mail_is_superadmin"):
             return jsonify({"error": "Yalnızca süper admin kullanabilir."}), 403
         import mail_alibaba_report as _ali_rep
-        with closing(get_db()) as conn:
-            result = _ali_rep.sync_delivery_reports(conn)
+        try:
+            with closing(get_db()) as conn:
+                result = _ali_rep.sync_delivery_reports(conn, hours_back=72, max_pages=8)
+        except Exception as exc:
+            return jsonify({"error": f"Senkron hatası: {exc}"}), 500
         return jsonify(result), (200 if not result.get("errors") else 207)
 
     def _mask_secret(s):

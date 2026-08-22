@@ -256,7 +256,7 @@ def _sync_alibaba_delivery_reports():
     with closing(get_db()) as conn:
         try:
             import mail_alibaba_report as _ali_rep
-            result = _ali_rep.sync_delivery_reports(conn)
+            result = _ali_rep.sync_delivery_reports(conn, hours_back=48, max_pages=40)
             if not result.get("skipped"):
                 print(
                     f"✉️  alibaba delivery report sync: seen={result.get('seen')} "
