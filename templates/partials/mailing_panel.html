@@ -1014,6 +1014,40 @@
         </form>
       </div>
     </section>
+    <section class="card" style="margin-bottom:1rem;" id="mail-set-alibaba-report-card">
+      <div class="card-head">
+        <span class="mm-label-row" style="margin:0;">
+          Alibaba DirectMail — Gerçek teslimat raporu (OpenAPI)
+          <span class="mm-tip" tabindex="0" data-tip="Panel varsayılan olarak sadece SMTP kabul (250 OK) durumunu bilir — gerçek teslimat/bounce/spam sonucu SADECE bu API ile çekilebilir. Yalnızca OKUMA yapar (dm:SenderStatisticsDetailByParam), hiçbir gönderim/ayar değiştirmez.">?</span>
+        </span>
+      </div>
+      <div class="card-body">
+        <p class="muted" style="font-size:0.8rem;margin-bottom:0.5rem;">
+          Alibaba Cloud konsolünde tercihen salt-okunur bir RAM alt-kullanıcısı oluşturup sadece <code>dm:SenderStatisticsDetailByParam</code> iznini verin — bu anahtar hiçbir zaman mail göndermek veya ayar değiştirmek için kullanılmaz, sadece Alibaba'nın kendi gördüğü gerçek teslimat sonucunu okur.
+        </p>
+        <p class="muted" style="font-size:0.8rem;margin-bottom:0.5rem;">
+          Durum: <span id="mail-set-ali-status">—</span> · Kayıtlı AK: <code id="mail-set-ali-akid-masked">—</code> · Son senkron: <span id="mail-set-ali-last-sync">—</span>
+        </p>
+        <form id="mail-alibaba-report-form" class="form-row-4">
+          <div><label>AccessKey Id</label><input type="text" id="mail-set-ali-akid" placeholder="LTAI... (boş = değiştirme)" autocomplete="off"></div>
+          <div><label>AccessKey Secret</label><input type="password" id="mail-set-ali-aksecret" placeholder="boş = değiştirme" autocomplete="new-password"></div>
+          <div><label>Bölge (Region)</label><input type="text" id="mail-set-ali-region" placeholder="ap-southeast-1"></div>
+          <div>
+            <label class="mm-switch" style="margin-top:1.4rem;">
+              <input type="checkbox" id="mail-set-ali-enabled">
+              <span class="mm-switch-track"></span>
+              <span>Periyodik senkron aktif</span>
+            </label>
+          </div>
+          <div style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+            <button type="submit" class="btn btn-primary">Kaydet</button>
+            <button type="button" class="btn btn-secondary" id="mail-set-ali-test">Bağlantıyı test et</button>
+            <button type="button" class="btn btn-secondary" id="mail-set-ali-sync-now">Şimdi senkronla</button>
+            <span class="muted" id="mail-set-ali-hint" style="font-size:0.72rem;"></span>
+          </div>
+        </form>
+      </div>
+    </section>
     <section class="card" style="margin-bottom:1rem;">
       <div class="card-head"><span>Webhook secret (IVR)</span></div>
       <div class="card-body">

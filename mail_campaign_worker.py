@@ -248,6 +248,24 @@ def _reconcile_credit_counters():
             print(f"⚠️  credit reconcile: {exc}")
 
 
+def _sync_alibaba_delivery_reports():
+    """Alibaba DirectMail OpenAPI (SenderStatisticsDetailByParam) — GERÇEK
+    teslimat/bounce/spam/invalid sonucunu çeker. Sadece okuma; ayar
+    yapılmamışsa veya doğrulanmamışsa mail_alibaba_report.sync_delivery_reports
+    kendisi no-op (skipped) döner, burada ekstra kontrol gerekmez."""
+    with closing(get_db()) as conn:
+        try:
+            import mail_alibaba_report as _ali_rep
+            result = _ali_rep.sync_delivery_reports(conn)
+            if not result.get("skipped"):
+                print(
+                    f"✉️  alibaba delivery report sync: seen={result.get('seen')} "
+                    f"matched={result.get('matched')} errors={result.get('errors')}"
+                )
+        except Exception as exc:
+            print(f"⚠️  alibaba delivery report sync: {exc}")
+
+
 def _scheduler_loop():
     _tick_n = 0
     # Deploy/restart sonrası ~15dk beklemeden hemen bir kez çalıştır — 21.08
@@ -305,6 +323,14 @@ def _scheduler_loop():
                 _reconcile_misclassified_stuck_sends()
             except Exception as exc:
                 print(f"⚠️  misclassified stuck-sweep reconcile: {exc}")
+        # ~her 15 dakikada bir (8s * 113) — Alibaba DirectMail OpenAPI'den
+        # GERÇEK teslimat/bounce sonucunu çeker (sadece okuma). Konfigüre
+        # edilmemiş/doğrulanmamışsa sync_delivery_reports kendisi no-op döner.
+        if _tick_n % 113 == 0:
+            try:
+                _sync_alibaba_delivery_reports()
+            except Exception as exc:
+                print(f"⚠️  alibaba delivery report sync: {exc}")
         time.sleep(8)
 
 
