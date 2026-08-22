@@ -3442,6 +3442,42 @@ def ensure_mail_mx_cache_table(conn):
     conn.commit()
 
 
+def ensure_mail_sends_real_status_columns(conn):
+    """Alibaba DirectMail OpenAPI (SenderStatisticsDetailByParam) üzerinden
+    çekilen GERÇEK teslimat sonucu için ek kolonlar — mevcut `status` kolonu
+    yalnızca SMTP submission (Alibaba'ya kabul) durumunu tutar, bunu HİÇ
+    ezmez; ayrı alanlarda tutulup rapor tarafında karşılaştırmalı gösterilir.
+
+    real_status: 'delivered' | 'invalid' | 'spam' | 'failed' (Alibaba'nın
+    Status: 0/2/3/4 karşılığı) — henüz eşleşme bulunamadıysa NULL kalır."""
+    cols = _table_columns(conn, "mail_sends") or set()
+    extras = [
+        ("real_status", "TEXT"),
+        ("real_status_at", "TEXT"),
+        ("real_status_message", "TEXT"),
+        ("real_status_source", "TEXT"),
+    ]
+    for name, typedef in extras:
+        if name in cols:
+            continue
+        try:
+            execute(conn, f"ALTER TABLE mail_sends ADD COLUMN {name} {typedef}")
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+    try:
+        execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_sends_to_email ON mail_sends(to_email)")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+
 def _dedupe_mail_contacts_by_email(conn):
     """Büyük ölçekli bulk upsert (ON CONFLICT) için email üzerinde UNIQUE
     index gerekiyor — önce olası (nadir) mükerrer kayıtları birleştirir.
@@ -3717,6 +3753,36 @@ def init_db():
                 except Exception:
                     pass
                 print(f"⚠️  ensure_mail_contacts_unique_email hata: {exc}")
+            try:
+                ensure_mail_sends_real_status_columns(conn)
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                print(f"⚠️  ensure_mail_sends_real_status_columns hata: {exc}")
+            try:
+                # 22.08: import fast-gate MX'i geçtiği halde verify_status boş
+                # kalıyordu → "Sadece doğrulanmış" kampanyası bu kişileri elemişti.
+                # Fast-gate 21.08'de eklendi; o tarihten beri csv import edilen
+                # ve hâlâ boş olan kayıtları mx_ok'a çek (self-heal, bir kez).
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_contacts
+                    SET verify_status = 'mx_ok'
+                    WHERE source = 'csv'
+                      AND COALESCE(verify_status, '') = ''
+                      AND CAST(created_at AS TEXT) >= '2026-08-21'
+                    """,
+                )
+                conn.commit()
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                print(f"⚠️  backfill import mx_ok hata: {exc}")
 
 
 def wipe_operational_data(conn):

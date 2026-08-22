@@ -192,6 +192,13 @@
         if (d7.pending_unresolved > 200) {
           msg += " ⏳ " + fmtNum(d7.pending_unresolved) + " gönderim hâlâ 'queued' — bu oran henüz bunları içermiyor, sistem bunları otomatik çözümleyecek.";
         }
+        var ali7 = sr.alibaba_confirmed_7d || {};
+        if (ali7.rate != null && ali7.coverage >= 20) {
+          msg += " Alibaba gerçek teslimat (son 7 gün): %" +
+            String(ali7.rate).replace(".", ",") +
+            " (" + fmtNum(ali7.delivered) + "/" + fmtNum(ali7.total) +
+            ", kapsama %" + String(ali7.coverage).replace(".", ",") + ").";
+        }
         note.textContent = msg;
       } else {
         note.textContent = "Son 7 günde ölçülebilir gönderim yok.";
@@ -3553,6 +3560,25 @@
       if (campOnly && (scrub.scrub_campaign_only_valid || s.scrub_campaign_only_valid === "1")) {
         campOnly.checked = true;
       }
+      var aliAkid = document.getElementById("mail-set-ali-akid");
+      if (aliAkid) aliAkid.value = "";
+      var aliSecret = document.getElementById("mail-set-ali-aksecret");
+      if (aliSecret) aliSecret.value = "";
+      var aliRegion = document.getElementById("mail-set-ali-region");
+      if (aliRegion) aliRegion.value = s.alibaba_report_region || "ap-southeast-1";
+      var aliEnabled = document.getElementById("mail-set-ali-enabled");
+      if (aliEnabled) aliEnabled.checked = !!s.alibaba_report_enabled;
+      setText("mail-set-ali-akid-masked", s.alibaba_report_ak_id_masked || "—");
+      setText("mail-set-ali-last-sync", s.alibaba_report_last_sync ? fmtTime(s.alibaba_report_last_sync) : "henüz senkronlanmadı");
+      var aliStatusTxt = "yapılandırılmadı";
+      if (s.alibaba_report_configured) {
+        aliStatusTxt = s.alibaba_report_verified
+          ? (s.alibaba_report_enabled ? "doğrulandı · aktif" : "doğrulandı · pasif (senkron kapalı)")
+          : "anahtar kayıtlı ama henüz test edilmedi — 'Bağlantıyı test et'e bas";
+      } else if (s.alibaba_report_error) {
+        aliStatusTxt = "hata: " + s.alibaba_report_error;
+      }
+      setText("mail-set-ali-status", aliStatusTxt);
     });
   }
 
@@ -4966,6 +4992,73 @@
         });
       });
     }
+    var aliForm = document.getElementById("mail-alibaba-report-form");
+    if (aliForm) {
+      aliForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var akid = (document.getElementById("mail-set-ali-akid") || {}).value || "";
+        var secret = (document.getElementById("mail-set-ali-aksecret") || {}).value || "";
+        var region = (document.getElementById("mail-set-ali-region") || {}).value || "ap-southeast-1";
+        var enabled = !!(document.getElementById("mail-set-ali-enabled") || {}).checked;
+        var body = {
+          alibaba_report_region: region.trim() || "ap-southeast-1",
+          alibaba_report_enabled: enabled
+        };
+        if (akid.trim()) body.alibaba_report_ak_id = akid.trim();
+        if (secret.trim()) body.alibaba_report_ak_secret = secret.trim();
+        mailApi("/api/mailing/settings", { method: "PATCH", body: body }).then(function (res) {
+          if (!res || !res.ok) {
+            mailToast((res && res.data && res.data.error) || "Alibaba ayarı kaydedilemedi");
+            return;
+          }
+          mailToast("Alibaba teslimat raporu ayarları kaydedildi");
+          mailLoadSettings();
+        });
+      });
+    }
+    bindClick("mail-set-ali-test", function () {
+      var hint = document.getElementById("mail-set-ali-hint");
+      if (hint) hint.textContent = "Test ediliyor…";
+      var body = {};
+      var akid = ((document.getElementById("mail-set-ali-akid") || {}).value || "").trim();
+      var secret = ((document.getElementById("mail-set-ali-aksecret") || {}).value || "").trim();
+      var region = ((document.getElementById("mail-set-ali-region") || {}).value || "").trim();
+      if (akid) body.alibaba_report_ak_id = akid;
+      if (secret) body.alibaba_report_ak_secret = secret;
+      if (region) body.alibaba_report_region = region;
+      mailApi("/api/mailing/settings/test-alibaba-report", { method: "POST", body: body, timeoutMs: 25000 }).then(function (res) {
+        if (!res || !res.ok) {
+          var err = (res && res.data && (res.data.error || res.data.message)) || "Bağlantı testi başarısız";
+          if (hint) hint.textContent = err;
+          mailToast(err);
+          return;
+        }
+        if (hint) hint.textContent = "Bağlantı OK — senkronu açıp kaydet.";
+        mailToast("Alibaba API bağlantısı doğrulandı");
+        mailLoadSettings();
+      });
+    });
+    bindClick("mail-set-ali-sync-now", function () {
+      var hint = document.getElementById("mail-set-ali-hint");
+      if (hint) hint.textContent = "Senkronlanıyor…";
+      mailApi("/api/mailing/settings/sync-alibaba-report", { method: "POST", timeoutMs: 60000 }).then(function (res) {
+        if (!res || !res.ok) {
+          var err = (res && res.data && (res.data.error || res.data.reason)) || "Senkron başarısız";
+          if (hint) hint.textContent = err;
+          mailToast(err);
+          return;
+        }
+        var d = res.data || {};
+        if (d.skipped) {
+          if (hint) hint.textContent = "Atlandı: " + (d.reason || "anahtar yok / test edilmedi");
+          mailToast("Senkron atlandı — önce kaydet + test et");
+          return;
+        }
+        if (hint) hint.textContent = "Görülen " + (d.seen || 0) + " · eşleşen " + (d.matched || 0);
+        mailToast("Alibaba teslimat raporu senkronlandı");
+        mailLoadSettings();
+      });
+    });
     var scApiForm = document.getElementById("mail-smartico-api-form");
     if (scApiForm) {
       scApiForm.addEventListener("submit", function (e) {

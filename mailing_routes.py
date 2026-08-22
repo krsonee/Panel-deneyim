@@ -1130,7 +1130,14 @@ def _campaign_selection_where(
         params.extend(tparams)
     if exclude_previously_sent:
         in_flight = _in_flight_recipient_sql()
-        sent_sql = "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id)"
+        # Sadece GERÇEKTEN gönderilmiş (SMTP kabul / simülasyon) sayılır.
+        # skipped/failed/queued/bounced bir kişiyi "daha önce mail aldı" diye
+        # hayattan men etmesin — 21.08 enkazı (silinen kampanyanın skipped
+        # işaretlenen binlerce satırı) yüzünden temiz listenin yarısı elenmesin.
+        sent_sql = (
+            "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id "
+            "AND s.status IN ('sent', 'simulated'))"
+        )
         # Hem geçmiş gönderim hem başka kampanyada bekleyen alıcı
         pool_block = f"(({sent_sql}) AND ({in_flight}))"
         exempt_tags = [t for t in tags if _tag_is_exclude_sent_exempt(t, custom_exempt)]
@@ -1367,7 +1374,8 @@ def _filter_sendable_contact_ids(
             ex_sql, ex_params = _contact_has_exclude_exempt_tag_sql(custom_exempt)
             in_flight = _in_flight_recipient_sql()
             clauses.append(
-                f"((NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id) "
+                f"((NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id "
+                f"AND s.status IN ('sent', 'simulated')) "
                 f"AND ({in_flight})) OR {ex_sql})"
             )
             params.extend(ex_params)
@@ -1707,9 +1715,36 @@ def _bulk_upsert_contacts(conn, batch, tag, now, tenant_id=None):
     existing_set = {str(r["email"]).lower() for r in (existing_rows or [])}
     inserted = sum(1 for email, _ in batch if email.lower() not in existing_set)
     updated = len(batch) - inserted
+    # Import job bu fonksiyonu SADECE verify_email_fast geçtikten sonra çağırır —
+    # yani MX var, syntax OK. verify_status yazılmazsa "Sadece doğrulanmış"
+    # kampanya filtresi bu kişileri HİÇ seçmez (22.08: 1069 kişilik etiketten
+    # 606'ı boş verify_status yüzünden elendi, 418 kişiye düştü).
+    has_verify = "verify_status" in cols
     values_sql = []
     params = []
-    if has_tenant:
+    if has_tenant and has_verify:
+        for email, name in batch:
+            values_sql.append("(?, ?, ?, ?, 0, '', 'mx_ok', ?, ?, ?)")
+            params += [email, name, tag_json_single, "csv", now, now, tid]
+        sql = f"""
+            INSERT INTO mail_contacts
+            (email, name, tags, source, unsubscribed, notes, verify_status, created_at, updated_at, tenant_id)
+            VALUES {",".join(values_sql)}
+            ON CONFLICT (tenant_id, email) DO UPDATE SET
+                name = CASE WHEN mail_contacts.name = '' THEN EXCLUDED.name ELSE mail_contacts.name END,
+                tags = CASE
+                    WHEN ? = '' THEN mail_contacts.tags
+                    WHEN mail_contacts.tags LIKE ? THEN mail_contacts.tags
+                    WHEN mail_contacts.tags = '[]' THEN ?
+                    ELSE substr(mail_contacts.tags, 1, length(mail_contacts.tags) - 1) || ',"' || ? || '"]'
+                END,
+                verify_status = CASE
+                    WHEN COALESCE(mail_contacts.verify_status, '') IN ('', 'unknown') THEN 'mx_ok'
+                    ELSE mail_contacts.verify_status
+                END,
+                updated_at = EXCLUDED.updated_at
+        """
+    elif has_tenant:
         for email, name in batch:
             values_sql.append("(?, ?, ?, ?, 0, '', ?, ?, ?)")
             params += [email, name, tag_json_single, "csv", now, now, tid]
@@ -1724,6 +1759,27 @@ def _bulk_upsert_contacts(conn, batch, tag, now, tenant_id=None):
                     WHEN mail_contacts.tags LIKE ? THEN mail_contacts.tags
                     WHEN mail_contacts.tags = '[]' THEN ?
                     ELSE substr(mail_contacts.tags, 1, length(mail_contacts.tags) - 1) || ',"' || ? || '"]'
+                END,
+                updated_at = EXCLUDED.updated_at
+        """
+    elif has_verify:
+        for email, name in batch:
+            values_sql.append("(?, ?, ?, ?, 0, '', 'mx_ok', ?, ?)")
+            params += [email, name, tag_json_single, "csv", now, now]
+        sql = f"""
+            INSERT INTO mail_contacts (email, name, tags, source, unsubscribed, notes, verify_status, created_at, updated_at)
+            VALUES {",".join(values_sql)}
+            ON CONFLICT (email) DO UPDATE SET
+                name = CASE WHEN mail_contacts.name = '' THEN EXCLUDED.name ELSE mail_contacts.name END,
+                tags = CASE
+                    WHEN ? = '' THEN mail_contacts.tags
+                    WHEN mail_contacts.tags LIKE ? THEN mail_contacts.tags
+                    WHEN mail_contacts.tags = '[]' THEN ?
+                    ELSE substr(mail_contacts.tags, 1, length(mail_contacts.tags) - 1) || ',"' || ? || '"]'
+                END,
+                verify_status = CASE
+                    WHEN COALESCE(mail_contacts.verify_status, '') IN ('', 'unknown') THEN 'mx_ok'
+                    ELSE mail_contacts.verify_status
                 END,
                 updated_at = EXCLUDED.updated_at
         """
@@ -3081,6 +3137,17 @@ def _delivery_health_snapshot(conn, tenant_id=None):
         "target_maintain": 80.0,
         "note": "Alibaba: limit artışı için ≥%90, mevcut limiti sürdürmek için ≥%80 gerekli.",
     }
+    try:
+        import mail_alibaba_report as _ali_rep
+        success_rate["alibaba_confirmed_24h"] = _ali_rep.real_success_rate(conn, since_24, tenant_id=tenant_id)
+        success_rate["alibaba_confirmed_7d"] = _ali_rep.real_success_rate(conn, since, tenant_id=tenant_id)
+        success_rate["alibaba_confirmed_note"] = (
+            "Bu oran Alibaba DirectMail API'sinden çekilen GERÇEK teslimat sonucudur "
+            "(konsoldaki oranla aynı kaynak) — yukarıdaki oran ise sadece SMTP kabul "
+            "durumudur. 'coverage' düşükse henüz senkronlanmamış demektir."
+        )
+    except Exception as ali_exc:
+        success_rate["alibaba_confirmed_error"] = str(ali_exc)
     samples = []
     try:
         # to_email göstermek başka firmanın alıcı adreslerini sızdırabilir —
@@ -5832,6 +5899,135 @@ def create_mailing_blueprint(permission_required):
             out["tag_filters"] = _parse_tag_filter_list(tag_filter)
         return jsonify({"campaign": out}), 201
 
+    @bp.route("/campaigns/exclusion-breakdown", methods=["GET"])
+    @mail_perm(*MAIL_CAMP)
+    def campaign_exclusion_breakdown():
+        """Bir etiket için 'neden dışlandı' dökümü — kampanya oluşturmadan önce
+        şeffaflık amaçlı: toplam / uygun / kaçı unsub / kaçı suppress / kaçı
+        'önceden gönderilmiş veya başka kampanyada bekliyor' yüzünden elendi,
+        + hangi eski kampanyaya denk geldiklerine dair örnek kayıtlar.
+        22.08 olayı: kullanıcı 1069 kişilik etiketten 418 kişiye gönderim
+        yapılınca «diğer 651 nerede» diye sordu — bu endpoint net cevap verir."""
+        tag = (request.args.get("tag") or "").strip()
+        if not tag:
+            return jsonify({"error": "tag zorunlu."}), 400
+        try:
+            sample_n = min(max(int(request.args.get("sample") or 10), 0), 50)
+        except (TypeError, ValueError):
+            sample_n = 10
+        only_verified_raw = (request.args.get("only_verified") or "").strip().lower()
+        only_verified = only_verified_raw in ("1", "true", "yes", "on")
+        with closing(get_db()) as conn:
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+            except Exception:
+                _tid = None
+            custom_exempt = _load_exclude_sent_exempt_custom(conn)
+            tags_list = _parse_tag_filter_list(tag)
+            if not tags_list:
+                return jsonify({"error": "Geçersiz etiket."}), 400
+            tag_clause, tag_params = _tag_match_any_clause(tags_list)
+            base_clauses = [tag_clause]
+            base_params = list(tag_params)
+            if _tid:
+                base_clauses.append("tenant_id = ?")
+                base_params.append(int(_tid))
+            base_where = " AND ".join(base_clauses)
+
+            def _count(extra_clause=None, extra_params=()):
+                sql = f"SELECT COUNT(*) FROM mail_contacts WHERE {base_where}"
+                params = list(base_params)
+                if extra_clause:
+                    sql += f" AND ({extra_clause})"
+                    params.extend(extra_params)
+                return int(scalar(conn, sql, tuple(params)) or 0)
+
+            total_in_tag = _count()
+            excluded_unsub = _count("unsubscribed = 1")
+            excluded_suppressed = _count(
+                "EXISTS (SELECT 1 FROM mail_suppressions s WHERE s.email = LOWER(mail_contacts.email))"
+            )
+            exempt_tags = [t for t in tags_list if _tag_is_exclude_sent_exempt(t, custom_exempt)]
+            fully_exempt = bool(exempt_tags) and len(exempt_tags) == len(tags_list)
+            in_flight = _in_flight_recipient_sql()
+            already_sent_clause = (
+                "EXISTS (SELECT 1 FROM mail_sends s2 WHERE s2.contact_id = mail_contacts.id "
+                "AND s2.status IN ('sent', 'simulated'))"
+                f" OR NOT ({in_flight})"
+            )
+            excluded_already_sent_or_inflight = 0 if fully_exempt else _count(already_sent_clause)
+            excluded_unverified = 0
+            verified_ok = _count("LOWER(COALESCE(verify_status, '')) IN ('valid', 'mx_ok')")
+            verify_empty = _count("COALESCE(verify_status, '') = ''")
+            if only_verified:
+                excluded_unverified = _count(
+                    "LOWER(COALESCE(verify_status, '')) NOT IN ('valid', 'mx_ok')"
+                )
+            eligible_where, eligible_params = _campaign_selection_where(
+                tag, True, only_verified=only_verified, custom_exempt=custom_exempt, tenant_id=_tid,
+            )
+            eligible = int(scalar(
+                conn, f"SELECT COUNT(*) FROM mail_contacts WHERE {eligible_where}",
+                tuple(eligible_params),
+            ) or 0)
+
+            sample = []
+            if not fully_exempt and sample_n:
+                rows = fetchall(
+                    conn,
+                    f"""
+                    SELECT mc.id, mc.email,
+                        (SELECT s.campaign_id FROM mail_sends s WHERE s.contact_id = mc.id ORDER BY s.id DESC LIMIT 1) AS last_campaign_id,
+                        (SELECT s.status FROM mail_sends s WHERE s.contact_id = mc.id ORDER BY s.id DESC LIMIT 1) AS last_status,
+                        (SELECT s.created_at FROM mail_sends s WHERE s.contact_id = mc.id ORDER BY s.id DESC LIMIT 1) AS last_created_at
+                    FROM mail_contacts mc
+                    WHERE {base_where} AND ({already_sent_clause})
+                    ORDER BY mc.id DESC
+                    LIMIT ?
+                    """,
+                    tuple(base_params) + (sample_n,),
+                ) or []
+                rows = [_row(r) for r in rows]
+                camp_ids = set()
+                for r in rows:
+                    v = r.get("last_campaign_id")
+                    if v:
+                        camp_ids.add(int(v))
+                camp_names = {}
+                if camp_ids:
+                    ph = ",".join(["?"] * len(camp_ids))
+                    crows = fetchall(
+                        conn, f"SELECT id, name FROM mail_campaigns WHERE id IN ({ph})", tuple(camp_ids)
+                    ) or []
+                    for c in crows:
+                        c = _row(c)
+                        camp_names[int(c.get("id"))] = c.get("name")
+                for r in rows:
+                    cid = r.get("last_campaign_id")
+                    cid_int = int(cid) if cid else None
+                    sample.append({
+                        "email": r.get("email"),
+                        "last_campaign_id": cid_int,
+                        "last_campaign_name": camp_names.get(cid_int) if cid_int else "(silinmiş/eşleşmeyen kampanya)",
+                        "last_status": r.get("last_status"),
+                        "last_sent_at": r.get("last_created_at"),
+                    })
+
+        return jsonify({
+            "tag": tag,
+            "total_in_tag": total_in_tag,
+            "eligible": eligible,
+            "excluded_total": max(0, total_in_tag - eligible),
+            "excluded_unsubscribed": excluded_unsub,
+            "excluded_suppressed": excluded_suppressed,
+            "excluded_already_sent_or_inflight": excluded_already_sent_or_inflight,
+            "excluded_unverified": excluded_unverified,
+            "verified_ok": verified_ok,
+            "verify_empty": verify_empty,
+            "sample_excluded": sample,
+        })
+
     @bp.route("/campaigns/select-preview", methods=["POST"])
     @mail_perm(*MAIL_CAMP)
     def preview_campaign_selection():
@@ -7132,6 +7328,19 @@ def create_mailing_blueprint(permission_required):
                 settings["smartico_api_key_masked"] = ""
                 settings["smartico_api_error"] = str(sc_exc)
             try:
+                import mail_alibaba_report as _ali_rep
+                ali_cfg = _ali_rep.get_config(conn)
+                settings["alibaba_report_configured"] = ali_cfg["configured"]
+                settings["alibaba_report_enabled"] = ali_cfg["enabled"]
+                settings["alibaba_report_verified"] = ali_cfg["verified"]
+                settings["alibaba_report_region"] = ali_cfg["region"]
+                settings["alibaba_report_last_sync"] = ali_cfg["last_sync"]
+                settings["alibaba_report_ak_id_masked"] = _ali_rep.mask_key(ali_cfg["ak_id"])
+                settings["alibaba_report_ak_secret_set"] = bool(ali_cfg["ak_secret"])
+            except Exception as ali_exc:
+                settings["alibaba_report_configured"] = False
+                settings["alibaba_report_error"] = str(ali_exc)
+            try:
                 from mail_tenant import current_tenant_id, list_allocated_domains
                 from flask import session as _sess
                 _tid = current_tenant_id()
@@ -7173,6 +7382,19 @@ def create_mailing_blueprint(permission_required):
                 if not new_key:
                     return jsonify({"error": "Smartico API anahtarı boş olamaz."}), 400
                 smartico_api.save_config(conn, new_key, new_host)
+            if any(k in data for k in ("alibaba_report_ak_id", "alibaba_report_ak_secret", "alibaba_report_region", "alibaba_report_enabled")):
+                from flask import session as _sess
+                if not _sess.get("mail_is_superadmin"):
+                    return jsonify({"error": "Yalnızca süper admin değiştirebilir."}), 403
+                import mail_alibaba_report as _ali_rep
+                enabled_val = data.get("alibaba_report_enabled")
+                _ali_rep.save_config(
+                    conn,
+                    ak_id=data.get("alibaba_report_ak_id"),
+                    ak_secret=data.get("alibaba_report_ak_secret"),
+                    region=data.get("alibaba_report_region"),
+                    enabled=(bool(enabled_val) if enabled_val is not None else None),
+                )
             bool_keys = {
                 "scrub_smtp_verify", "scrub_auto_suppress_invalid", "scrub_suppress_disposable",
                 "scrub_suppress_role", "scrub_campaign_only_valid",
@@ -7218,6 +7440,19 @@ def create_mailing_blueprint(permission_required):
                 settings["smartico_api_host"] = ""
                 settings["smartico_api_key_masked"] = ""
                 settings["smartico_api_error"] = str(sc_exc)
+            try:
+                import mail_alibaba_report as _ali_rep
+                ali_cfg = _ali_rep.get_config(conn)
+                settings["alibaba_report_configured"] = ali_cfg["configured"]
+                settings["alibaba_report_enabled"] = ali_cfg["enabled"]
+                settings["alibaba_report_verified"] = ali_cfg["verified"]
+                settings["alibaba_report_region"] = ali_cfg["region"]
+                settings["alibaba_report_last_sync"] = ali_cfg["last_sync"]
+                settings["alibaba_report_ak_id_masked"] = _ali_rep.mask_key(ali_cfg["ak_id"])
+                settings["alibaba_report_ak_secret_set"] = bool(ali_cfg["ak_secret"])
+            except Exception as ali_exc:
+                settings["alibaba_report_configured"] = False
+                settings["alibaba_report_error"] = str(ali_exc)
         return jsonify({"settings": settings})
 
     @bp.route("/settings/test-smtp", methods=["POST"])
@@ -7265,6 +7500,41 @@ def create_mailing_blueprint(permission_required):
                     pass
         status = 200 if result.get("ok") else 400
         return jsonify(result), status
+
+    @bp.route("/settings/test-alibaba-report", methods=["POST"])
+    @mail_perm(*MAIL_SET)
+    def test_alibaba_report():
+        """Alibaba DirectMail OpenAPI (SenderStatisticsDetailByParam) bağlantı
+        testi — sadece OKUMA, hiçbir gönderim/ayar değiştirmez. Süper admin only.
+        Başarılıysa alibaba_report_verified=1 yazılır ve senkron job aktifleşebilir."""
+        from flask import session as _sess
+        if not _sess.get("mail_is_superadmin"):
+            return jsonify({"error": "Yalnızca süper admin kullanabilir."}), 403
+        data = request.get_json(silent=True) or {}
+        import mail_alibaba_report as _ali_rep
+        with closing(get_db()) as conn:
+            if data.get("alibaba_report_ak_id") or data.get("alibaba_report_ak_secret") or data.get("alibaba_report_region"):
+                _ali_rep.save_config(
+                    conn,
+                    ak_id=data.get("alibaba_report_ak_id"),
+                    ak_secret=data.get("alibaba_report_ak_secret"),
+                    region=data.get("alibaba_report_region"),
+                )
+            result = _ali_rep.test_connection(conn)
+        return jsonify(result), (200 if result.get("ok") else 400)
+
+    @bp.route("/settings/sync-alibaba-report", methods=["POST"])
+    @mail_perm(*MAIL_SET)
+    def sync_alibaba_report_now():
+        """Manuel tetikleme — normalde arka planda periyodik çalışır, ama
+        test/acil durum için anlık senkron tetiklenebilsin."""
+        from flask import session as _sess
+        if not _sess.get("mail_is_superadmin"):
+            return jsonify({"error": "Yalnızca süper admin kullanabilir."}), 403
+        import mail_alibaba_report as _ali_rep
+        with closing(get_db()) as conn:
+            result = _ali_rep.sync_delivery_reports(conn)
+        return jsonify(result), (200 if not result.get("errors") else 207)
 
     def _mask_secret(s):
         if not s:
