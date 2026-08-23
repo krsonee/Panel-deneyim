@@ -1102,6 +1102,35 @@ def _in_flight_recipient_sql():
     """
 
 
+def _safe_contact_count(conn, where_sql, params, *, timeout_ms=12000):
+    """mail_contacts COUNT — timeout/abort olursa 0 değil None. Txn'ı temizler.
+
+    PG session statement_timeout=25s. Ağır (çok etiket + hariç tut + verify)
+    COUNT bunu aşınca transaction aborted kalıyordu; sonraki registry
+    okuması da 0 dönüyordu (Kaç kişi? → 0 / ?).
+    """
+    try:
+        if uses_postgres():
+            try:
+                execute(conn, f"SET LOCAL statement_timeout = '{int(timeout_ms)}ms'")
+            except Exception:
+                safe_rollback(conn)
+                try:
+                    execute(conn, f"SET LOCAL statement_timeout = '{int(timeout_ms)}ms'")
+                except Exception:
+                    pass
+        n = scalar(
+            conn,
+            f"SELECT COUNT(*) FROM mail_contacts WHERE {where_sql}",
+            tuple(params),
+        )
+        return int(n or 0)
+    except Exception as exc:
+        print(f"⚠️  mail contact count fail: {exc}")
+        safe_rollback(conn)
+        return None
+
+
 def _campaign_selection_where(
     tag_filter, exclude_previously_sent, only_verified=False, custom_exempt=None,
     tenant_id=None,
@@ -1124,10 +1153,6 @@ def _campaign_selection_where(
         clauses.append("tenant_id = ?")
         params.append(int(tenant_id))
     tags = _parse_tag_filter_list(tag_filter)
-    if tags:
-        clause, tparams = _tag_match_any_clause(tags)
-        clauses.append(clause)
-        params.extend(tparams)
     if exclude_previously_sent:
         in_flight = _in_flight_recipient_sql()
         # Sadece GERÇEKTEN gönderilmiş (SMTP kabul / simülasyon) sayılır.
@@ -1146,14 +1171,25 @@ def _campaign_selection_where(
             clauses.append(pool_block)
         elif not non_exempt_tags:
             # Sadece test/muaf etiketler — filtre yok
-            pass
+            clause, tparams = _tag_match_any_clause(tags)
+            clauses.append(clause)
+            params.extend(tparams)
         elif not exempt_tags:
+            clause, tparams = _tag_match_any_clause(tags)
+            clauses.append(clause)
+            params.extend(tparams)
             clauses.append(pool_block)
         else:
-            # Karışık: muaf etiketi olanlar geçer; diğerleri elenir
+            # Karışık: (muaf) OR (diğer AND havuz filtresi).
+            # Eski biçim (tag1 OR tag2) AND (muaf OR havuz) PG'de 25sn'yi aşıyordu.
             ex_clause, ex_params = _tag_match_any_clause(exempt_tags)
-            clauses.append(f"(({ex_clause}) OR {pool_block})")
-            params.extend(ex_params)
+            nx_clause, nx_params = _tag_match_any_clause(non_exempt_tags)
+            clauses.append(f"(({ex_clause}) OR (({nx_clause}) AND {pool_block}))")
+            params.extend(list(ex_params) + list(nx_params))
+    elif tags:
+        clause, tparams = _tag_match_any_clause(tags)
+        clauses.append(clause)
+        params.extend(tparams)
     if only_verified:
         # SMTP ile valid + (SMTP kapalıyken) mx_ok kabul
         clauses.append("LOWER(COALESCE(verify_status, '')) IN ('valid', 'mx_ok')")
@@ -1182,16 +1218,11 @@ def _count_tag_campaign_match(
         tag, exclude_previously_sent, only_verified=only_verified,
         custom_exempt=custom_exempt, tenant_id=tenant_id,
     )
-    try:
-        n = int(scalar(
-            conn,
-            f"SELECT COUNT(*) FROM mail_contacts WHERE {where_sql}",
-            tuple(params),
-        ) or 0)
+    n = _safe_contact_count(conn, where_sql, params)
+    if n is not None:
         return n, False
-    except Exception:
-        n = _registry_tag_count(conn, tag)
-        return int(n or 0), True
+    n = _registry_tag_count(conn, tag)
+    return int(n or 0), True
 
 
 def _tag_breakdown_for_campaign(
@@ -1235,10 +1266,48 @@ def _tag_breakdown_for_campaign(
         out.append({
             "tag": tag,
             "count": int(count or 0),
+            "will_take": int(count or 0),
             "approx": bool(approx),
             "exclude_sent_exempt": _tag_is_exclude_sent_exempt(tag, custom_exempt),
         })
     return out
+
+
+def _allocate_will_take(tag_breakdown, max_recipients, tags_order=None):
+    """Maks alıcıyı etiketlere böl — gönderimle aynı sıra: önce muaf/test, sonra diğerleri.
+
+    Örnek: maks 200, Makro Test 52 + Boss davet 60k → Makro Test 52, Boss davet 148.
+    """
+    rows = list(tag_breakdown or [])
+    if not rows:
+        return rows
+    by = {r.get("tag"): r for r in rows if r.get("tag")}
+    ordered = []
+    seen = set()
+    preferred = list(tags_order or [r.get("tag") for r in rows])
+    exempt = [t for t in preferred if by.get(t, {}).get("exclude_sent_exempt") and t not in seen]
+    for t in exempt:
+        seen.add(t)
+        ordered.append(by[t])
+    for t in preferred:
+        if t in by and t not in seen:
+            seen.add(t)
+            ordered.append(by[t])
+    for r in rows:
+        t = r.get("tag")
+        if t and t not in seen:
+            seen.add(t)
+            ordered.append(r)
+    remaining = int(max_recipients) if max_recipients else None
+    for r in ordered:
+        n = int(r.get("count") or 0)
+        if remaining is None:
+            r["will_take"] = n
+        else:
+            take = min(n, max(0, remaining))
+            r["will_take"] = take
+            remaining -= take
+    return rows
 
 
 def _insert_campaign_recipient_ids(conn, campaign_id, contact_ids, now):
@@ -1529,15 +1598,26 @@ def _attach_campaign_recipients(
             seen.add(cid)
             merged.append(cid)
 
-    def _ids_for_tags(tag_list):
+    def _ids_for_tags(tag_list, limit=None, exclude_ids=None):
         if not tag_list:
             return []
         where_sql, params = _campaign_selection_where(
             tag_list, exclude_previously_sent, only_verified=only_verified,
             custom_exempt=custom_exempt, tenant_id=tenant_id,
         )
+        params = list(params)
+        exclude_ids = [int(x) for x in (exclude_ids or []) if x is not None]
+        if exclude_ids:
+            # Büyük exclude listesini parçala — 60k NOT IN patlamasın
+            exclude_ids = exclude_ids[:8000]
+            ph = ",".join(["?"] * len(exclude_ids))
+            where_sql += f" AND id NOT IN ({ph})"
+            params.extend(exclude_ids)
         sql = f"SELECT id FROM mail_contacts WHERE {where_sql} ORDER BY id ASC"
-        return [r["id"] for r in fetchall(conn, sql, tuple(params))]
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(int(limit))
+        return [r["id"] for r in (fetchall(conn, sql, tuple(params)) or [])]
 
     custom_exempt = _load_exclude_sent_exempt_custom(conn)
 
@@ -1554,13 +1634,16 @@ def _attach_campaign_recipients(
     if tags:
         exempt_tags = [t for t in tags if _tag_is_exclude_sent_exempt(t, custom_exempt)]
         non_exempt_tags = [t for t in tags if not _tag_is_exclude_sent_exempt(t, custom_exempt)]
-        # Önce muaf/test etiketleri — max_recipients bunları kesmesin
-        if exempt_tags:
-            _push(_ids_for_tags(exempt_tags))
-        if non_exempt_tags:
-            _push(_ids_for_tags(non_exempt_tags))
-        elif not exempt_tags:
-            _push(_ids_for_tags(tags))
+        # Önce muaf/test (etiket etiket), sonra diğerleri — Kaç kişi? ile aynı kesim
+        remaining = None
+        if max_recipients:
+            remaining = max(0, int(max_recipients) - len(merged))
+        for tag in exempt_tags + non_exempt_tags:
+            if remaining is not None and remaining <= 0:
+                break
+            _push(_ids_for_tags([tag], limit=remaining, exclude_ids=seen))
+            if remaining is not None:
+                remaining = max(0, int(max_recipients) - len(merged))
 
     if not tags and not contact_ids and not emails:
         raise ValueError(
@@ -2432,11 +2515,15 @@ def _registry_tag_count(conn, name):
         )
         if row is None:
             return None
-        if hasattr(row, "keys") and "contact_count" in row.keys():
-            return int(row["contact_count"] or 0)
+        d = _row(row) if not isinstance(row, dict) else row
+        if d and "contact_count" in d:
+            return int(d.get("contact_count") or 0)
+        try:
+            return int(row[0] or 0)
+        except Exception:
+            return None
     except Exception:
-        pass
-    return None
+        return None
 
 
 def _harvest_tags_into_registry(conn, tag_names, now=None):
@@ -5936,12 +6023,13 @@ def create_mailing_blueprint(permission_required):
             base_where = " AND ".join(base_clauses)
 
             def _count(extra_clause=None, extra_params=()):
-                sql = f"SELECT COUNT(*) FROM mail_contacts WHERE {base_where}"
+                where = base_where
                 params = list(base_params)
                 if extra_clause:
-                    sql += f" AND ({extra_clause})"
+                    where = f"{base_where} AND ({extra_clause})"
                     params.extend(extra_params)
-                return int(scalar(conn, sql, tuple(params)) or 0)
+                n = _safe_contact_count(conn, where, params, timeout_ms=15000)
+                return int(n or 0)
 
             total_in_tag = _count()
             excluded_unsub = _count("unsubscribed = 1")
@@ -5967,66 +6055,72 @@ def create_mailing_blueprint(permission_required):
             eligible_where, eligible_params = _campaign_selection_where(
                 tag, True, only_verified=only_verified, custom_exempt=custom_exempt, tenant_id=_tid,
             )
-            eligible = int(scalar(
-                conn, f"SELECT COUNT(*) FROM mail_contacts WHERE {eligible_where}",
-                tuple(eligible_params),
-            ) or 0)
+            eligible_n = _safe_contact_count(conn, eligible_where, eligible_params, timeout_ms=15000)
+            eligible = int(eligible_n or 0)
 
             sample = []
             if not fully_exempt and sample_n:
-                rows = fetchall(
-                    conn,
-                    f"""
-                    SELECT mc.id, mc.email,
-                        (SELECT s.campaign_id FROM mail_sends s WHERE s.contact_id = mc.id ORDER BY s.id DESC LIMIT 1) AS last_campaign_id,
-                        (SELECT s.status FROM mail_sends s WHERE s.contact_id = mc.id ORDER BY s.id DESC LIMIT 1) AS last_status,
-                        (SELECT s.created_at FROM mail_sends s WHERE s.contact_id = mc.id ORDER BY s.id DESC LIMIT 1) AS last_created_at
-                    FROM mail_contacts mc
-                    WHERE {base_where} AND ({already_sent_clause})
-                    ORDER BY mc.id DESC
-                    LIMIT ?
-                    """,
-                    tuple(base_params) + (sample_n,),
-                ) or []
-                rows = [_row(r) for r in rows]
-                camp_ids = set()
-                for r in rows:
-                    v = r.get("last_campaign_id")
-                    if v:
-                        camp_ids.add(int(v))
-                camp_names = {}
-                if camp_ids:
-                    ph = ",".join(["?"] * len(camp_ids))
-                    crows = fetchall(
-                        conn, f"SELECT id, name FROM mail_campaigns WHERE id IN ({ph})", tuple(camp_ids)
+                try:
+                    rows = fetchall(
+                        conn,
+                        f"""
+                        SELECT mc.id, mc.email,
+                            (SELECT s.campaign_id FROM mail_sends s WHERE s.contact_id = mc.id ORDER BY s.id DESC LIMIT 1) AS last_campaign_id,
+                            (SELECT s.status FROM mail_sends s WHERE s.contact_id = mc.id ORDER BY s.id DESC LIMIT 1) AS last_status,
+                            (SELECT s.created_at FROM mail_sends s WHERE s.contact_id = mc.id ORDER BY s.id DESC LIMIT 1) AS last_created_at
+                        FROM mail_contacts mc
+                        WHERE {base_where} AND ({already_sent_clause})
+                        ORDER BY mc.id DESC
+                        LIMIT ?
+                        """,
+                        tuple(base_params) + (sample_n,),
                     ) or []
-                    for c in crows:
-                        c = _row(c)
-                        camp_names[int(c.get("id"))] = c.get("name")
-                for r in rows:
-                    cid = r.get("last_campaign_id")
-                    cid_int = int(cid) if cid else None
-                    sample.append({
-                        "email": r.get("email"),
-                        "last_campaign_id": cid_int,
-                        "last_campaign_name": camp_names.get(cid_int) if cid_int else "(silinmiş/eşleşmeyen kampanya)",
-                        "last_status": r.get("last_status"),
-                        "last_sent_at": r.get("last_created_at"),
-                    })
+                    rows = [_row(r) for r in rows]
+                    camp_ids = set()
+                    for r in rows:
+                        v = r.get("last_campaign_id")
+                        if v:
+                            camp_ids.add(int(v))
+                    camp_names = {}
+                    if camp_ids:
+                        ph = ",".join(["?"] * len(camp_ids))
+                        crows = fetchall(
+                            conn, f"SELECT id, name FROM mail_campaigns WHERE id IN ({ph})", tuple(camp_ids)
+                        ) or []
+                        for c in crows:
+                            c = _row(c)
+                            camp_names[int(c.get("id"))] = c.get("name")
+                    for r in rows:
+                        cid = r.get("last_campaign_id")
+                        cid_int = int(cid) if cid else None
+                        sample.append({
+                            "email": r.get("email"),
+                            "last_campaign_id": cid_int,
+                            "last_campaign_name": camp_names.get(cid_int) if cid_int else "(silinmiş/eşleşmeyen kampanya)",
+                            "last_status": r.get("last_status"),
+                            "last_sent_at": r.get("last_created_at"),
+                        })
+                except Exception as exc:
+                    print(f"⚠️  exclusion-breakdown sample: {exc}")
+                    safe_rollback(conn)
 
-        return jsonify({
-            "tag": tag,
-            "total_in_tag": total_in_tag,
-            "eligible": eligible,
-            "excluded_total": max(0, total_in_tag - eligible),
-            "excluded_unsubscribed": excluded_unsub,
-            "excluded_suppressed": excluded_suppressed,
-            "excluded_already_sent_or_inflight": excluded_already_sent_or_inflight,
-            "excluded_unverified": excluded_unverified,
-            "verified_ok": verified_ok,
-            "verify_empty": verify_empty,
-            "sample_excluded": sample,
-        })
+        try:
+            return jsonify({
+                "tag": tag,
+                "total_in_tag": total_in_tag,
+                "eligible": eligible,
+                "excluded_total": max(0, total_in_tag - eligible),
+                "excluded_unsubscribed": excluded_unsub,
+                "excluded_suppressed": excluded_suppressed,
+                "excluded_already_sent_or_inflight": excluded_already_sent_or_inflight,
+                "excluded_unverified": excluded_unverified,
+                "verified_ok": verified_ok,
+                "verify_empty": verify_empty,
+                "sample_excluded": sample,
+            })
+        except Exception as exc:
+            print(f"⚠️  exclusion-breakdown: {exc}")
+            return jsonify({"error": "Döküm hesaplanamadı — tekrar dene."}), 500
 
     @bp.route("/campaigns/select-preview", methods=["POST"])
     @mail_perm(*MAIL_CAMP)
@@ -6112,14 +6206,12 @@ def create_mailing_blueprint(permission_required):
                 )
                 if tags_list and filtered:
                     ph = ",".join(["?"] * len(filtered))
-                    try:
-                        total = int(scalar(
-                            conn,
-                            f"SELECT COUNT(*) FROM mail_contacts WHERE ({where_sql}) OR id IN ({ph})",
-                            tuple(params) + tuple(filtered),
-                        ) or 0)
+                    mixed_where = f"({where_sql}) OR id IN ({ph})"
+                    mixed_params = tuple(params) + tuple(filtered)
+                    total = _safe_contact_count(conn, mixed_where, mixed_params)
+                    if total is not None:
                         approx = False
-                    except Exception:
+                    else:
                         total = mixed_selected
                         approx = True
                 elif tags_list:
@@ -6127,21 +6219,20 @@ def create_mailing_blueprint(permission_required):
                     if len(tags_list) == 1 and not exclude_sent and not only_verified and not _tid:
                         total = _registry_tag_count(conn, tags_list[0])
                     if total is None:
-                        try:
-                            total = int(scalar(
-                                conn,
-                                f"SELECT COUNT(*) FROM mail_contacts WHERE {where_sql}",
-                                tuple(params),
-                            ) or 0)
+                        total = _safe_contact_count(conn, where_sql, params)
+                        if total is not None:
                             approx = False
-                        except Exception:
-                            total = None
                     if total is None:
-                        try:
-                            total, approx = _approx_contact_total(conn)
-                        except Exception:
-                            total = 0
-                            approx = True
+                        # Birleşim COUNT timeout — etiket başına say, topla (örtüşme ≈)
+                        tag_breakdown = _tag_breakdown_for_campaign(
+                            conn, tags_list,
+                            exclude_previously_sent=exclude_sent,
+                            only_verified=only_verified,
+                            custom_exempt=custom_exempt,
+                            tenant_id=_tid,
+                        )
+                        total = sum(int(x.get("count") or 0) for x in tag_breakdown)
+                        approx = True
                     total = int(total or 0)
                 elif filtered:
                     total = len(filtered)
@@ -6153,7 +6244,7 @@ def create_mailing_blueprint(permission_required):
                         total = 0
                         approx = True
                     total = int(total or 0)
-                if tags_list:
+                if tags_list and not tag_breakdown:
                     tag_breakdown = _tag_breakdown_for_campaign(
                         conn, tags_list,
                         exclude_previously_sent=exclude_sent,
@@ -6161,7 +6252,24 @@ def create_mailing_blueprint(permission_required):
                         custom_exempt=custom_exempt,
                         tenant_id=_tid,
                     )
-        will_attach = min(total, max_recipients) if max_recipients else total
+        if tag_breakdown:
+            # Manuel seçim varsa kontenjan onlardan düşer; kalan etiketlere bölünür
+            cap = max_recipients
+            if cap and mixed_selected:
+                cap = max(0, int(cap) - int(mixed_selected or 0))
+            tag_breakdown = _allocate_will_take(tag_breakdown, cap, tags_order=tags_list)
+        planned = 0
+        for row in tag_breakdown:
+            try:
+                planned += int(row.get("will_take") or 0)
+            except (TypeError, ValueError):
+                pass
+        if max_recipients:
+            will_attach = min(int(total or 0), int(max_recipients))
+            if planned:
+                will_attach = min(will_attach, planned + int(mixed_selected or 0))
+        else:
+            will_attach = total
         exempt_selected = [
             t for t in tags_list if _tag_is_exclude_sent_exempt(t, custom_exempt)
         ]
@@ -6170,11 +6278,11 @@ def create_mailing_blueprint(permission_required):
         for row in tag_breakdown:
             if row.get("exclude_sent_exempt"):
                 try:
-                    priority_count += int(row.get("count") or 0)
+                    priority_count += int(row.get("will_take") or row.get("count") or 0)
                 except (TypeError, ValueError):
                     pass
         priority_truncated = bool(
-            max_recipients and priority_count and priority_count > int(max_recipients)
+            max_recipients and priority_count and priority_count >= int(max_recipients)
         )
         return jsonify({
             "matching_count": total,

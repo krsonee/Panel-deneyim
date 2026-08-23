@@ -1482,9 +1482,23 @@
     return Object.keys(names).sort(function (a, b) { return a.localeCompare(b, "tr"); });
   }
 
-  function mailFillAllTagSelects() {
+  function mailTagCountMap() {
     var countMap = {};
-    (mailTagCounts || []).forEach(function (t) { countMap[t.name] = t.count; });
+    (mailTags || []).forEach(function (t) {
+      if (!t || !t.name) return;
+      var n = t.contact_count;
+      if (n == null) n = t.count;
+      if (n != null && n !== "") countMap[t.name] = Number(n);
+    });
+    (mailTagCounts || []).forEach(function (t) {
+      if (!t || !t.name) return;
+      if (t.count != null && t.count !== "") countMap[t.name] = Number(t.count);
+    });
+    return countMap;
+  }
+
+  function mailFillAllTagSelects() {
+    var countMap = mailTagCountMap();
     var list = mailTagNameList();
     var optionsWithEmpty = function (emptyLabel) {
       return '<option value="">' + esc(emptyLabel || "Etiket yok") + "</option>" +
@@ -1542,8 +1556,7 @@
     if (!box) return;
     var prev = {};
     mailScrubSelectedTags().forEach(function (t) { prev[t] = true; });
-    var countMap = {};
-    (mailTagCounts || []).forEach(function (t) { countMap[t.name] = t.count; });
+    var countMap = mailTagCountMap();
     var list = mailTagNameList();
     if (!list.length) {
       box.innerHTML = '<span class="muted">Önce etiket oluştur</span>';
@@ -1611,8 +1624,7 @@
     var fromBox = document.getElementById("mail-tag-from-list");
     var toBox = document.getElementById("mail-tag-to-list");
     if (!fromBox && !toBox) return;
-    var countMap = {};
-    (mailTagCounts || []).forEach(function (t) { countMap[t.name] = t.count; });
+    var countMap = mailTagCountMap();
     var list = mailTagNameList();
     var fromCur = mailGetMoveFromTag();
     var toCur = mailGetMoveToTag();
@@ -1640,8 +1652,7 @@
   function mailRenderTagManageList() {
     var box = document.getElementById("mail-tag-manage-list");
     if (!box) return;
-    var countMap = {};
-    (mailTagCounts || []).forEach(function (t) { countMap[t.name] = t.count; });
+    var countMap = mailTagCountMap();
     var list = mailTagNameList();
     if (!list.length) {
       box.innerHTML = '<span class="hint">Henüz etiket yok</span>';
@@ -2950,11 +2961,7 @@
   }
 
   function mailCampTagCountMap() {
-    var countMap = {};
-    (mailTagCounts || []).forEach(function (t) {
-      if (t && t.name) countMap[t.name] = t.count;
-    });
-    return countMap;
+    return mailTagCountMap();
   }
 
   function mailFormatTagBreakdown(tags, countMap, opts) {
@@ -3019,8 +3026,7 @@
     if (!box) return;
     var prev = {};
     mailCampSelectedTags().forEach(function (t) { prev[t] = true; });
-    var countMap = {};
-    (mailTagCounts || []).forEach(function (t) { countMap[t.name] = t.count; });
+    var countMap = mailTagCountMap();
     var names = {};
     (mailTags || []).forEach(function (t) { if (t && t.name) names[t.name] = true; });
     (mailTagCounts || []).forEach(function (t) { if (t && t.name) names[t.name] = true; });
@@ -4711,21 +4717,32 @@
             html += ' <span class="muted">· yalnız manuel seçim</span>';
           }
           if (breakdown.length) {
-            var map = {};
+            var poolMap = {};
+            var takeMap = {};
+            var hasTake = false;
             var anyApprox = false;
             breakdown.forEach(function (x) {
-              map[x.tag] = x.count;
+              poolMap[x.tag] = x.count;
+              if (x.will_take != null) {
+                takeMap[x.tag] = x.will_take;
+                hasTake = true;
+              }
               if (x.approx) anyApprox = true;
             });
-            html += "<br><strong>Etiket başına:</strong> " + mailFormatTagBreakdown(
-              breakdown.map(function (x) { return x.tag; }),
-              map
-            );
-            if (tags.length > 1) {
-              html += ' <span class="muted">· birleşim (OR)' +
-                (anyApprox ? ", etiket sayıları yaklaşık olabilir" : "") +
-                "; aynı kişi birden fazla etikette olabilir</span>";
+            var tagNames = breakdown.map(function (x) { return x.tag; });
+            if (hasTake && (tags.length > 1 || (res.data.max_recipients && willAttach !== total))) {
+              html += "<br><strong>Bu gönderimde:</strong> " + mailFormatTagBreakdown(tagNames, takeMap) +
+                ' <span class="muted">kişi eklenecek' +
+                (res.data.max_recipients ? (" (maks " + fmtNum(res.data.max_recipients) + ")") : "") +
+                "</span>";
             }
+            html += "<br><span class=\"muted\"><strong>Havuz:</strong> " + mailFormatTagBreakdown(tagNames, poolMap);
+            if (tags.length > 1) {
+              html += " · birleşim (OR)" +
+                (anyApprox ? ", sayılar yaklaşık olabilir" : "") +
+                "; aynı kişi iki etikette olabilir";
+            }
+            html += "</span>";
           }
           var exemptTags = res.data.exclude_sent_exempt_tags || [];
           if (!exemptTags.length && breakdown.length) {
