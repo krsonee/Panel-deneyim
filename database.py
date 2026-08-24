@@ -816,7 +816,15 @@ def migrate_makrolink(conn):
         execute(conn, "ALTER TABLE makrolink_links ADD COLUMN category TEXT NOT NULL DEFAULT ''")
         cols = _table_columns(conn, "makrolink_links")
     if cols and "short_host" not in cols:
-        execute(conn, "ALTER TABLE makrolink_links ADD COLUMN short_host TEXT NOT NULL DEFAULT ''")
+        try:
+            execute(conn, "ALTER TABLE makrolink_links ADD COLUMN short_host TEXT NOT NULL DEFAULT ''")
+            conn.commit()
+        except Exception as exc:
+            print(f"⚠️  makrolink short_host column: {exc}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         cols = _table_columns(conn, "makrolink_links")
     # Makro: eski linkleri varsayılan short host’a bağla (tüm domainlerde açılmasın)
     if cols and "short_host" in cols:

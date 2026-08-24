@@ -857,8 +857,11 @@ def _row_to_dict(conn, row):
     if not row:
         return None
     d = dict(row)
-    d["short_host"] = _clean_host(d.get("short_host") or "")
-    bound = d["short_host"]
+    try:
+        d["short_host"] = _clean_host(d.get("short_host") or "")
+    except Exception:
+        d["short_host"] = ""
+    bound = d.get("short_host") or ""
     d["short_url"] = short_url(conn, d["code"], host=bound or None)
     if bound:
         d["short_urls"] = [d["short_url"]] if d["short_url"] else []
@@ -931,17 +934,30 @@ def get_link_by_code(conn, code, active_only=True, host=None, require_host=False
         return None
     extra = " AND COALESCE(is_active, 1) = 1" if active_only else ""
     host = _clean_host(host) if host else ""
+    row = None
+    used_host_filter = False
     if require_host and host:
-        row = fetchone(
-            conn,
-            """
-            SELECT * FROM makrolink_links
-            WHERE lower(code) = ?""" + extra + """
-              AND (TRIM(COALESCE(short_host, '')) = '' OR lower(short_host) = ?)
-            """,
-            (code, host),
-        )
-    else:
+        try:
+            row = fetchone(
+                conn,
+                """
+                SELECT * FROM makrolink_links
+                WHERE lower(code) = ?""" + extra + """
+                  AND (TRIM(COALESCE(short_host, '')) = '' OR lower(short_host) = ?)
+                """,
+                (code, host),
+            )
+            used_host_filter = True
+        except Exception as exc:
+            # short_host kolonu yok / transaction abort → host filtresiz devam
+            print(f"⚠️  get_link_by_code host filter: {exc}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            used_host_filter = False
+            row = None
+    if not used_host_filter:
         row = fetchone(
             conn,
             "SELECT * FROM makrolink_links WHERE lower(code) = ?" + extra,
@@ -1372,7 +1388,11 @@ def resync_all_tracking(conn):
 
 def record_click_and_resolve(conn, code, ip="", user_agent="", referer="", short_host=""):
     host = _clean_host(short_host)
-    enforce_host = bool(host and is_makrolink_host(host, conn))
+    # Bizzo: kısa domain host-bind zorunlu değil — custom domain 500/404 olmasın
+    if PANEL_BRAND == "bizzo":
+        enforce_host = False
+    else:
+        enforce_host = bool(host and is_makrolink_host(host, conn))
     link = get_link_by_code(
         conn, code, active_only=True, host=host if enforce_host else None, require_host=enforce_host
     )

@@ -206,15 +206,19 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
     @bp.route("/r/<code>")
     def redirect_short(code):
         host = (request.host or "").split(":")[0]
-        with closing(get_db()) as conn:
-            dest = makrolink_api.record_click_and_resolve(
-                conn,
-                code,
-                ip=request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip(),
-                user_agent=request.headers.get("User-Agent", ""),
-                referer=request.headers.get("Referer", ""),
-                short_host=host,
-            )
+        try:
+            with closing(get_db()) as conn:
+                dest = makrolink_api.record_click_and_resolve(
+                    conn,
+                    code,
+                    ip=request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip(),
+                    user_agent=request.headers.get("User-Agent", ""),
+                    referer=request.headers.get("Referer", ""),
+                    short_host=host,
+                )
+        except Exception as exc:
+            print(f"⚠️  makrolink /r resolve: {exc}")
+            return ("Link çözülemedi.", 500)
         if not dest:
             return ("Link bulunamadı veya pasif.", 404)
         return redirect(dest, code=302)
