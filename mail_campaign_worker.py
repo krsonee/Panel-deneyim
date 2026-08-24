@@ -260,7 +260,8 @@ def _sync_alibaba_delivery_reports():
             if not result.get("skipped"):
                 print(
                     f"✉️  alibaba delivery report sync: seen={result.get('seen')} "
-                    f"matched={result.get('matched')} errors={result.get('errors')}"
+                    f"matched={result.get('matched')} dead={result.get('dead_stamped')} "
+                    f"errors={result.get('errors')}"
                 )
         except Exception as exc:
             print(f"⚠️  alibaba delivery report sync: {exc}")

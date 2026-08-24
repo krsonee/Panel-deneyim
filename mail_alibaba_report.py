@@ -30,7 +30,18 @@ import uuid
 import json
 from datetime import datetime, timedelta, timezone
 
-from database import execute, fetchall, get_mail_setting, scalar, upsert_mail_setting
+import re
+
+from database import (
+    execute,
+    fetchall,
+    fetchone,
+    get_mail_setting,
+    iso,
+    scalar,
+    upsert_mail_setting,
+    utcnow,
+)
 
 SETTING_AK_ID = "alibaba_report_ak_id"
 SETTING_AK_SECRET = "alibaba_report_ak_secret"
@@ -49,6 +60,132 @@ _STATUS_MAP = {
     3: "spam",
     4: "failed",
 }
+
+# Gmail 5.7.1 "messages from [IP] weren't sent" = IP itibarı, kutu ölü değil.
+# OverQuota = kutu dolu. Bunları invalid işaretleme.
+_SOFT_FAIL_RE = re.compile(
+    r"5\.7\.1|weren't sent|overquota|over quota|4\.2\.2|5\.2\.2|"
+    r"greylist|try again|temporarily|rate limit|timeout",
+    re.I,
+)
+_DEAD_ADDR_RE = re.compile(
+    r"invalid rcptto|559\s|5\.1\.1|user unknown|no such user|"
+    r"mailbox not found|does not exist|unrouteable|"
+    r"bounce suppression list|account-level bounce",
+    re.I,
+)
+
+
+def _is_dead_mailbox(real_status, message) -> bool:
+    """Alibaba sonucundan 'bu adrese bir daha atma' kararı.
+
+    invalid (status 2) ve 559/bounce-suppression → ölü.
+    5.7.1 IP bloğu / kutu dolu → ölü değil, tekrar denenebilir (farklı IP/gün).
+    """
+    st = (real_status or "").strip().lower()
+    msg = message or ""
+    if st == "invalid":
+        return True
+    if _SOFT_FAIL_RE.search(msg) and not _DEAD_ADDR_RE.search(msg):
+        return False
+    if _DEAD_ADDR_RE.search(msg):
+        return True
+    return False
+
+
+def _mark_contact_dead(conn, *, contact_id, email, detail):
+    """Ölü adresi bir daha kampanyaya sokma — verify_status + suppression."""
+    email = (email or "").strip().lower()
+    if not email and not contact_id:
+        return False
+    now = iso(utcnow())
+    detail = (detail or "alibaba_invalid")[:240]
+    if contact_id:
+        try:
+            existing = fetchone(
+                conn,
+                "SELECT verify_status FROM mail_contacts WHERE id = ?",
+                (int(contact_id),),
+            )
+            if existing and str(existing["verify_status"] or "").lower() in ("invalid", "disposable"):
+                return False
+            execute(
+                conn,
+                """
+                UPDATE mail_contacts
+                SET verify_status = 'invalid',
+                    verify_detail = ?,
+                    verified_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+                  AND LOWER(COALESCE(verify_status, '')) NOT IN ('invalid', 'disposable')
+                """,
+                (detail, now, now, int(contact_id)),
+            )
+            try:
+                from mail_scrub import _set_verify_tags
+                _set_verify_tags(conn, int(contact_id), "invalid", now)
+            except Exception:
+                pass
+        except Exception as exc:
+            print(f"⚠️  alibaba dead-contact stamp: {exc}")
+    if email:
+        try:
+            from mail_ops import suppress_email
+            suppress_email(conn, email, reason="invalid", source="alibaba_report")
+        except Exception as exc:
+            print(f"⚠️  alibaba dead-contact suppress: {exc}")
+    return True
+
+
+def apply_send_outcome_to_contact(conn, send_id, real_status, message):
+    if not _is_dead_mailbox(real_status, message):
+        return False
+    row = fetchone(
+        conn,
+        "SELECT contact_id, to_email FROM mail_sends WHERE id = ?",
+        (int(send_id),),
+    )
+    if not row:
+        return False
+    return _mark_contact_dead(
+        conn,
+        contact_id=row["contact_id"] if row["contact_id"] else None,
+        email=row["to_email"],
+        detail=f"alibaba:{real_status} {(message or '')[:180]}",
+    )
+
+
+def backfill_dead_from_reports(conn, *, limit=4000):
+    """Tarihsel Alibaba invalid / bounce-list kayıtlarını kontağa işle."""
+    rows = fetchall(
+        conn,
+        """
+        SELECT s.id, s.contact_id, s.to_email, s.real_status, s.real_status_message
+        FROM mail_sends s
+        WHERE s.real_status IN ('invalid', 'failed')
+        ORDER BY s.id DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    ) or []
+    n = 0
+    for r in rows:
+        if not _is_dead_mailbox(r["real_status"], r["real_status_message"]):
+            continue
+        if _mark_contact_dead(
+            conn,
+            contact_id=r["contact_id"] if r["contact_id"] else None,
+            email=r["to_email"],
+            detail=f"alibaba:{r['real_status']} {(r['real_status_message'] or '')[:180]}",
+        ):
+            n += 1
+    if n:
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    return n
 
 
 def _endpoint(region: str) -> str:
@@ -332,6 +469,10 @@ def sync_delivery_reports(conn, *, hours_back=48, max_pages=8):
                 """,
                 (real_status, when, str(msg)[:500], send_id),
             )
+            try:
+                apply_send_outcome_to_contact(conn, send_id, real_status, msg)
+            except Exception as exc:
+                print(f"⚠️  alibaba outcome→contact: {exc}")
             matched += 1
         conn.commit()
         next_start = data.get("NextStart")
@@ -341,10 +482,16 @@ def sync_delivery_reports(conn, *, hours_back=48, max_pages=8):
 
     upsert_mail_setting(conn, SETTING_LAST_SYNC, now.strftime("%Y-%m-%dT%H:%M:%SZ"))
     conn.commit()
+    dead_stamped = 0
+    try:
+        dead_stamped = backfill_dead_from_reports(conn, limit=4000)
+    except Exception as exc:
+        print(f"⚠️  alibaba dead backfill: {exc}")
     return {
         "skipped": False,
         "seen": seen,
         "matched": matched,
+        "dead_stamped": dead_stamped,
         "pages": pages,
         "window_start": start.isoformat(),
         "window_end": now.isoformat(),

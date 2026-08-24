@@ -1147,6 +1147,8 @@ def _campaign_selection_where(
     clauses = [
         "unsubscribed = 0",
         "NOT EXISTS (SELECT 1 FROM mail_suppressions s WHERE s.email = LOWER(mail_contacts.email))",
+        # Alibaba invalid / bounce-list geri yazımı — only_verified kapalı olsa bile ölü kutuya atma
+        "LOWER(COALESCE(verify_status, '')) NOT IN ('invalid', 'disposable')",
     ]
     params = []
     if tenant_id:
@@ -1448,6 +1450,8 @@ def _filter_sendable_contact_ids(
                 f"AND ({in_flight})) OR {ex_sql})"
             )
             params.extend(ex_params)
+        if has_verify:
+            clauses.append("LOWER(COALESCE(verify_status, '')) NOT IN ('invalid', 'disposable')")
         if only_verified and has_verify:
             clauses.append("LOWER(COALESCE(verify_status, '')) IN ('valid', 'mx_ok')")
         rows = fetchall(
