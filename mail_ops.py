@@ -549,9 +549,15 @@ def campaign_analytics(conn, campaign_id=None, tenant_id=None, created_since=Non
             (SELECT COUNT(*) FROM mail_sends s
              WHERE s.campaign_id = c.id AND s.clicked_at IS NOT NULL) AS clicked,
             (SELECT COUNT(*) FROM mail_sends s
-             WHERE s.campaign_id = c.id AND s.status IN ('sent','simulated')) AS delivered,
+             WHERE s.campaign_id = c.id AND (
+               s.status IN ('sent','simulated')
+               OR COALESCE(s.real_status, '') IN ('delivered','invalid','failed','spam')
+             )) AS delivered,
             (SELECT COUNT(*) FROM mail_sends s
-             WHERE s.campaign_id = c.id AND s.status = 'sent') AS delivered_real,
+             WHERE s.campaign_id = c.id AND (
+               s.status = 'sent'
+               OR COALESCE(s.real_status, '') IN ('delivered','invalid','failed','spam')
+             )) AS delivered_real,
             (SELECT COUNT(*) FROM mail_sends s
              WHERE s.campaign_id = c.id AND s.status = 'simulated') AS delivered_simulated
         FROM mail_campaigns c
@@ -612,7 +618,10 @@ def campaign_analytics(conn, campaign_id=None, tenant_id=None, created_since=Non
                     """
                     SELECT COUNT(*) FROM (
                       SELECT LOWER(to_email) AS e FROM mail_sends
-                      WHERE campaign_id = ? AND status IN ('sent','simulated')
+                      WHERE campaign_id = ? AND (
+                        status IN ('sent','simulated')
+                        OR COALESCE(real_status, '') IN ('delivered','invalid','failed','spam')
+                      )
                       GROUP BY LOWER(to_email)
                     ) t
                     """,
@@ -625,7 +634,10 @@ def campaign_analytics(conn, campaign_id=None, tenant_id=None, created_since=Non
                     conn,
                     """
                     SELECT COUNT(*) FROM mail_sends
-                    WHERE campaign_id = ? AND status IN ('sent','simulated')
+                    WHERE campaign_id = ? AND (
+                      status IN ('sent','simulated')
+                      OR COALESCE(real_status, '') IN ('delivered','invalid','failed','spam')
+                    )
                     """,
                     (d["id"],),
                 )
@@ -642,9 +654,10 @@ def campaign_analytics(conn, campaign_id=None, tenant_id=None, created_since=Non
             d["oversend"] = False
             d["dup_sends"] = 0
 
-        delivered = int(d.get("delivered") or 0) or 1
-        d["open_rate"] = round(100.0 * int(d.get("opened") or 0) / delivered, 2)
-        d["click_rate"] = round(100.0 * clicked / delivered, 2)
+        delivered = int(d.get("delivered") or 0)
+        denom = delivered if delivered > 0 else int(d.get("recipient_count") or d.get("total_count") or 0) or 1
+        d["open_rate"] = round(100.0 * int(d.get("opened") or 0) / denom, 2)
+        d["click_rate"] = round(100.0 * clicked / denom, 2)
         d["clicked"] = clicked
         d["error"] = (d.get("error") or "") or ""
         sc = _empty_sc_metrics()

@@ -284,6 +284,10 @@ def _scheduler_loop():
     except Exception as exc:
         print(f"⚠️  misclassified stuck-sweep reconcile (ilk çalıştırma): {exc}")
     try:
+        _reconcile_skipped_but_delivered()
+    except Exception as exc:
+        print(f"⚠️  skipped-but-delivered reconcile (ilk çalıştırma): {exc}")
+    try:
         _reconcile_credit_counters()
     except Exception as exc:
         print(f"⚠️  credit reconcile (ilk çalıştırma): {exc}")
@@ -301,6 +305,10 @@ def _scheduler_loop():
                 _sweep_stuck_queued_sends()
             except Exception as exc:
                 print(f"⚠️  mail stuck-queued sweep: {exc}")
+            try:
+                _reconcile_skipped_but_delivered()
+            except Exception as exc:
+                print(f"⚠️  skipped-but-delivered reconcile: {exc}")
         # ~her 1 dakikada bir (8s * 8) — Alibaba kotası dolduğu için durdurulmuş
         # kampanyaları, kota yenilenir yenilenmez (ya da superadmin limiti elle
         # yükseltirse) otomatik devam ettirir.
@@ -380,6 +388,8 @@ def _sweep_stuck_queued_sends():
             FROM mail_sends s
             LEFT JOIN mail_campaigns c ON c.id = s.campaign_id
             WHERE s.status = 'queued'
+              AND COALESCE(s.real_status, '') = ''
+              AND COALESCE(s.provider_msg_id, '') = ''
               AND (
                     (s.campaign_id IS NULL AND s.created_at < ?)
                     OR (s.created_at < ? AND s.campaign_id IN (
@@ -416,6 +426,46 @@ def _sweep_stuck_queued_sends():
             conn.commit()
         except Exception as exc:
             print(f"⚠️  credit reconcile (stuck-queued sonrası): {exc}")
+
+
+def _reconcile_skipped_but_delivered():
+    """Stuck-sweep 'queued kalmıştı → skipped' yazmış ama Alibaba sonradan
+    teslim/fail/invalid dönmüş kayıtlar. Rapor 0 iletilen / %800 açılma
+    gösteriyordu (kampanya #92, 24.08 — pixel/tıklama işledi, iletilen 0)."""
+    with closing(get_db()) as conn:
+        try:
+            cur = execute(
+                conn,
+                """
+                UPDATE mail_sends
+                SET status = 'sent',
+                    error = '',
+                    sent_at = COALESCE(sent_at, real_status_at, created_at)
+                WHERE status = 'skipped'
+                  AND COALESCE(real_status, '') IN ('delivered', 'invalid', 'failed', 'spam')
+                """,
+            )
+            n = 0
+            try:
+                n = int(cur.rowcount or 0)
+            except Exception:
+                n = 0
+            conn.commit()
+            if n:
+                print(f"✉️  skipped-but-delivered reconcile: {n} kayıt sent'e alındı")
+                try:
+                    from mail_credit import reconcile_credit_used, reconcile_tenant_credit_used
+                    reconcile_credit_used(conn)
+                    reconcile_tenant_credit_used(conn)
+                    conn.commit()
+                except Exception:
+                    pass
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            print(f"⚠️  skipped-but-delivered reconcile: {exc}")
 
 
 def _reconcile_misclassified_stuck_sends():

@@ -3477,6 +3477,7 @@
               "<td>" + mmStatusBadge(mailCampStatusLabel(c.status)) + "</td>" +
               "<td>" + fmtNum(c.recipient_count != null ? c.recipient_count : c.total_count) + "</td>" +
               "<td>" + delivCell + "</td>" +
+              "<td>" + fmtNum(c.opened) + "</td>" +
               "<td>" + fmtNum(c.clicked) + "</td>" +
               "<td>" + esc(String(c.open_rate)) + "%</td>" +
               "<td>" + esc(String(c.click_rate)) + "%</td>" +

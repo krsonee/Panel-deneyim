@@ -7149,7 +7149,11 @@ def create_mailing_blueprint(permission_required):
             p = tenant_params + (start.isoformat(), until)
             gonderilen = int(scalar(conn, f"SELECT COUNT(*) FROM mail_sends{clause}", p) or 0)
             iletilen = int(scalar(
-                conn, f"SELECT COUNT(*) FROM mail_sends{clause} AND status IN ('sent','simulated')", p
+                conn,
+                f"SELECT COUNT(*) FROM mail_sends{clause} AND ("
+                f"status IN ('sent','simulated') "
+                f"OR COALESCE(real_status, '') IN ('delivered','invalid','failed','spam'))",
+                p,
             ) or 0)
             acilan = int(scalar(conn, f"SELECT COUNT(*) FROM mail_sends{clause} AND opened_at IS NOT NULL", p) or 0)
             tiklanan = int(scalar(conn, f"SELECT COUNT(*) FROM mail_sends{clause} AND clicked_at IS NOT NULL", p) or 0)
