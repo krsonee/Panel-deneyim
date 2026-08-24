@@ -611,7 +611,7 @@
       <div class="card-head">
         <span class="mm-label-row" style="margin:0;">
           Alibaba günlük kota
-          <span class="mm-tip" tabindex="0" data-tip="Hesap bazlı (tüm domainler). Kalan yetersizse kampanya başlamaz. Yenilenme UTC 00:00.">?</span>
+          <span class="mm-tip" tabindex="0" data-tip="Hesap bazlı (tüm domainler). SMTP’ye gidenler (başarılı+fail) sayılır. Kuyruk/skip sayılmaz. Yenilenme UTC 00:00.">?</span>
         </span>
         <button type="button" class="btn btn-sm btn-secondary" id="mail-quota-refresh">Yenile</button>
       </div>
@@ -621,6 +621,7 @@
           <div class="mail-quota-meta">
             <strong id="mail-quota-remaining">—</strong>
             <span class="muted" id="mail-quota-used">kullanılan — / —</span>
+            <span class="muted" id="mail-quota-stats">atıldı — · başarılı — · fail —</span>
             <span class="muted" id="mail-quota-renew">yenilenme: —</span>
           </div>
         </div>
@@ -638,6 +639,7 @@
           <div class="mail-quota-bar"><div class="mail-quota-fill" id="mail-domain-cap-fill" style="width:0%"></div></div>
           <div class="mail-quota-meta">
             <strong id="mail-domain-cap-remaining">Domain kapasitesi —</strong>
+            <span class="muted" id="mail-domain-cap-stats">atıldı — · başarılı — · fail —</span>
             <span class="muted" id="mail-domain-cap-domains">— domain</span>
           </div>
         </div>

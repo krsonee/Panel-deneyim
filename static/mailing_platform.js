@@ -458,6 +458,12 @@
     }
     if (rem) rem.textContent = "Kalan " + fmt(q.remaining);
     if (used) used.textContent = "kullanılan " + fmt(q.used) + " / " + fmt(q.limit);
+    var stats = document.getElementById("mm-aq-stats");
+    if (stats) {
+      stats.textContent = "atıldı " + fmt(q.used) +
+        " · başarılı " + fmt(q.success) +
+        " · fail " + fmt(q.fail);
+    }
     if (renew) renew.textContent = "yenilenme: " + (q.renews_at_label || "—");
     if (fill) {
       var pct = Math.min(100, Math.max(0, Number(q.pct_used) || 0));

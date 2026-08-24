@@ -2824,7 +2824,16 @@
     var remaining = Number(cap.remaining_today) || 0;
     var sendable = Number(cap.sendable_count) || 0;
     var allocated = Number(cap.allocated_count) || 0;
+    var sentN = Number(cap.sent_today) || 0;
+    var okN = Number(cap.success_today) || 0;
+    var failN = Number(cap.fail_today) || 0;
     if (rem) rem.textContent = "Bugün kalan " + fmtNum(remaining);
+    var statsEl = document.getElementById("mail-domain-cap-stats");
+    if (statsEl) {
+      statsEl.textContent = "atıldı " + fmtNum(sentN) +
+        " · başarılı " + fmtNum(okN) +
+        " · fail " + fmtNum(failN);
+    }
     if (doms) {
       doms.textContent = sendable + " / " + allocated + " domain gönderilebilir";
     }
@@ -2850,7 +2859,7 @@
     if (note) {
       note.textContent = remaining <= 0
         ? "Bugün domain kapasitesi yok — kampanya başlamaz / otomatik durur."
-        : ("Bugün gönderilebilir toplam slot (tahsisli domainler). Otomatik rotasyon bunu kullanır.");
+        : ("Bugün gönderilebilir toplam slot (tahsisli domainler). Atılan = SMTP’ye giden; kalan = cap − atılan.");
     }
     if (hint) {
       hint.textContent = sendable > 0
@@ -2875,6 +2884,12 @@
     var hint = document.getElementById("mail-quota-hint");
     if (rem) rem.textContent = "Kalan " + fmtNum(q.remaining);
     if (used) used.textContent = "kullanılan " + fmtNum(q.used) + " / " + fmtNum(q.limit);
+    var qStats = document.getElementById("mail-quota-stats");
+    if (qStats) {
+      qStats.textContent = "atıldı " + fmtNum(q.used) +
+        " · başarılı " + fmtNum(q.success) +
+        " · fail " + fmtNum(q.fail);
+    }
     if (renew) renew.textContent = "yenilenme: " + (q.renews_at_label || "—");
     if (fill) {
       var pct = Math.min(100, Math.max(0, Number(q.pct_used) || 0));
@@ -2885,7 +2900,8 @@
     if (hint) {
       hint.textContent = q.exhausted
         ? ("Kota dolu — kampanya başlatılmaz. " + (q.renews_at_label || ""))
-        : ("Kampanya alıcı sayısı kalan kotayı (" + fmtNum(q.remaining) + ") aşarsa gönderim başlamaz.");
+        : ("Bugün SMTP’ye gidenler sayılıyor (başarılı+fail). Kampanya kalan kotayı (" +
+          fmtNum(q.remaining) + ") aşarsa başlamaz.");
     }
     window._mailAccountQuota = q;
   }

@@ -75,20 +75,8 @@ def ensure_auto_domain_column(conn) -> None:
 
 
 def domain_sent_today(conn, domain_id: int) -> int:
-    since = day_since_iso_utc(conn)
-    return int(
-        scalar(
-            conn,
-            """
-            SELECT COUNT(*) FROM mail_sends
-            WHERE domain_id = ?
-              AND status IN ('sent', 'simulated')
-              AND created_at >= ?
-            """,
-            (int(domain_id), since),
-        )
-        or 0
-    )
+    from mail_account_quota import send_stats_today
+    return send_stats_today(conn, domain_id=int(domain_id))["used"]
 
 
 def domain_remaining_today(conn, domain_row) -> int:
@@ -101,37 +89,10 @@ def domain_remaining_today(conn, domain_row) -> int:
 
 
 def _sent_today_by_domain(conn, domain_ids: list[int]) -> dict[int, int]:
-    """Havuzdaki TÜM domainler için 'bugün gönderilen' sayısını TEK sorguda getirir.
-
-    Öncesinde her domain için ayrı ayrı COUNT(*) sorgusu atılıyordu (N+1) —
-    ~50 domainlik havuzda tek bir pick_tenant_domain çağrısı 50-100+ sorgu
-    üretebiliyordu; kampanya worker'ı bunu recipient/batch başına tekrar tekrar
-    çağırdığı için toplam sorgu sayısı hızla büyüyordu.
-    """
-    ids = [int(i) for i in domain_ids]
-    if not ids:
-        return {}
-    since = day_since_iso_utc(conn)
-    ph = ",".join(["?"] * len(ids))
-    rows = fetchall(
-        conn,
-        f"""
-        SELECT domain_id, COUNT(*) AS cnt
-        FROM mail_sends
-        WHERE domain_id IN ({ph})
-          AND status IN ('sent', 'simulated')
-          AND created_at >= ?
-        GROUP BY domain_id
-        """,
-        tuple(ids) + (since,),
-    ) or []
-    out = {int(i): 0 for i in ids}
-    for r in rows:
-        try:
-            out[int(r["domain_id"])] = int(r["cnt"] or 0)
-        except Exception:
-            continue
-    return out
+    """Havuzdaki TÜM domainler için bugün kota yiyen gönderim (tek sorgu)."""
+    from mail_account_quota import send_stats_today_by_domain
+    stats = send_stats_today_by_domain(conn, domain_ids)
+    return {int(i): int((stats.get(int(i)) or {}).get("used") or 0) for i in domain_ids}
 
 
 def _pool_domains(conn, tenant_id: int | None) -> list[dict]:
@@ -209,14 +170,24 @@ def pick_tenant_domain(
 
 
 def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
+    from mail_account_quota import send_stats_today_by_domain
+
     allocated = _pool_domains(conn, tenant_id)
-    sent_by_domain = _sent_today_by_domain(conn, [int(d["id"]) for d in allocated])
+    ids = [int(d["id"]) for d in allocated]
+    stats_by = send_stats_today_by_domain(conn, ids)
     sendable = []
     remaining_sum = 0
+    sent_sum = 0
+    ok_sum = 0
+    fail_sum = 0
+    total_cap = 0
     domains = []
     for d in allocated:
         did = int(d["id"])
-        sent = sent_by_domain.get(did, 0)
+        stt = stats_by.get(did) or {}
+        sent = int(stt.get("used") or 0)
+        ok = int(stt.get("success") or 0)
+        fail = int(stt.get("fail") or 0)
         cap = int(d.get("daily_cap") or 0)
         rem = max(0, cap - sent) if cap > 0 else 0
         st = (d.get("warm_status") or "").strip().lower()
@@ -230,12 +201,19 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
             "warmup_cohort": (d.get("warmup_cohort") or "new"),
             "daily_cap": cap,
             "sent_today": sent,
+            "success_today": ok,
+            "fail_today": fail,
             "remaining_today": rem,
             "health_score": int(d.get("health_score") or 0),
             "sendable": not blocked,
             "block_reason": reason,
         }
         domains.append(item)
+        sent_sum += sent
+        ok_sum += ok
+        fail_sum += fail
+        if cap > 0:
+            total_cap += cap
         if item["sendable"]:
             sendable.append(item)
             remaining_sum += rem
@@ -243,6 +221,10 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
         "allocated_count": len(allocated),
         "sendable_count": len(sendable),
         "remaining_today": remaining_sum,
+        "sent_today": sent_sum,
+        "success_today": ok_sum,
+        "fail_today": fail_sum,
+        "total_cap": total_cap,
         "domains": domains,
         "auto_default": True,
         "note": "Kampanya domain seçmez — sistem sağlık + günlük cap’e göre döner.",

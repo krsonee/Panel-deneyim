@@ -160,6 +160,7 @@
                   <div class="mail-quota-meta">
                     <strong id="mm-aq-remaining">—</strong>
                     <span class="muted" id="mm-aq-used">kullanılan — / —</span>
+                    <span class="muted" id="mm-aq-stats">atıldı — · başarılı — · fail —</span>
                     <span class="muted" id="mm-aq-renew">yenilenme: —</span>
                   </div>
                 </div>
@@ -606,8 +607,8 @@
     window.MAIL_IS_SUPERADMIN = {{ "true" if is_superadmin else "false" }};
     window.MAIL_TENANT_ID = {{ tenant_id if tenant_id else "null" }};
   </script>
-  <script src="/static/mailing.js?v=20260824mm42"></script>
-  <script src="/static/mailing_platform.js?v=20260821mm21"></script>
+  <script src="/static/mailing.js?v=20260824mm43"></script>
+  <script src="/static/mailing_platform.js?v=20260824mm22"></script>
   <script>
     (function () {
       document.getElementById("module-mailing-panel")?.removeAttribute("hidden");

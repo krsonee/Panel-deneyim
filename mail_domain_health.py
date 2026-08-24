@@ -233,22 +233,11 @@ def domain_is_send_blocked(conn, domain_id) -> tuple[bool, str]:
         return True, f"Domain {st}"
     daily_cap = int(row_get(row, "daily_cap") or 0)
     if daily_cap > 0:
-        now_local = datetime.now(_daily_cap_tz(conn))
-        day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-        since = day_start.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        sent_today = int(
-            scalar(
-                conn,
-                """
-                SELECT COUNT(*) FROM mail_sends
-                WHERE domain_id = ?
-                  AND status IN ('sent', 'simulated')
-                  AND created_at >= ?
-                """,
-                (int(domain_id), since),
-            )
-            or 0
-        )
+        try:
+            from mail_domain_pick import domain_sent_today
+            sent_today = domain_sent_today(conn, int(domain_id))
+        except Exception:
+            sent_today = 0
         if sent_today >= daily_cap:
             return True, f"daily_cap doldu ({sent_today}/{daily_cap})"
     return False, ""
