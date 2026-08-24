@@ -593,7 +593,8 @@ def migrate_makrolink(conn):
                 created_by TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                category TEXT NOT NULL DEFAULT ''
+                category TEXT NOT NULL DEFAULT '',
+                short_host TEXT NOT NULL DEFAULT ''
             )
             """,
         )
@@ -628,7 +629,8 @@ def migrate_makrolink(conn):
                 created_by TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                category TEXT NOT NULL DEFAULT ''
+                category TEXT NOT NULL DEFAULT '',
+                short_host TEXT NOT NULL DEFAULT ''
             )
             """,
         )
@@ -812,6 +814,31 @@ def migrate_makrolink(conn):
         cols = _table_columns(conn, "makrolink_links")
     if cols and "category" not in cols:
         execute(conn, "ALTER TABLE makrolink_links ADD COLUMN category TEXT NOT NULL DEFAULT ''")
+        cols = _table_columns(conn, "makrolink_links")
+    if cols and "short_host" not in cols:
+        execute(conn, "ALTER TABLE makrolink_links ADD COLUMN short_host TEXT NOT NULL DEFAULT ''")
+        cols = _table_columns(conn, "makrolink_links")
+    # Makro: eski linkleri varsayılan short host’a bağla (tüm domainlerde açılmasın)
+    if cols and "short_host" in cols:
+        try:
+            from panel_config import PANEL_BRAND as _ml_host_brand
+        except Exception:
+            _ml_host_brand = "makro"
+        if _ml_host_brand == "makro":
+            ph_row = fetchone(conn, "SELECT value FROM makrolink_settings WHERE key = ?", ("public_host",))
+            ph = ((ph_row["value"] if ph_row else "") or "").strip().lower()
+            if ph.startswith("www."):
+                ph = ph[4:]
+            if ph:
+                execute(
+                    conn,
+                    """
+                    UPDATE makrolink_links
+                    SET short_host = ?
+                    WHERE TRIM(COALESCE(short_host, '')) = ''
+                    """,
+                    (ph,),
+                )
     # Kısa kodları lowercase normalize et (case-insensitive eşsizlik)
     try:
         rows = fetchall(conn, "SELECT id, code FROM makrolink_links ORDER BY id")

@@ -857,8 +857,13 @@ def _row_to_dict(conn, row):
     if not row:
         return None
     d = dict(row)
-    d["short_url"] = short_url(conn, d["code"])
-    d["short_urls"] = short_urls_for_code(conn, d["code"])
+    d["short_host"] = _clean_host(d.get("short_host") or "")
+    bound = d["short_host"]
+    d["short_url"] = short_url(conn, d["code"], host=bound or None)
+    if bound:
+        d["short_urls"] = [d["short_url"]] if d["short_url"] else []
+    else:
+        d["short_urls"] = short_urls_for_code(conn, d["code"])
     d["clicks"] = int(d.get("click_count") or 0)
     # Panel host üzerinden test (DNS/custom domain hazır olmasa da)
     code = (d.get("code") or "").strip()
@@ -889,22 +894,59 @@ def list_links(conn, q_text=None, limit=200):
             or q_text in (x.get("affiliate_id") or "").lower()
             or q_text in (x.get("ref_code") or "").lower()
             or q_text in (x.get("category") or "").lower()
+            or q_text in (x.get("short_host") or "").lower()
         ]
     return items
 
 
-def get_link_by_code(conn, code, active_only=True):
+def _allowed_short_hosts(conn):
+    cfg = get_config(conn)
+    hosts = list(cfg.get("short_hosts") or [])
+    ph = _clean_host(cfg.get("public_host") or "")
+    if ph and ph not in hosts:
+        hosts.append(ph)
+    return hosts, ph
+
+
+def resolve_bound_short_host(conn, raw, *, required=False):
+    """Oluşturma/düzenlemede seçilen kısa domain. Boş = tüm host’larda açılır (eski davranış)."""
+    allowed, public_host = _allowed_short_hosts(conn)
+    h = _clean_host(raw)
+    if h:
+        if h not in allowed:
+            raise ValueError("Bu kısa domain listede yok. Önce Ayarlar’dan ekle.")
+        return h
+    if required:
+        if len(allowed) == 1:
+            return allowed[0]
+        if public_host and len(allowed) <= 1:
+            return public_host
+        raise ValueError("Kısa link hangi domain üzerinden oluşacak, seç.")
+    return ""
+
+
+def get_link_by_code(conn, code, active_only=True, host=None, require_host=False):
     code = (code or "").strip().lower()
     if not _valid_code(code):
         return None
-    if active_only:
+    extra = " AND COALESCE(is_active, 1) = 1" if active_only else ""
+    host = _clean_host(host) if host else ""
+    if require_host and host:
         row = fetchone(
             conn,
-            "SELECT * FROM makrolink_links WHERE lower(code) = ? AND COALESCE(is_active, 1) = 1",
-            (code,),
+            """
+            SELECT * FROM makrolink_links
+            WHERE lower(code) = ?""" + extra + """
+              AND (TRIM(COALESCE(short_host, '')) = '' OR lower(short_host) = ?)
+            """,
+            (code, host),
         )
     else:
-        row = fetchone(conn, "SELECT * FROM makrolink_links WHERE lower(code) = ?", (code,))
+        row = fetchone(
+            conn,
+            "SELECT * FROM makrolink_links WHERE lower(code) = ?" + extra,
+            (code,),
+        )
     return _row_to_dict(conn, row) if row else None
 
 
@@ -919,6 +961,7 @@ def create_link(
     created_by="",
     target_domain=None,
     category="",
+    short_host=None,
 ):
     destination_url = normalize_destination_url(conn, destination_url)
     if not _valid_url(destination_url):
@@ -949,6 +992,9 @@ def create_link(
         if group_raw:
             target_domain = ("group:" + group_raw)[:200]
     category = normalize_category(category, allow_empty=False, conn=conn)
+    bound_host = resolve_bound_short_host(
+        conn, short_host, required=(PANEL_BRAND != "bizzo")
+    )
     now = iso(utcnow())
 
     # smartico_link_id sadece gerçek go.aff hedeflerinde
@@ -978,12 +1024,12 @@ def create_link(
             UPDATE makrolink_links
             SET code = ?, destination_url = ?, label = ?, affiliate_id = ?, smartico_link_id = ?,
                 ref_code = ?, click_count = 0, is_active = 1, created_by = ?,
-                created_at = ?, updated_at = ?, target_domain = ?, category = ?
+                created_at = ?, updated_at = ?, target_domain = ?, category = ?, short_host = ?
             WHERE id = ?
             """,
             (
                 code, destination_url, label, affiliate_id, smartico_link_id, ref_code,
-                created_by, now, now, target_domain, category, revive_id,
+                created_by, now, now, target_domain, category, bound_host, revive_id,
             ),
         )
         link_id = revive_id
@@ -993,13 +1039,13 @@ def create_link(
             """
             INSERT INTO makrolink_links
               (code, destination_url, label, affiliate_id, smartico_link_id, ref_code,
-               click_count, is_active, created_by, created_at, updated_at, target_domain, category)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?)
+               click_count, is_active, created_by, created_at, updated_at, target_domain, category, short_host)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, ?)
             RETURNING id
             """,
             (
                 code, destination_url, label, affiliate_id, smartico_link_id, ref_code,
-                created_by, now, now, target_domain, category,
+                created_by, now, now, target_domain, category, bound_host,
             ),
         )
         link_id = cur.fetchone()["id"]
@@ -1009,12 +1055,12 @@ def create_link(
             """
             INSERT INTO makrolink_links
               (code, destination_url, label, affiliate_id, smartico_link_id, ref_code,
-               click_count, is_active, created_by, created_at, updated_at, target_domain, category)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?)
+               click_count, is_active, created_by, created_at, updated_at, target_domain, category, short_host)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, ?)
             """,
             (
                 code, destination_url, label, affiliate_id, smartico_link_id, ref_code,
-                created_by, now, now, target_domain, category,
+                created_by, now, now, target_domain, category, bound_host,
             ),
         )
         link_id = cur.lastrowid
@@ -1053,6 +1099,7 @@ def update_link(
     ref_code=None,
     target_domain=None,
     category=None,
+    short_host=None,
 ):
     row = fetchone(conn, "SELECT * FROM makrolink_links WHERE id = ?", (int(link_id),))
     if not row:
@@ -1114,16 +1161,23 @@ def update_link(
     else:
         new_category = row.get("category") or ""
 
+    if short_host is not None:
+        new_short_host = resolve_bound_short_host(
+            conn, short_host, required=(PANEL_BRAND != "bizzo")
+        )
+    else:
+        new_short_host = _clean_host(row.get("short_host") or "")
+
     now = iso(utcnow())
     execute(
         conn,
         """
         UPDATE makrolink_links
         SET destination_url = ?, label = ?, code = ?, affiliate_id = ?, ref_code = ?,
-            target_domain = ?, category = ?, updated_at = ?
+            target_domain = ?, category = ?, short_host = ?, updated_at = ?
         WHERE id = ?
         """,
-        (dest, lab, new_code, aff, ref, new_target_domain, new_category, now, int(link_id)),
+        (dest, lab, new_code, aff, ref, new_target_domain, new_category, new_short_host, now, int(link_id)),
     )
     _sync_makrolink_to_online_group(
         conn,
@@ -1317,7 +1371,11 @@ def resync_all_tracking(conn):
 
 
 def record_click_and_resolve(conn, code, ip="", user_agent="", referer="", short_host=""):
-    link = get_link_by_code(conn, code, active_only=True)
+    host = _clean_host(short_host)
+    enforce_host = bool(host and is_makrolink_host(host, conn))
+    link = get_link_by_code(
+        conn, code, active_only=True, host=host if enforce_host else None, require_host=enforce_host
+    )
     if not link:
         return None
     now = iso(utcnow())

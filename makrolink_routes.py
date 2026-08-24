@@ -146,6 +146,7 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
                     created_by=username,
                     target_domain=data.get("target_domain") or None,
                     category=data.get("category") or "",
+                    short_host=data.get("short_host") or data.get("preferred_host") or None,
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -167,6 +168,7 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
                     ref_code=data.get("ref_code") if "ref_code" in data else None,
                     target_domain=data.get("target_domain") if "target_domain" in data else None,
                     category=data.get("category") if "category" in data else None,
+                    short_host=data.get("short_host") if "short_host" in data else None,
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
