@@ -363,9 +363,20 @@ def _bizzo_logo_url():
     return (base + path) if base else path
 
 
+def _not_spam_dest_url():
+    """«Spam değil olarak işaretledim» onay sayfası — Gmail bunu söylemez, bu buton bizim kaydımız."""
+    return (_public_base() or "https://mikromail.onrender.com").rstrip("/") + "/m/ok/spam-degil"
+
+
+def _is_not_spam_dest(dest):
+    d = (dest or "").strip().lower()
+    return "spam-degil" in d or "/m/ok/spam-degil" in d
+
+
 def _spam_tip_banner_html():
-    """Spam tip şeridi — soft amber (engine ile aynı dil)."""
+    """Spam şeridi + gerçek takip butonu (sadece yazı değil)."""
     gold = "#ffcc00"
+    dest = html_lib.escape(_not_spam_dest_url(), quote=True)
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
         '<tr><td align="center" style="padding:0 12px 12px;">'
@@ -375,17 +386,20 @@ def _spam_tip_banner_html():
         '<tr><td align="center" style="padding:12px 16px;'
         f"font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:{gold};"
         'background-color:#1a1608;">'
-        "Spam klasöründeyse "
-        f'<strong style="color:{gold};">butonlar çalışmaz</strong>. '
-        f'Önce <strong style="color:{gold};">Spam değil</strong> deyin, sonra tıklayın.'
+        "Gelen kutusuna almak için Gmail/Outlook’ta önce "
+        f'<strong style="color:{gold};">Spam değil</strong> deyin, sonra '
+        f'<a href="{dest}" data-mm-not-spam="1" target="_blank" rel="noopener" '
+        f'style="color:#050505;background:{gold};font-weight:700;text-decoration:none;'
+        'padding:6px 12px;border-radius:8px;display:inline-block;margin-top:6px;">'
+        "Spam değil olarak işaretledim</a>"
         "</td></tr></table></td></tr></table>"
     )
 
 
 def _ensure_spam_tip(html):
-    """HTML gövdede spam şeridi yoksa <body> hemen ardına ekler (yeni şablonlar dahil)."""
+    """HTML gövdede tıklanabilir spam-değil butonu yoksa ekler."""
     html = html or ""
-    if "Spam değil" in html or "Spam olmadığını bildir" in html:
+    if 'data-mm-not-spam="1"' in html:
         return html
     banner = _spam_tip_banner_html()
     low = html.lower()
@@ -409,6 +423,8 @@ def _apply_mail_assets(text):
         text = text.replace("__MAIL_LOGO__", _mail_logo_url())
     if "__BIZZO_LOGO__" in text:
         text = text.replace("__BIZZO_LOGO__", _bizzo_logo_url())
+    if "__NOT_SPAM_URL__" in text:
+        text = text.replace("__NOT_SPAM_URL__", _not_spam_dest_url())
     promo_map = {
         "__MB_IMG_KASA__": "kasa.jpg",
         "__MB_IMG_KAYIP__": "kayip.jpg",
@@ -733,6 +749,8 @@ def _inject_tracking(conn, body, *, send_id, contact_id=None, campaign_id=None, 
             return dest
         if "/m/c/" in dest:
             return absolutize_track(dest)
+        if _is_not_spam_dest(dest) and dest.startswith("/"):
+            dest = (base or "https://mikromail.onrender.com").rstrip("/") + dest
         if not re.match(r"^https?://", dest, re.I):
             if dest.startswith("//"):
                 dest = "https:" + dest
@@ -2851,6 +2869,12 @@ def create_mailing_click_blueprint():
             dest = (dest or "").strip()
             dest, sc2 = _split_smartico_marker(dest)
             is_sc = bool(is_sc) or sc2
+            if _is_not_spam_dest(dest):
+                if dest.startswith("/"):
+                    dest = (_public_base() or "https://mikromail.onrender.com").rstrip("/") + dest
+                elif not re.match(r"^https?://", dest, re.I):
+                    dest = (_public_base() or "https://mikromail.onrender.com").rstrip("/") + "/m/ok/spam-degil"
+                return dest
             if not dest or dest.startswith("/"):
                 return None
             if not re.match(r"^https?://", dest, re.I):
@@ -2894,30 +2918,57 @@ def create_mailing_click_blueprint():
                             """,
                             (first, now, row["id"]),
                         )
-                        if row["send_id"]:
-                            # Tıklama = açılma demektir (pixel ateşlenmemiş olsa
-                            # bile) — önceden clicked_at yazılırken opened_at hiç
-                            # set edilmiyordu, "tıkladı ama açmadı" gibi yanlış
-                            # bir görünüme yol açıyordu.
-                            execute(
-                                conn,
-                                """
-                                UPDATE mail_sends SET
-                                    clicked_at = COALESCE(clicked_at, ?),
-                                    opened_at = COALESCE(opened_at, ?)
-                                WHERE id = ?
-                                """,
-                                (now, now, row["send_id"]),
-                            )
-                        if row["contact_id"]:
-                            try:
-                                from mail_ops import tag_click_outcome
-                                tag_click_outcome(conn, row["contact_id"], opened=True, now=now)
-                            except Exception:
-                                _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
+                        if row["send_id"] or row["contact_id"]:
+                            ns = _is_not_spam_dest(dest)
+                            if ns and row["contact_id"]:
+                                _tag_contact(conn, int(row["contact_id"]), "mail_spam_degil", now)
+                            elif not ns:
+                                if row["send_id"]:
+                                    execute(
+                                        conn,
+                                        """
+                                        UPDATE mail_sends SET
+                                            clicked_at = COALESCE(clicked_at, ?),
+                                            opened_at = COALESCE(opened_at, ?)
+                                        WHERE id = ?
+                                        """,
+                                        (now, now, row["send_id"]),
+                                    )
+                                if row["contact_id"]:
+                                    try:
+                                        from mail_ops import tag_click_outcome
+                                        tag_click_outcome(conn, row["contact_id"], opened=True, now=now)
+                                    except Exception:
+                                        _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
                     elif signed.get("c"):
                         try:
-                            _tag_contact(conn, int(signed["c"]), "mail_tiklayan", now)
+                            cid = int(signed["c"])
+                            if _is_not_spam_dest(dest):
+                                _tag_contact(conn, cid, "mail_spam_degil", now)
+                                try:
+                                    insert_returning_id(
+                                        conn,
+                                        """
+                                        INSERT INTO mail_click_links
+                                        (token, send_id, contact_id, campaign_id, dest_url,
+                                         click_count, first_clicked_at, last_clicked_at, created_at)
+                                        VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+                                        """,
+                                        (
+                                            token,
+                                            signed.get("s"),
+                                            cid,
+                                            signed.get("g"),
+                                            dest,
+                                            now,
+                                            now,
+                                            now,
+                                        ),
+                                    )
+                                except Exception:
+                                    pass
+                            else:
+                                _tag_contact(conn, cid, "mail_tiklayan", now)
                         except Exception:
                             pass
                     conn.commit()
@@ -2952,23 +3003,28 @@ def create_mailing_click_blueprint():
                     """,
                     (first, now, row["id"]),
                 )
-                if row.get("send_id"):
-                    execute(
-                        conn,
-                        """
-                        UPDATE mail_sends SET
-                            clicked_at = COALESCE(clicked_at, ?),
-                            opened_at = COALESCE(opened_at, ?)
-                        WHERE id = ?
-                        """,
-                        (now, now, row["send_id"]),
-                    )
-                if row.get("contact_id"):
-                    try:
-                        from mail_ops import tag_click_outcome
-                        tag_click_outcome(conn, row["contact_id"], opened=True, now=now)
-                    except Exception:
-                        _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
+                if row.get("send_id") or row.get("contact_id"):
+                    ns = _is_not_spam_dest(dest)
+                    if ns and row.get("contact_id"):
+                        _tag_contact(conn, int(row["contact_id"]), "mail_spam_degil", now)
+                    elif not ns:
+                        if row.get("send_id"):
+                            execute(
+                                conn,
+                                """
+                                UPDATE mail_sends SET
+                                    clicked_at = COALESCE(clicked_at, ?),
+                                    opened_at = COALESCE(opened_at, ?)
+                                WHERE id = ?
+                                """,
+                                (now, now, row["send_id"]),
+                            )
+                        if row.get("contact_id"):
+                            try:
+                                from mail_ops import tag_click_outcome
+                                tag_click_outcome(conn, row["contact_id"], opened=True, now=now)
+                            except Exception:
+                                _tag_contact(conn, row["contact_id"], "mail_tiklayan", now)
                 conn.commit()
             except Exception as exc:
                 print(f"⚠️  mail_click legacy analytics: {exc}")
@@ -2977,6 +3033,19 @@ def create_mailing_click_blueprint():
                 except Exception:
                     pass
         return redirect(dest, code=302)
+
+    @bp.route("/m/ok/spam-degil", methods=["GET"])
+    def mail_not_spam_thanks():
+        html = (
+            "<!doctype html><meta charset=utf-8><title>Teşekkürler</title>"
+            "<meta name=viewport content='width=device-width,initial-scale=1'>"
+            "<body style='font-family:sans-serif;padding:1.5rem;background:#0f172a;color:#e2e8f0'>"
+            "<h2 style='margin:0 0 0.5rem'>Kaydedildi</h2>"
+            "<p style='color:#94a3b8;line-height:1.5'>«Spam değil» olarak işaretlediğini aldık. "
+            "Gelen kutusundaki butonlar artık tıklanabilir olmalı.</p>"
+            "</body>"
+        )
+        return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     @bp.route("/m/o/<int:send_id>/<sig>", methods=["GET"])
     def mail_open_pixel(send_id, sig):
@@ -6889,6 +6958,34 @@ def create_mailing_blueprint(permission_required):
                 where.append("r.status = ?")
                 params.append(status_filter)
             where_sql = " AND ".join(where)
+            ns_contact_ids = set()
+            try:
+                ns_rows = fetchall(
+                    conn,
+                    """
+                    SELECT DISTINCT contact_id
+                    FROM mail_click_links
+                    WHERE contact_id IS NOT NULL
+                      AND COALESCE(click_count, 0) > 0
+                      AND LOWER(COALESCE(dest_url, '')) LIKE '%spam-degil%'
+                      AND (
+                        campaign_id = ?
+                        OR send_id IN (SELECT id FROM mail_sends WHERE campaign_id = ?)
+                      )
+                    """,
+                    (campaign_id, campaign_id),
+                )
+                for nr in ns_rows or []:
+                    try:
+                        ns_contact_ids.add(int(nr["contact_id"]))
+                    except (TypeError, ValueError, KeyError):
+                        pass
+            except Exception as exc:
+                print(f"⚠️  campaign not_spam lookup: {exc}")
+                try:
+                    safe_rollback(conn)
+                except Exception:
+                    pass
             total = int(scalar(
                 conn,
                 f"SELECT COUNT(*) FROM mail_campaign_recipients r WHERE {where_sql}",
@@ -6908,6 +7005,7 @@ def create_mailing_blueprint(permission_required):
                     COALESCE(s.status, s2.status) AS send_status,
                     COALESCE(s.opened_at, s2.opened_at) AS opened_at,
                     COALESCE(s.clicked_at, s2.clicked_at) AS clicked_at,
+                    COALESCE(s.real_status, s2.real_status) AS real_status,
                     COALESCE(NULLIF(TRIM(s.error), ''), NULLIF(TRIM(s2.error), '')) AS send_error
                 FROM mail_campaign_recipients r
                 JOIN mail_contacts c ON c.id = r.contact_id
@@ -6927,14 +7025,37 @@ def create_mailing_blueprint(permission_required):
             for r in rows or []:
                 d = dict(r)
                 d["tags"] = _parse_tags(d.get("tags"))
+                try:
+                    d["not_spam"] = int(d.get("contact_id") or 0) in ns_contact_ids
+                except (TypeError, ValueError):
+                    d["not_spam"] = False
                 out.append(d)
+            clicked_total = int(scalar(
+                conn,
+                "SELECT COUNT(*) FROM mail_sends WHERE campaign_id = ? AND clicked_at IS NOT NULL",
+                (campaign_id,),
+            ) or 0)
+            opened_total = int(scalar(
+                conn,
+                "SELECT COUNT(*) FROM mail_sends WHERE campaign_id = ? AND opened_at IS NOT NULL",
+                (campaign_id,),
+            ) or 0)
+            spam_total = int(scalar(
+                conn,
+                "SELECT COUNT(*) FROM mail_sends WHERE campaign_id = ? AND real_status = 'spam'",
+                (campaign_id,),
+            ) or 0)
             camp_d = _row(camp)
         return jsonify({
             "campaign": camp_d,
             "recipients": out,
             "total": total,
-            "limit": limit,
             "truncated": total > len(out),
+            "limit": limit,
+            "clicked_total": clicked_total,
+            "opened_total": opened_total,
+            "spam_total": spam_total,
+            "not_spam_total": len(ns_contact_ids),
         })
 
     @bp.route("/contacts/export", methods=["GET"])

@@ -1122,7 +1122,21 @@
       <button type="button" class="modal-close" id="mail-camp-detail-close" aria-label="Kapat">&times;</button>
     </div>
     <div class="modal-body" style="padding:0.85rem 1rem;overflow:auto;flex:1;min-height:0;">
-      <p class="hint" id="mail-camp-detail-meta" style="margin:0 0 0.75rem;">—</p>
+      <p class="hint" id="mail-camp-detail-meta" style="margin:0 0 0.5rem;">—</p>
+      <p class="hint" style="margin:0 0 0.65rem;font-size:0.78rem;">
+        Gmail/Outlook «Spam değil» tıklamasını gönderene iletmez.
+        <strong>Spam değil</strong> = maildeki sarı butona basanlar (bizim kaydımız).
+        Eski kampanyalarda buton yoktu — o liste boş kalır; gelen kutusuna alıp tıklayanlar <strong>Tıkladı</strong> filtresinde.
+        <strong>Spam şikayeti</strong> = Alibaba’ya «bu spam» diyenler (tersi).
+      </p>
+      <div id="mail-camp-detail-filters" style="display:flex;flex-wrap:wrap;gap:0.4rem;align-items:center;margin:0 0 0.75rem;">
+        <button type="button" class="btn btn-sm btn-secondary" data-camp-eng="all">Tümü</button>
+        <button type="button" class="btn btn-sm btn-secondary" data-camp-eng="clicked">Tıkladı</button>
+        <button type="button" class="btn btn-sm btn-secondary" data-camp-eng="opened">Açıldı</button>
+        <button type="button" class="btn btn-sm btn-secondary" data-camp-eng="not_spam">Spam değil</button>
+        <button type="button" class="btn btn-sm btn-secondary" data-camp-eng="spam">Spam şikayeti</button>
+        <button type="button" class="btn btn-sm" id="mail-camp-detail-copy">Görünen e-postaları kopyala</button>
+      </div>
       <div class="table-wrap">
         <div class="table-scroll" style="max-height:55vh;">
           <table>

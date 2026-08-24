@@ -2631,21 +2631,26 @@
   }
 
   function mailSpamTipBannerHtml() {
+    var dest = "/m/ok/spam-degil";
+    try { dest = (window.location.origin || "") + "/m/ok/spam-degil"; } catch (e) { /* ignore */ }
     return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
       '<tr><td align="center" style="padding:0 12px 12px;">' +
       '<table role="presentation" width="600" cellpadding="0" cellspacing="0" bgcolor="#1a1608" ' +
       'style="width:100%;max-width:600px;background-color:#1a1608;border:1px solid #5a4208;border-radius:12px;">' +
       '<tr><td align="center" style="padding:12px 16px;font-family:Arial,Helvetica,sans-serif;' +
       'font-size:12px;line-height:1.5;color:#ffcc00;background-color:#1a1608;">' +
-      "Spam klasöründeyse " +
-      '<strong style="color:#ffcc00;">butonlar çalışmaz</strong>. ' +
-      'Önce <strong style="color:#ffcc00;">Spam değil</strong> deyin, sonra tıklayın.' +
+      "Gelen kutusuna almak için Gmail/Outlook’ta önce " +
+      '<strong style="color:#ffcc00;">Spam değil</strong> deyin, sonra ' +
+      '<a href="' + dest + '" data-mm-not-spam="1" target="_blank" rel="noopener" ' +
+      'style="color:#050505;background:#ffcc00;font-weight:700;text-decoration:none;' +
+      'padding:6px 12px;border-radius:8px;display:inline-block;margin-top:6px;">' +
+      "Spam değil olarak işaretledim</a>" +
       "</td></tr></table></td></tr></table>";
   }
 
   function ensureMailSpamTip(html) {
     var s = html || "";
-    if (s.indexOf("Spam değil") >= 0 || s.indexOf("Spam olmadığını bildir") >= 0) return s;
+    if (s.indexOf('data-mm-not-spam="1"') >= 0) return s;
     var banner = mailSpamTipBannerHtml();
     var m = s.match(/<body[^>]*>/i);
     if (m) {
@@ -2665,6 +2670,9 @@
     try { origin = window.location.origin || ""; } catch (e0) { origin = ""; }
     s = s.replace(/__MAIL_LOGO__/g, mailLogoPreviewUrl());
     s = s.replace(/__BIZZO_LOGO__/g, bizzoLogoPreviewUrl());
+    s = s.replace(/__NOT_SPAM_URL__/g, (function () {
+      try { return (window.location.origin || "") + "/m/ok/spam-degil"; } catch (e1) { return "/m/ok/spam-degil"; }
+    })());
     s = s.replace(/__MB_IMG_KASA__/g, origin + "/static/mailing/promos/kasa.jpg");
     s = s.replace(/__MB_IMG_KAYIP__/g, origin + "/static/mailing/promos/kayip.jpg");
     s = s.replace(/__MB_IMG_ARKADAS__/g, origin + "/static/mailing/promos/arkadas.jpg");
@@ -3225,6 +3233,51 @@
     });
   }
 
+  var _mailCampDetailRows = [];
+  var _mailCampDetailEng = "all";
+
+  function mailCampDetailVisibleRows() {
+    var eng = _mailCampDetailEng || "all";
+    return (_mailCampDetailRows || []).filter(function (r) {
+      if (eng === "clicked") return !!r.clicked_at;
+      if (eng === "opened") return !!r.opened_at;
+      if (eng === "not_spam") return !!r.not_spam;
+      if (eng === "spam") return String(r.real_status || "").toLowerCase() === "spam";
+      return true;
+    });
+  }
+
+  function mailRenderCampDetailTable() {
+    var tbody = document.getElementById("mail-camp-detail-table");
+    if (!tbody) return;
+    var rows = mailCampDetailVisibleRows();
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">Bu filtrede alıcı yok</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function (r) {
+      var tags = (r.tags || []).map(function (t) {
+        return '<span class="tag">' + esc(t) + "</span>";
+      }).join(" ") || '<span class="muted">—</span>';
+      var st = r.send_status || r.recipient_status || "—";
+      var sendErr = (r.send_error || "").trim();
+      var eng = [];
+      if (r.opened_at) eng.push("açıldı");
+      if (r.clicked_at) eng.push("tıkladı");
+      if (r.not_spam) eng.push("spam değil");
+      if (String(r.real_status || "").toLowerCase() === "spam") eng.push("spam şikayeti");
+      return "<tr>" +
+        "<td>" + esc(r.email || "") + "</td>" +
+        "<td>" + esc(r.name || "") + "</td>" +
+        "<td>" + tags + "</td>" +
+        "<td>" + mmStatusBadge(st) + "</td>" +
+        "<td style=\"max-width:320px;font-size:0.78rem;color:#fca5a5;word-break:break-word;\">" +
+          (sendErr ? esc(sendErr) : '<span class="muted">—</span>') + "</td>" +
+        "<td>" + (eng.length ? esc(eng.join(" · ")) : '<span class="muted">—</span>') + "</td>" +
+        "</tr>";
+    }).join("");
+  }
+
   function mailCloseCampDetailModal() {
     var modal = document.getElementById("mail-camp-detail-modal");
     if (modal) modal.classList.remove("open");
@@ -3240,7 +3293,7 @@
     if (meta) meta.textContent = "Yükleniyor…";
     tbody.innerHTML = '<tr><td colspan="6" class="empty">Yükleniyor…</td></tr>';
     modal.classList.add("open");
-    mailApi("/api/mailing/campaigns/" + campaignId + "/recipients?limit=1000", { timeoutMs: 60000 })
+    mailApi("/api/mailing/campaigns/" + campaignId + "/recipients?limit=5000", { timeoutMs: 60000 })
       .then(function (res) {
         if (!res || !res.ok) {
           var err = (res && res.data && res.data.error) || "Alıcılar alınamadı";
@@ -3250,36 +3303,23 @@
         }
         var camp = res.data.campaign || {};
         var rows = res.data.recipients || [];
+        _mailCampDetailRows = rows;
+        _mailCampDetailEng = "all";
         var total = res.data.total != null ? res.data.total : rows.length;
         var tagFilter = (camp.tag_filter || "").trim();
+        var clickedN = res.data.clicked_total != null ? res.data.clicked_total : rows.filter(function (x) { return x.clicked_at; }).length;
+        var openedN = res.data.opened_total != null ? res.data.opened_total : rows.filter(function (x) { return x.opened_at; }).length;
+        var spamN = res.data.spam_total != null ? res.data.spam_total : 0;
+        var notSpamN = res.data.not_spam_total != null ? res.data.not_spam_total : rows.filter(function (x) { return x.not_spam; }).length;
         if (meta) {
-          meta.textContent = fmtNum(total) + " alıcı" +
+          meta.textContent = fmtNum(total) + " alıcı · tıkladı " + fmtNum(clickedN) +
+            " · açıldı " + fmtNum(openedN) +
+            " · spam değil " + fmtNum(notSpamN) +
+            " · spam şikayeti " + fmtNum(spamN) +
             (res.data.truncated ? " (ilk " + rows.length + " gösteriliyor)" : "") +
-            (tagFilter ? (" · kampanya etiket filtresi: " + tagFilter) : " · etiket filtresi yok");
+            (tagFilter ? (" · etiket: " + tagFilter) : "");
         }
-        if (!rows.length) {
-          tbody.innerHTML = '<tr><td colspan="6" class="empty">Alıcı yok</td></tr>';
-          return;
-        }
-        tbody.innerHTML = rows.map(function (r) {
-          var tags = (r.tags || []).map(function (t) {
-            return '<span class="tag">' + esc(t) + "</span>";
-          }).join(" ") || '<span class="muted">—</span>';
-          var st = r.send_status || r.recipient_status || "—";
-          var sendErr = (r.send_error || "").trim();
-          var eng = [];
-          if (r.opened_at) eng.push("açıldı");
-          if (r.clicked_at) eng.push("tıkladı");
-          return "<tr>" +
-            "<td>" + esc(r.email || "") + "</td>" +
-            "<td>" + esc(r.name || "") + "</td>" +
-            "<td>" + tags + "</td>" +
-            "<td>" + mmStatusBadge(st) + "</td>" +
-            "<td style=\"max-width:320px;font-size:0.78rem;color:#fca5a5;word-break:break-word;\">" +
-              (sendErr ? esc(sendErr) : '<span class="muted">—</span>') + "</td>" +
-            "<td>" + (eng.length ? esc(eng.join(" · ")) : '<span class="muted">—</span>') + "</td>" +
-            "</tr>";
-        }).join("");
+        mailRenderCampDetailTable();
       });
   }
 
@@ -4808,6 +4848,27 @@
       switchMailTab("settings");
     });
     bindClick("mail-camp-detail-close", mailCloseCampDetailModal);
+    bindClick("mail-camp-detail-copy", function () {
+      var emails = mailCampDetailVisibleRows().map(function (r) { return r.email; }).filter(Boolean);
+      if (!emails.length) { mailToast("Kopyalanacak e-posta yok"); return; }
+      var text = emails.join("\n");
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          mailToast(fmtNum(emails.length) + " e-posta kopyalandı");
+        }).catch(function () { mailToast("Kopyalanamadı"); });
+      } else {
+        mailToast("Kopyala desteklenmiyor");
+      }
+    });
+    var campFilt = document.getElementById("mail-camp-detail-filters");
+    if (campFilt) {
+      campFilt.addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-camp-eng]");
+        if (!btn) return;
+        _mailCampDetailEng = btn.getAttribute("data-camp-eng") || "all";
+        mailRenderCampDetailTable();
+      });
+    }
     var campDetailModal = document.getElementById("mail-camp-detail-modal");
     if (campDetailModal) {
       campDetailModal.addEventListener("click", function (e) {

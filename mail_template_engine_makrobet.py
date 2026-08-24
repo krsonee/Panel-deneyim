@@ -36,6 +36,12 @@ IMG_RACE = "__MB_IMG_RACE__"
 
 # ── Components ─────────────────────────────────────────────────────────────
 def notice_spam() -> str:
+    btn = (
+        f'<a href="__NOT_SPAM_URL__" data-mm-not-spam="1" target="_blank" rel="noopener" '
+        f'style="color:{INK};background:{GOLD};font-weight:700;text-decoration:none;'
+        f'padding:6px 12px;border-radius:8px;display:inline-block;margin-top:8px;">'
+        f"Spam değil olarak işaretledim</a>"
+    )
     return f"""
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
     <tr>
@@ -48,7 +54,8 @@ def notice_spam() -> str:
             <td align="center" bgcolor="{GOLD_SOFT_BG}"
               style="padding:12px 16px;font-family:{FONT};font-size:12px;line-height:1.5;color:{GOLD};">
               Spam klasöründeyse <strong style="color:{GOLD};">butonlar çalışmaz</strong>.
-              Önce <strong style="color:{GOLD};">Spam değil</strong> deyin, sonra tıklayın.
+              Önce Gmail/Outlook’ta <strong style="color:{GOLD};">Spam değil</strong> deyin, sonra buraya basın:<br>
+              {btn}
             </td>
           </tr>
         </table>

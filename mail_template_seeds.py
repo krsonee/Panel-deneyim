@@ -53,15 +53,18 @@ _LOGO_PLACEHOLDER = "__MAIL_LOGO__"
 
 
 def _spam_tip_banner():
-    """Gmail/Outlook’ta spam klasöründe butonlar çalışmasın diye uyarı şeridi."""
+    """Gmail/Outlook spam uyarısı + takip butonu."""
     return f"""
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#050505;">
     <tr>
       <td align="center" style="padding:11px 18px;font-family:Urbanist,Arial,Helvetica,sans-serif;font-size:12px;line-height:1.45;color:#ffffff;">
         <span style="color:{_MB_GOLD};font-size:13px;vertical-align:middle;">⚠</span>
-        &nbsp;Butonların tıklanabilir olması için
-        <strong style="color:{_MB_GOLD};">Spam olmadığını bildir</strong>
-        seçeneğine tıklayın.
+        &nbsp;Butonların tıklanabilir olması için önce
+        <strong style="color:{_MB_GOLD};">Spam değil</strong>
+        deyin, sonra
+        <a href="__NOT_SPAM_URL__" data-mm-not-spam="1" target="_blank" rel="noopener"
+           style="color:#050505;background:{_MB_GOLD};font-weight:700;text-decoration:none;padding:6px 12px;border-radius:8px;display:inline-block;margin-top:6px;">
+          Spam değil olarak işaretledim</a>
       </td>
     </tr>
   </table>"""
