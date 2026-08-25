@@ -171,8 +171,12 @@ def pick_tenant_domain(
 
 def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
     from mail_account_quota import send_stats_today_by_domain
+    from mail_tenant import domain_has_smtp, list_allocated_domains
 
-    allocated = _pool_domains(conn, tenant_id)
+    if tenant_id:
+        allocated = [dict(r) for r in (list_allocated_domains(conn, int(tenant_id)) or [])]
+    else:
+        allocated = [dict(r) for r in (fetchall(conn, "SELECT * FROM mail_domains ORDER BY id ASC") or [])]
     ids = [int(d["id"]) for d in allocated]
     stats_by = send_stats_today_by_domain(conn, ids)
     sendable = []
@@ -183,6 +187,12 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
     queued_sum = 0
     total_cap = 0
     domains = []
+    day_label = ""
+    try:
+        now_local = datetime.now(_op_tz(conn))
+        day_label = now_local.strftime("%d.%m.%Y") + " TR"
+    except Exception:
+        day_label = "bugün"
     for d in allocated:
         did = int(d["id"])
         stt = stats_by.get(did) or {}
@@ -193,12 +203,25 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
         cap = int(d.get("daily_cap") or 0)
         rem = max(0, cap - sent) if cap > 0 else 0
         st = (d.get("warm_status") or "").strip().lower()
+        smtp_ok = domain_has_smtp(d)
+        local = (d.get("from_local") or "noreply").strip() or "noreply"
+        host = (d.get("domain") or "").strip()
         is_blocked = st in ("paused", "burned")
-        reason = f"Domain {st}" if is_blocked else ("cap" if rem <= 0 else "")
-        blocked = is_blocked or rem <= 0
+        if not smtp_ok:
+            reason = "SMTP yok"
+        elif is_blocked:
+            reason = f"Domain {st}"
+        elif rem <= 0:
+            reason = "cap"
+        else:
+            reason = ""
+        can_send = smtp_ok and not is_blocked and rem > 0
+        pct = round(100.0 * sent / cap, 1) if cap > 0 else 0.0
         item = {
             "id": did,
-            "domain": d.get("domain") or "",
+            "domain": host,
+            "from_local": local,
+            "from_email": f"{local}@{host}" if host else local,
             "warm_status": st,
             "warmup_cohort": (d.get("warmup_cohort") or "new"),
             "daily_cap": cap,
@@ -207,8 +230,10 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
             "fail_today": fail,
             "queued_today": queued,
             "remaining_today": rem,
+            "pct_used": min(100.0, max(0.0, pct)),
             "health_score": int(d.get("health_score") or 0),
-            "sendable": not blocked,
+            "smtp_ready": smtp_ok,
+            "sendable": can_send,
             "block_reason": reason,
         }
         domains.append(item)
@@ -216,7 +241,7 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
         ok_sum += ok
         fail_sum += fail
         queued_sum += queued
-        if cap > 0:
+        if cap > 0 and smtp_ok:
             total_cap += cap
         if item["sendable"]:
             sendable.append(item)
@@ -231,6 +256,7 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
         "queued_today": queued_sum,
         "total_cap": total_cap,
         "domains": domains,
+        "day_label": day_label,
         "auto_default": True,
         "note": "Kampanya domain seçmez — sistem sağlık + günlük cap’e göre döner.",
     }

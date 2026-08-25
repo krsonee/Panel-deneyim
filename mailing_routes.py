@@ -3745,6 +3745,18 @@ def create_mailing_blueprint(permission_required):
 
             sc = smartico_dashboard_summary(conn)
 
+            _dash_domain_today = {
+                "domains": [],
+                "day_label": "",
+                "allocated_count": 0,
+                "sendable_count": 0,
+            }
+            try:
+                from mail_domain_pick import tenant_domain_capacity_snapshot
+                _dash_domain_today = tenant_domain_capacity_snapshot(conn, _tid)
+            except Exception as _dtx:
+                print(f"⚠️  dashboard domain_today: {_dtx}")
+
             by_tenant = None
             if not _tid and _sess.get("mail_is_superadmin"):
                 # "Tümü" görünümü — superadmin genel toplamların yanında
@@ -3779,6 +3791,7 @@ def create_mailing_blueprint(permission_required):
             },
             "smartico": sc,
             "domains": domains,
+            "domain_today": _dash_domain_today,
             "provider_mode": provider,
             "delivery_health": delivery_health,
             "by_tenant": by_tenant,

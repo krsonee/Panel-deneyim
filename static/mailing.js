@@ -1283,7 +1283,7 @@
       }
       setText("mail-dash-note", res.data.note || "");
       mailDomains = res.data.domains || [];
-      renderDomainChips(mailDomains);
+      renderDomainTodayCards(res.data.domain_today || { domains: [] });
       updateProviderPill(res.data.provider_mode);
       mailShowDeliveryAlert(res.data.delivery_health, res.data.provider_mode);
       renderTenantBreakdown(res.data.by_tenant);
@@ -1353,6 +1353,99 @@
       return '<span class="acc-chip"><span class="acc-chip-text">' + esc(d.domain) +
         "</span> " + badge + smtp + "</span>";
     }).join("");
+  }
+
+  function mailDomainWarmBadge(st) {
+    st = String(st || "").toLowerCase();
+    if (st === "warm") return '<span class="mm-badge mm-badge-ok">ısınmış</span>';
+    if (st === "warming") return '<span class="mm-badge mm-badge-warn">ısınıyor</span>';
+    if (st === "cold") return '<span class="mm-badge mm-badge-warn">soğuk</span>';
+    if (st === "paused") return '<span class="mm-badge mm-badge-danger">durdu</span>';
+    if (st === "burned") return '<span class="mm-badge mm-badge-danger">yanmış</span>';
+    if (st) return '<span class="mm-badge mm-badge-warn">' + esc(st) + "</span>";
+    return "";
+  }
+
+  function mailDomainTodayCardHtml(d, rotateRank) {
+    var sent = Number(d.sent_today) || 0;
+    var ok = Number(d.success_today) || 0;
+    var fail = Number(d.fail_today) || 0;
+    var queued = Number(d.queued_today) || 0;
+    var rem = Number(d.remaining_today) || 0;
+    var cap = Number(d.daily_cap) || 0;
+    var pct = cap > 0 ? Math.min(100, Math.max(0, Math.round((sent / cap) * 100))) : 0;
+    var cls = "mm-dom-today-card";
+    if (!d.smtp_ready || d.warm_status === "paused" || d.warm_status === "burned") cls += " is-blocked";
+    else if (cap > 0 && rem <= 0) cls += " is-full";
+    else if (sent > 0) cls += " is-active";
+    var fillCls = "mail-quota-fill";
+    if (pct >= 90 || (cap > 0 && rem <= 0)) fillCls += " is-danger";
+    else if (pct >= 70) fillCls += " is-warn";
+    var statusTxt = d.sendable
+      ? (rotateRank === 1 ? "sıradaki" : ("havuz #" + rotateRank))
+      : (d.block_reason === "cap" ? "cap doldu" : (d.block_reason || "kapalı"));
+    var queuedBit = queued > 0
+      ? '<div class="mm-dom-today-nums-extra">kuyruk ' + fmtNum(queued) + "</div>"
+      : "";
+    return '<article class="' + cls + '">' +
+      '<div class="mm-dom-today-head">' +
+        '<div>' +
+          '<div class="mm-dom-today-name">' + esc(d.domain || "—") + "</div>" +
+          '<div class="mm-dom-today-from">' + esc(d.from_email || ((d.from_local || "noreply") + "@" + (d.domain || ""))) + "</div>" +
+        "</div>" +
+        '<div class="mm-dom-today-badges">' + mailDomainWarmBadge(d.warm_status) + "</div>" +
+      "</div>" +
+      '<div class="mm-dom-today-nums">' +
+        '<div class="ok"><b>' + fmtNum(ok) + "</b><span>başarılı</span></div>" +
+        '<div class="fail"><b>' + fmtNum(fail) + "</b><span>fail</span></div>" +
+        '<div class="all"><b>' + fmtNum(sent) + "</b><span>atıldı</span></div>" +
+      "</div>" + queuedBit +
+      '<div class="mail-quota-bar" aria-hidden="true"><div class="' + fillCls + '" style="width:' + pct + '%"></div></div>' +
+      '<div class="mm-dom-today-foot">' +
+        '<span>kalan ' + fmtNum(rem) + (cap > 0 ? (" / " + fmtNum(cap)) : "") + "</span>" +
+        "<span>" + esc(statusTxt) + "</span>" +
+      "</div>" +
+    "</article>";
+  }
+
+  function renderDomainTodayCards(cap) {
+    if (!cap) return;
+    var day = cap.day_label || "";
+    ["mail-dash-domain-day", "mail-camp-domain-day"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = day
+        ? (id === "mail-camp-domain-day" ? ("Bugün · " + day) : day)
+        : el.textContent;
+    });
+    var list = (cap.domains || []).slice();
+    var ranked = list.filter(function (d) { return d.sendable; }).slice().sort(function (a, b) {
+      var ar = Number(a.remaining_today) || 0;
+      var br = Number(b.remaining_today) || 0;
+      if (br !== ar) return br - ar;
+      var ah = Number(a.health_score) || 0;
+      var bh = Number(b.health_score) || 0;
+      if (bh !== ah) return bh - ah;
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
+    });
+    var rankById = {};
+    ranked.forEach(function (d, i) { rankById[d.id] = i + 1; });
+    list.sort(function (a, b) {
+      var as = Number(a.sent_today) || 0;
+      var bs = Number(b.sent_today) || 0;
+      if (bs !== as) return bs - as;
+      var ar = Number(a.remaining_today) || 0;
+      var br = Number(b.remaining_today) || 0;
+      if (br !== ar) return br - ar;
+      return String(a.domain || "").localeCompare(String(b.domain || ""));
+    });
+    var html = list.length
+      ? list.map(function (d) { return mailDomainTodayCardHtml(d, rankById[d.id] || 0); }).join("")
+      : '<p class="muted" style="margin:0;">Tahsisli domain yok.</p>';
+    ["mail-dash-domain-cards", "mail-camp-domain-cards"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.innerHTML = html;
+    });
   }
 
   function setText(id, val) {
@@ -2870,6 +2963,7 @@
         : "Gönderilebilir domain yok — Platform/ısıtma kontrol et.";
     }
     window._mailDomainCapacity = cap;
+    renderDomainTodayCards(cap);
   }
 
   function refreshDomainCapacity() {
