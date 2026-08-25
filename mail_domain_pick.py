@@ -180,6 +180,7 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
     sent_sum = 0
     ok_sum = 0
     fail_sum = 0
+    queued_sum = 0
     total_cap = 0
     domains = []
     for d in allocated:
@@ -188,6 +189,7 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
         sent = int(stt.get("used") or 0)
         ok = int(stt.get("success") or 0)
         fail = int(stt.get("fail") or 0)
+        queued = int(stt.get("queued") or 0)
         cap = int(d.get("daily_cap") or 0)
         rem = max(0, cap - sent) if cap > 0 else 0
         st = (d.get("warm_status") or "").strip().lower()
@@ -203,6 +205,7 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
             "sent_today": sent,
             "success_today": ok,
             "fail_today": fail,
+            "queued_today": queued,
             "remaining_today": rem,
             "health_score": int(d.get("health_score") or 0),
             "sendable": not blocked,
@@ -212,6 +215,7 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
         sent_sum += sent
         ok_sum += ok
         fail_sum += fail
+        queued_sum += queued
         if cap > 0:
             total_cap += cap
         if item["sendable"]:
@@ -224,6 +228,7 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
         "sent_today": sent_sum,
         "success_today": ok_sum,
         "fail_today": fail_sum,
+        "queued_today": queued_sum,
         "total_cap": total_cap,
         "domains": domains,
         "auto_default": True,

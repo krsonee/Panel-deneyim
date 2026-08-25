@@ -2830,9 +2830,12 @@
     if (rem) rem.textContent = "Bugün kalan " + fmtNum(remaining);
     var statsEl = document.getElementById("mail-domain-cap-stats");
     if (statsEl) {
-      statsEl.textContent = "atıldı " + fmtNum(sentN) +
+      var line = "atıldı " + fmtNum(sentN) +
         " · başarılı " + fmtNum(okN) +
         " · fail " + fmtNum(failN);
+      var queuedN = Number(cap.queued_today) || 0;
+      if (queuedN > 0) line += " · kuyruk " + fmtNum(queuedN);
+      statsEl.textContent = line;
     }
     if (doms) {
       doms.textContent = sendable + " / " + allocated + " domain gönderilebilir";
@@ -2886,11 +2889,16 @@
     if (used) used.textContent = "kullanılan " + fmtNum(q.used) + " / " + fmtNum(q.limit);
     var qStats = document.getElementById("mail-quota-stats");
     if (qStats) {
-      qStats.textContent = "atıldı " + fmtNum(q.used) +
+      var qLine = "atıldı " + fmtNum(q.used) +
         " · başarılı " + fmtNum(q.success) +
         " · fail " + fmtNum(q.fail);
+      if (Number(q.queued) > 0) qLine += " · kuyruk " + fmtNum(q.queued);
+      qStats.textContent = qLine;
     }
-    if (renew) renew.textContent = "yenilenme: " + (q.renews_at_label || "—");
+    if (renew) {
+      renew.textContent = "yenilenme: " + (q.renews_at_label || "—") +
+        (q.tz ? (" · gün " + q.tz) : "");
+    }
     if (fill) {
       var pct = Math.min(100, Math.max(0, Number(q.pct_used) || 0));
       fill.style.width = pct + "%";
@@ -2899,13 +2907,21 @@
     }
     if (hint) {
       var lastBit = "";
-      if (q.last_send_at) {
+      if (q.last_send_label) {
+        lastBit = " Son kayıt: " + q.last_send_label +
+          (q.last_send_status ? (" (" + q.last_send_status + ")") : "") + ".";
+      } else if (q.last_send_at) {
         lastBit = " Son SMTP: " + String(q.last_send_at).replace("T", " ").slice(0, 16) +
           (q.last_send_status ? (" (" + q.last_send_status + ")") : "") + ".";
       }
+      if (q.recent_sends && q.recent_sends.length) {
+        lastBit += " " + q.recent_sends.slice(0, 3).map(function (s) {
+          return "#" + s.id + " " + (s.status || "") + " " + (s.when || "");
+        }).join(" · ") + ".";
+      }
       hint.textContent = q.exhausted
         ? ("Kota dolu — kampanya başlatılmaz. " + (q.renews_at_label || "") + lastBit)
-        : ("Bugün SMTP’ye gidenler sayılıyor (başarılı+fail). Kampanya kalan kotayı (" +
+        : ("Bugün (TR) SMTP + kuyruk sayılıyor. Kampanya kalan kotayı (" +
           fmtNum(q.remaining) + ") aşarsa başlamaz." + lastBit);
     }
     window._mailAccountQuota = q;
