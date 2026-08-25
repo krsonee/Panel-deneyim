@@ -5,15 +5,22 @@ Limit tüm domain’ler / tenant’lar için ortaktır (Main Account Daily quota
 Sayaç, SMTP’ye gerçekten giden mailleri sayar (sent + fail + Alibaba
 real_status). Kuyrukta kalan / hiç gitmeyen skip sayılmaz.
 
-Zaman penceresi: COALESCE(sent_at, created_at) — kuyruk dün, gönderim bugün
-ise bugünün kotasına yazılır. Timestamp T/Z/boşluk/+00:00 karışımı normalize edilir.
+Zaman penceresi raporlarla aynı: CAST(created_at/sent_at AS TEXT) >= 'YYYY-MM-DD'.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from database import fetchall, fetchone, get_mail_setting, scalar, upsert_mail_setting
+from database import (
+    fetchall,
+    fetchone,
+    get_mail_setting,
+    row_get,
+    safe_rollback,
+    scalar,
+    upsert_mail_setting,
+)
 
 try:
     from zoneinfo import ZoneInfo
@@ -88,36 +95,13 @@ def _day_window(conn) -> tuple[str, str, datetime, str]:
     return since, until, end_local, tz_name
 
 
-def _norm_bound(iso_s: str) -> str:
-    """'2026-08-24T00:00:00Z' → '2026-08-24 00:00:00' (lexicographic TEXT compare)."""
-    s = (iso_s or "").replace("T", " ").replace("Z", "")
-    s = s.replace("+00:00", "").replace("+00", "")
-    return s.strip()
-
-
-def _norm_ts_sql(expr: str) -> str:
-    return (
-        "REPLACE(REPLACE(REPLACE(REPLACE("
-        f"CAST({expr} AS TEXT), 'T', ' '), 'Z', ''), '+00:00', ''), '+00', '')"
-    )
-
-
-def send_event_ts_sql(alias: str = "") -> str:
-    """SMTP anı (sent_at); yoksa created_at."""
-    p = f"{alias}." if alias else ""
-    return f"COALESCE(NULLIF(TRIM({p}sent_at), ''), {p}created_at)"
-
-
-# Alibaba kotasına / domain cap’e yazılan gönderimler (SMTP’ye çıktı veya
-# Alibaba real_status geldi). queued + hiç gitmeyen skip hariç.
+# Raporların çalışan kalıbı: CAST(col AS TEXT) >= 'YYYY-MM-DD'
+# Önceki REPLACE(T/Z/+00:00) karşılaştırması bazı PG TEXT formatlarında 0 satır
+# döndürüyordu — kredi düşer, günlük sayaç 0 kalırdı.
 QUOTA_HIT_SQL = """
 (
-  LOWER(COALESCE(status, '')) NOT IN ('queued', '')
-  AND (
-    LOWER(status) IN ('sent', 'simulated', 'failed', 'bounced')
-    OR COALESCE(real_status, '') IN ('delivered', 'invalid', 'failed', 'spam')
-    OR TRIM(COALESCE(provider_msg_id, '')) <> ''
-  )
+  LOWER(COALESCE(status, '')) IN ('sent', 'simulated', 'failed', 'bounced')
+  OR COALESCE(real_status, '') IN ('delivered', 'invalid', 'failed', 'spam')
 )
 """
 
@@ -128,9 +112,10 @@ FAIL_SQL = """
 )
 """
 
-SUCCESS_SQL = f"""
+SUCCESS_SQL = """
 (
-  NOT {FAIL_SQL}
+  COALESCE(real_status, '') NOT IN ('invalid', 'failed', 'spam')
+  AND LOWER(COALESCE(status, '')) NOT IN ('failed', 'bounced')
   AND (
     COALESCE(real_status, '') = 'delivered'
     OR LOWER(COALESCE(status, '')) IN ('sent', 'simulated')
@@ -139,10 +124,20 @@ SUCCESS_SQL = f"""
 """
 
 
-def window_filter_sql(conn, alias: str = "") -> tuple[str, tuple[str, str]]:
+def window_filter_sql(conn, alias: str = "") -> tuple[str, tuple]:
+    """Bugünün kota penceresi — reports_kpi ile aynı TEXT tarih karşılaştırması."""
     since, until, _, _ = _day_window(conn)
-    ts = _norm_ts_sql(send_event_ts_sql(alias))
-    return f"{ts} >= ? AND {ts} < ?", (_norm_bound(since), _norm_bound(until))
+    p = f"{alias}." if alias else ""
+    since_d = since[:10]
+    until_d = until[:10]
+    created = f"CAST({p}created_at AS TEXT)"
+    sent = f"CAST({p}sent_at AS TEXT)"
+    sql = f"""(
+      ({created} >= ? AND {created} < ?)
+      OR ({p}sent_at IS NOT NULL AND TRIM(COALESCE({p}sent_at, '')) <> ''
+          AND {sent} >= ? AND {sent} < ?)
+    )"""
+    return sql, (since_d, until_d, since_d, until_d)
 
 
 def _empty_stats() -> dict:
@@ -157,9 +152,7 @@ def send_stats_today(conn, *, domain_id: int | None = None) -> dict:
     if domain_id:
         extra = " AND domain_id = ?"
         args.append(int(domain_id))
-    row = fetchone(
-        conn,
-        f"""
+    sql = f"""
         SELECT
           COUNT(*) AS used,
           COALESCE(SUM(CASE WHEN {SUCCESS_SQL} THEN 1 ELSE 0 END), 0) AS success,
@@ -168,15 +161,56 @@ def send_stats_today(conn, *, domain_id: int | None = None) -> dict:
         WHERE {QUOTA_HIT_SQL}
           AND {win}
           {extra}
-        """,
-        tuple(args),
-    )
+    """
+    try:
+        row = fetchone(conn, sql, tuple(args))
+    except Exception as exc:
+        print(f"⚠️  send_stats_today: {exc}")
+        safe_rollback(conn)
+        return _send_stats_today_fallback(conn, domain_id=domain_id)
     if not row:
         return _empty_stats()
     return {
-        "used": int(row["used"] or 0),
-        "success": int(row["success"] or 0),
-        "fail": int(row["fail"] or 0),
+        "used": int(row_get(row, "used") or 0),
+        "success": int(row_get(row, "success") or 0),
+        "fail": int(row_get(row, "fail") or 0),
+    }
+
+
+def _send_stats_today_fallback(conn, *, domain_id: int | None = None) -> dict:
+    """En sade sayım — reports_kpi ile birebir tarih filtresi."""
+    since, until, _, _ = _day_window(conn)
+    extra = ""
+    args: list = [since[:10], until[:10]]
+    if domain_id:
+        extra = " AND domain_id = ?"
+        args.append(int(domain_id))
+    try:
+        row = fetchone(
+            conn,
+            f"""
+            SELECT
+              COUNT(*) AS used,
+              COALESCE(SUM(CASE WHEN LOWER(COALESCE(status,'')) IN ('sent','simulated') THEN 1 ELSE 0 END), 0) AS success,
+              COALESCE(SUM(CASE WHEN LOWER(COALESCE(status,'')) IN ('failed','bounced') THEN 1 ELSE 0 END), 0) AS fail
+            FROM mail_sends
+            WHERE LOWER(COALESCE(status,'')) IN ('sent','simulated','failed','bounced')
+              AND CAST(created_at AS TEXT) >= ?
+              AND CAST(created_at AS TEXT) < ?
+              {extra}
+            """,
+            tuple(args),
+        )
+    except Exception as exc:
+        print(f"⚠️  send_stats_today fallback: {exc}")
+        safe_rollback(conn)
+        return _empty_stats()
+    if not row:
+        return _empty_stats()
+    return {
+        "used": int(row_get(row, "used") or 0),
+        "success": int(row_get(row, "success") or 0),
+        "fail": int(row_get(row, "fail") or 0),
     }
 
 
@@ -187,31 +221,36 @@ def send_stats_today_by_domain(conn, domain_ids: list[int]) -> dict[int, dict]:
         return out
     win, params = window_filter_sql(conn)
     ph = ",".join(["?"] * len(ids))
-    rows = fetchall(
-        conn,
-        f"""
-        SELECT
-          domain_id,
-          COUNT(*) AS used,
-          COALESCE(SUM(CASE WHEN {SUCCESS_SQL} THEN 1 ELSE 0 END), 0) AS success,
-          COALESCE(SUM(CASE WHEN {FAIL_SQL} THEN 1 ELSE 0 END), 0) AS fail
-        FROM mail_sends
-        WHERE domain_id IN ({ph})
-          AND {QUOTA_HIT_SQL}
-          AND {win}
-        GROUP BY domain_id
-        """,
-        tuple(ids) + tuple(params),
-    ) or []
+    try:
+        rows = fetchall(
+            conn,
+            f"""
+            SELECT
+              domain_id,
+              COUNT(*) AS used,
+              COALESCE(SUM(CASE WHEN {SUCCESS_SQL} THEN 1 ELSE 0 END), 0) AS success,
+              COALESCE(SUM(CASE WHEN {FAIL_SQL} THEN 1 ELSE 0 END), 0) AS fail
+            FROM mail_sends
+            WHERE domain_id IN ({ph})
+              AND {QUOTA_HIT_SQL}
+              AND {win}
+            GROUP BY domain_id
+            """,
+            tuple(ids) + tuple(params),
+        ) or []
+    except Exception as exc:
+        print(f"⚠️  send_stats_today_by_domain: {exc}")
+        safe_rollback(conn)
+        return out
     for r in rows:
         try:
-            did = int(r["domain_id"])
+            did = int(row_get(r, "domain_id"))
         except (TypeError, ValueError, KeyError):
             continue
         out[did] = {
-            "used": int(r["used"] or 0),
-            "success": int(r["success"] or 0),
-            "fail": int(r["fail"] or 0),
+            "used": int(row_get(r, "used") or 0),
+            "success": int(row_get(r, "success") or 0),
+            "fail": int(row_get(r, "fail") or 0),
         }
     return out
 
@@ -227,6 +266,25 @@ def quota_snapshot(conn) -> dict:
     remaining = max(0, limit - used)
     since, until, renews_at, tz_name = _day_window(conn)
     pct = round(100.0 * used / limit, 1) if limit else 0.0
+    last_status = ""
+    last_at = ""
+    try:
+        last = fetchone(
+            conn,
+            """
+            SELECT status, created_at, sent_at
+            FROM mail_sends
+            WHERE LOWER(COALESCE(status,'')) IN ('sent','simulated','failed','bounced')
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+        )
+        if last:
+            last_status = str(row_get(last, "status") or "")
+            last_at = str(row_get(last, "sent_at") or row_get(last, "created_at") or "")
+    except Exception as exc:
+        print(f"⚠️  quota last_send: {exc}")
+        safe_rollback(conn)
     return {
         "limit": limit,
         "used": used,
@@ -240,6 +298,8 @@ def quota_snapshot(conn) -> dict:
         "window_end_utc": until,
         "renews_at": renews_at.isoformat(),
         "renews_at_label": renews_at.strftime("%d.%m.%Y %H:%M") + f" ({tz_name})",
+        "last_send_at": last_at,
+        "last_send_status": last_status,
         "source": "alibaba_account_daily",
     }
 

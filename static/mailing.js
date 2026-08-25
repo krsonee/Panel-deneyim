@@ -2898,10 +2898,15 @@
       fill.classList.toggle("is-danger", pct >= 90 || !!q.exhausted);
     }
     if (hint) {
+      var lastBit = "";
+      if (q.last_send_at) {
+        lastBit = " Son SMTP: " + String(q.last_send_at).replace("T", " ").slice(0, 16) +
+          (q.last_send_status ? (" (" + q.last_send_status + ")") : "") + ".";
+      }
       hint.textContent = q.exhausted
-        ? ("Kota dolu — kampanya başlatılmaz. " + (q.renews_at_label || ""))
+        ? ("Kota dolu — kampanya başlatılmaz. " + (q.renews_at_label || "") + lastBit)
         : ("Bugün SMTP’ye gidenler sayılıyor (başarılı+fail). Kampanya kalan kotayı (" +
-          fmtNum(q.remaining) + ") aşarsa başlamaz.");
+          fmtNum(q.remaining) + ") aşarsa başlamaz." + lastBit);
     }
     window._mailAccountQuota = q;
   }
