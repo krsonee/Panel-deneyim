@@ -1229,6 +1229,11 @@ def platform_account_quota_get():
     from mail_credit import credit_snapshot
 
     with closing(get_db()) as conn:
+        try:
+            from mail_campaign_worker import reconcile_skipped_but_recipient_sent
+            reconcile_skipped_but_recipient_sent()
+        except Exception:
+            pass
         snap = quota_snapshot(conn)
         credit = credit_snapshot(conn)
     return jsonify({"quota": snap, "credit": credit})

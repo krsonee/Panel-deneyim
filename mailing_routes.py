@@ -7403,6 +7403,11 @@ def create_mailing_blueprint(permission_required):
         from mail_credit import credit_snapshot, tenant_credit_snapshot
 
         with closing(get_db()) as conn:
+            try:
+                from mail_campaign_worker import reconcile_skipped_but_recipient_sent
+                reconcile_skipped_but_recipient_sent()
+            except Exception:
+                pass
             snap = quota_snapshot(conn)
             credit = credit_snapshot(conn)
             tenant_credit = None
@@ -7423,6 +7428,11 @@ def create_mailing_blueprint(permission_required):
         from mail_tenant import current_tenant_id
 
         with closing(get_db()) as conn:
+            try:
+                from mail_campaign_worker import reconcile_skipped_but_recipient_sent
+                reconcile_skipped_but_recipient_sent()
+            except Exception:
+                pass
             try:
                 ensure_auto_domain_column(conn)
             except Exception:

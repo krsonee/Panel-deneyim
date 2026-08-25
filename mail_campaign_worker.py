@@ -288,6 +288,10 @@ def _scheduler_loop():
     except Exception as exc:
         print(f"⚠️  skipped-but-delivered reconcile (ilk çalıştırma): {exc}")
     try:
+        reconcile_skipped_but_recipient_sent(force=True)
+    except Exception as exc:
+        print(f"⚠️  skipped-but-recipient-sent heal (ilk çalıştırma): {exc}")
+    try:
         _reconcile_credit_counters()
     except Exception as exc:
         print(f"⚠️  credit reconcile (ilk çalıştırma): {exc}")
@@ -309,6 +313,10 @@ def _scheduler_loop():
                 _reconcile_skipped_but_delivered()
             except Exception as exc:
                 print(f"⚠️  skipped-but-delivered reconcile: {exc}")
+            try:
+                reconcile_skipped_but_recipient_sent(force=True)
+            except Exception as exc:
+                print(f"⚠️  skipped-but-recipient-sent heal: {exc}")
         # ~her 1 dakikada bir (8s * 8) — Alibaba kotası dolduğu için durdurulmuş
         # kampanyaları, kota yenilenir yenilenmez (ya da superadmin limiti elle
         # yükseltirse) otomatik devam ettirir.
@@ -384,7 +392,14 @@ def _sweep_stuck_queued_sends():
         rows = fetchall(
             conn,
             """
-            SELECT s.id, s.campaign_id, c.status AS camp_status
+            SELECT s.id, s.campaign_id, c.status AS camp_status,
+              (
+                SELECT r.status FROM mail_campaign_recipients r
+                WHERE r.send_id = s.id
+                   OR (r.campaign_id = s.campaign_id AND r.contact_id = s.contact_id)
+                ORDER BY CASE WHEN r.send_id = s.id THEN 0 ELSE 1 END
+                LIMIT 1
+              ) AS recip_status
             FROM mail_sends s
             LEFT JOIN mail_campaigns c ON c.id = s.campaign_id
             WHERE s.status = 'queued'
@@ -403,9 +418,28 @@ def _sweep_stuck_queued_sends():
         if not rows:
             return
         n = 0
+        n_sent = 0
         for r in rows:
             sid = int(row_get(r, "id"))
             camp_status = row_get(r, "camp_status")
+            recip_st = str(row_get(r, "recip_status") or "").strip().lower()
+            # Worker SMTP sonrası recipient'ı 'sent' yazmış ama mail_sends
+            # queued kalmış olabilir (commit crash-window). Bunları skipped
+            # yapmak günlük kotayı 0 gösterir — sent'e çek.
+            if recip_st in ("sent", "simulated"):
+                execute(
+                    conn,
+                    """
+                    UPDATE mail_sends
+                    SET status = ?,
+                        sent_at = COALESCE(sent_at, created_at),
+                        error = ''
+                    WHERE id = ? AND status = 'queued'
+                    """,
+                    (recip_st, sid),
+                )
+                n_sent += 1
+                continue
             msg = _STUCK_SWEEP_DONE_MARK if camp_status == "done" else _STUCK_SWEEP_CANCEL_MARK
             execute(
                 conn,
@@ -418,7 +452,9 @@ def _sweep_stuck_queued_sends():
             )
             n += 1
         conn.commit()
-        print(f"✉️  stuck-queued sweep: {n} kayıt skipped'e çevrildi (accepted/rejected sayılmaz)")
+        print(
+            f"✉️  stuck-queued sweep: {n} skipped, {n_sent} recipient-sent→sent"
+        )
         try:
             from mail_credit import reconcile_credit_used, reconcile_tenant_credit_used
             reconcile_credit_used(conn)
@@ -466,6 +502,78 @@ def _reconcile_skipped_but_delivered():
             except Exception:
                 pass
             print(f"⚠️  skipped-but-delivered reconcile: {exc}")
+
+
+_last_recip_sent_heal = 0.0
+_RECIP_SENT_HEAL_EVERY = 30.0
+
+
+def reconcile_skipped_but_recipient_sent(*, force: bool = False):
+    """Stuck-sweep queued→skipped yazmış ama kampanya alıcısı 'sent'.
+
+    deliver_mail SMTP'yi atıp 'sent' döner; worker recipient'ı sent yazar;
+    mail_sends commit düşerse queued kalır; 1 saat sonra sweep skipped yapar.
+    Kota/kredi skipped saymaz — bugün 1083+1700 kampanyalar 0 görünür.
+    """
+    global _last_recip_sent_heal
+    now_m = time.time()
+    if not force and (now_m - _last_recip_sent_heal) < _RECIP_SENT_HEAL_EVERY:
+        return 0
+    _last_recip_sent_heal = now_m
+    with closing(get_db()) as conn:
+        try:
+            cur = execute(
+                conn,
+                """
+                UPDATE mail_sends
+                SET status = 'sent',
+                    error = '',
+                    sent_at = COALESCE(sent_at, created_at)
+                WHERE status = 'skipped'
+                  AND COALESCE(real_status, '') = ''
+                  AND (
+                    error LIKE '%queued kalmıştı%'
+                    OR error LIKE '%gönderim durumu doğrulanamadı%'
+                    OR error LIKE '%olası crash-window%'
+                  )
+                  AND (
+                    id IN (
+                      SELECT r.send_id FROM mail_campaign_recipients r
+                      WHERE r.send_id IS NOT NULL
+                        AND LOWER(COALESCE(r.status, '')) IN ('sent', 'simulated')
+                    )
+                    OR EXISTS (
+                      SELECT 1 FROM mail_campaign_recipients r
+                      WHERE r.campaign_id = mail_sends.campaign_id
+                        AND r.contact_id = mail_sends.contact_id
+                        AND LOWER(COALESCE(r.status, '')) IN ('sent', 'simulated')
+                    )
+                  )
+                """,
+            )
+            n = 0
+            try:
+                n = int(cur.rowcount or 0)
+            except Exception:
+                n = 0
+            conn.commit()
+            if n:
+                print(f"✉️  skipped-but-recipient-sent heal: {n} kayıt sent'e alındı")
+                try:
+                    from mail_credit import reconcile_credit_used, reconcile_tenant_credit_used
+                    reconcile_credit_used(conn)
+                    reconcile_tenant_credit_used(conn)
+                    conn.commit()
+                except Exception:
+                    pass
+            return n
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            print(f"⚠️  skipped-but-recipient-sent heal: {exc}")
+            return 0
 
 
 def _reconcile_misclassified_stuck_sends():
@@ -1129,6 +1237,21 @@ def _process_campaign(campaign_id):
                         "UPDATE mail_campaign_recipients SET status = ?, send_id = ? WHERE id = ?",
                         (recip_status, send_id, rec["recipient_id"]),
                     )
+                    if recip_status in ("sent", "simulated") and send_id:
+                        # deliver_mail SMTP'yi atıp sent dönmüş olsa da mail_sends
+                        # queued kalabilir (commit crash). Recipient ile aynı txn'de kapat.
+                        execute(
+                            conn,
+                            """
+                            UPDATE mail_sends
+                            SET status = ?,
+                                sent_at = COALESCE(sent_at, ?),
+                                error = ''
+                            WHERE id = ?
+                              AND LOWER(COALESCE(status, '')) IN ('queued', 'skipped')
+                            """,
+                            (recip_status, iso(utcnow()), send_id),
+                        )
                     if status in ("simulated", "sent", "queued"):
                         _bump_campaign_counter(conn, campaign_id, sent=1)
                         try:

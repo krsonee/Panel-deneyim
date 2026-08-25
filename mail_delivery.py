@@ -640,13 +640,42 @@ def deliver_mail(
                 consume_credit(conn, tenant_id=credit_tenant_id, n=1)
             except Exception as cexc:
                 print(f"⚠️  credit consume: {cexc}")
-            # SMTP fiilen gönderildi (harici, geri alınamaz) — durum güncellemesi
-            # commit edilmezse ve süreç burada çökerse kayıt 'queued' kalır ve
-            # bir retry mekanizması aynı maili tekrar gönderebilir (double-send).
-            try:
-                conn.commit()
-            except Exception:
-                safe_rollback(conn)
+            # SMTP fiilen gönderildi (harici, geri alınamaz). Commit düşerse
+            # kayıt queued kalır; retry ile yazmayı dene, yine olmazsa worker
+            # recipient-sent heal düzeltecek (çift SMTP yok).
+            persisted = False
+            for attempt in range(3):
+                try:
+                    conn.commit()
+                    persisted = True
+                    break
+                except Exception as persist_exc:
+                    print(
+                        f"⚠️  SMTP sent persist retry {attempt + 1}/3 "
+                        f"send_id={send_id}: {persist_exc}"
+                    )
+                    safe_rollback(conn)
+                    try:
+                        execute(
+                            conn,
+                            """
+                            UPDATE mail_sends
+                            SET status = 'sent', provider_msg_id = ?, sent_at = ?, error = ''
+                            WHERE id = ?
+                            """,
+                            (msg_id or "", now, send_id),
+                        )
+                        try:
+                            from mail_credit import consume_credit
+                            consume_credit(conn, tenant_id=credit_tenant_id, n=1)
+                        except Exception:
+                            pass
+                    except Exception as rewrite_exc:
+                        print(f"⚠️  SMTP sent rewrite send_id={send_id}: {rewrite_exc}")
+            if not persisted:
+                print(
+                    f"⚠️  SMTP sent ama mail_sends queued kalabilir send_id={send_id}"
+                )
             return send_id, "sent", ""
         except Exception as exc:
             last_err = str(exc).strip()[:400] or "SMTP gönderim hatası"
