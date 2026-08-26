@@ -13,8 +13,10 @@ MIN_SAMPLE = 20
 # ≥%80 sürdürme şartı). Domain eşiklerini bu hedeften ÖNCE alarm verecek şekilde
 # sıkılaştırdık — eskiden %10 fail'e kadar izin veriyordu, bu tek başına hesabı
 # %90'ın altına düşürebiliyordu.
-BOUNCE_RATE_MAX = 4.0
-FAIL_RATE_MAX = 7.0
+BOUNCE_RATE_MAX = 6.0
+# SMTP fail neredeyse 0 kalıyordu; asıl kırmızı Alibaba real_status=failed (Gmail 4.7.28).
+# %22 üstü = o domain çürük (vipileti %80). Kardeşler ~%14 ise durmaz, cap düşer.
+FAIL_RATE_MAX = 22.0
 COMPLAINT_RATE_MAX = 0.3
 
 try:
@@ -39,28 +41,52 @@ def _daily_cap_tz(conn):
 
 def _domain_send_stats(conn, domain_id: int, *, hours: int = WINDOW_HOURS) -> dict:
     since = iso(utcnow() - timedelta(hours=max(1, int(hours))))
-    rows = fetchall(
-        conn,
-        """
-        SELECT status, LOWER(COALESCE(error,'')) AS err
-        FROM mail_sends
-        WHERE domain_id = ? AND created_at >= ?
-        """,
-        (int(domain_id), since),
-    ) or []
+    try:
+        rows = fetchall(
+            conn,
+            """
+            SELECT
+              LOWER(COALESCE(status, '')) AS st,
+              LOWER(COALESCE(error, '')) AS err,
+              LOWER(COALESCE(real_status, '')) AS real_st
+            FROM mail_sends
+            WHERE domain_id = ? AND created_at >= ?
+            """,
+            (int(domain_id), since),
+        ) or []
+    except Exception:
+        try:
+            from database import safe_rollback
+            safe_rollback(conn)
+        except Exception:
+            pass
+        rows = fetchall(
+            conn,
+            """
+            SELECT status AS st, LOWER(COALESCE(error,'')) AS err, '' AS real_st
+            FROM mail_sends
+            WHERE domain_id = ? AND created_at >= ?
+            """,
+            (int(domain_id), since),
+        ) or []
     total = bounced = failed = complaints = 0
     for r in rows:
-        st = (r["status"] or "").strip().lower()
-        err = r["err"] or ""
-        if st in ("sent", "simulated", "bounced", "failed"):
-            total += 1
-        if st == "bounced":
+        st = (row_get(r, "st") or "").strip().lower()
+        err = row_get(r, "err") or ""
+        real_st = (row_get(r, "real_st") or "").strip().lower()
+        if st not in ("sent", "simulated", "bounced", "failed"):
+            continue
+        total += 1
+        # Alibaba gerçek sonuç (status çoğu zaman 'sent' kalır) — 26.08 Gmail 4.7.28
+        if real_st in ("failed", "spam"):
+            failed += 1
+        elif real_st == "invalid":
             bounced += 1
-            if "complaint" in err:
-                complaints += 1
+        elif st == "bounced":
+            bounced += 1
         elif st == "failed":
             failed += 1
-        if "complaint" in err and st != "bounced":
+        if "complaint" in err:
             complaints += 1
     return {
         "total": total,
@@ -240,6 +266,15 @@ def domain_is_send_blocked(conn, domain_id) -> tuple[bool, str]:
             sent_today = 0
         if sent_today >= daily_cap:
             return True, f"daily_cap doldu ({sent_today}/{daily_cap})"
+    try:
+        from mail_account_quota import send_stats_today
+        stt = send_stats_today(conn, domain_id=int(domain_id))
+        used = int(stt.get("used") or 0)
+        fail = int(stt.get("fail") or 0)
+        if used >= 40 and (100.0 * fail / used) >= 20.0:
+            return True, f"bugün Alibaba fail %{round(100.0 * fail / used, 1)} (n={used}) — domain dinleniyor"
+    except Exception:
+        pass
     return False, ""
 
 

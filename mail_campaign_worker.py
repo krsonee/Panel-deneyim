@@ -292,6 +292,18 @@ def _scheduler_loop():
     except Exception as exc:
         print(f"⚠️  skipped-but-recipient-sent heal (ilk çalıştırma): {exc}")
     try:
+        from mail_warmup_program import emergency_clamp_inflated_caps
+        with closing(get_db()) as _c:
+            emergency_clamp_inflated_caps(_c)
+            _c.commit()
+    except Exception as exc:
+        print(f"⚠️  warmup safety clamp (ilk çalıştırma): {exc}")
+    try:
+        from mail_domain_health import tick_domain_health_once
+        tick_domain_health_once()
+    except Exception as exc:
+        print(f"⚠️  domain health (ilk çalıştırma): {exc}")
+    try:
         _reconcile_credit_counters()
     except Exception as exc:
         print(f"⚠️  credit reconcile (ilk çalıştırma): {exc}")

@@ -27,6 +27,9 @@ TOTAL_DAYS = 30
 # Tek ısıtma programına (bir cohort track'ine) alınabilecek üst sınır — önceden
 # 20'ye SESSİZCE kırpılıyordu (bkz. start_program/patch_program eski hali).
 MAX_WARMUP_DOMAINS = 300
+# Isınan domaine 3240 yazılmasın (26.08 Gmail 4.7.28). warm olunca program cap'i geçerli.
+WARMING_HARD_MAX = 600
+CLAMP_SETTING = "warmup_safety_clamp_v3"
 # Operatör günü: Türkiye gece yarısı (00:00) sonrası yeni checklist
 OP_TZ = ZoneInfo("Europe/Istanbul") if ZoneInfo else timezone.utc
 # Test/ Tolga Test gibi 3–5’lik denemeler «son bulk günü» sayılmasın
@@ -90,26 +93,26 @@ def day_plan(day: int, *, cohort: str = COHORT_LEGACY) -> dict:
 
     if cohort == COHORT_NEW:
         if d <= 5:
-            per = 10 + (d - 1) * 8  # 10…42
+            per = 8 + (d - 1) * 4  # 8…24
             band = "seed"
             tasks = ["list_scrub", "list_dedupe", "test_send", "spam_check", "bulk_send", "cap_apply"]
         elif d <= 12:
-            per = 50 + (d - 6) * 25  # 50…200
+            per = 30 + (d - 6) * 8  # 30…78
             band = "early"
             tasks = ["list_dedupe", "test_send", "bulk_send", "spam_check", "metrics_review", "cap_apply"]
         elif d <= 20:
-            per = 220 + (d - 13) * 45  # 220…535
+            per = 90 + (d - 13) * 12  # 90…174
             band = "ramp"
             tasks = ["list_scrub", "bulk_send", "spam_check", "metrics_review", "reply_monitor", "cap_apply"]
         elif d <= 26:
-            per = 560 + (d - 21) * 80  # 560…960
+            per = 190 + (d - 21) * 20  # 190…290
             band = "scale"
             tasks = ["list_dedupe", "bulk_send", "metrics_review", "spam_check", "cap_apply"]
         else:
-            per = 1000 + (d - 27) * 150  # 1000…1450
+            per = 320 + (d - 27) * 30  # 320…410
             band = "mature"
             tasks = ["bulk_send", "metrics_review", "reply_monitor", "cap_apply", "spam_check"]
-        per = min(per, 1800)
+        per = min(per, 450)
         titles = {
             "seed": "Yeni domain — tohum (çok düşük hacim)",
             "early": "Yeni domain — erken ısıtma",
@@ -124,28 +127,30 @@ def day_plan(day: int, *, cohort: str = COHORT_LEGACY) -> dict:
             "Legacy programdan bağımsız ilerler — gün numaraları karışmaz.",
         ]
     else:
-        # Domain başına günlük hedef (legacy / ısınmış)
+        # Domain başına günlük hedef (legacy / ısınmış).
+        # Eski ramp gün 22+ 1800…3400 yazıyordu; ısınan domaine 3240 cap
+        # + 10k gece kampanyası Gmail 4.7.28 fail patlatıyordu (26.08).
         if d <= 3:
-            per = 20 + (d - 1) * 15  # 20, 35, 50
+            per = 20 + (d - 1) * 10  # 20, 30, 40
             band = "seed"
             tasks = ["list_scrub", "list_dedupe", "test_send", "spam_check", "bulk_send", "cap_apply"]
         elif d <= 7:
-            per = 80 + (d - 4) * 40  # 80…200
+            per = 50 + (d - 4) * 20  # 50…110
             band = "early"
             tasks = ["list_dedupe", "test_send", "bulk_send", "spam_check", "metrics_review", "cap_apply"]
         elif d <= 14:
-            per = 250 + (d - 8) * 80  # 250…730
+            per = 130 + (d - 8) * 25  # 130…280
             band = "ramp"
             tasks = ["list_scrub", "bulk_send", "spam_check", "metrics_review", "reply_monitor", "cap_apply"]
         elif d <= 21:
-            per = 800 + (d - 15) * 150  # 800…1700
+            per = 300 + (d - 15) * 35  # 300…510
             band = "scale"
             tasks = ["list_dedupe", "bulk_send", "metrics_review", "spam_check", "cap_apply"]
         else:
-            per = 1800 + (d - 22) * 200  # 1800…3400
+            per = 550 + (d - 22) * 30  # 550…790
             band = "mature"
             tasks = ["bulk_send", "metrics_review", "reply_monitor", "cap_apply", "spam_check"]
-        per = min(per, 4000)
+        per = min(per, 800)
         titles = {
             "seed": "Eski domain — tohum / düşük hacim",
             "early": "Eski domain — erken ısıtma",
@@ -168,7 +173,7 @@ def day_plan(day: int, *, cohort: str = COHORT_LEGACY) -> dict:
         "title": titles.get(band, "Isıtma"),
         "per_domain_target": per,
         "total_target_5": per * n_dom,
-        "daily_cap_suggest": min(5000 if cohort == COHORT_LEGACY else 2000, max(80, per + 40)),
+        "daily_cap_suggest": max(40, int(per)),
         "tasks": [
             {
                 "key": k,
@@ -640,7 +645,8 @@ def sync_program_caps(conn, state: dict | None = None, *, cohort: str = COHORT_L
     day_n = compute_day_number(tr, today)
     plan = day_plan(day_n, cohort=cohort)
     cap = int(plan["daily_cap_suggest"])
-    hourly = max(20, min(200, (cap + 19) // 20))
+    cap = min(cap, WARMING_HARD_MAX)
+    hourly = max(8, min(40, (cap + 19) // 20))
     updated = 0
     for did in tr.get("domain_ids") or []:
         try:
@@ -664,12 +670,11 @@ def sync_program_caps(conn, state: dict | None = None, *, cohort: str = COHORT_L
                     warm_day = ?,
                     warm_status = CASE
                         WHEN COALESCE(warm_status, '') IN ('burned', 'paused') THEN warm_status
-                        WHEN ? >= 30 THEN 'warm'
                         ELSE 'warming'
                     END
                 WHERE id = ?
                 """,
-                (cap, hourly, int(day_n), int(day_n), int(did)),
+                (cap, hourly, int(day_n), int(did)),
             )
             updated += 1
         except Exception:
@@ -685,6 +690,54 @@ def sync_program_caps(conn, state: dict | None = None, *, cohort: str = COHORT_L
         "per_domain_target": int(plan["per_domain_target"]),
         "cohort": cohort,
     }
+
+
+def emergency_clamp_inflated_caps(conn) -> dict:
+    """26.08: ısınan domainlere 3240 cap yazılmıştı. Planı + hard max’e çek,
+    Alibaba fail oranı yüksek olanları health tick durdursun.
+
+    Tek seferlik (CLAMP_SETTING); her request’te cap ezilmesin.
+    """
+    from database import get_mail_setting, upsert_mail_setting
+
+    if (get_mail_setting(conn, CLAMP_SETTING, "") or "").strip() == "1":
+        return {"skipped": True, "reason": "already"}
+    updated_tracks = []
+    for cohort in COHORTS:
+        try:
+            res = sync_program_caps(conn, cohort=cohort, force=True)
+            updated_tracks.append(res)
+        except Exception as exc:
+            print(f"⚠️  emergency cap sync [{cohort}]: {exc}")
+    n_cap = 0
+    n_hour = 0
+    try:
+        rows = fetchall(
+            conn,
+            """
+            SELECT id, daily_cap, hourly_cap FROM mail_domains
+            WHERE LOWER(COALESCE(warm_status, '')) = 'warming'
+            """,
+        ) or []
+        for r in rows:
+            did = int(r["id"])
+            cap = int(r["daily_cap"] or 0)
+            hourly = int(r["hourly_cap"] or 0)
+            new_cap = min(cap, WARMING_HARD_MAX) if cap > 0 else cap
+            new_hour = min(hourly, 40) if hourly > 0 else hourly
+            if new_cap != cap or new_hour != hourly:
+                execute(
+                    conn,
+                    "UPDATE mail_domains SET daily_cap = ?, hourly_cap = ? WHERE id = ?",
+                    (new_cap, new_hour, did),
+                )
+                n_cap += 1 if new_cap != cap else 0
+                n_hour += 1 if new_hour != hourly else 0
+    except Exception as exc:
+        print(f"⚠️  emergency warming hard-max: {exc}")
+    upsert_mail_setting(conn, CLAMP_SETTING, "1")
+    print(f"✉️  warmup safety clamp: tracks={updated_tracks} lowered={n_cap}")
+    return {"skipped": False, "tracks": updated_tracks, "lowered": n_cap}
 
 
 def _track_snapshot(conn, st: dict, cohort: str, *, auto_realign=None) -> dict:

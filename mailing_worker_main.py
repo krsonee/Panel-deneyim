@@ -35,10 +35,15 @@ def _tick_warm_domains(conn):
     if last == today:
         return
     try:
-        from mail_warmup_program import load_state as wu_load, maybe_auto_realign_after_gap
+        from mail_warmup_program import load_state as wu_load, maybe_auto_realign_after_gap, COHORTS
 
         wu = wu_load(conn)
-        if wu.get("active") and (wu.get("domain_ids") or []):
+        tracks = wu.get("tracks") or {}
+        program_on = any(bool((tracks.get(c) or {}).get("active")) for c in COHORTS)
+        if not program_on:
+            # v1 düz state
+            program_on = bool(wu.get("active") and (wu.get("domain_ids") or []))
+        if program_on:
             maybe_auto_realign_after_gap(conn)
             upsert_mail_setting(conn, "warm_tick_date", today)
             return
@@ -55,20 +60,12 @@ def _tick_warm_domains(conn):
     ) or []
     for r in rows:
         day = int(r["warm_day"] or 0) + 1
-        base = 50
-        target = max(int(r["daily_cap"] or 500), base)
-        new_cap = min(5000, base + day * max(20, target // 30))
+        new_cap = min(600, 40 + day * 12)
         execute(
             conn,
             "UPDATE mail_domains SET warm_day = ?, daily_cap = ? WHERE id = ?",
             (day, new_cap, r["id"]),
         )
-        if day >= 30 and new_cap >= 2000:
-            execute(
-                conn,
-                "UPDATE mail_domains SET warm_status = 'warm' WHERE id = ?",
-                (r["id"],),
-            )
     upsert_mail_setting(conn, "warm_tick_date", today)
 
 
@@ -91,6 +88,19 @@ def main():
         except Exception as wm_exc:
             print(f"⚠️  weekly maintenance startup: {wm_exc}")
         conn.commit()
+        try:
+            from mail_warmup_program import emergency_clamp_inflated_caps
+            emergency_clamp_inflated_caps(conn)
+            conn.commit()
+        except Exception as clamp_exc:
+            print(f"⚠️  warmup safety clamp: {clamp_exc}")
+        try:
+            from mail_domain_health import tick_domain_health_once
+            n_pause = tick_domain_health_once()
+            if n_pause:
+                print(f"✉️  domain auto-pause on boot count={n_pause}")
+        except Exception as hexc:
+            print(f"⚠️  domain health boot: {hexc}")
 
     from mail_campaign_worker import (
         _tick_scheduled,

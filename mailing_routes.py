@@ -3461,6 +3461,19 @@ def create_mailing_blueprint(permission_required):
             except Exception as c_exc:
                 print(f"⚠️  mail credit defaults: {c_exc}")
             try:
+                from mail_warmup_program import emergency_clamp_inflated_caps
+                emergency_clamp_inflated_caps(conn)
+                conn.commit()
+            except Exception as clamp_exc:
+                print(f"⚠️  warmup safety clamp: {clamp_exc}")
+            try:
+                from mail_domain_health import tick_domain_health_once
+                n_pause = tick_domain_health_once()
+                if n_pause:
+                    print(f"✉️  domain auto-pause on boot count={n_pause}")
+            except Exception as hexc:
+                print(f"⚠️  domain health boot: {hexc}")
+            try:
                 from mail_template_wipe import ensure_templates_wiped_once
                 wiped = ensure_templates_wiped_once(conn)
                 if wiped:
@@ -5841,10 +5854,10 @@ def create_mailing_blueprint(permission_required):
             contact_ids = []
             tag_filter = ""
         try:
-            rate = int(data.get("rate_per_minute") or 120)
+            rate = int(data.get("rate_per_minute") or 60)
         except (TypeError, ValueError):
-            rate = 120
-        rate = max(1, min(rate, 6000))
+            rate = 60
+        rate = max(1, min(rate, 120))
         scheduled_raw = (data.get("scheduled_at") or "").strip() or None
         # datetime-local (TR) → timezone-aware ISO
         if scheduled_raw:

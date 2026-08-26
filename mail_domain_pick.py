@@ -111,16 +111,23 @@ def _pool_domains(conn, tenant_id: int | None) -> list[dict]:
     return out
 
 
+FAIL_SKIP_PCT = 20.0
+FAIL_SKIP_MIN = 40
+
+
 def list_sendable_domains(
     conn,
     tenant_id: int | None,
     *,
     exclude_ids: set[int] | None = None,
 ) -> list[dict]:
-    """paused/burned/cap-dolu hariç, kalan slotu olan domainler."""
+    """paused/burned/cap-dolu / bugün Alibaba fail şişmiş hariç."""
+    from mail_account_quota import send_stats_today_by_domain
+
     exclude_ids = exclude_ids or set()
     pool = [d for d in _pool_domains(conn, tenant_id) if int(d["id"]) not in exclude_ids]
-    sent_by_domain = _sent_today_by_domain(conn, [int(d["id"]) for d in pool])
+    ids = [int(d["id"]) for d in pool]
+    stats_by = send_stats_today_by_domain(conn, ids)
 
     out = []
     for d in pool:
@@ -129,13 +136,18 @@ def list_sendable_domains(
         if st in ("paused", "burned"):
             continue
         cap = int(d.get("daily_cap") or 0)
-        sent = sent_by_domain.get(did, 0)
+        stt = stats_by.get(did) or {}
+        sent = int(stt.get("used") or 0)
+        fail = int(stt.get("fail") or 0)
         rem = max(0, cap - sent) if cap > 0 else 0
         d["_remaining_today"] = rem
         d["_sent_today"] = sent
+        d["_fail_today"] = fail
         d["_blocked"] = False
         d["_block_reason"] = ""
         if rem <= 0:
+            continue
+        if sent >= FAIL_SKIP_MIN and (100.0 * fail / sent) >= FAIL_SKIP_PCT:
             continue
         out.append(d)
     return out
@@ -207,15 +219,18 @@ def tenant_domain_capacity_snapshot(conn, tenant_id: int | None) -> dict:
         local = (d.get("from_local") or "noreply").strip() or "noreply"
         host = (d.get("domain") or "").strip()
         is_blocked = st in ("paused", "burned")
+        fail_hot = sent >= 40 and (100.0 * fail / max(sent, 1)) >= 20.0
         if not smtp_ok:
             reason = "SMTP yok"
         elif is_blocked:
             reason = f"Domain {st}"
         elif rem <= 0:
             reason = "cap"
+        elif fail_hot:
+            reason = "bugün fail yüksek"
         else:
             reason = ""
-        can_send = smtp_ok and not is_blocked and rem > 0
+        can_send = smtp_ok and not is_blocked and rem > 0 and not fail_hot
         pct = round(100.0 * sent / cap, 1) if cap > 0 else 0.0
         item = {
             "id": did,
