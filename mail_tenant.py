@@ -408,32 +408,66 @@ def ensure_tenant_schema(conn) -> None:
     except Exception as exc:
         print(f"⚠️  heal_ready_domains: {exc}")
 
-    # Bootstrap superadmin from env if empty
-    if not scalar(conn, "SELECT COUNT(*) FROM mail_superadmins"):
-        from werkzeug.security import generate_password_hash
+    # Superadmin şifresi Render env ile senkron. Eski davranış tablo doluysa
+    # env'i yok sayıyordu — dashboard'da şifre değişince giriş eski kalıyordu.
+    _ensure_mail_superadmin_from_env(conn, now)
 
-        user = (os.environ.get("MAILING_SUPERADMIN_USER") or os.environ.get("ADMIN_USERNAME") or "tolgakt").strip()
-        pw = (os.environ.get("MAILING_SUPERADMIN_PASSWORD") or os.environ.get("ADMIN_PASSWORD") or "changeme").strip()
-        try:
+    _strip_settings_permission_from_tenant_users(conn)
+    _repair_bizzo_template_ownership(conn)
+
+
+def _ensure_mail_superadmin_from_env(conn, now) -> None:
+    """Render Environment şifresini mail_superadmins ile her boot'ta eşle.
+
+    Makro panel `ensure_primary_admin` gibi: env değişince restart yeterli.
+    Tablo boşken insert, doluyken aynı username'in hash'ini güncelle.
+    Env boşsa (yerel/dev) mevcut hash'e dokunma.
+    """
+    from werkzeug.security import generate_password_hash
+
+    user = (
+        os.environ.get("MAILING_SUPERADMIN_USER")
+        or os.environ.get("ADMIN_USERNAME")
+        or ""
+    ).strip()
+    pw = (
+        os.environ.get("MAILING_SUPERADMIN_PASSWORD")
+        or os.environ.get("ADMIN_PASSWORD")
+        or ""
+    ).strip()
+    if not user or not pw:
+        return
+    username = user.lower()
+    ph = generate_password_hash(pw, method="pbkdf2:sha256")
+    try:
+        row = fetchone(
+            conn,
+            "SELECT id FROM mail_superadmins WHERE LOWER(username) = ?",
+            (username,),
+        )
+        if row:
+            execute(
+                conn,
+                "UPDATE mail_superadmins SET password_hash = ?, active = 1, display_name = COALESCE(NULLIF(display_name, ''), ?) WHERE LOWER(username) = ?",
+                (ph, user, username),
+            )
+        else:
             insert_returning_id(
                 conn,
                 """
                 INSERT INTO mail_superadmins (username, password_hash, display_name, active, created_at)
                 VALUES (?, ?, ?, 1, ?)
                 """,
-                (user.lower(), generate_password_hash(pw, method="pbkdf2:sha256"), user, now),
+                (username, ph, user, now),
             )
-            conn.commit()
-            print(f"✉️  Mikromail superadmin bootstrap: {user}")
-        except Exception as exc:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            print(f"⚠️  superadmin bootstrap: {exc}")
-
-    _strip_settings_permission_from_tenant_users(conn)
-    _repair_bizzo_template_ownership(conn)
+        conn.commit()
+        print(f"✉️  Mikromail superadmin env sync: {username}")
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"⚠️  superadmin env sync: {exc}")
 
 
 def _strip_settings_permission_from_tenant_users(conn) -> None:
