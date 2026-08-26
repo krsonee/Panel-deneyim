@@ -1107,6 +1107,41 @@ def _contact_has_exclude_exempt_tag_sql(custom_exempt=None):
     return "(" + " OR ".join(parts) + ")", tuple(params)
 
 
+def _previously_mailed_exists_sql():
+    """Kişi daha önce gerçekten mail aldı mı?
+
+    İki kaynak (herhangi biri yeter):
+      1) mail_sends status sent/simulated — SMTP kabul / simülasyon
+      2) mail_campaign_recipients status sent/simulated — kampanya alıcısı
+         gönderildi yazılmış
+
+    Crash-window / stuck-sweep: worker recipient'ı sent yazar, mail_sends
+    skipped kalır. Eski filtre yalnız (1)'e bakıyordu; aynı 10k her gün
+    havuza geri düşüyordu. (2) bunu kapatır.
+
+    21.08 enkazı: skipped send + sent olmayan recipient → hâlâ gönderilebilir.
+    """
+    return """
+    (
+      EXISTS (
+        SELECT 1 FROM mail_sends s
+        WHERE s.contact_id = mail_contacts.id
+          AND s.status IN ('sent', 'simulated')
+      )
+      OR EXISTS (
+        SELECT 1 FROM mail_campaign_recipients r
+        WHERE r.contact_id = mail_contacts.id
+          AND r.status IN ('sent', 'simulated')
+      )
+    )
+    """
+
+
+def _not_previously_mailed_sql():
+    """Hariç tut açıkken gönderilebilir havuzda kalsın diye."""
+    return "NOT " + _previously_mailed_exists_sql()
+
+
 def _in_flight_recipient_sql():
     """Zamanlanmış / kuyruktaki / gönderilmekte olan kampanya alıcıları."""
     return """
@@ -1175,14 +1210,10 @@ def _campaign_selection_where(
     tags = _parse_tag_filter_list(tag_filter)
     if exclude_previously_sent:
         in_flight = _in_flight_recipient_sql()
-        # Sadece GERÇEKTEN gönderilmiş (SMTP kabul / simülasyon) sayılır.
-        # skipped/failed/queued/bounced bir kişiyi "daha önce mail aldı" diye
-        # hayattan men etmesin — 21.08 enkazı (silinen kampanyanın skipped
-        # işaretlenen binlerce satırı) yüzünden temiz listenin yarısı elenmesin.
-        sent_sql = (
-            "NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id "
-            "AND s.status IN ('sent', 'simulated'))"
-        )
+        # SMTP sent/simulated VEYA kampanya alıcısı sent/simulated.
+        # skipped/failed/queued tek başına kilitlemez (21.08 enkazı), ama
+        # recipient sent ise kişi havuza geri dönmez.
+        sent_sql = _not_previously_mailed_sql()
         # Hem geçmiş gönderim hem başka kampanyada bekleyen alıcı
         pool_block = f"(({sent_sql}) AND ({in_flight}))"
         exempt_tags = [t for t in tags if _tag_is_exclude_sent_exempt(t, custom_exempt)]
@@ -1238,9 +1269,14 @@ def _count_tag_campaign_match(
         tag, exclude_previously_sent, only_verified=only_verified,
         custom_exempt=custom_exempt, tenant_id=tenant_id,
     )
-    n = _safe_contact_count(conn, where_sql, params)
+    timeout_ms = 20000 if (exclude_previously_sent or only_verified) else 12000
+    n = _safe_contact_count(conn, where_sql, params, timeout_ms=timeout_ms)
     if n is not None:
         return n, False
+    # Filtreli COUNT timeout — registry ham etiket sayısıdır, "kalan havuz" değil.
+    # Aynı 80k'yı her gün göstermek kullanıcıyı yanıltıyordu.
+    if exclude_previously_sent or only_verified:
+        return None, True
     n = _registry_tag_count(conn, tag)
     return int(n or 0), True
 
@@ -1263,6 +1299,11 @@ def _tag_breakdown_for_campaign(
     # birleşim toplamı select-preview'da ayrı exact COUNT ile gelir.
     use_exact = bool(exclude_previously_sent or only_verified or tenant_id) and len(tags) <= 3
     for tag in tags:
+        tag_total = _registry_tag_count(conn, tag)
+        try:
+            tag_total = int(tag_total) if tag_total is not None else None
+        except (TypeError, ValueError):
+            tag_total = None
         if use_exact:
             count, approx = _count_tag_campaign_match(
                 conn, tag,
@@ -1271,9 +1312,11 @@ def _tag_breakdown_for_campaign(
                 custom_exempt=custom_exempt,
                 tenant_id=tenant_id,
             )
+        elif exclude_previously_sent or only_verified:
+            # 4+ etiket: filtreli COUNT pahalı — ham sayıyı "kalan" diye yutma
+            count, approx = None, True
         else:
-            n = _registry_tag_count(conn, tag)
-            if n is None:
+            if tag_total is None:
                 count, approx = _count_tag_campaign_match(
                     conn, tag,
                     exclude_previously_sent=False,
@@ -1282,11 +1325,18 @@ def _tag_breakdown_for_campaign(
                     tenant_id=tenant_id,
                 )
             else:
-                count, approx = int(n), True
+                count, approx = int(tag_total), True
+        remaining = None if count is None else int(count or 0)
+        pool_for_take = remaining if remaining is not None else int(tag_total or 0)
+        already_mailed = None
+        if tag_total is not None and remaining is not None and remaining <= tag_total:
+            already_mailed = max(0, int(tag_total) - int(remaining))
         out.append({
             "tag": tag,
-            "count": int(count or 0),
-            "will_take": int(count or 0),
+            "count": remaining,
+            "tag_total": tag_total,
+            "already_mailed": already_mailed,
+            "will_take": int(pool_for_take or 0),
             "approx": bool(approx),
             "exclude_sent_exempt": _tag_is_exclude_sent_exempt(tag, custom_exempt),
         })
@@ -1320,7 +1370,14 @@ def _allocate_will_take(tag_breakdown, max_recipients, tags_order=None):
             ordered.append(r)
     remaining = int(max_recipients) if max_recipients else None
     for r in ordered:
-        n = int(r.get("count") or 0)
+        n = r.get("count")
+        if n is None:
+            n = int(r.get("tag_total") or r.get("will_take") or 0)
+        else:
+            try:
+                n = int(n or 0)
+            except (TypeError, ValueError):
+                n = 0
         if remaining is None:
             r["will_take"] = n
         else:
@@ -1462,10 +1519,9 @@ def _filter_sendable_contact_ids(
         if exclude_previously_sent:
             ex_sql, ex_params = _contact_has_exclude_exempt_tag_sql(custom_exempt)
             in_flight = _in_flight_recipient_sql()
+            sent_sql = _not_previously_mailed_sql()
             clauses.append(
-                f"((NOT EXISTS (SELECT 1 FROM mail_sends s WHERE s.contact_id = mail_contacts.id "
-                f"AND s.status IN ('sent', 'simulated')) "
-                f"AND ({in_flight})) OR {ex_sql})"
+                f"((({sent_sql}) AND ({in_flight})) OR {ex_sql})"
             )
             params.extend(ex_params)
         if has_verify:
@@ -6139,9 +6195,7 @@ def create_mailing_blueprint(permission_required):
             fully_exempt = bool(exempt_tags) and len(exempt_tags) == len(tags_list)
             in_flight = _in_flight_recipient_sql()
             already_sent_clause = (
-                "EXISTS (SELECT 1 FROM mail_sends s2 WHERE s2.contact_id = mail_contacts.id "
-                "AND s2.status IN ('sent', 'simulated'))"
-                f" OR NOT ({in_flight})"
+                f"{_previously_mailed_exists_sql()} OR NOT ({in_flight})"
             )
             excluded_already_sent_or_inflight = 0 if fully_exempt else _count(already_sent_clause)
             excluded_unverified = 0
@@ -6318,11 +6372,13 @@ def create_mailing_blueprint(permission_required):
                     if len(tags_list) == 1 and not exclude_sent and not only_verified and not _tid:
                         total = _registry_tag_count(conn, tags_list[0])
                     if total is None:
-                        total = _safe_contact_count(conn, where_sql, params)
+                        timeout_ms = 20000 if (exclude_sent or only_verified) else 12000
+                        total = _safe_contact_count(conn, where_sql, params, timeout_ms=timeout_ms)
                         if total is not None:
                             approx = False
                     if total is None:
-                        # Birleşim COUNT timeout — etiket başına say, topla (örtüşme ≈)
+                        # Birleşim COUNT timeout — etiket başına say, topla (örtüşme ≈).
+                        # Filtreli count yoksa registry'yi "kalan havuz" diye yutma.
                         tag_breakdown = _tag_breakdown_for_campaign(
                             conn, tags_list,
                             exclude_previously_sent=exclude_sent,
@@ -6330,9 +6386,15 @@ def create_mailing_blueprint(permission_required):
                             custom_exempt=custom_exempt,
                             tenant_id=_tid,
                         )
-                        total = sum(int(x.get("count") or 0) for x in tag_breakdown)
-                        approx = True
-                    total = int(total or 0)
+                        parts = [x.get("count") for x in tag_breakdown]
+                        if parts and all(c is not None for c in parts):
+                            total = sum(int(c or 0) for c in parts)
+                            approx = True
+                        else:
+                            total = None
+                            approx = True
+                    elif total is not None:
+                        total = int(total or 0)
                 elif filtered:
                     total = len(filtered)
                     approx = False
@@ -6358,13 +6420,19 @@ def create_mailing_blueprint(permission_required):
                 cap = max(0, int(cap) - int(mixed_selected or 0))
             tag_breakdown = _allocate_will_take(tag_breakdown, cap, tags_order=tags_list)
         planned = 0
+        remaining_unknown = False
         for row in tag_breakdown:
+            if row.get("count") is None:
+                remaining_unknown = True
             try:
                 planned += int(row.get("will_take") or 0)
             except (TypeError, ValueError):
                 pass
-        if max_recipients:
-            will_attach = min(int(total or 0), int(max_recipients))
+        if total is None:
+            remaining_unknown = True
+            will_attach = int(max_recipients) if max_recipients else None
+        elif max_recipients:
+            will_attach = min(int(total), int(max_recipients))
             if planned:
                 will_attach = min(will_attach, planned + int(mixed_selected or 0))
         else:
@@ -6388,11 +6456,16 @@ def create_mailing_blueprint(permission_required):
             "will_attach": will_attach,
             "max_recipients": max_recipients,
             "approx": approx,
+            "remaining_unknown": remaining_unknown,
             "recipient_mode": recipient_mode,
             "tag_filters": tags_list,
             "tag_breakdown": tag_breakdown,
             "exclude_sent_exempt_tags": exempt_selected,
-            "priority_guaranteed": min(priority_count, will_attach) if exempt_selected else 0,
+            "priority_guaranteed": (
+                min(priority_count, will_attach) if exempt_selected and will_attach is not None else (
+                    priority_count if exempt_selected else 0
+                )
+            ),
             "priority_truncated": priority_truncated,
             "manual_selected": mixed_selected if recipient_mode == "tag" else (
                 len(contact_ids) if recipient_mode == "selected" else 0

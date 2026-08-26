@@ -793,6 +793,9 @@
             </label>
             <p class="hint" style="margin:0;flex-basis:100%;">
               Daha önce gönderilenler + başka kampanyada bekleyen (zamanlanmış / kuyruk / gönderiliyor) alıcılar havuzdan düşer.
+              «Gönderilmiş» = SMTP sent/simulated <em>veya</em> kampanya alıcısı sent — SMTP satırı skipped kalsa bile
+              kişi ertesi gün aynı etiketten tekrar seçilmez. Ham etiket sayısı (mail_mx_ok / Boss davet) düşmez;
+              düşen «Kaç kişi?» kalan havuzudur.
               Muaf test etiketleri: <code>tolgatest</code>, <code>test</code>, <code>qa</code>, <code>sandbox</code>, <code>deneme</code>
               veya bunlarla başlayan / içinde <code>tolgatest</code> geçen isimler —
               bu filtreye takılmaz (her zaman gönderilir).

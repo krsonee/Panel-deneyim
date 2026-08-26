@@ -4875,26 +4875,36 @@
             hint.textContent = (res.data && res.data.error) || "Hesaplanamadı — tekrar dene (tenant seçili mi?)";
             return;
           }
-          var total = res.data.matching_count || 0;
+          var total = res.data.matching_count;
+          var totalUnknown = total == null;
           var willAttach = res.data.will_attach != null ? res.data.will_attach : total;
           var tags = res.data.tag_filters || [];
           var breakdown = res.data.tag_breakdown || [];
           var manualN = res.data.manual_selected || 0;
           var approxBit = res.data.approx ? " (yaklaşık)" : "";
-          var html = "Filtreye uyan: <strong>" + fmtNum(total) + "</strong>" + approxBit +
-            " kişi · eklenecek: <strong>" + fmtNum(willAttach) + "</strong> kişi";
+          var html = totalUnknown
+            ? "Filtreye uyan: <strong>?</strong> (sayı zaman aşımı — gönderimde daha önce gidenler yine düşer)"
+            : ("Filtreye uyan: <strong>" + fmtNum(total) + "</strong>" + approxBit + " kişi");
+          if (willAttach != null) {
+            html += " · eklenecek: <strong>" + fmtNum(willAttach) + "</strong> kişi";
+          }
+          if (res.data.remaining_unknown) {
+            html += ' <span class="muted">· kalan havuz tam sayılamadı; oluşturunca hariç tutma uygulanır</span>';
+          }
           if (manualN && tags.length) {
             html += ' <span class="muted">· karışık: ' + fmtNum(manualN) + " manuel + etiket birleşimi</span>";
           } else if (manualN && !tags.length) {
             html += ' <span class="muted">· yalnız manuel seçim</span>';
           }
           if (breakdown.length) {
-            var poolMap = {};
+            var remainMap = {};
+            var totalMap = {};
             var takeMap = {};
             var hasTake = false;
             var anyApprox = false;
             breakdown.forEach(function (x) {
-              poolMap[x.tag] = x.count;
+              remainMap[x.tag] = x.count;
+              if (x.tag_total != null) totalMap[x.tag] = x.tag_total;
               if (x.will_take != null) {
                 takeMap[x.tag] = x.will_take;
                 hasTake = true;
@@ -4908,7 +4918,12 @@
                 (res.data.max_recipients ? (" (maks " + fmtNum(res.data.max_recipients) + ")") : "") +
                 "</span>";
             }
-            html += "<br><span class=\"muted\"><strong>Havuz:</strong> " + mailFormatTagBreakdown(tagNames, poolMap);
+            html += "<br><span class=\"muted\"><strong>Kalan (filtreli):</strong> " +
+              mailFormatTagBreakdown(tagNames, remainMap);
+            if (Object.keys(totalMap).length) {
+              html += "<br><strong>Etikette (ham):</strong> " + mailFormatTagBreakdown(tagNames, totalMap) +
+                " — bu sayı düşmez; daha önce gönderilenler yukarıdaki kalandan çıkar";
+            }
             if (tags.length > 1) {
               html += " · birleşim (OR)" +
                 (anyApprox ? ", sayılar yaklaşık olabilir" : "") +

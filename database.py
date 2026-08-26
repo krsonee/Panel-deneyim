@@ -3340,6 +3340,9 @@ def migrate_mail_campaigns_pro(conn):
     try:
         execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_campaigns_status ON mail_campaigns(status)")
         execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_camp_recip_camp_status ON mail_campaign_recipients(campaign_id, status)")
+        execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_camp_recip_contact ON mail_campaign_recipients(contact_id)")
+        execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_camp_recip_contact_sent ON mail_campaign_recipients(contact_id) WHERE status IN ('sent', 'simulated')")
+        execute(conn, "CREATE INDEX IF NOT EXISTS idx_mail_sends_contact_sent ON mail_sends(contact_id) WHERE status IN ('sent', 'simulated')")
         conn.commit()
     except Exception as exc:
         print(f"⚠️  mail_campaigns indexes: {exc}")
