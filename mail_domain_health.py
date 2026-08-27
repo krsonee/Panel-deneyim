@@ -15,9 +15,15 @@ MIN_SAMPLE = 20
 # %90'ın altına düşürebiliyordu.
 BOUNCE_RATE_MAX = 6.0
 # SMTP fail neredeyse 0 kalıyordu; asıl kırmızı Alibaba real_status=failed (Gmail 4.7.28).
-# %22 üstü = o domain çürük (vipileti %80). Kardeşler ~%14 ise durmaz, cap düşer.
+# n≥80 iken %22 üstü = çürük (vipileti %78 / 2624).
+# 27.08: yeni domainler n=22–31 ve %22.2 ile kıl payı pause oldu (Gmail geçici 4.7.28).
+# Küçük örnekte ancak %45+ (alkanka %100) durdurur.
 FAIL_RATE_MAX = 22.0
+FAIL_PAUSE_FULL_N = 80
+FAIL_RATE_MAX_SMALL_N = 45.0
 COMPLAINT_RATE_MAX = 0.3
+# Kısıtlı hesap: yeni cohort ısınırken günlük tavan; legacy ısınırken WARMING_HARD_MAX.
+NEW_COHORT_DAILY_CAP = 40
 
 try:
     from zoneinfo import ZoneInfo
@@ -115,12 +121,20 @@ def compute_rates(stats: dict) -> dict:
 def should_pause(rates: dict) -> tuple[bool, str]:
     if not rates.get("sample_ok"):
         return False, ""
+    n = int(rates.get("total") or 0)
     if rates["bounce_rate"] > BOUNCE_RATE_MAX:
-        return True, f"bounce_rate={rates['bounce_rate']}% > {BOUNCE_RATE_MAX}% (n={rates['total']})"
-    if rates["fail_rate"] > FAIL_RATE_MAX:
-        return True, f"fail_rate={rates['fail_rate']}% > {FAIL_RATE_MAX}% (n={rates['total']})"
+        return True, f"bounce_rate={rates['bounce_rate']}% > {BOUNCE_RATE_MAX}% (n={n})"
+    fail = float(rates["fail_rate"] or 0)
+    if n < FAIL_PAUSE_FULL_N:
+        if fail > FAIL_RATE_MAX_SMALL_N:
+            return True, (
+                f"fail_rate={fail}% > {FAIL_RATE_MAX_SMALL_N}% "
+                f"(n={n} < {FAIL_PAUSE_FULL_N})"
+            )
+    elif fail > FAIL_RATE_MAX:
+        return True, f"fail_rate={fail}% > {FAIL_RATE_MAX}% (n={n})"
     if rates["complaint_rate"] > COMPLAINT_RATE_MAX:
-        return True, f"complaint_rate={rates['complaint_rate']}% > {COMPLAINT_RATE_MAX}% (n={rates['total']})"
+        return True, f"complaint_rate={rates['complaint_rate']}% > {COMPLAINT_RATE_MAX}% (n={n})"
     return False, ""
 
 
@@ -217,6 +231,95 @@ def evaluate_and_maybe_pause(conn, domain_id: int, *, hours: int = WINDOW_HOURS)
     return {**rates, "should_pause": pause, "paused": paused, "reason": reason}
 
 
+def enforce_constrained_caps(conn) -> int:
+    """Yeni cohort ısınma tavanı 40; ısınan her domain ≤ 600. paused cap'e dokunma."""
+    n = 0
+    try:
+        from mail_warmup_program import WARMING_HARD_MAX
+        rows = fetchall(
+            conn,
+            """
+            SELECT id, daily_cap, hourly_cap,
+                   LOWER(COALESCE(warm_status, 'cold')) AS st,
+                   COALESCE(NULLIF(warmup_cohort, ''), 'new') AS cohort
+            FROM mail_domains
+            """,
+        ) or []
+        for r in rows:
+            st = (row_get(r, "st") or "").strip().lower()
+            if st in ("paused", "burned"):
+                continue
+            cap = int(row_get(r, "daily_cap") or 0)
+            hourly = int(row_get(r, "hourly_cap") or 0)
+            cohort = (row_get(r, "cohort") or "new").strip().lower()
+            new_cap = cap
+            new_hour = hourly
+            if cohort == "new" and st != "warm":
+                if cap <= 0 or cap > NEW_COHORT_DAILY_CAP:
+                    new_cap = NEW_COHORT_DAILY_CAP
+                new_hour = max(4, min(12, new_hour if new_hour > 0 else 8))
+            elif st == "warming" and cap > WARMING_HARD_MAX:
+                new_cap = WARMING_HARD_MAX
+                new_hour = min(hourly if hourly > 0 else 40, 40)
+            if new_cap != cap or new_hour != hourly:
+                execute(
+                    conn,
+                    "UPDATE mail_domains SET daily_cap = ?, hourly_cap = ? WHERE id = ?",
+                    (int(new_cap), int(new_hour), int(r["id"])),
+                )
+                n += 1
+    except Exception as exc:
+        print(f"⚠️  enforce_constrained_caps: {exc}")
+    return n
+
+
+def review_paused_domains_maybe_unpause(conn) -> list[dict]:
+    """Yeni eşikle artık durmaması gereken kıl-payı pause'ları geri aç.
+
+    vipileti (%78 / 2624) ve alkanka (%100 / 20) should_pause True kalır.
+    """
+    rows = fetchall(
+        conn,
+        """
+        SELECT id, domain FROM mail_domains
+        WHERE LOWER(COALESCE(warm_status, '')) = 'paused'
+        ORDER BY id ASC
+        LIMIT 200
+        """,
+    ) or []
+    out = []
+    for r in rows:
+        did = int(r["id"])
+        try:
+            stats = _domain_send_stats(conn, did, hours=WINDOW_HOURS)
+            rates = compute_rates(stats)
+            pause, reason = should_pause(rates)
+            if pause:
+                out.append({**rates, "domain_id": did, "domain": row_get(r, "domain"), "unpaused": False})
+                continue
+            ok = unpause_domain(conn, did)
+            if ok:
+                print(
+                    f"✉️  AUTO-UNPAUSE domain #{did} ({row_get(r, 'domain')}): "
+                    f"fail={rates.get('fail_rate')}% n={rates.get('total')} — yeni eşik"
+                )
+            out.append({
+                **rates,
+                "domain_id": did,
+                "domain": row_get(r, "domain"),
+                "unpaused": bool(ok),
+                "reason": reason,
+            })
+        except Exception as exc:
+            print(f"⚠️  domain unpause-check #{row_get(r, 'id')}: {exc}")
+            try:
+                from database import safe_rollback
+                safe_rollback(conn)
+            except Exception:
+                pass
+    return out
+
+
 def review_all_active_domains(conn) -> list[dict]:
     rows = fetchall(
         conn,
@@ -280,8 +383,29 @@ def domain_is_send_blocked(conn, domain_id) -> tuple[bool, str]:
 
 def tick_domain_health_once() -> int:
     paused_n = 0
+    unpaused_n = 0
     try:
         with closing(get_db()) as conn:
+            try:
+                unpaused_n = sum(
+                    1 for r in review_paused_domains_maybe_unpause(conn) if r.get("unpaused")
+                )
+            except Exception as uexc:
+                print(f"⚠️  paused unpause pass: {uexc}")
+                try:
+                    from database import safe_rollback
+                    safe_rollback(conn)
+                except Exception:
+                    pass
+            if unpaused_n:
+                print(f"✉️  domain auto-unpause count={unpaused_n}")
+            conn.commit()
+            try:
+                n_cap = enforce_constrained_caps(conn)
+                if n_cap:
+                    print(f"✉️  constrained caps updated={n_cap}")
+            except Exception as cexc:
+                print(f"⚠️  constrained caps: {cexc}")
             results = review_all_active_domains(conn)
             conn.commit()
             paused_n = sum(1 for r in results if r.get("paused"))
