@@ -123,6 +123,12 @@ def init_db():
         ensure_brand_tracked_domains()
     except Exception as exc:
         print(f"⚠️  ensure_brand_tracked_domains: {exc}")
+    try:
+        from makrolink_api import ensure_brand_short_hosts
+        with closing(get_db()) as conn:
+            ensure_brand_short_hosts(conn)
+    except Exception as exc:
+        print(f"⚠️  ensure_brand_short_hosts: {exc}")
     ensure_primary_admin()
     seed_admin_users()
     print(f"\n🏷️  Panel markası: {BRAND['product_name']} (PANEL_BRAND={PANEL_BRAND})\n")
@@ -972,6 +978,15 @@ def health():
 
 @app.route("/")
 def index():
+    """Panel kanonik host → admin. Kısa domain (makroz.ink / makrosms.com) → login değil."""
+    host = (request.host or "").split(":")[0].strip().lower()
+    try:
+        with closing(get_db()) as conn:
+            public_short = makrolink_api.is_makrolink_host(host, conn)
+    except Exception:
+        public_short = makrolink_api.is_makrolink_host(host, None)
+    if public_short:
+        return ("Link bulunamadı veya pasif.", 404)
     return redirect(url_for("admin_page"))
 
 
