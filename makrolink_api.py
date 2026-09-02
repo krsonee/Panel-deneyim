@@ -46,6 +46,10 @@ SMARTICO_ENABLED = _panel_feature("smartico")
 # Bizzo: en fazla N short host; Makro: 0 = sınırsız
 MAX_SHORT_HOSTS = int(BRAND.get("shortlink_max_hosts") or 0)
 
+# DNS/Render'da bağlı olsa bile Kısa Link listesine düşmeyen Makro public host'lar.
+# Seed ON CONFLICT DO NOTHING olduğu için prod DB'ye sonradan hiç yazılmıyordu.
+MAKRO_ENSURE_SHORT_HOSTS = ("makroz.ink",)
+
 
 def _max_short_hosts():
     return int(BRAND.get("shortlink_max_hosts") or 0)
@@ -84,6 +88,38 @@ def _is_blocked_short_host(host):
 
 def _filter_hosts_for_brand(hosts):
     return [h for h in (hosts or []) if h and not _is_blocked_short_host(h)]
+
+
+def _with_ensured_short_hosts(hosts):
+    """Makro: makroz.ink gibi zorunlu public host'ları listeye ekle (silinmesin)."""
+    out = [h for h in (hosts or []) if h]
+    if PANEL_BRAND != "makro":
+        return out
+    seen = set(out)
+    for h in MAKRO_ENSURE_SHORT_HOSTS:
+        host = _clean_host(h)
+        if host and host not in seen:
+            out.append(host)
+            seen.add(host)
+    return out
+
+
+def ensure_brand_short_hosts(conn):
+    """Boot'ta makroz.ink'i makrolink_settings.short_hosts'a yaz (mevcut listeyi silmeden)."""
+    if PANEL_BRAND != "makro":
+        return False
+    raw = get_setting(conn, "short_hosts", "") or ""
+    default_host = _clean_host(get_setting(conn, "public_host", "") or "")
+    hosts = _with_ensured_short_hosts(_parse_host_list(raw, default_host or DEFAULT_PUBLIC_HOST))
+    if default_host and default_host not in hosts:
+        hosts.insert(0, default_host)
+        hosts = _with_ensured_short_hosts(hosts)
+    prev = _parse_host_list(raw, "")
+    if hosts == prev:
+        return False
+    upsert_setting(conn, "short_hosts", "\n".join(hosts))
+    print(f"✉️  makrolink short_hosts ensure: {hosts}")
+    return True
 
 
 def purge_foreign_short_hosts(conn):
@@ -443,6 +479,7 @@ def get_config(conn, include_secrets=False):
         hosts.insert(0, default_host)
     # Bizzo: eski makrovip seed’ini gizle / listeden çıkar
     hosts = _filter_hosts_for_brand(hosts)
+    hosts = _with_ensured_short_hosts(hosts)
     if default_host and _is_blocked_short_host(default_host):
         default_host = hosts[0] if hosts else ""
     elif default_host and default_host not in hosts:
@@ -517,6 +554,7 @@ def save_config(
                 "Bu panelde Makro domain kullanılamaz: " + ", ".join(blocked)
             )
         hosts = _filter_hosts_for_brand(hosts)
+        hosts = _with_ensured_short_hosts(hosts)
         max_hosts = _max_short_hosts()
         if max_hosts and len(hosts) > max_hosts:
             raise ValueError(f"En fazla {max_hosts} kısa domain eklenebilir.")
@@ -532,8 +570,10 @@ def save_config(
 
     if public_host is not None:
         host = _clean_host(public_host) or _clean_host(DEFAULT_PUBLIC_HOST)
-        hosts_now = _filter_hosts_for_brand(
-            _parse_host_list(get_setting(conn, "short_hosts", ""), "")
+        hosts_now = _with_ensured_short_hosts(
+            _filter_hosts_for_brand(
+                _parse_host_list(get_setting(conn, "short_hosts", ""), "")
+            )
         )
         # Boş public_host + dolu short_hosts → ilk host'u koru (kazara silme)
         if not host:
@@ -1447,6 +1487,8 @@ def is_makrolink_host(host, conn=None):
     host = _clean_host((host or "").split(":")[0])
     if not host:
         return False
+    if PANEL_BRAND == "makro" and host in MAKRO_ENSURE_SHORT_HOSTS:
+        return True
     if conn is None:
         return host == DEFAULT_PUBLIC_HOST
     cfg = get_config(conn)
