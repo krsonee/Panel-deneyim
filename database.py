@@ -826,27 +826,87 @@ def migrate_makrolink(conn):
             except Exception:
                 pass
         cols = _table_columns(conn, "makrolink_links")
-    # Makro: eski linkleri varsayılan short host’a bağla (tüm domainlerde açılmasın)
+    # Makro SMS short host: örnek metindeki makrosms.com asla gerçek domain değil.
+    # Asıl domain makroz.ink — ayar + link kayıtlarını geri al, SMS kategorisini oraya bağla.
     if cols and "short_host" in cols:
         try:
             from panel_config import PANEL_BRAND as _ml_host_brand
         except Exception:
             _ml_host_brand = "makro"
         if _ml_host_brand == "makro":
+            def _clean_ml_host(h):
+                h = (h or "").strip().lower().replace("https://", "").replace("http://", "").strip("/")
+                h = h.split("/")[0]
+                if h.startswith("www."):
+                    h = h[4:]
+                return h
+
+            _FAKE_SMS = "makrosms.com"
+            _REAL_SMS = "makroz.ink"
+
+            def _swap_fake_sms(h):
+                h = _clean_ml_host(h)
+                if h in (_FAKE_SMS, "makrosms"):
+                    return _REAL_SMS
+                return h
+
             ph_row = fetchone(conn, "SELECT value FROM makrolink_settings WHERE key = ?", ("public_host",))
-            ph = ((ph_row["value"] if ph_row else "") or "").strip().lower()
-            if ph.startswith("www."):
-                ph = ph[4:]
-            if ph:
+            ph = _swap_fake_sms((ph_row["value"] if ph_row else "") or "")
+            sh_row = fetchone(conn, "SELECT value FROM makrolink_settings WHERE key = ?", ("short_hosts",))
+            raw_hosts = (sh_row["value"] if sh_row else "") or ""
+            hosts = []
+            seen = set()
+            for part in re.split(r"[\s,;]+", str(raw_hosts)):
+                h = _swap_fake_sms(part)
+                if not h or "." not in h or h in seen:
+                    continue
+                seen.add(h)
+                hosts.append(h)
+            if _REAL_SMS not in seen:
+                hosts.append(_REAL_SMS)
+            if ph == _FAKE_SMS or ph == "makrosms":
+                ph = _REAL_SMS
+            if uses_postgres():
                 execute(
                     conn,
                     """
-                    UPDATE makrolink_links
-                    SET short_host = ?
-                    WHERE TRIM(COALESCE(short_host, '')) = ''
+                    INSERT INTO makrolink_settings (key, value) VALUES ('short_hosts', ?)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                     """,
-                    (ph,),
+                    ("\n".join(hosts),),
                 )
+                if ph:
+                    execute(
+                        conn,
+                        """
+                        INSERT INTO makrolink_settings (key, value) VALUES ('public_host', ?)
+                        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                        """,
+                        (ph,),
+                    )
+            else:
+                execute(conn, "INSERT OR REPLACE INTO makrolink_settings (key, value) VALUES ('short_hosts', ?)", ("\n".join(hosts),))
+                if ph:
+                    execute(conn, "INSERT OR REPLACE INTO makrolink_settings (key, value) VALUES ('public_host', ?)", (ph,))
+            execute(
+                conn,
+                """
+                UPDATE makrolink_links
+                SET short_host = ?
+                WHERE lower(TRIM(COALESCE(short_host, ''))) IN (?, 'makrosms')
+                """,
+                (_REAL_SMS, _FAKE_SMS),
+            )
+            execute(
+                conn,
+                """
+                UPDATE makrolink_links
+                SET short_host = ?
+                WHERE lower(TRIM(COALESCE(category, ''))) = 'sms'
+                  AND lower(TRIM(COALESCE(short_host, ''))) IN ('', ?)
+                """,
+                (_REAL_SMS, ph or ""),
+            )
     # Kısa kodları lowercase normalize et (case-insensitive eşsizlik)
     try:
         rows = fetchall(conn, "SELECT id, code FROM makrolink_links ORDER BY id")
