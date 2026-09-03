@@ -3112,6 +3112,31 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="reset-user-pass-modal">
+    <div class="modal modal-settings" style="max-width:440px;">
+      <div class="modal-head">
+        <h3 id="reset-user-pass-title">Şifre Değiştir</h3>
+        <button class="modal-close" id="reset-user-pass-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-section edit-user-form" style="border:none;padding-top:1rem;">
+          <input type="hidden" id="reset-user-pass-id">
+          <p class="muted-sm" style="margin-bottom:0.85rem;">Hesap: <strong id="reset-user-pass-name"></strong></p>
+          <div style="margin-bottom:0.65rem;">
+            <label class="field-label" for="reset-user-pass">Yeni şifre</label>
+            <input class="field-input" id="reset-user-pass" type="password" autocomplete="new-password" placeholder="En az 6 karakter">
+          </div>
+          <div style="margin-bottom:0.85rem;">
+            <label class="field-label" for="reset-user-pass2">Yeni şifre (tekrar)</label>
+            <input class="field-input" id="reset-user-pass2" type="password" autocomplete="new-password" placeholder="Tekrar yaz">
+          </div>
+          <p class="muted-sm" style="margin-bottom:0.85rem;">Kullanıcı bir sonraki girişte bu şifreyi değiştirmeye zorlanır.</p>
+          <button type="button" class="btn-add-user" id="btn-reset-user-pass">Şifreyi Kaydet</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Hesabım Modal -->
   <div class="modal-overlay" id="account-modal">
     <div class="modal modal-settings" style="max-width:480px;">
@@ -3988,6 +4013,7 @@
                   '<button type="button" class="user-menu-btn" data-user-menu-btn="'+u.id+'" title="İşlemler" aria-haspopup="true">⋮</button>'+
                   '<div class="user-menu-pop" data-user-menu-pop="'+u.id+'">'+
                     '<button type="button" class="user-menu-item" data-edit-user="'+u.id+'">🔑 Yetkileri Düzenle</button>'+
+                    (!u.is_primary_admin?'<button type="button" class="user-menu-item" data-pass-user="'+u.id+'">🔒 Şifre Değiştir</button>':'')+
                     '<button type="button" class="user-menu-item" data-unlock-user="'+u.id+'">🔓 Kilidi Aç</button>'+
                     (u.two_factor_required?'<button type="button" class="user-menu-item" data-reset-2fa-user="'+u.id+'">🛡️ 2FA Sıfırla</button>':'')+
                     (!u.is_primary_admin && users.length>1?'<button type="button" class="user-menu-item danger" data-del-user="'+u.id+'">🗑️ Kullanıcıyı Sil</button>':'')+
@@ -4037,6 +4063,20 @@
               fetch(API+"/api/admin/users/"+btn.getAttribute("data-del-user"),{method:"DELETE"})
                 .then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});})
                 .then(function(res){ if(!res.ok){alert(res.data.error);return;} loadSettings(); toast("Silindi"); });
+            };
+          });
+          box.querySelectorAll("[data-pass-user]").forEach(function(btn) {
+            btn.onclick = function() {
+              closeAllUserMenus();
+              var uid = btn.getAttribute("data-pass-user");
+              var user = users.find(function(x){ return String(x.id) === String(uid); });
+              if (!user || user.is_primary_admin) return;
+              document.getElementById("reset-user-pass-id").value = uid;
+              document.getElementById("reset-user-pass-title").textContent = (user.display_name || user.username) + " — Şifre";
+              document.getElementById("reset-user-pass-name").textContent = user.username;
+              document.getElementById("reset-user-pass").value = "";
+              document.getElementById("reset-user-pass2").value = "";
+              document.getElementById("reset-user-pass-modal").classList.add("open");
             };
           });
           box.querySelectorAll("[data-unlock-user]").forEach(function(btn) {
@@ -7017,6 +7057,34 @@
       });
       bindOptional("edit-user-modal", "click", function(e) {
         if (e.target === this) this.classList.remove("open");
+      });
+      bindOptional("reset-user-pass-close", "click", function() {
+        document.getElementById("reset-user-pass-modal").classList.remove("open");
+      });
+      bindOptional("reset-user-pass-modal", "click", function(e) {
+        if (e.target === this) this.classList.remove("open");
+      });
+      bindOptional("btn-reset-user-pass", "click", function() {
+        var btn = document.getElementById("btn-reset-user-pass");
+        var uid = document.getElementById("reset-user-pass-id").value;
+        var p1 = (document.getElementById("reset-user-pass").value || "").trim();
+        var p2 = (document.getElementById("reset-user-pass2").value || "").trim();
+        if (!uid) return;
+        if (p1.length < 6) { alert("Şifre en az 6 karakter olmalı."); return; }
+        if (p1 !== p2) { alert("Şifreler eşleşmiyor."); return; }
+        withButtonBusy(btn, function () {
+          return fetch(API+"/api/admin/users/"+uid+"/password", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({ password: p1 })
+          }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+            .then(function(res) {
+              if (!res.ok) { alert(res.data.error || "Şifre kaydedilemedi"); return; }
+              document.getElementById("reset-user-pass").value = "";
+              document.getElementById("reset-user-pass2").value = "";
+              document.getElementById("reset-user-pass-modal").classList.remove("open");
+              toast("Şifre güncellendi. Kullanıcı yeni şifreyle giriş yapacak.");
+            });
+        }, "Kaydediliyor…");
       });
       bindOptional("btn-save-user-perms", "click", function() {
         var btn = document.getElementById("btn-save-user-perms");

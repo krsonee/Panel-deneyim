@@ -2133,7 +2133,8 @@ def update_admin_user(user_id):
     role = (data.get("role") or "custom").strip().lower()
     permissions = permissions_from_role(role, data.get("permissions"))
     password = (data.get("password") or "").strip()
-    if role == "custom" and not permissions:
+    role_in_payload = "role" in data or "permissions" in data
+    if role_in_payload and role == "custom" and not permissions:
         return jsonify({"error": "Özel rol için en az bir yetki seçin."}), 400
     with closing(get_db()) as conn:
         row = fetchone(conn, "SELECT * FROM admin_users WHERE id = ?", (user_id,))
@@ -2150,7 +2151,7 @@ def update_admin_user(user_id):
 
         set_clauses = []
         params = []
-        if not target_is_primary:
+        if not target_is_primary and role_in_payload:
             # Ana admin hesabı için rol/yetki her zaman zorla superadmin/["*"] olduğundan
             # bu alanlar sessizce değiştirilmeden bırakılır (read-time zaten override ediyor).
             set_clauses.extend(["role = ?", "permissions = ?"])
@@ -2188,6 +2189,34 @@ def update_admin_user(user_id):
         session["admin_permissions"] = item["permissions"]
     audit("user_updated", detail=f"target={item['username']} role={item['role']}")
     return jsonify({"ok": True, "user": item})
+
+
+@app.route("/api/admin/users/<int:user_id>/password", methods=["POST"])
+@superadmin_required
+def admin_set_user_password(user_id):
+    """Süper admin, açtığı hesabın şifresini sıfırlar — rol/yetki gövdesi gerekmez."""
+    data = request.get_json(silent=True) or {}
+    password = (data.get("password") or data.get("new_password") or "").strip()
+    if not password:
+        return jsonify({"error": "Yeni şifre gerekli."}), 400
+    if len(password) < 6:
+        return jsonify({"error": "Şifre en az 6 karakter olmalı."}), 400
+    with closing(get_db()) as conn:
+        row = fetchone(conn, "SELECT * FROM admin_users WHERE id = ?", (user_id,))
+        if not row:
+            return jsonify({"error": "Kullanıcı bulunamadı."}), 404
+        if is_primary_admin(row["username"]):
+            return jsonify({
+                "error": "Ana admin hesabının şifresi panelden değiştirilemez. Render → Environment → ADMIN_PASSWORD.",
+            }), 403
+        execute(
+            conn,
+            "UPDATE admin_users SET password_hash = ?, must_change_password = 1 WHERE id = ?",
+            (generate_password_hash(password, method="pbkdf2:sha256"), user_id),
+        )
+        conn.commit()
+    audit("user_password_reset", detail=f"target={row['username']}")
+    return jsonify({"ok": True, "username": row["username"]})
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
