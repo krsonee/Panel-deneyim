@@ -614,6 +614,98 @@ def shell(*, title: str, body_rows: str, preheader: str = "") -> str:
 
 
 # ── Presets (coherent copy, no tag pills, single bottom CTA) ───────────────
+def preset_davet_deneme_kasa_250fs() -> dict:
+    """Davet mailing — canlı Promosyonlar (04.09.2026): Deneme Kasa Görevleri + 250 FS.
+
+    Site metni: 250 adet freespin (Big Bass Makrobet 1000 / Gates of Makrobet 1000),
+    Deneme · Silver · Gold kasa basamakları. 27.08.2026 sonrası yeni kayıt.
+    """
+    body = (
+        f'<tr><td align="center" style="padding:6px 20px 10px;">{badge("ÖZEL DAVET", glow=True)}</td></tr>'
+        + eyebrow("Deneme Kasa Görevleri")
+        + headline("Merhaba {{name}}, 250 freespin + nakit kasa seni bekliyor", size=23)
+        + lead(
+            "Kayıt ol, görevleri tamamla. "
+            "<strong style=\"color:#ffcc00;\">Deneme, Silver ve Gold</strong> kasalarla "
+            "nakit kazanca çık; yanında "
+            "<strong style=\"color:#ffcc00;\">250 adet freespin</strong> tanımlansın.",
+            size=15,
+            emphasize=True,
+        )
+        + feature_box(
+            kicker="★ Yeni üyelere özel ★",
+            big="250 FS",
+            subtitle="FREESPİN HAKKI",
+            note="Big Bass Makrobet 1000 veya Gates of Makrobet 1000 — kayıt + deneme kasa göreviyle eklenir.",
+        )
+        + section_label("Kasa görevleri — 3 basamak")
+        + numbered_list(
+            [
+                (
+                    "Deneme Kasası",
+                    "Kayıt sonrası kasa tanımlanır. Kasadan 1.000 TL kazanç; ardından 1.000 TL yatırımla 2.000 TL çevrimsiz nakit çekim.",
+                ),
+                (
+                    "Silver Kasa",
+                    "İlk çekimden sonra +500 TL yatırım (toplam 1.500 TL). Ödül: Wisdom of Athena 1000 — kazanç limiti 3.000 TL.",
+                ),
+                (
+                    "Gold Kasa",
+                    "Slot / canlı casinoda 3.500 TL çevrim (crash/aviator hariç). Ödül: Sweet Bonanza 1000 — kazanç limiti 5.000 TL.",
+                ),
+            ]
+        )
+        + section_label("Aynı anda açık diğer promosyonlar")
+        + promo_cards(
+            [
+                (
+                    "%100 Kayıp Bonusu",
+                    "Sıfır risk: yatırım senden, güvence Makrobet’ten — kaybın kadar bakiye yeniden tanımlanır.",
+                ),
+                (
+                    "Gün Sonu Kasası",
+                    "Gün içinde yatırım yap; aynı gece 00:30’da kasan otomatik eklensin.",
+                ),
+                (
+                    "Makro Görev",
+                    "Günlük, haftalık ve aylık görevleri bitir; kasa ödüllerini yakala.",
+                ),
+                (
+                    "Arkadaşını Getir",
+                    "Arkadaşının aldığı yatırım bonusunu sana da ekleyelim.",
+                ),
+            ],
+            pad_y=11,
+        )
+        + cta_row("Daveti Aç · Hemen Kayıt Ol", wide=True, font_px=16, pad="16px 36px", glow=True)
+        + lead(
+            "27.08.2026’dan sonra yeni kayıt · kampanya 24 saat geçerli · IP / adres başına 1 kez. "
+            "Genel şartlar uygulanır. 18+",
+            size=12,
+        )
+    )
+    return {
+        "name": "2026 · Davet · 250 FS + Deneme Kasa",
+        "subject": "{{name}}, 250 freespin + Deneme / Silver / Gold kasa seni bekliyor",
+        "html_body": shell(
+            title="Makrobet Özel Davet",
+            preheader="250 freespin · Deneme kasa · Silver · Gold · %100 kayıp · Hemen kayıt ol",
+            body_rows=body,
+        ),
+        "text_body": (
+            "Merhaba {{name}},\n\n"
+            "Makrobet özel davet — Deneme Kasa Görevleri:\n"
+            "• 250 adet freespin (Big Bass Makrobet 1000 / Gates of Makrobet 1000)\n"
+            "• Deneme Kasası — 1.000 TL kazanç, 1.000 TL yatırımla 2.000 TL çevrimsiz çekim\n"
+            "• Silver Kasa — Wisdom of Athena 1000, limit 3.000 TL\n"
+            "• Gold Kasa — Sweet Bonanza 1000, limit 5.000 TL\n"
+            "• Ayrıca: %100 kayıp, Gün Sonu Kasası, Makro Görev, Arkadaşını Getir\n\n"
+            "27.08.2026 sonrası yeni kayıt · 24 saat · bir kez.\n"
+            f"Hemen kayıt ol: {AFF}\n"
+        ),
+    }
+
+
 def preset_davet_deneme_kayip() -> dict:
     """Davet mailing — 3.000 TL deneme kasası + %100 kayıp (promosyonlar sayfası)."""
     body = (
@@ -1344,6 +1436,7 @@ def preset_gorselsiz_ayricaliklar() -> dict:
 
 
 PRESET_BUILDERS = (
+    preset_davet_deneme_kasa_250fs,
     preset_davet_deneme_kayip,
     preset_steril_ayricaliklar,
     preset_gorselsiz_ayricaliklar,

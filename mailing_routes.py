@@ -3549,6 +3549,15 @@ def create_mailing_blueprint(permission_required):
             except Exception as seed_exc:
                 print(f"⚠️  mail template seed v2026: {seed_exc}")
             try:
+                from mail_template_seeds_v2026 import seed_davet_deneme_kasa_250fs_template
+                _fs = seed_davet_deneme_kasa_250fs_template(conn, overwrite=True)
+                print(
+                    f"✉️  davet 250 FS + deneme kasa: "
+                    f"{_fs.get('action')} ({_fs.get('name')})"
+                )
+            except Exception as fs_exc:
+                print(f"⚠️  davet 250 FS seed: {fs_exc}")
+            try:
                 from mail_template_seeds_bizzo import seed_bizzo_mail_templates
                 # Wipe sonrası auto-seed kapalıysa Bizzo da geri gelmesin
                 _bz = seed_bizzo_mail_templates(conn, overwrite=True)

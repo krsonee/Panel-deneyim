@@ -17,6 +17,7 @@ from database import (
 )
 from mail_template_engine_makrobet import (
     build_all_presets,
+    preset_davet_deneme_kasa_250fs,
     preset_davet_deneme_kayip,
     preset_gorselsiz_ayricaliklar,
     preset_steril_ayricaliklar,
@@ -27,6 +28,7 @@ SEED_FLAG = "seeded_makrobet_templates_v2026m"
 TEMPLATES = build_all_presets()
 
 DAVET_DENEME_KAYIP_NAME = "2026 · Davet · Deneme + %100 Kayıp"
+DAVET_DENEME_KASA_250FS_NAME = "2026 · Davet · 250 FS + Deneme Kasa"
 STERIL_AYRICALIKLAR_NAME = "2026 · Steril · Ayrıcalıklar"
 GORSELSIZ_AYRICALIKLAR_NAME = "2026 · Görselsiz · Ayrıcalıklar"
 
@@ -71,6 +73,22 @@ def _upsert_template(conn, item: dict, *, overwrite: bool) -> str:
         ),
     )
     return "added"
+
+
+def seed_davet_deneme_kasa_250fs_template(conn, overwrite=True):
+    """250 FS + Deneme/Silver/Gold kasa davet — wipe skip açıkken de eklenir."""
+    action = _upsert_template(conn, preset_davet_deneme_kasa_250fs(), overwrite=overwrite)
+    try:
+        conn.commit()
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "name": DAVET_DENEME_KASA_250FS_NAME,
+        "added": 1 if action == "added" else 0,
+        "updated": 1 if action == "updated" else 0,
+        "action": action,
+    }
 
 
 def seed_davet_deneme_kayip_template(conn, overwrite=True):
