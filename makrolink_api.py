@@ -1388,14 +1388,9 @@ def resync_all_tracking(conn):
 
 def record_click_and_resolve(conn, code, ip="", user_agent="", referer="", short_host=""):
     host = _clean_host(short_host)
-    # Bizzo: kısa domain host-bind zorunlu değil — custom domain 500/404 olmasın
-    if PANEL_BRAND == "bizzo":
-        enforce_host = False
-    else:
-        enforce_host = bool(host and is_makrolink_host(host, conn))
-    link = get_link_by_code(
-        conn, code, active_only=True, host=host if enforce_host else None, require_host=enforce_host
-    )
+    # Kısa domain listesindeki her host aynı kodu açar (makrovip / makroz.ink / makrosms).
+    # Host-bind kopyalanacak URL içindir; yönlendirmeyi 404 yapmaz.
+    link = get_link_by_code(conn, code, active_only=True, host=None, require_host=False)
     if not link:
         return None
     now = iso(utcnow())

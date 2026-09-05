@@ -2432,7 +2432,7 @@
                   <select id="makrolink-short-host" required>
                     <option value="">— Domain seç —</option>
                   </select>
-                  <span class="muted-sm" style="display:block;margin-top:0.25rem;">Link sadece bu domainde açılır. SMS için makroz.ink, diğerleri için makrovip.com seç.</span>
+                  <span class="muted-sm" style="display:block;margin-top:0.25rem;">Kopyalanacak adresi seç. SMS için makrosms.com veya makroz.ink, diğerleri için makrovip.com.</span>
                 </div>
               </div>
               {% endif %}
@@ -2472,7 +2472,7 @@
               </div>
               <div id="makrolink-created-urls" style="display:none;margin-top:0.5rem;flex-direction:column;gap:0.3rem;"></div>
             </div>
-            <p class="hint" style="margin-top:0.5rem;">{% if panel.brand == "bizzo" %}Akış: <code>domain1.com/xxx</code> · <code>domain2.com/xxx</code> → hedef site URL’si. Hepsi aynı koda gider.{% else %}Akış: seçtiğin kısa domain + kod → hedef site. <code>makrovip.com/kod</code> ile <code>makroz.ink/kod</code> birbirini açmaz.{% endif %}</p>
+            <p class="hint" style="margin-top:0.5rem;">{% if panel.brand == "bizzo" %}Akış: <code>domain1.com/xxx</code> · <code>domain2.com/xxx</code> → hedef site URL’si. Hepsi aynı koda gider.{% else %}Akış: seçtiğin kısa domain + kod → hedef site. Listedeki diğer kısa domainler (makrovip / makroz.ink / makrosms) aynı kodu da açar.{% endif %}</p>
           </div>
           <div class="table-wrap">
             <div class="makrolink-table-toolbar" style="flex-wrap:wrap;gap:0.45rem;align-items:end;">
