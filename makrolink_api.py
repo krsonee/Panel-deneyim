@@ -833,8 +833,11 @@ def bulk_rewrite_destination_hosts(conn, *, prefix="makrobet", from_num=None, to
 def short_url(conn, code, host=None):
     cfg = get_config(conn)
     h = _clean_host(host) if host else cfg["public_host"]
-    if h not in cfg["short_hosts"]:
+    if not h:
         h = cfg["public_host"]
+    elif h not in (cfg.get("short_hosts") or []) and cfg.get("public_host"):
+        # Listede yoksa yine de seçilen hostu yaz — sessizce makroz.ink'e düşürme
+        pass
     return f"{cfg['public_scheme']}://{h}/{code}"
 
 
@@ -862,11 +865,17 @@ def _row_to_dict(conn, row):
     except Exception:
         d["short_host"] = ""
     bound = d.get("short_host") or ""
+    cat = (d.get("category") or "").strip().lower()
+    if not bound and cat == "sms":
+        bound = "makrosms.com"
+        d["short_host"] = bound
     d["short_url"] = short_url(conn, d["code"], host=bound or None)
-    if bound:
-        d["short_urls"] = [d["short_url"]] if d["short_url"] else []
-    else:
-        d["short_urls"] = short_urls_for_code(conn, d["code"])
+    all_urls = short_urls_for_code(conn, d["code"])
+    if d["short_url"] and d["short_url"] not in all_urls:
+        all_urls = [d["short_url"]] + all_urls
+    if d["short_url"] and d["short_url"] in all_urls:
+        all_urls = [d["short_url"]] + [u for u in all_urls if u != d["short_url"]]
+    d["short_urls"] = all_urls
     d["clicks"] = int(d.get("click_count") or 0)
     # Panel host üzerinden test (DNS/custom domain hazır olmasa da)
     code = (d.get("code") or "").strip()

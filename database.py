@@ -870,6 +870,16 @@ def migrate_makrolink(conn):
                     "INSERT OR REPLACE INTO makrolink_settings (key, value) VALUES ('short_hosts', ?)",
                     ("\n".join(hosts),),
                 )
+            # SMS linkleri yanlışlıkla makroz.ink’e yazılmıştı — geri makrosms.com
+            execute(
+                conn,
+                """
+                UPDATE makrolink_links
+                SET short_host = 'makrosms.com'
+                WHERE lower(TRIM(COALESCE(category, ''))) = 'sms'
+                  AND lower(TRIM(COALESCE(short_host, ''))) IN ('makroz.ink', '')
+                """,
+            )
     # Kısa kodları lowercase normalize et (case-insensitive eşsizlik)
     try:
         rows = fetchall(conn, "SELECT id, code FROM makrolink_links ORDER BY id")
