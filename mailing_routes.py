@@ -3221,9 +3221,10 @@ def _purge_all_mail_click_links_once():
 def _purge_all_mail_contacts_once():
     """Bir kerelik: tüm mail kontakları + bağlı gönderim/tıklama kayıtlarını sil.
 
-    Panel kasmasını bitirmek için deploy'da çalışır; mail_settings ile tekrarlanmaz.
+    Panel kasmasını bitirmek / temiz re-import için deploy'da çalışır;
+    mail_settings flag ile tekrarlanmaz.
     """
-    flag = "purge_all_contacts_v20260713a"
+    flag = "purge_all_contacts_v20260906a"
     try:
         with closing(get_db()) as conn:
             if (get_mail_setting(conn, flag, "") or "").strip() == "1":
@@ -3233,6 +3234,10 @@ def _purge_all_mail_contacts_once():
                 before = int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0)
             except Exception:
                 before = -1
+            if before == 0:
+                upsert_mail_setting(conn, flag, "1")
+                conn.commit()
+                return 0
             if uses_postgres():
                 execute(
                     conn,
@@ -3251,9 +3256,12 @@ def _purge_all_mail_contacts_once():
                 except Exception:
                     execute(conn, "DELETE FROM mail_import_jobs")
                 try:
-                    execute(conn, "UPDATE mail_contact_tags SET contact_count = 0")
+                    execute(conn, "DELETE FROM mail_contact_tags")
                 except Exception:
-                    pass
+                    try:
+                        execute(conn, "UPDATE mail_contact_tags SET contact_count = 0")
+                    except Exception:
+                        pass
             else:
                 for table in (
                     "mail_campaign_recipients",
@@ -3268,17 +3276,65 @@ def _purge_all_mail_contacts_once():
                     except Exception:
                         pass
                 try:
-                    execute(conn, "UPDATE mail_contact_tags SET contact_count = 0")
+                    execute(conn, "DELETE FROM mail_contact_tags")
                 except Exception:
-                    pass
+                    try:
+                        execute(conn, "UPDATE mail_contact_tags SET contact_count = 0")
+                    except Exception:
+                        pass
             upsert_mail_setting(conn, flag, "1")
             conn.commit()
             _invalidate_mail_stats_cache()
-            print(f"🧹 mail contacts purged once (before≈{before})")
+            print(f"🧹 mail contacts purged once (before≈{before}) flag={flag}")
             return before
     except Exception as exc:
         print(f"⚠️  mail contacts purge failed: {exc}")
         return -1
+
+
+def _purge_all_mail_contacts_now(conn):
+    """Anlık tam wipe (API) — flag yazmaz; çağıran commit eder."""
+    before = int(scalar(conn, "SELECT COUNT(*) FROM mail_contacts") or 0)
+    if uses_postgres():
+        execute(
+            conn,
+            """
+            TRUNCATE TABLE
+              mail_campaign_recipients,
+              mail_click_links,
+              mail_ivr_events,
+              mail_sends,
+              mail_contacts
+            RESTART IDENTITY CASCADE
+            """,
+        )
+        try:
+            execute(conn, "TRUNCATE TABLE mail_import_jobs RESTART IDENTITY CASCADE")
+        except Exception:
+            execute(conn, "DELETE FROM mail_import_jobs")
+        try:
+            execute(conn, "DELETE FROM mail_contact_tags")
+        except Exception:
+            execute(conn, "UPDATE mail_contact_tags SET contact_count = 0")
+    else:
+        for table in (
+            "mail_campaign_recipients",
+            "mail_click_links",
+            "mail_ivr_events",
+            "mail_sends",
+            "mail_contacts",
+            "mail_import_jobs",
+        ):
+            try:
+                execute(conn, f"DELETE FROM {table}")
+            except Exception:
+                pass
+        try:
+            execute(conn, "DELETE FROM mail_contact_tags")
+        except Exception:
+            execute(conn, "UPDATE mail_contact_tags SET contact_count = 0")
+    _invalidate_mail_stats_cache()
+    return before
 
 
 def _delivery_health_snapshot(conn, tenant_id=None):
@@ -3659,12 +3715,11 @@ def create_mailing_blueprint(permission_required):
             cancel_active_scrub_jobs()
         except Exception as exc:
             print(f"⚠️  startup scrub cancel: {exc}")
-    # Standalone Mikromail'de kontak purge kapalı (satış verisi)
-    if not external_worker and (os.environ.get("SERVICE_MODE") or "").strip().lower() != "mailing":
-        try:
-            _purge_all_mail_contacts_once()
-        except Exception as exc:
-            print(f"⚠️  startup contacts purge: {exc}")
+    # 2026-09-06: tüm kontakları sil — temiz re-import (flag bir kerelik; Mikromail dahil)
+    try:
+        _purge_all_mail_contacts_once()
+    except Exception as exc:
+        print(f"⚠️  startup contacts purge: {exc}")
     bp = Blueprint("mailing", __name__, url_prefix="/api/mailing")
 
     def mail_perm(*keys):
@@ -4206,6 +4261,52 @@ def create_mailing_blueprint(permission_required):
             "deleted": deleted,
             "tag": tag or None,
             "message": f"{deleted} kontak silindi.",
+        })
+
+    @bp.route("/contacts/purge-all", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def purge_all_contacts():
+        """Tüm kontak + send/recipient/click/import job — sadece süper admin.
+
+        Onay: body.confirm == \"SIL_HEPSINI\"
+        """
+        from flask import session as _sess
+
+        if not _sess.get("mail_is_superadmin"):
+            return jsonify({"error": "Sadece süper admin tüm rehberi silebilir."}), 403
+        data = request.get_json(silent=True) or {}
+        if (data.get("confirm") or "").strip() != "SIL_HEPSINI":
+            return jsonify({
+                "error": "Onay için confirm: \"SIL_HEPSINI\" gönder.",
+            }), 400
+        with closing(get_db()) as conn:
+            try:
+                before = _purge_all_mail_contacts_now(conn)
+                try:
+                    upsert_mail_setting(conn, "purge_all_contacts_v20260906a", "1")
+                except Exception:
+                    pass
+                try:
+                    from mail_ops import audit
+                    audit(
+                        conn,
+                        request.headers.get("X-Admin-User") or _sess.get("mail_user") or "admin",
+                        "contacts_purge_all",
+                        f"before={before}",
+                    )
+                except Exception:
+                    pass
+                conn.commit()
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                return jsonify({"error": f"Purge başarısız: {exc}"}), 500
+        return jsonify({
+            "ok": True,
+            "deleted_before": before,
+            "message": f"Rehber temizlendi (önce ≈{before} kontak).",
         })
 
     @bp.route("/contacts", methods=["POST"])
