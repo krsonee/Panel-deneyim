@@ -4783,38 +4783,49 @@
           }
         }
         var submitBtn = campForm.querySelector('button[type="submit"]');
-        if (submitBtn) submitBtn.disabled = true;
+        var submitLabel = submitBtn ? submitBtn.textContent : "";
+        function mailCampSubmitReset() {
+          if (!submitBtn) return;
+          submitBtn.disabled = false;
+          submitBtn.textContent = submitLabel || (mailCampWhenMode() === "schedule" ? "Zamanla ve oluştur" : "Oluştur ve gönder");
+        }
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = when === "schedule" ? "Zamanlanıyor…" : "Oluşturuluyor…";
+        }
+        mailToast(when === "schedule" ? "Kampanya zamanlanıyor…" : "Kampanya oluşturuluyor — büyük listede 1–2 dk sürebilir");
         mailEnsureTenant().then(function (tid) {
           if (window.MAIL_STANDALONE && window.MAIL_IS_SUPERADMIN && !tid && !window.MAIL_TENANT_ID) {
             mailToast("Üstten Aktif tenant seç (örn. makro), sonra tekrar dene");
-            if (submitBtn) submitBtn.disabled = false;
+            mailCampSubmitReset();
             return null;
           }
-          return mailApi("/api/mailing/campaigns", { method: "POST", body: body, timeoutMs: 120000 });
+          return mailApi("/api/mailing/campaigns", { method: "POST", body: body, timeoutMs: 180000 });
         }).then(function (res) {
           if (!res) {
-            if (submitBtn) submitBtn.disabled = false;
+            mailCampSubmitReset();
             return null;
           }
           if (!res.ok) {
-            if (submitBtn) submitBtn.disabled = false;
+            mailCampSubmitReset();
             mailToast((res.data && res.data.error) || ("Oluşturulamadı (HTTP " + res.status + ")"));
             return null;
           }
           var camp = res.data.campaign || {};
           var campId = camp.id;
           if (!campId) {
-            if (submitBtn) submitBtn.disabled = false;
+            mailCampSubmitReset();
             mailToast("Kampanya oluştu ama id yok");
             return null;
           }
+          if (submitBtn) submitBtn.textContent = "Kuyruğa alınıyor…";
           // Hemen / zamanla → kuyruğa al
           return mailApi("/api/mailing/campaigns/" + campId + "/queue", {
             method: "POST",
             body: { send_now: when === "now" },
             timeoutMs: 60000
           }).then(function (qRes) {
-            if (submitBtn) submitBtn.disabled = false;
+            mailCampSubmitReset();
             if (!qRes || !qRes.ok) {
               mailToast(
                 "Taslak oluştu (#" + campId + ") ama kuyruk hatası: " +
@@ -4843,7 +4854,7 @@
             mailLoadCampaigns();
           });
         }).catch(function () {
-          if (submitBtn) submitBtn.disabled = false;
+          mailCampSubmitReset();
           mailToast("Kampanya isteği patladı — tekrar dene");
         });
       });

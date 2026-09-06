@@ -1156,31 +1156,56 @@ def _in_flight_recipient_sql():
 
 
 def _safe_contact_count(conn, where_sql, params, *, timeout_ms=12000):
-    """mail_contacts COUNT — timeout/abort olursa 0 değil None. Txn'ı temizler.
+    """mail_contacts COUNT — timeout/abort olursa 0 değil None.
 
     PG session statement_timeout=25s. Ağır (çok etiket + hariç tut + verify)
     COUNT bunu aşınca transaction aborted kalıyordu; sonraki registry
     okuması da 0 dönüyordu (Kaç kişi? → 0 / ?).
+
+    ÖNEMLİ: full conn.rollback() YAPMA. Kampanya create içinde attach'ten
+    sonra breakdown COUNT timeout olursa eski kod tüm INSERT'i (kampanya +
+    alıcılar) geri alıyor, ardından SELECT None →
+    ``NoneType ... item assignment``. SAVEPOINT ile yalnız sayımı iptal et.
     """
+    sp = "sp_mail_contact_count"
+    sp_open = False
     try:
+        try:
+            execute(conn, f"SAVEPOINT {sp}")
+            sp_open = True
+        except Exception:
+            # Txn zaten bozuksa temizle; CREATE yolunda ideally buraya gelinmez
+            safe_rollback(conn)
+            try:
+                execute(conn, f"SAVEPOINT {sp}")
+                sp_open = True
+            except Exception:
+                sp_open = False
         if uses_postgres():
             try:
                 execute(conn, f"SET LOCAL statement_timeout = '{int(timeout_ms)}ms'")
             except Exception:
-                safe_rollback(conn)
-                try:
-                    execute(conn, f"SET LOCAL statement_timeout = '{int(timeout_ms)}ms'")
-                except Exception:
-                    pass
+                pass
         n = scalar(
             conn,
             f"SELECT COUNT(*) FROM mail_contacts WHERE {where_sql}",
             tuple(params),
         )
+        if sp_open:
+            try:
+                execute(conn, f"RELEASE SAVEPOINT {sp}")
+            except Exception:
+                pass
         return int(n or 0)
     except Exception as exc:
         print(f"⚠️  mail contact count fail: {exc}")
-        safe_rollback(conn)
+        if sp_open:
+            try:
+                execute(conn, f"ROLLBACK TO SAVEPOINT {sp}")
+            except Exception:
+                safe_rollback(conn)
+        else:
+            safe_rollback(conn)
         return None
 
 
@@ -1283,13 +1308,16 @@ def _count_tag_campaign_match(
 
 def _tag_breakdown_for_campaign(
     conn, tags, *, exclude_previously_sent=False, only_verified=False, limit=25,
-    custom_exempt=None, tenant_id=None,
+    custom_exempt=None, tenant_id=None, exact=None,
 ):
     """Seçilen etiketler için etiket başına sayı.
 
     Büyük listelerde filtreli COUNT etiketi başına çok yavaş olabilir —
     bu yüzden varsayılan: registry (yaklaşık). exact=True istenirse
     filtreli sayım yapılır.
+
+    exact=False: create_campaign içinde zorunlu — ağır COUNT create txn'ını
+    (eski bug) veya yanıtı geciktirmesin; alıcı sayısı zaten attached.
     """
     tags = _parse_tag_filter_list(tags)[: max(0, int(limit or 25))]
     if custom_exempt is None:
@@ -1297,7 +1325,10 @@ def _tag_breakdown_for_campaign(
     out = []
     # Filtreliyse bile breakdown için önce registry (UI donmasın);
     # birleşim toplamı select-preview'da ayrı exact COUNT ile gelir.
-    use_exact = bool(exclude_previously_sent or only_verified or tenant_id) and len(tags) <= 3
+    if exact is None:
+        use_exact = bool(exclude_previously_sent or only_verified or tenant_id) and len(tags) <= 3
+    else:
+        use_exact = bool(exact) and len(tags) <= 3
     for tag in tags:
         tag_total = _registry_tag_count(conn, tag)
         try:
@@ -6134,17 +6165,37 @@ def create_mailing_blueprint(permission_required):
                 "UPDATE mail_campaigns SET total_count = ?, updated_at = ? WHERE id = ?",
                 (attached, now, cid),
             )
+            # Breakdown create yanıtında nicelik; exact COUNT (mail_mx_ok ~300k)
+            # timeout + eski full-rollback kampanyayı siliyordu. Registry yeter.
             tag_breakdown = []
             if recipient_mode == "tag" and tag_filter:
-                tag_breakdown = _tag_breakdown_for_campaign(
-                    conn, tag_filter,
-                    exclude_previously_sent=exclude_sent,
-                    only_verified=only_verified,
-                    tenant_id=_tid,
-                )
+                try:
+                    tag_breakdown = _tag_breakdown_for_campaign(
+                        conn, tag_filter,
+                        exclude_previously_sent=exclude_sent,
+                        only_verified=only_verified,
+                        tenant_id=_tid,
+                        exact=False,
+                    )
+                except Exception as br_exc:
+                    print(f"⚠️  campaign tag_breakdown: {br_exc}")
+                    tag_breakdown = []
             conn.commit()
             row = fetchone(conn, "SELECT * FROM mail_campaigns WHERE id = ?", (cid,))
             out = _row(row)
+            if not out:
+                # Insert commit olduysa ama SELECT boşa düştü — id ile dön ki UI kuyruğa alabilsin
+                return jsonify({
+                    "campaign": {
+                        "id": cid,
+                        "name": name,
+                        "status": "draft",
+                        "recipient_count": attached,
+                        "tag_breakdown": tag_breakdown,
+                        "tag_filters": _parse_tag_filter_list(tag_filter),
+                    },
+                    "warning": "Kampanya yazıldı; satır yeniden okunamadı — listeden kontrol et.",
+                }), 201
             out["recipient_count"] = attached
             out["tag_breakdown"] = tag_breakdown
             out["tag_filters"] = _parse_tag_filter_list(tag_filter)
