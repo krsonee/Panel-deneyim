@@ -289,16 +289,34 @@ def _mx_hosts(domain: str) -> list[str]:
     return []
 
 
+_SMTP_CONNECT_ERRORS = (
+    smtplib.SMTPServerDisconnected,
+    smtplib.SMTPConnectError,
+    smtplib.SMTPHeloError,
+    TimeoutError,
+    socket.timeout,
+    ConnectionError,
+    OSError,
+)
+
+
 def _smtp_probe(email: str, mx_hosts: list[str], mail_from: str, timeout: float = 12.0) -> tuple[str, str]:
-    """Döner: (status, detail) — valid|invalid|unknown|catch_all"""
+    """Döner: (status, detail) — valid|invalid|unknown|catch_all|unreachable
+
+    unreachable = MX host'lara port 25 ile bağlanılamadı (Render/EC2 outbound
+    port 25 bloğu gibi). Bu durumda mailbox RCPT sonucu bilinmiyor; çağıran
+    MX doğrulamasına (mx_ok) düşmeli — hepsini mail_unknown saymak yanlış.
+    """
     mail_from = (mail_from or "probe@localhost").strip()
     last_detail = "no_mx_connect"
+    saw_smtp_dialog = False  # en az bir host'ta MAIL FROM / RCPT konuşuldu
     for host in mx_hosts[:3]:
         try:
             with smtplib.SMTP(timeout=timeout) as smtp:
                 smtp.connect(host, 25)
                 smtp.ehlo_or_helo_if_needed()
                 code, _ = smtp.mail(mail_from)
+                saw_smtp_dialog = True
                 if code not in (250, 251):
                     last_detail = f"mail_from_{code}"
                     continue
@@ -320,13 +338,14 @@ def _smtp_probe(email: str, mx_hosts: list[str], mail_from: str, timeout: float 
                 if code in (550, 551, 552, 553, 554):
                     return "invalid", f"rcpt_{code} @{host}: {msg_s}"
                 last_detail = f"rcpt_{code} @{host}: {msg_s}"
-        except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError, smtplib.SMTPHeloError,
-                TimeoutError, socket.timeout, ConnectionError, OSError) as exc:
+        except _SMTP_CONNECT_ERRORS as exc:
             last_detail = f"{type(exc).__name__}:{str(exc)[:120]}"
             continue
         except Exception as exc:
             last_detail = f"{type(exc).__name__}:{str(exc)[:120]}"
             continue
+    if not saw_smtp_dialog:
+        return "unreachable", f"smtp_port25_blocked:{last_detail}"
     return "unknown", last_detail
 
 
@@ -458,6 +477,10 @@ def verify_email(email: str, *, smtp_verify: bool = True, mail_from: str = "") -
         return {"email": addr, "status": "mx_ok", "detail": f"mx:{mx[0]}"}
 
     status, detail = _smtp_probe(addr, mx, mail_from or f"probe@{domain}")
+    # Port 25'e hiç bağlanılamadıysa (Render/EC2 bloğu) RCPT bilinmiyor —
+    # bunu mail_unknown diye etiketlemek listeyi zehirler. MX var → mx_ok.
+    if status == "unreachable":
+        return {"email": addr, "status": "mx_ok", "detail": f"{detail}|mx:{mx[0]}"}
     return {"email": addr, "status": status, "detail": detail}
 
 
@@ -736,6 +759,10 @@ def _process_scrub_job(job_id: int):
     batch_size = 200
     last_contact_id = resume_after
     row_errors = 0
+    # SMTP ping istiyorsa bile port 25 kapalıysa (Render) erken MX-only'ye düş.
+    smtp_verify_effective = bool(settings["scrub_smtp_verify"])
+    smtp_unreachable_streak = 0
+    smtp_fallback_warned = False
 
     def _iter_batches():
         nonlocal last_contact_id
@@ -825,11 +852,42 @@ def _process_scrub_job(job_id: int):
                 try:
                     result = verify_email(
                         email,
-                        smtp_verify=settings["scrub_smtp_verify"],
+                        smtp_verify=smtp_verify_effective,
                         mail_from=mail_from,
                     )
                 except Exception as verify_exc:
                     result = {"email": email, "status": "unknown", "detail": f"verify_exc:{verify_exc}"[:200]}
+
+                detail_s = str(result.get("detail") or "")
+                if smtp_verify_effective and (
+                    detail_s.startswith("smtp_port25_blocked:")
+                    or "|mx:" in detail_s and "smtp_port25_blocked:" in detail_s
+                ):
+                    smtp_unreachable_streak += 1
+                elif smtp_verify_effective and result.get("status") in ("valid", "invalid", "catch_all", "unknown"):
+                    smtp_unreachable_streak = 0
+
+                if (
+                    smtp_verify_effective
+                    and not smtp_fallback_warned
+                    and smtp_unreachable_streak >= 5
+                ):
+                    # Render/EC2 outbound :25 — RCPT imkânsız; kalanı MX-only (hızlı + kampanyaya uygun)
+                    smtp_verify_effective = False
+                    smtp_fallback_warned = True
+                    with suppress(Exception):
+                        with closing(get_db()) as conn:
+                            execute(
+                                conn,
+                                "UPDATE mail_scrub_jobs SET error = ?, updated_at = ? WHERE id = ?",
+                                (
+                                    "SMTP port 25 erişilemiyor (Render bloğu) — MX-only'ye düşüldü. "
+                                    "Ayarlardan SMTP ping'i kapatmanız önerilir.",
+                                    iso(utcnow()),
+                                    job_id,
+                                ),
+                            )
+                            conn.commit()
 
                 try:
                     with closing(get_db()) as conn:
@@ -848,7 +906,7 @@ def _process_scrub_job(job_id: int):
                             _update_job_progress(
                                 conn, job_id, processed, counts, suppressed_n, skipped_n, last_contact_id
                             )
-                            if processed == 1:
+                            if processed == 1 and not smtp_fallback_warned:
                                 execute(
                                     conn,
                                     "UPDATE mail_scrub_jobs SET error = '' WHERE id = ?",
@@ -877,7 +935,7 @@ def _process_scrub_job(job_id: int):
                     last_contact_id = cid
                     continue
 
-                if settings["scrub_smtp_verify"]:
+                if smtp_verify_effective:
                     elapsed = time.monotonic() - t0
                     sleep_for = interval - elapsed
                     if sleep_for > 0:

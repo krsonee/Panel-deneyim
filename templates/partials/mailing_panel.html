@@ -460,7 +460,8 @@
       <div class="card-body">
         <p class="hint" style="margin:0 0 0.65rem;">
           Syntax / disposable / MX / SMTP ping ile geçersiz adresleri ayıklar.
-          Geçersizler suppression’a alınır; geçerli olanlar <code>mail_valid</code> etiketi alır.
+          Geçersizler suppression’a alınır; SMTP RCPT başarılıysa <code>mail_valid</code>,
+          MX-only (veya port 25 kapalıysa) <code>mail_mx_ok</code> etiketi alır.
           SMTP ping “pasif kullanıcı” bulmaz — sadece mailbox’ın kabul edilip edilmediğine bakar.
         </p>
         <div style="margin-bottom:0.65rem;">
@@ -1008,13 +1009,18 @@
       </div>
     </section>
     <section class="card" style="margin-bottom:1rem;">
-      <div class="card-head">
+          <div class="card-head">
         <span class="mm-label-row" style="margin:0;">
           Liste temizleme ayarları
-          <span class="mm-tip" tabindex="0" data-tip="SMTP ping kapalıysa syntax+MX. Açıkken RCPT TO. Port 25 kapalıysa SMTP ping’i kapat.">?</span>
+          <span class="mm-tip" tabindex="0" data-tip="SMTP ping kapalıysa syntax+MX (mail_mx_ok). Açıkken RCPT TO (mail_valid). Render’da outbound port 25 kapalıdır — SMTP ping açılırsa probe bağlanamaz; sistem MX-only’ye düşer. Büyük listelerde SMTP ping’i kapalı tutun.">?</span>
         </span>
       </div>
       <div class="card-body">
+        <p class="hint" style="margin:0 0 0.75rem;">
+          Render’da <strong>outbound port 25 engelli</strong>. SMTP ping açıkken RCPT yapılamaz; sonuçlar
+          <code>mail_unknown</code> yerine MX doğrulamasıyla <code>mail_mx_ok</code> olur (kampanya “sadece doğrulanmış” bunu kabul eder).
+          Gerçek mailbox ping için dış doğrulayıcı veya port 25 açık bir host gerekir.
+        </p>
         <form id="mail-scrub-settings-form" class="form-row-4">
           <div>
             <label class="mm-switch" style="margin-top:1.4rem;">
