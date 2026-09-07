@@ -2709,17 +2709,17 @@
 
   function mailLogoPreviewUrl() {
     try {
-      return (window.location.origin || "") + "/static/mailing/makrobet-logo-mail.png?v=20260723c";
+      return (window.location.origin || "") + "/m/assets/makrobet-logo-mail.jpg?v=20260907a";
     } catch (e) {
-      return "/static/mailing/makrobet-logo-mail.png?v=20260723c";
+      return "/m/assets/makrobet-logo-mail.jpg?v=20260907a";
     }
   }
 
   function bizzoLogoPreviewUrl() {
     try {
-      return (window.location.origin || "") + "/static/mailing/bizzo-logo.png?v=20260723d";
+      return (window.location.origin || "") + "/m/assets/bizzo-logo.png?v=20260907a";
     } catch (e) {
-      return "/static/mailing/bizzo-logo.png?v=20260723d";
+      return "/m/assets/bizzo-logo.png?v=20260907a";
     }
   }
 
@@ -2766,10 +2766,10 @@
     s = s.replace(/__NOT_SPAM_URL__/g, (function () {
       try { return (window.location.origin || "") + "/m/ok/spam-degil"; } catch (e1) { return "/m/ok/spam-degil"; }
     })());
-    s = s.replace(/__MB_IMG_KASA__/g, origin + "/static/mailing/promos/kasa.jpg");
-    s = s.replace(/__MB_IMG_KAYIP__/g, origin + "/static/mailing/promos/kayip.jpg");
-    s = s.replace(/__MB_IMG_ARKADAS__/g, origin + "/static/mailing/promos/arkadas.jpg");
-    s = s.replace(/__MB_IMG_RACE__/g, origin + "/static/mailing/promos/race.jpg");
+    s = s.replace(/__MB_IMG_KASA__/g, origin + "/m/assets/promos/kasa.jpg");
+    s = s.replace(/__MB_IMG_KAYIP__/g, origin + "/m/assets/promos/kayip.jpg");
+    s = s.replace(/__MB_IMG_ARKADAS__/g, origin + "/m/assets/promos/arkadas.jpg");
+    s = s.replace(/__MB_IMG_RACE__/g, origin + "/m/assets/promos/race.jpg");
     s = ensureMailSpamTip(s);
     // href="{{link:...}}" → sadece URL; aksi halde butonlar patlıyor
     s = s.replace(/href\s*=\s*(["'])\s*\{\{\s*link\s*:\s*([^}]+)\s*\}\}\s*\1/gi, function (_m, q, raw) {

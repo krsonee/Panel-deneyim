@@ -351,16 +351,18 @@ DEFAULT_GREETING_NAME = "Değerli üye"
 
 
 def _mail_logo_url():
-    """Şablonlardaki __MAIL_LOGO__ — güncel renkli site logosu (navy zeminli jpg)."""
-    base = _public_base()
-    path = "/static/mailing/makrobet-logo-mail.png?v=20260723c"
-    return (base + path) if base else path
+    """Şablonlardaki __MAIL_LOGO__ — navy zeminli JPG (e-posta istemcileri için).
+
+    /static/mailing/* ara sıra 403 / UA engeline takılabiliyor; /m/assets/
+    public click blueprint üzerinden servis edilir (auth yok, cache'li).
+    """
+    base = (_public_base() or "https://mikromail.onrender.com").rstrip("/")
+    return f"{base}/m/assets/makrobet-logo-mail.jpg?v=20260907a"
 
 
 def _bizzo_logo_url():
-    base = _public_base()
-    path = "/static/mailing/bizzo-logo.png?v=20260723d"
-    return (base + path) if base else path
+    base = (_public_base() or "https://mikromail.onrender.com").rstrip("/")
+    return f"{base}/m/assets/bizzo-logo.png?v=20260907a"
 
 
 def _not_spam_dest_url():
@@ -412,15 +414,28 @@ def _ensure_spam_tip(html):
 
 
 def _mail_promo_img_url(name):
-    base = _public_base()
-    path = f"/static/mailing/promos/{name}"
-    return (base + path) if base else path
+    base = (_public_base() or "https://mikromail.onrender.com").rstrip("/")
+    return f"{base}/m/assets/promos/{name}"
 
 
 def _apply_mail_assets(text):
     text = text or ""
+    logo = _mail_logo_url()
     if "__MAIL_LOGO__" in text:
-        text = text.replace("__MAIL_LOGO__", _mail_logo_url())
+        text = text.replace("__MAIL_LOGO__", logo)
+    # Eski kırık / relative / png yollarını da JPG public asset'e çek
+    text = re.sub(
+        r"https?://[^\"'\s]+/static/mailing/makrobet-logo-mail\.(?:png|jpg)(?:\?[^\"'\s]*)?",
+        logo,
+        text,
+        flags=re.I,
+    )
+    text = re.sub(
+        r"(?<![\"'=])/static/mailing/makrobet-logo-mail\.(?:png|jpg)(?:\?[^\"'\s]*)?",
+        logo,
+        text,
+        flags=re.I,
+    )
     if "__BIZZO_LOGO__" in text:
         text = text.replace("__BIZZO_LOGO__", _bizzo_logo_url())
     if "__NOT_SPAM_URL__" in text:
@@ -438,6 +453,53 @@ def _apply_mail_assets(text):
     if "<" in text and ("<html" in text.lower() or "<body" in text.lower() or "<table" in text.lower()):
         text = _ensure_spam_tip(text)
     return text
+
+
+def _bake_mail_logo_urls_in_templates(conn):
+    """DB'deki şablonlarda __MAIL_LOGO__ / eski static logo → mutlak /m/assets JPG."""
+    logo = _mail_logo_url()
+    bizzo = _bizzo_logo_url()
+    rows = fetchall(conn, "SELECT id, html_body, text_body FROM mail_templates") or []
+    n = 0
+    for row in rows:
+        html = row.get("html_body") or ""
+        text = row.get("text_body") or ""
+        new_html = html
+        new_text = text
+        if new_html:
+            if "__MAIL_LOGO__" in new_html:
+                new_html = new_html.replace("__MAIL_LOGO__", logo)
+            if "__BIZZO_LOGO__" in new_html:
+                new_html = new_html.replace("__BIZZO_LOGO__", bizzo)
+            new_html = re.sub(
+                r"https?://[^\"'\s]+/static/mailing/makrobet-logo-mail\.(?:png|jpg)(?:\?[^\"'\s]*)?",
+                logo,
+                new_html,
+                flags=re.I,
+            )
+            new_html = re.sub(
+                r"(?<![\"'=])/static/mailing/makrobet-logo-mail\.(?:png|jpg)(?:\?[^\"'\s]*)?",
+                logo,
+                new_html,
+                flags=re.I,
+            )
+            # Eski /m/assets png → jpg
+            new_html = re.sub(
+                r"https?://[^\"'\s]+/m/assets/makrobet-logo-mail\.png(?:\?[^\"'\s]*)?",
+                logo,
+                new_html,
+                flags=re.I,
+            )
+        if new_text and "__MAIL_LOGO__" in new_text:
+            new_text = new_text.replace("__MAIL_LOGO__", logo)
+        if new_html != html or new_text != text:
+            execute(
+                conn,
+                "UPDATE mail_templates SET html_body = ?, text_body = ?, updated_at = ? WHERE id = ?",
+                (new_html, new_text, iso(utcnow()), row["id"]),
+            )
+            n += 1
+    return n
 
 
 def _render_template(text, contact):
@@ -3134,6 +3196,53 @@ def create_mailing_click_blueprint():
         )
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
+    @bp.route("/m/assets/<path:filename>", methods=["GET", "HEAD"])
+    def mail_public_asset(filename):
+        """E-posta logoları / promo görselleri — auth yok, cache'li.
+
+        Gmail Image Proxy /static altında ara sıra 403 alabiliyor; /m/assets
+        click blueprint üzerinden güvenilir servis.
+        """
+        from flask import abort, send_from_directory
+
+        raw = (filename or "").replace("\\", "/").lstrip("/")
+        if ".." in raw or raw.startswith("/"):
+            abort(404)
+        allowed_root = {
+            "makrobet-logo-mail.jpg",
+            "makrobet-logo-mail.png",
+            "makrobet-logo.png",
+            "makrobet-logo-black.png",
+            "bizzo-logo.png",
+            "bizzo-logo.svg",
+            "bizzo-mark.svg",
+        }
+        allowed_promo = {"kasa.jpg", "kayip.jpg", "arkadas.jpg", "race.jpg"}
+        here = os.path.dirname(os.path.abspath(__file__))
+        base_dir = os.path.join(here, "static", "mailing")
+        if not os.path.isdir(base_dir):
+            base_dir = os.path.join(os.path.dirname(here), "static", "mailing")
+
+        if raw.startswith("promos/"):
+            leaf = raw.split("/", 1)[1]
+            if leaf not in allowed_promo:
+                abort(404)
+            directory = os.path.join(base_dir, "promos")
+            file_name = leaf
+        else:
+            if raw not in allowed_root:
+                abort(404)
+            directory = base_dir
+            file_name = raw
+
+        if not os.path.isfile(os.path.join(directory, file_name)):
+            abort(404)
+        resp = send_from_directory(directory, file_name, max_age=86400)
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers.pop("Content-Disposition", None)
+        return resp
+
     @bp.route("/m/o/<int:send_id>/<sig>", methods=["GET"])
     def mail_open_pixel(send_id, sig):
         from mail_ops import record_open, verify_open_sig
@@ -3678,6 +3787,13 @@ def create_mailing_blueprint(permission_required):
                 _repair_bizzo_template_ownership(conn)
             except Exception as repair_exc:
                 print(f"⚠️  bizzo template ownership repair: {repair_exc}")
+            try:
+                baked = _bake_mail_logo_urls_in_templates(conn)
+                conn.commit()
+                if baked:
+                    print(f"✉️  baked mail logo URLs in {baked} template(s)")
+            except Exception as bake_exc:
+                print(f"⚠️  bake mail logo URLs: {bake_exc}")
             try:
                 from mail_weekly_maintenance import ensure_sunday_maintenance
                 _wm = ensure_sunday_maintenance(conn)
