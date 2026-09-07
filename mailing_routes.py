@@ -5141,6 +5141,38 @@ def create_mailing_blueprint(permission_required):
             conn.commit()
         return jsonify({"ok": True, "status": "cancelling"})
 
+    @bp.route("/contacts/scrub/resume/<int:job_id>", methods=["POST"])
+    @mail_perm(*MAIL_CRM)
+    def resume_scrub(job_id):
+        """İptal/hata olmuş temizliği kaldığı yerden sürdür."""
+        from mail_scrub import job_public, resume_scrub_job
+
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM mail_scrub_jobs WHERE id = ?", (job_id,))
+            if not row:
+                return jsonify({"error": "İş bulunamadı."}), 404
+            row = _row(row)
+            try:
+                from mail_tenant import current_tenant_id
+                _tid = current_tenant_id()
+                if _tid and row.get("tenant_id") and int(row["tenant_id"]) != int(_tid):
+                    return jsonify({"error": "Bu iş başka firmaya ait."}), 403
+            except Exception:
+                pass
+        try:
+            info = resume_scrub_job(job_id)
+        except RuntimeError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Devam ettirilemedi: {exc}"}), 500
+        with closing(get_db()) as conn:
+            row = fetchone(conn, "SELECT * FROM mail_scrub_jobs WHERE id = ?", (job_id,))
+        return jsonify({
+            "ok": True,
+            "job": job_public(row) if row else info,
+            "message": f"Temizlik #{job_id} kaldığı yerden devam ediyor.",
+        })
+
     @bp.route("/contacts/scrub/force-reset", methods=["POST"])
     @mail_perm(*MAIL_CRM)
     def scrub_force_reset():

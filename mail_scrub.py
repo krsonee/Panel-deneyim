@@ -983,6 +983,53 @@ def _cancel_stale_scrub_jobs(conn, *, older_seconds: int = 180) -> int:
     return n
 
 
+def resume_scrub_job(job_id: int) -> dict:
+    """İptal/hata olmuş scrub işini kaldığı last_contact_id'den devam ettir."""
+    now = iso(utcnow())
+    with closing(get_db()) as conn:
+        ensure_mail_scrub_schema(conn)
+        job = fetchone(conn, "SELECT * FROM mail_scrub_jobs WHERE id = ?", (int(job_id),))
+        if not job:
+            raise RuntimeError("İş bulunamadı.")
+        status = (_row_get(job, "status") or "").strip()
+        if status in ("pending", "running", "cancelling"):
+            raise RuntimeError(f"İş zaten aktif ({status}).")
+        if status not in ("cancelled", "error"):
+            raise RuntimeError(f"Bu durumdan devam edilemez ({status}).")
+        # Başka aktif iş varsa blokla
+        active = scalar(
+            conn,
+            "SELECT COUNT(*) FROM mail_scrub_jobs WHERE status IN ('pending', 'running', 'cancelling') AND id <> ?",
+            (int(job_id),),
+        ) or 0
+        if int(active) > 0:
+            raise RuntimeError("Başka bir temizlik işi zaten çalışıyor — önce onu bitir/iptal et.")
+        processed = int(_row_get(job, "processed") or 0)
+        total = int(_row_get(job, "total") or 0)
+        execute(
+            conn,
+            """
+            UPDATE mail_scrub_jobs SET
+                status = 'pending',
+                error = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                f"devam — kaldığı yerden (işlenen {processed}/{total or '?'})",
+                now,
+                int(job_id),
+            ),
+        )
+        conn.commit()
+
+    t = threading.Thread(
+        target=_run_scrub_job, args=(int(job_id),), daemon=True, name=f"mail-scrub-resume-{job_id}"
+    )
+    t.start()
+    return {"id": int(job_id), "status": "pending", "processed": processed, "total": total}
+
+
 def start_scrub_job(*, tag_filter="", contact_ids=None, scope="filter", tenant_id=None) -> int:
     now = iso(utcnow())
     ids = list(contact_ids or [])

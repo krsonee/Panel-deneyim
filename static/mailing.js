@@ -2345,41 +2345,58 @@
     var bar = document.getElementById("mail-scrub-progress-bar");
     var statusEl = document.getElementById("mail-scrub-status");
     var cancelBtn = document.getElementById("mail-scrub-cancel");
+    var resumeBtn = document.getElementById("mail-scrub-resume");
     var banner = document.getElementById("mm-scrub-banner");
     var bannerText = document.getElementById("mm-scrub-banner-text");
     var active = mailScrubIsActive(j);
+    var resumable = !!(j && (j.status === "cancelled" || j.status === "error") && Number(j.processed || 0) > 0 && Number(j.processed || 0) < Number(j.total || 0));
     if (cancelBtn) cancelBtn.hidden = !active;
+    if (resumeBtn) {
+      resumeBtn.hidden = !resumable;
+      if (resumable) resumeBtn.setAttribute("data-id", String(j.id));
+    }
     if (banner) banner.hidden = !active;
-    if (!j || !active) {
-      // İptal / bitmiş / sıfırlanmış — “takılı” gibi görünmesin
+    if (!j) {
       if (prog) prog.hidden = true;
       if (bar) bar.style.width = "0%";
+      if (statusEl) statusEl.textContent = "Hazır — SMTP kapalıysa daha hızlı biter. Listeyi temizle’ye bas.";
+      try { localStorage.removeItem("mm_scrub_job_id"); } catch (e) { /* ignore */ }
+      return;
+    }
+    // Bitmiş / iptal — paneli GİZLEME; operatör ne olduğunu görsün
+    if (!active) {
+      if (prog) prog.hidden = false;
+      var pctDone = j.total ? Math.min(100, Math.round(100 * (j.processed || 0) / j.total)) : 0;
+      if (bar) {
+        bar.style.width = pctDone + "%";
+        bar.style.background = j.status === "done" ? "var(--green,#22c55e)" : "var(--rose,#f43f5e)";
+      }
       if (statusEl) {
-        if (j && (j.status === "done" || j.status === "error")) {
-          statusEl.textContent = mailScrubStatusText(j) + " — bitmiş. Yeniden başlatmak için Listeyi temizle.";
-        } else {
-          statusEl.textContent = "Hazır — SMTP kapalıysa daha hızlı biter. Listeyi temizle’ye bas.";
+        var stLabel = j.status === "cancelled" ? "İPTAL" : (j.status === "error" ? "HATA" : (j.status || ""));
+        statusEl.textContent = stLabel + " · #" + j.id + " · " + mailScrubStatusText(j) +
+          (resumable ? " — «Kaldığı yerden devam» ile sürdürebilirsin." : " — Yeniden başlatmak için Listeyi temizle.");
+      }
+      if (banner && (j.status === "cancelled" || j.status === "error")) {
+        banner.hidden = false;
+        if (bannerText) {
+          bannerText.textContent = "Son temizlik #" + j.id + " " +
+            (j.status === "cancelled" ? "iptal edildi" : "hata verdi") +
+            " · " + (j.processed || 0) + "/" + (j.total || "?") +
+            (resumable ? " · devam ettirilebilir" : "");
         }
       }
       try { localStorage.removeItem("mm_scrub_job_id"); } catch (e) { /* ignore */ }
       return;
     }
     if (prog) prog.hidden = false;
-    var pct = j.total > 0 ? Math.min(100, Math.round((j.processed / j.total) * 100)) : 0;
-    if (bar) bar.style.width = (j.total > 0 ? pct : (j.processed > 0 ? 40 : 12)) + "%";
+    if (bar) bar.style.background = "var(--green,#22c55e)";
+    var pct = j.total ? Math.min(100, Math.round(100 * (j.processed || 0) / j.total)) : 0;
+    if (bar) bar.style.width = pct + "%";
     var line = mailScrubStatusText(j);
     if (j.status === "cancelling") line = "İptal ediliyor… · " + line;
-    if (statusEl) statusEl.textContent = line;
-    if (bannerText) {
-      bannerText.textContent = "Liste temizliği #" + (j.id || "?") + " · " +
-        (j.processed || 0) + "/" + (j.total || "?") +
-        " · valid " + (j.valid_count || 0) +
-        " · invalid " + (j.invalid_count || 0) +
-        (j.status === "pending" ? " · başlıyor…" : "");
-    }
-    try {
-      if (j.id) localStorage.setItem("mm_scrub_job_id", String(j.id));
-    } catch (e) { /* ignore */ }
+    if (statusEl) statusEl.textContent = "#" + j.id + " · " + line;
+    if (bannerText) bannerText.textContent = "Liste temizliği çalışıyor #" + j.id + " · " + (j.processed || 0) + "/" + (j.total || "?");
+    try { localStorage.setItem("mm_scrub_job_id", String(j.id)); } catch (e) { /* ignore */ }
   }
 
   function mailPollScrubJob(jobId) {
@@ -5112,6 +5129,25 @@
       mailApi("/api/mailing/contacts/scrub/cancel/" + mailScrubJobId, { method: "POST" }).then(function (res) {
         if (!res || !res.ok) mailToast((res && res.data && res.data.error) || "İptal edilemedi");
         else mailToast("İptal isteniyor…");
+      });
+    });
+    bindClick("mail-scrub-resume", function () {
+      var btn = document.getElementById("mail-scrub-resume");
+      var id = btn && btn.getAttribute("data-id");
+      if (!id) {
+        mailToast("Devam edilecek iş yok");
+        return;
+      }
+      if (!confirm("Temizlik #" + id + " kaldığı yerden devam etsin mi?")) return;
+      if (btn) btn.disabled = true;
+      mailApi("/api/mailing/contacts/scrub/resume/" + id, { method: "POST", timeoutMs: 30000 }).then(function (res) {
+        if (btn) btn.disabled = false;
+        if (!res || !res.ok) {
+          mailToast((res && res.data && res.data.error) || "Devam ettirilemedi");
+          return;
+        }
+        mailToast(res.data.message || ("#" + id + " devam ediyor"));
+        mailPollScrubJob(Number(id));
       });
     });
     var scrubForm = document.getElementById("mail-scrub-settings-form");
