@@ -1,0 +1,20 @@
+{
+  "name": "MakroPanel + Mikromail (dev)",
+  "user": "ubuntu",
+  "install": "./.cursor/install.sh",
+  "terminals": [
+    {
+      "name": "makropanel",
+      "command": "source \"$HOME/.venv/bin/activate\" && export PANEL_BRAND=makro SERVICE_MODE=panel ADMIN_USERNAME=tolgakt ADMIN_PASSWORD=makro123 PORT=8080 && exec gunicorn app:app --bind 0.0.0.0:8080 --workers 1 --threads 4 --worker-class gthread --timeout 120 --keep-alive 5"
+    },
+    {
+      "name": "mikromail",
+      "command": "source \"$HOME/.venv/bin/activate\" && export SERVICE_MODE=mailing PANEL_BRAND=makro MAILING_WORKER_EXTERNAL=1 MAILING_SUPERADMIN_USER=tolgakt MAILING_SUPERADMIN_PASSWORD=makro123 ADMIN_USERNAME=tolgakt ADMIN_PASSWORD=makro123 PORT=8081 && exec gunicorn mailing_app:app --bind 0.0.0.0:8081 --workers 1 --threads 4 --worker-class gthread --timeout 7200 --keep-alive 5"
+    },
+    {
+      "name": "mikromail-worker",
+      "command": "source \"$HOME/.venv/bin/activate\" && export SERVICE_MODE=mailing-worker MAILING_WORKER_EXTERNAL=1 && exec python mailing_worker_main.py"
+    }
+  ],
+  "ports": [8080, 8081]
+}
