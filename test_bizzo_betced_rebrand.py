@@ -17,11 +17,11 @@ import panel_config  # noqa: E402
 import track_domains  # noqa: E402
 
 
+# UI / seed — purge kodundaki "silinecek host" docstring'i hariç
 PANEL_FILES = (
     Path("panel_config.py"),
     Path("templates/admin.html"),
     Path("static/biolink.js"),
-    Path("track_domains.py"),
 )
 
 
