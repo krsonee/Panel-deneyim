@@ -126,12 +126,12 @@
     var cfg = window.PANEL_BIOLINK || {};
     if (cfg.brand !== "bizzo") return;
     var p = cfg.pack || {};
-    var handle = p.handle || "bizzocasino";
-    var site = p.site_url || cfg.promoPlaceholder || "https://www.bizzocasino168.com";
-    BL_PRESETS.whatsapp.defaults.label = p.wa_default || "Bizzo WhatsApp Destek";
-    BL_PRESETS.whatsapp.fields[0].placeholder = p.wa_default || "Bizzo WhatsApp Destek";
-    BL_PRESETS.telegram.defaults.label = p.tg_default || "Bizzo Telegram";
-    BL_PRESETS.telegram.fields[0].placeholder = p.tg_default || "Bizzo Telegram";
+    var handle = p.handle || "betced";
+    var site = p.site_url || cfg.promoPlaceholder || "https://betced.com";
+    BL_PRESETS.whatsapp.defaults.label = p.wa_default || "Betced WhatsApp Destek";
+    BL_PRESETS.whatsapp.fields[0].placeholder = p.wa_default || "Betced WhatsApp Destek";
+    BL_PRESETS.telegram.defaults.label = p.tg_default || "Betced Telegram";
+    BL_PRESETS.telegram.fields[0].placeholder = p.tg_default || "Betced Telegram";
     BL_PRESETS.telegram.fields[1].placeholder = handle;
     BL_PRESETS.instagram.fields[1].placeholder = handle;
     BL_PRESETS.twitter.fields[1].placeholder = handle;
@@ -152,7 +152,7 @@
       { key: "url", label: "Kampanya linki", placeholder: cfg.promoPlaceholder || site, full: true },
     ];
     BL_PRESETS.link.color = p.link_color || "#b2ff4f";
-    BL_PRESETS.link.defaults.label = p.link_default_label || "Bizzo'ya Git";
+    BL_PRESETS.link.defaults.label = p.link_default_label || "Betced'e Git";
     BL_PRESETS.link.fields[0].placeholder = p.link_label_placeholder || "Güncel Giriş";
     BL_PRESETS.link.fields[1].placeholder = site;
     BL_PRESETS.heading.defaults.label = p.heading_default || "🎰 Canlı Promosyonlar";
