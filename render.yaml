@@ -31,6 +31,12 @@ services:
         fromDatabase:
           name: makropanel-db
           property: connectionString
+      - key: MEDIA_BOT_ENABLED
+        value: "0"
+      - key: MEDIA_BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
 
   - type: web
     name: mikromail

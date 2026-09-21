@@ -2582,6 +2582,12 @@ def tracked_domain_redirect():
 
 def _run_startup():
     init_db()
+    if os.environ.get("MEDIA_BOT_ENABLED", "").strip().lower() in ("1", "true", "yes"):
+        try:
+            from media_bot import start_in_background
+            start_in_background()
+        except Exception as exc:
+            print(f"media bot başlamadı: {exc}")
 
 
 # Werkzeug reloader açıkken parent process'te init atlanır (çift migration / kilit riski)
