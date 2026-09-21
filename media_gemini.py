@@ -36,8 +36,9 @@ def _request(url, payload=None, timeout=120):
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", "replace")
         raise GeminiError(_short_error(body) or f"Google {exc.code}") from exc
-    except urllib.error.URLError as exc:
-        raise GeminiError(f"Google bağlantı hatası: {exc.reason}") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        reason = getattr(exc, "reason", None) or exc
+        raise GeminiError(f"Google bağlantı hatası: {reason}") from exc
     if not raw:
         return {}
     return json.loads(raw.decode("utf-8"))
@@ -68,6 +69,26 @@ def extract_image(payload):
             if parsed:
                 data, mime = parsed
                 return {"bytes": data, "mime": mime, "interaction_id": interaction_id}
+    for candidate in payload.get("candidates") or []:
+        content = candidate.get("content") or {}
+        for part in content.get("parts") or []:
+            parsed = _image_block(part)
+            if parsed:
+                data, mime = parsed
+                return {"bytes": data, "mime": mime, "interaction_id": interaction_id}
+    return None
+
+
+def image_failure_reason(payload):
+    if not isinstance(payload, dict):
+        return None
+    feedback = payload.get("promptFeedback") or {}
+    if feedback.get("blockReason"):
+        return f"Google bu isteği geri çevirdi ({feedback['blockReason']})"
+    for candidate in payload.get("candidates") or []:
+        reason = candidate.get("finishReason")
+        if reason and reason not in ("STOP", "FINISH_REASON_UNSPECIFIED"):
+            return f"Google görseli tamamlamadı ({reason})"
     return None
 
 
@@ -75,11 +96,18 @@ def _image_block(block):
     if not isinstance(block, dict):
         return None
     data = block.get("data")
-    if not data and isinstance(block.get("inline_data"), dict):
-        data = block["inline_data"].get("data")
+    inline = block.get("inline_data") or block.get("inlineData") or {}
+    if not data and isinstance(inline, dict):
+        data = inline.get("data")
     if not data:
         return None
-    mime = block.get("mime_type") or block.get("mimeType") or "image/png"
+    mime = (
+        block.get("mime_type")
+        or block.get("mimeType")
+        or (inline.get("mime_type") if isinstance(inline, dict) else None)
+        or (inline.get("mimeType") if isinstance(inline, dict) else None)
+        or "image/png"
+    )
     try:
         return base64.b64decode(data), mime
     except (ValueError, TypeError):
@@ -88,33 +116,31 @@ def _image_block(block):
 
 def generate_image(prompt, aspect_ratio, previous_interaction_id=None, reference=None):
     """reference = {'bytes': b, 'mime': 'image/png'} önceki görseli düzenlemek için."""
-    if reference:
-        user_input = [
-            {"type": "text", "text": prompt},
-            {
-                "type": "image",
+    parts = [{"text": prompt}]
+    if reference and reference.get("bytes"):
+        parts.append({
+            "inlineData": {
+                "mimeType": reference.get("mime") or "image/png",
                 "data": base64.b64encode(reference["bytes"]).decode("ascii"),
-                "mime_type": reference.get("mime") or "image/png",
-            },
-        ]
-    else:
-        user_input = prompt
+            }
+        })
+    elif previous_interaction_id:
+        parts[0]["text"] = prompt + " Keep the previous poster and apply only the requested change."
     body = {
-        "model": IMAGE_MODEL,
-        "input": user_input,
-        "response_format": {
-            "type": "image",
-            "mime_type": "image/png",
-            "aspect_ratio": aspect_ratio,
-            "image_size": "1K",
+        "contents": [{"role": "user", "parts": parts}],
+        "generationConfig": {
+            "responseModalities": ["IMAGE", "TEXT"],
+            "imageConfig": {"aspectRatio": aspect_ratio},
         },
     }
-    if previous_interaction_id:
-        body["previous_interaction_id"] = previous_interaction_id
-    payload = _request(f"{API_BASE}/interactions", body, timeout=180)
+    payload = _request(
+        f"{API_BASE}/models/{IMAGE_MODEL}:generateContent",
+        body,
+        timeout=70,
+    )
     image = extract_image(payload)
     if not image:
-        raise GeminiError("Model görsel döndürmedi. Metni kısaltıp tekrar dene.")
+        raise GeminiError(image_failure_reason(payload) or "Model görsel döndürmedi. Metni kısaltıp tekrar dene.")
     return image
 
 

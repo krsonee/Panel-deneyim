@@ -60,6 +60,12 @@ class MediaBot:
                     self._on_update(update)
                 except Exception as exc:
                     print(f"media bot update: {exc}")
+                    chat_id = _chat_id(update)
+                    if chat_id:
+                        try:
+                            self._send(chat_id, f"İşlem yarıda kaldı: {exc}")
+                        except Exception:
+                            pass
 
     def _skip_backlog(self):
         try:
@@ -232,54 +238,53 @@ class MediaBot:
             self._send(chat_id, "Bir iş hâlâ sürüyor. Bitince tekrar yaz.")
             return
         self.busy.add(chat_id)
-        self._send(chat_id, "Görsel hazırlanıyor. Bu bir dakikayı bulabilir.")
         try:
+            self._send(chat_id, "Görsel hazırlanıyor. Bu bir dakikayı bulabilir.")
             aspect = FORMATS[session["fmt"]][0]
             reference = None
-            previous = None
-            if revise and session.get("interaction_id"):
-                previous = session["interaction_id"]
-            elif revise and session.get("image"):
+            if revise and session.get("image"):
                 reference = {"bytes": session["image"], "mime": session.get("mime") or "image/png"}
-            image = generate_image(prompt, aspect, previous_interaction_id=previous, reference=reference)
-        except GeminiError as exc:
+            image = self._call_with_deadline(
+                lambda: generate_image(prompt, aspect, reference=reference)
+            )
+            session["image"] = image["bytes"]
+            session["mime"] = image["mime"]
+            session["interaction_id"] = image.get("interaction_id")
+            session["step"] = "ready"
+            filename = f"{session['brand']}_{session['fmt']}.png"
+            self._send_photo(chat_id, image["bytes"], ready_caption(session, filename), self._result_keyboard())
+        except Exception as exc:
             self._send(chat_id, f"Görsel çıkmadı: {exc}")
-            return
         finally:
             self.busy.discard(chat_id)
-        session["image"] = image["bytes"]
-        session["mime"] = image["mime"]
-        session["interaction_id"] = image.get("interaction_id")
-        session["step"] = "ready"
-        filename = f"{session['brand']}_{session['fmt']}.png"
-        self._send_photo(chat_id, image["bytes"], ready_caption(session, filename), self._result_keyboard())
 
     def _make_sticker(self, chat_id, session):
         if chat_id in self.busy:
             self._send(chat_id, "Bir iş hâlâ sürüyor.")
             return
         self.busy.add(chat_id)
-        self._send(chat_id, "Sticker çiziliyor.")
         try:
-            image = generate_image(sticker_prompt(session), "1:1")
-        except GeminiError as exc:
+            self._send(chat_id, "Sticker çiziliyor.")
+            image = self._call_with_deadline(
+                lambda: generate_image(sticker_prompt(session), "1:1")
+            )
+            session["image"] = image["bytes"]
+            session["mime"] = image["mime"]
+            session["interaction_id"] = image.get("interaction_id")
+            session["step"] = "sticker_ready"
+            self._send_photo(
+                chat_id,
+                image["bytes"],
+                "Sticker taslağı hazır. Pakete ekleyeyim mi?",
+                {"inline_keyboard": [[
+                    {"text": "Onayla ve kaydet", "callback_data": "s:ok"},
+                    {"text": "İptal", "callback_data": "s:cancel"},
+                ]]},
+            )
+        except Exception as exc:
             self._send(chat_id, f"Sticker çıkmadı: {exc}")
-            return
         finally:
             self.busy.discard(chat_id)
-        session["image"] = image["bytes"]
-        session["mime"] = image["mime"]
-        session["interaction_id"] = image.get("interaction_id")
-        session["step"] = "sticker_ready"
-        self._send_photo(
-            chat_id,
-            image["bytes"],
-            "Sticker taslağı hazır. Pakete ekleyeyim mi?",
-            {"inline_keyboard": [[
-                {"text": "Onayla ve kaydet", "callback_data": "s:ok"},
-                {"text": "İptal", "callback_data": "s:cancel"},
-            ]]},
-        )
 
     def _animate(self, chat_id, session):
         if not session.get("image"):
@@ -290,23 +295,25 @@ class MediaBot:
             return
         aspect = video_aspect(session.get("fmt"))
         self.busy.add(chat_id)
-        self._send(
-            chat_id,
-            f"Video hazırlanıyor ({aspect}, 4 saniye). Yaklaşık 0,20 dolar. Birkaç dakika sürebilir.",
-        )
         try:
-            video = generate_video(
-                video_prompt(session),
-                session["image"],
-                session.get("mime") or "image/png",
-                aspect,
+            self._send(
+                chat_id,
+                f"Video hazırlanıyor ({aspect}, 4 saniye). Yaklaşık 0,20 dolar. Birkaç dakika sürebilir.",
             )
-        except GeminiError as exc:
+            video = self._call_with_deadline(
+                lambda: generate_video(
+                    video_prompt(session),
+                    session["image"],
+                    session.get("mime") or "image/png",
+                    aspect,
+                ),
+                seconds=240,
+            )
+            self._send_video(chat_id, video, "Video hazır.")
+        except Exception as exc:
             self._send(chat_id, f"Video çıkmadı: {exc}")
-            return
         finally:
             self.busy.discard(chat_id)
-        self._send_video(chat_id, video, "Video hazır.")
 
     def _send_hd(self, chat_id, session):
         if not session.get("image"):
@@ -483,6 +490,25 @@ class MediaBot:
             files={"video": ("kampanya.mp4", data, "video/mp4")},
         )
 
+    def _call_with_deadline(self, fn, seconds=80):
+        box = {}
+
+        def run():
+            try:
+                box["value"] = fn()
+            except Exception as exc:
+                box["error"] = exc
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        worker.join(seconds)
+        if worker.is_alive():
+            raise GeminiError("Google zamanında cevap vermedi. Biraz sonra tekrar dene.")
+        if box.get("error"):
+            err = box["error"]
+            raise err if isinstance(err, GeminiError) else GeminiError(str(err))
+        return box.get("value")
+
     def _api(self, method, payload=None, files=None, timeout=60):
         url = f"https://api.telegram.org/bot{self.token}/{method}"
         if files:
@@ -502,6 +528,12 @@ class MediaBot:
         if not result.get("ok", True):
             raise RuntimeError(result.get("description") or "Telegram hatası")
         return result
+
+
+def _chat_id(update):
+    if "callback_query" in update:
+        return ((update["callback_query"].get("message") or {}).get("chat") or {}).get("id")
+    return ((update.get("message") or {}).get("chat") or {}).get("id")
 
 
 def _multipart(fields, files):

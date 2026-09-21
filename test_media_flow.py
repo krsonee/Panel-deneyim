@@ -53,6 +53,20 @@ class FlowTests(unittest.TestCase):
         })
         self.assertEqual(found["bytes"], b"step-bytes")
 
+    def test_extract_image_from_generate_content(self):
+        raw = base64.b64encode(b"gen-bytes").decode()
+        found = extract_image({
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "inlineData": {"mimeType": "image/png", "data": raw},
+                    }]
+                }
+            }]
+        })
+        self.assertEqual(found["bytes"], b"gen-bytes")
+        self.assertEqual(found["mime"], "image/png")
+
 
 if __name__ == "__main__":
     unittest.main()
