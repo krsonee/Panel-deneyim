@@ -96,6 +96,36 @@ def video_prompt(session):
     )
 
 
+def banner_prompt(session):
+    brand = BRANDS[session["brand"]]
+    category = CATEGORIES[session["category"]]
+    text = (session.get("campaign") or "").strip()
+    return (
+        "Create one finished website banner advertisement at the requested aspect ratio. "
+        "The attached image is the official logo. Place that logo unchanged. Do not redraw or retype the brand name. "
+        f"Small website line, spelled exactly: {brand['domain']}. "
+        f"Palette: {brand['colors']}. "
+        f"Category: {category}. "
+        "This frame will loop as a banner, so keep the layout stable and the headline readable. "
+        "Render this Turkish headline exactly, with the same spelling and punctuation, "
+        f"as the largest text: \"{text}\". "
+        "Add a button that says HEMEN DENE. Add a small 18+ mark. "
+        "Do not add any other words, especially not English slogans. "
+        "High-end commercial banner, sharp type, not clipart."
+    )
+
+
+def banner_motion_prompt(session):
+    brand = BRANDS[session["brand"]]
+    return (
+        "Turn this banner into a short seamless loop. "
+        "Keep the same framing, the same Turkish headline, and the same brand "
+        f"{brand['wordmark']}. "
+        "Motion stays inside the banner: a soft light sweep, a small glow on the button, a few sparks. "
+        "Do not change the words. No new scenes, no camera cut, no voiceover."
+    )
+
+
 def video_aspect(fmt_key):
     """Veo kare üretmez. 1:1 ve 16:9 yatay, 9:16 dikey gider."""
     if fmt_key == "9x16":
@@ -104,11 +134,11 @@ def video_aspect(fmt_key):
 
 
 def welcome_text():
-    lines = ["Merhaba.", "", "Hangi marka için görsel üreteyim?", ""]
+    lines = ["Merhaba.", "", "Hangi marka?", ""]
     for key, brand in BRANDS.items():
         lines.append(f"• {brand['name']} — {brand['domain']}")
     lines.append("")
-    lines.append("Marka seç, sonra görsel ya da sticker.")
+    lines.append("Sonra görsel, video, sticker ya da banner gif seç.")
     return "\n".join(lines)
 
 

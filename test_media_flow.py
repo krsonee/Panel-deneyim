@@ -1,7 +1,15 @@
 import base64
 import unittest
 
-from media_flow import campaign_prompt, new_session, revise_prompt, video_aspect
+from media_flow import (
+    banner_motion_prompt,
+    banner_prompt,
+    campaign_prompt,
+    new_session,
+    revise_prompt,
+    video_aspect,
+    welcome_text,
+)
 from media_gemini import extract_image
 
 
@@ -29,6 +37,30 @@ class FlowTests(unittest.TestCase):
         text = revise_prompt(session, "%100 yerine %500 yaz")
         self.assertIn("%100 yerine %500 yaz", text)
         self.assertIn("BETCED", text)
+
+    def test_banner_prompt_keeps_headline_and_loops(self):
+        session = new_session()
+        session.update({
+            "brand": "makrobet",
+            "fmt": "16x9",
+            "category": "casino",
+            "campaign": "%100 Freespin Bonusu Seni Bekliyor!",
+        })
+        prompt = banner_prompt(session)
+        self.assertIn("%100 Freespin Bonusu Seni Bekliyor!", prompt)
+        self.assertIn("official logo", prompt)
+        self.assertIn("makrobet818.com", prompt)
+        self.assertIn("loop", prompt)
+        motion = banner_motion_prompt(session)
+        self.assertIn("seamless loop", motion)
+        self.assertIn("MAKROBET", motion)
+
+    def test_welcome_lists_video_and_banner(self):
+        text = welcome_text()
+        self.assertIn("video", text)
+        self.assertIn("banner gif", text)
+        self.assertIn("makrobet818.com", text)
+        self.assertIn("betced368.com", text)
 
     def test_video_aspect_maps_square_to_landscape(self):
         self.assertEqual(video_aspect("1x1"), "16:9")

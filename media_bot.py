@@ -19,6 +19,8 @@ from io import BytesIO
 
 from media_brands import BRANDS, CATEGORIES, FORMATS, logo_reference, mascot_reference
 from media_flow import (
+    banner_motion_prompt,
+    banner_prompt,
     campaign_prompt,
     new_session,
     ready_caption,
@@ -131,6 +133,16 @@ class MediaBot:
             session["step"] = "format"
             self._show_formats(chat_id)
             return
+        if data == "m:vid":
+            session["mode"] = "video"
+            session["step"] = "format"
+            self._show_formats(chat_id)
+            return
+        if data == "m:gif":
+            session["mode"] = "gif"
+            session["step"] = "format"
+            self._show_formats(chat_id)
+            return
         if data == "m:stk":
             session["mode"] = "sticker"
             session["step"] = "format"
@@ -186,7 +198,13 @@ class MediaBot:
         step = session.get("step")
         if step == "campaign":
             session["campaign"] = text
-            self._make_image(chat_id, session, campaign_prompt(session), revise=False)
+            mode = session.get("mode")
+            if mode == "video":
+                self._make_clip(chat_id, session, "video")
+            elif mode == "gif":
+                self._make_clip(chat_id, session, "gif")
+            else:
+                self._make_image(chat_id, session, campaign_prompt(session), revise=False)
             return
         if step == "revise":
             self._make_image(chat_id, session, revise_prompt(session, text), revise=True)
@@ -305,6 +323,62 @@ class MediaBot:
         finally:
             self.busy.discard(chat_id)
 
+    def _make_clip(self, chat_id, session, kind):
+        if not session.get("brand") or not session.get("fmt"):
+            self._show_brands(chat_id)
+            return
+        if chat_id in self.busy:
+            self._send(chat_id, "Bir iş hâlâ sürüyor. Bitince tekrar yaz.")
+            return
+        label = "Video" if kind == "video" else "Banner gif"
+        self.busy.add(chat_id)
+        still = None
+        try:
+            aspect = FORMATS[session["fmt"]][1]
+            self._send(
+                chat_id,
+                f"{label} hazırlanıyor ({aspect}). Önce afiş, sonra 4 saniyelik hareket. "
+                "Yaklaşık 0,30 dolar. Birkaç dakika sürebilir.",
+            )
+            ratio = FORMATS[session["fmt"]][0]
+            reference = []
+            logo = logo_reference(session["brand"])
+            if logo:
+                reference.append(logo)
+            prompt = campaign_prompt(session) if kind == "video" else banner_prompt(session)
+            image = self._call_with_deadline(
+                lambda: generate_image(prompt, ratio, reference=reference)
+            )
+            still = image["bytes"]
+            mime = image.get("mime") or "image/png"
+            session["image"] = still
+            session["mime"] = mime
+            session["interaction_id"] = image.get("interaction_id")
+            motion = video_prompt(session) if kind == "video" else banner_motion_prompt(session)
+            clip = self._call_with_deadline(
+                lambda: generate_video(motion, still, mime, video_aspect(session.get("fmt"))),
+                seconds=300,
+            )
+            session["step"] = "ready"
+            caption = f"{label} hazır.\n{BRANDS[session['brand']]['name']} · {aspect}"
+            if kind == "gif":
+                self._send_animation(chat_id, clip, caption)
+            else:
+                self._send_video(chat_id, clip, caption)
+            self._show_menu(chat_id)
+        except Exception as exc:
+            if still:
+                self._send_photo(
+                    chat_id,
+                    still,
+                    f"{label} hareketi çıkmadı: {exc}\nAfiş burada.",
+                    self._result_keyboard(),
+                )
+            else:
+                self._send(chat_id, f"{label} çıkmadı: {exc}")
+        finally:
+            self.busy.discard(chat_id)
+
     def _animate(self, chat_id, session):
         if not session.get("image"):
             self._send(chat_id, "Önce bir görsel üret.")
@@ -410,6 +484,8 @@ class MediaBot:
             f"{name} seçildi. Ne üreteyim?",
             {"inline_keyboard": [
                 [{"text": "Görsel üret", "callback_data": "m:img"}],
+                [{"text": "Video üret", "callback_data": "m:vid"}],
+                [{"text": "Banner gif", "callback_data": "m:gif"}],
                 [{"text": "Sticker üret", "callback_data": "m:stk"}],
                 [{"text": "Marka değiştir", "callback_data": "a:home"}],
             ]},
@@ -461,9 +537,16 @@ class MediaBot:
         brand = BRANDS[session["brand"]]["name"]
         fmt = FORMATS[session["fmt"]][1]
         category = CATEGORIES[session["category"]]
+        mode = session.get("mode")
+        if mode == "video":
+            lead = "Kampanya metnini yaz. Aynen videodaki afişe basılır."
+        elif mode == "gif":
+            lead = "Kampanya metnini yaz. Aynen banner’a basılır."
+        else:
+            lead = "Kampanya metnini yaz. Aynen görsele basılır."
         return (
             f"{brand} · {category} · {fmt}\n\n"
-            "Kampanya metnini yaz. Aynen görsele basılır.\n"
+            f"{lead}\n"
             "Örnek: %100 Freespin Bonusu Seni Bekliyor!"
         )
 
@@ -507,6 +590,13 @@ class MediaBot:
             "sendVideo",
             {"chat_id": str(chat_id), "caption": caption},
             files={"video": ("kampanya.mp4", data, "video/mp4")},
+        )
+
+    def _send_animation(self, chat_id, data, caption):
+        self._api(
+            "sendAnimation",
+            {"chat_id": str(chat_id), "caption": caption},
+            files={"animation": ("banner.mp4", data, "video/mp4")},
         )
 
     def _call_with_deadline(self, fn, seconds=80):
