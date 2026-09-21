@@ -223,6 +223,9 @@ class MediaBot:
             session["character"] = text
             self._make_sticker(chat_id, session)
             return
+        if step == "sticker_ready":
+            self._send(chat_id, "Kaydetmek için Onayla ve kaydet’e bas, ya da İptal.")
+            return
         self._show_brands(chat_id)
 
     def _on_sticker_callback(self, chat_id, session, action):
@@ -293,26 +296,45 @@ class MediaBot:
                 self._show_formats(chat_id)
                 return
             aspect = FORMATS[session["fmt"]][0]
-            self._send(chat_id, f"Çiziliyor. Boyut: {FORMATS[session['fmt']][1]}.")
+            self._send(chat_id, f"Sticker kesiliyor. Boyut: {FORMATS[session['fmt']][1]}.")
             reference = []
-            logo = logo_reference(session["brand"])
-            if logo:
-                reference.append(logo)
             if session.get("sticker_kind") != "object":
                 mascot = mascot_reference(session["brand"])
                 if mascot:
-                    reference.append(mascot)
+                    reference.append({
+                        "bytes": _reference_on_magenta(mascot["bytes"]),
+                        "mime": "image/png",
+                    })
+            prompt = sticker_prompt(session)
             image = self._call_with_deadline(
-                lambda: generate_image(sticker_prompt(session), aspect, reference=reference)
+                lambda: generate_image(prompt, aspect, reference=reference)
             )
+            webp, cleaned = _prepare_sticker(image["bytes"])
+            if webp and not cleaned:
+                self._send(chat_id, "İlk çizim afiş gibi kaldı. Sticker diye bir kez daha deniyorum.")
+                image = self._call_with_deadline(
+                    lambda: generate_image(prompt, aspect, reference=reference)
+                )
+                webp, cleaned = _prepare_sticker(image["bytes"])
+            if not webp:
+                self._send(chat_id, "Sticker kesilemedi. Tekrar dene.")
+                return
             session["image"] = image["bytes"]
             session["mime"] = image["mime"]
+            session["sticker_webp"] = webp
             session["interaction_id"] = image.get("interaction_id")
             session["step"] = "sticker_ready"
-            self._send_photo(
+            _write_draft(chat_id, webp, session.get("brand"), session.get("user_id"))
+            try:
+                self._send_sticker_file(chat_id, webp)
+            except Exception:
+                self._send_document(chat_id, webp, "sticker.webp", "Sticker dosyası.")
+            note = "Sticker böyle, zemini yok. Pakete ekleyeyim mi?"
+            if not cleaned:
+                note = "Zemin tam silinemedi, hâlâ afiş gibi duruyor. Pakete ekleyeyim mi?"
+            self._send(
                 chat_id,
-                image["bytes"],
-                "Sticker taslağı hazır. Pakete ekleyeyim mi?",
+                note,
                 {"inline_keyboard": [[
                     {"text": "Onayla ve kaydet", "callback_data": "s:ok"},
                     {"text": "İptal", "callback_data": "s:cancel"},
@@ -416,14 +438,33 @@ class MediaBot:
         self._send_document(chat_id, session["image"], filename, "Dosya olarak.")
 
     def _save_sticker(self, chat_id, session):
-        if not session.get("image") or not self.username:
-            self._send(chat_id, "Sticker kaydedilemedi.")
+        webp = session.get("sticker_webp")
+        brand = session.get("brand")
+        if not webp:
+            draft = _read_draft(chat_id)
+            if draft:
+                webp = draft["webp"]
+                brand = brand or draft.get("brand")
+                if not session.get("user_id") and draft.get("user_id"):
+                    session["user_id"] = draft["user_id"]
+        if not webp:
+            self._send(chat_id, "Taslak durmuyor. Sticker’ı tekrar üret, çıkınca kaydet.")
             return
-        webp = _to_sticker_webp(session["image"])
-        if webp is None:
-            self._send(chat_id, "Sticker paketine çevrilemedi. Görsel sohbette duruyor.")
+        if not self.username:
+            try:
+                me = self._api("getMe")
+                self.username = ((me.get("result") or {}).get("username") or "").strip()
+            except Exception as exc:
+                self._send(chat_id, f"Sticker kaydedilemedi: bot adı alınamadı ({exc})")
+                return
+        if not self.username:
+            self._send(chat_id, "Sticker kaydedilemedi: botun kullanıcı adı yok.")
             return
-        brand = session.get("brand") or "marka"
+        if brand not in BRANDS:
+            self._send(chat_id, "Marka kayboldu. /start yazıp sticker’ı tekrar üret.")
+            return
+        brand = session.get("brand") or brand
+        session["brand"] = brand
         owner = session.get("user_id") or chat_id
         set_name = self.sticker_sets.get(brand) or f"{brand}_media_by_{self.username}".lower()
         title = f"{BRANDS[brand]['name']} Media"
@@ -465,6 +506,7 @@ class MediaBot:
                 self._send(chat_id, f"Paket eklenemedi: {second_error}")
                 return
         self.sticker_sets[brand] = set_name
+        _clear_draft(chat_id)
         self._send(chat_id, f"Sticker pakete eklendi: https://t.me/addstickers/{set_name}")
         self._show_menu(chat_id)
 
@@ -585,6 +627,13 @@ class MediaBot:
             files={"document": (filename, data, "image/png")},
         )
 
+    def _send_sticker_file(self, chat_id, data):
+        self._api(
+            "sendSticker",
+            {"chat_id": str(chat_id)},
+            files={"sticker": ("sticker.webp", data, "image/webp")},
+        )
+
     def _send_video(self, chat_id, data, caption):
         self._api(
             "sendVideo",
@@ -665,23 +714,179 @@ def _multipart(fields, files):
     return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
 
 
-def _to_sticker_webp(data):
-    try:
-        from PIL import Image
-    except ImportError:
+def _draft_dir():
+    from pathlib import Path
+    directory = Path("/tmp/media-bot-drafts")
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def _write_draft(chat_id, webp, brand, user_id):
+    directory = _draft_dir()
+    (directory / f"{chat_id}.webp").write_bytes(webp)
+    (directory / f"{chat_id}.json").write_text(json.dumps({
+        "brand": brand,
+        "user_id": user_id,
+    }))
+
+
+def _read_draft(chat_id):
+    directory = _draft_dir()
+    blob = directory / f"{chat_id}.webp"
+    if not blob.is_file():
         return None
-    image = Image.open(BytesIO(data)).convert("RGBA")
-    image.thumbnail((512, 512))
+    meta = {}
+    sidecar = directory / f"{chat_id}.json"
+    if sidecar.is_file():
+        try:
+            meta = json.loads(sidecar.read_text())
+        except json.JSONDecodeError:
+            meta = {}
+    return {"webp": blob.read_bytes(), "brand": meta.get("brand"), "user_id": meta.get("user_id")}
+
+
+def _clear_draft(chat_id):
+    directory = _draft_dir()
+    for suffix in (".webp", ".json"):
+        path = directory / f"{chat_id}{suffix}"
+        if path.is_file():
+            path.unlink()
+
+
+def _load_image(data):
+    from PIL import Image
+    return Image.open(BytesIO(data)).convert("RGBA")
+
+
+def _corner_color(image):
     width, height = image.size
-    if width == 0 or height == 0:
-        return None
-    if width >= height:
-        image = image.resize((512, max(1, int(512 * height / width))))
-    else:
-        image = image.resize((max(1, int(512 * width / height)), 512))
+    pixels = image.load()
+    points = ((1, 1), (width - 2, 1), (1, height - 2), (width - 2, height - 2))
+    colors = [pixels[x, y][:3] for x, y in points]
+    return tuple(sum(color[channel] for color in colors) // 4 for channel in range(3))
+
+
+def _flood_clear(image, match, paint):
+    """Kenardan başlayıp match olan pikselleri paint yapar."""
+    width, height = image.size
+    pixels = image.load()
+    seen = bytearray(width * height)
+    stack = []
+    for x in range(width):
+        stack.append((x, 0))
+        stack.append((x, height - 1))
+    for y in range(height):
+        stack.append((0, y))
+        stack.append((width - 1, y))
+    while stack:
+        x, y = stack.pop()
+        if x < 0 or y < 0 or x >= width or y >= height:
+            continue
+        index = y * width + x
+        if seen[index]:
+            continue
+        seen[index] = 1
+        if not match(pixels[x, y]):
+            continue
+        pixels[x, y] = paint
+        stack.append((x + 1, y))
+        stack.append((x - 1, y))
+        stack.append((x, y + 1))
+        stack.append((x, y - 1))
+    return image
+
+
+def _reference_on_magenta(data):
+    """Maskotun kart zeminini düz macentaya çevirir. Model o zemini kopyalamasın."""
+    image = _load_image(data)
+    background = _corner_color(image)
+
+    def match(pixel):
+        if pixel[3] < 16:
+            return True
+        return (
+            abs(pixel[0] - background[0])
+            + abs(pixel[1] - background[1])
+            + abs(pixel[2] - background[2])
+        ) <= 55
+
+    _flood_clear(image, match, (255, 0, 255, 255))
+    width, height = image.size
+    long_side = max(width, height)
+    if long_side < 512 and long_side > 0:
+        scale = 512 / long_side
+        image = image.resize((max(1, round(width * scale)), max(1, round(height * scale))))
     out = BytesIO()
-    image.save(out, format="WEBP")
+    image.save(out, format="PNG")
     return out.getvalue()
+
+
+def _knockout_magenta(image):
+    def match(pixel):
+        if pixel[3] < 16:
+            return True
+        return abs(pixel[0] - 255) + pixel[1] + abs(pixel[2] - 255) <= 140
+
+    width, height = image.size
+    pixels = image.load()
+    corners = ((1, 1), (width - 2, 1), (1, height - 2), (width - 2, height - 2))
+    if not any(match(pixels[x, y]) for x, y in corners):
+        return image
+    return _flood_clear(image, match, (255, 0, 255, 0))
+
+
+def _transparent_ratio(image):
+    histogram = image.getchannel("A").histogram()
+    return histogram[0] / float(image.size[0] * image.size[1])
+
+
+def _fit_sticker(image):
+    from PIL import Image
+    bounds = image.getchannel("A").getbbox()
+    if not bounds:
+        return None
+    image = image.crop(bounds)
+    width, height = image.size
+    pad = max(4, int(max(width, height) * 0.08))
+    canvas = Image.new("RGBA", (width + pad * 2, height + pad * 2), (0, 0, 0, 0))
+    canvas.paste(image, (pad, pad), image)
+    width, height = canvas.size
+    if width >= height:
+        size = (512, max(1, round(512 * height / width)))
+    else:
+        size = (max(1, round(512 * width / height)), 512)
+    return canvas.resize(size, Image.Resampling.LANCZOS)
+
+
+def _encode_webp(image):
+    limit = 512 * 1024
+    for quality in (80, 60, 40, 25):
+        out = BytesIO()
+        image.save(out, format="WEBP", quality=quality, method=6)
+        if out.tell() <= limit:
+            return out.getvalue()
+    out = BytesIO()
+    image.save(out, format="WEBP", quality=15, method=6)
+    return out.getvalue()
+
+
+def _prepare_sticker(data):
+    """Macenta zemini siler, bir kenarı 512 px olan şeffaf webp döner."""
+    try:
+        image = _load_image(data)
+    except Exception:
+        return None, False
+    cut = _knockout_magenta(image.copy())
+    cleaned = _transparent_ratio(cut) >= 0.08
+    fitted = _fit_sticker(cut if cleaned else image)
+    if fitted is None:
+        return None, False
+    return _encode_webp(fitted), cleaned
+
+
+def _to_sticker_webp(data):
+    webp, _cleaned = _prepare_sticker(data)
+    return webp
 
 
 def start_in_background():

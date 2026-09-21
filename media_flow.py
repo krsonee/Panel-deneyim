@@ -49,38 +49,43 @@ def revise_prompt(session, note):
 
 
 def sticker_prompt(session):
-    brand = BRANDS[session["brand"]]
     slogan = (session.get("slogan") or "").strip()
     game = (session.get("game") or "").strip()
     character = (session.get("character") or "").strip()
     kind = session.get("sticker_kind") or "mascot"
+    brand = BRANDS[session["brand"]]
     parts = [
-        "Create one finished betting advertisement at the requested aspect ratio.",
-        "High-end commercial poster, sharp lighting, not a cheap cartoon and not clipart.",
-        "The attached image is the official logo. Place that logo unchanged. Do not redraw the letters.",
-        f"Palette: {brand['colors']}.",
-        "Do not invent extra text. No English words such as FREE SPINS unless they are inside the slogan below.",
+        "Create one die-cut Telegram sticker of a single subject.",
+        "Not a poster, not a banner, not a card, not an advertisement layout.",
+        "No frame, no border, no rectangle, no button, no website, no headline.",
+        "Background is only flat pure magenta #FF00FF, the same empty background as the reference.",
+        "The subject floats in the middle and does not touch the edges.",
+        "The scene description below is what the subject is doing. It is not text to print.",
+        "Do not add any words except the slogan line, if one is given.",
     ]
     if kind == "object":
-        parts.append(f"Subject is an object, not a person: {character or game or 'casino chip'}.")
+        parts.append(f"Subject is one object, not a person: {character or game or 'a casino chip'}.")
     else:
         if brand.get("mascot"):
             parts.append(
-                "The second attached image is the official Makrobet mascot. "
-                "Keep the same 3D character: swept yellow hair, friendly face, navy suit with gold trim, white shirt, dark tie. "
-                "Only change his outfit, pose, and scene to match the request. "
-                "Do not replace him with Zeus, a fisherman, or any other character."
+                "The attached image is the official mascot. "
+                "Keep his face and swept yellow hair the same. "
+                "He may change outfit, pose, and what he holds. "
+                "Do not replace him with a different character. "
+                "Do not copy the reference background. Output background stays flat magenta #FF00FF."
             )
         else:
-            parts.append("Subject is a single mascot character, centered, full body or bust.")
+            parts.append("Subject is one original mascot character, centered.")
         if game:
-            parts.append(f"Inspired by the public slot theme name only as a description, not a copied logo: {game}.")
+            parts.append(f"Theme, as a scene only, not as a logo and not as printed text: {game}.")
         if character:
-            parts.append(f"Character details: {character}.")
+            parts.append(f"Scene, not printed text: {character}.")
     if slogan:
-        parts.append(f"Short text on the sticker, spelled exactly: \"{slogan}\".")
+        parts.append(
+            f"The only text is this short slogan, spelled exactly, on a small sign: \"{slogan}\"."
+        )
     else:
-        parts.append("No extra slogan text.")
+        parts.append("No text anywhere in the image.")
     parts.append("No photorealistic celebrity.")
     return " ".join(parts)
 
