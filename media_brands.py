@@ -16,6 +16,7 @@ BRANDS = {
         "colors": "koyu lacivert zemin (#08142c), altın sarısı ve beyaz logo",
         "wordmark": "MAKROBET",
         "logo": "static/mailing/makrobet-logo.png",
+        "mascot": "static/media/makrobet-mascot.png",
     },
     "betced": {
         "name": "Betced",
@@ -43,11 +44,19 @@ def brand_list():
     return [(key, BRANDS[key]) for key in BRANDS]
 
 
-def logo_reference(brand_key):
-    rel = (BRANDS.get(brand_key) or {}).get("logo")
+def _file_reference(brand_key, field):
+    rel = (BRANDS.get(brand_key) or {}).get(field)
     if not rel:
         return None
     path = ROOT / rel
     if not path.is_file():
         return None
     return {"bytes": path.read_bytes(), "mime": "image/png"}
+
+
+def logo_reference(brand_key):
+    return _file_reference(brand_key, "logo")
+
+
+def mascot_reference(brand_key):
+    return _file_reference(brand_key, "mascot")

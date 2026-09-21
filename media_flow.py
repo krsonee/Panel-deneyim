@@ -64,7 +64,15 @@ def sticker_prompt(session):
     if kind == "object":
         parts.append(f"Subject is an object, not a person: {character or game or 'casino chip'}.")
     else:
-        parts.append("Subject is a single mascot character, centered, full body or bust.")
+        if brand.get("mascot"):
+            parts.append(
+                "The second attached image is the official Makrobet mascot. "
+                "Keep the same 3D character: swept yellow hair, friendly face, navy suit with gold trim, white shirt, dark tie. "
+                "Only change his outfit, pose, and scene to match the request. "
+                "Do not replace him with Zeus, a fisherman, or any other character."
+            )
+        else:
+            parts.append("Subject is a single mascot character, centered, full body or bust.")
         if game:
             parts.append(f"Inspired by the public slot theme name only as a description, not a copied logo: {game}.")
         if character:

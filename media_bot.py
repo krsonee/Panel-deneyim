@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 from io import BytesIO
 
-from media_brands import BRANDS, CATEGORIES, FORMATS, logo_reference
+from media_brands import BRANDS, CATEGORIES, FORMATS, logo_reference, mascot_reference
 from media_flow import (
     campaign_prompt,
     new_session,
@@ -280,6 +280,10 @@ class MediaBot:
             logo = logo_reference(session["brand"])
             if logo:
                 reference.append(logo)
+            if session.get("sticker_kind") != "object":
+                mascot = mascot_reference(session["brand"])
+                if mascot:
+                    reference.append(mascot)
             image = self._call_with_deadline(
                 lambda: generate_image(sticker_prompt(session), aspect, reference=reference)
             )
