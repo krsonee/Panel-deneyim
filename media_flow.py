@@ -24,17 +24,16 @@ def campaign_prompt(session):
     category = CATEGORIES[session["category"]]
     text = (session.get("campaign") or "").strip()
     return (
-        "Create one finished online-betting campaign poster. "
-        f"Brand name to render exactly: {brand['wordmark']}. "
-        f"Small website line: {brand['domain']}. "
+        "Create one finished betting campaign poster at the requested aspect ratio. "
+        "The attached image is the official logo. Place that logo unchanged. Do not redraw or retype the brand name. "
+        f"Small website line, spelled exactly: {brand['domain']}. "
         f"Palette: {brand['colors']}. "
         f"Category: {category}. "
-        "Render this Turkish headline exactly, with the same spelling, accents, and punctuation, "
+        "Render this Turkish headline exactly, with the same spelling and punctuation, "
         f"as the largest text: \"{text}\". "
-        "Add a clear button that says HEMEN DENE. "
-        "Add a small 18+ mark. "
-        "Do not replace the brand, do not translate the headline, do not add a different company name. "
-        "Sharp commercial layout, readable type, no extra paragraphs."
+        "Add a button that says HEMEN DENE. Add a small 18+ mark. "
+        "Do not add any other words, especially not English slogans. "
+        "High-end commercial layout, sharp type, not clipart."
     )
 
 
@@ -56,9 +55,11 @@ def sticker_prompt(session):
     character = (session.get("character") or "").strip()
     kind = session.get("sticker_kind") or "mascot"
     parts = [
-        "Create one Telegram sticker illustration on a plain flat background.",
-        f"Brand wordmark {brand['wordmark']} small at the bottom.",
-        f"Style reference colors: {brand['colors']}.",
+        "Create one finished betting advertisement at the requested aspect ratio.",
+        "High-end commercial poster, sharp lighting, not a cheap cartoon and not clipart.",
+        "The attached image is the official logo. Place that logo unchanged. Do not redraw the letters.",
+        f"Palette: {brand['colors']}.",
+        "Do not invent extra text. No English words such as FREE SPINS unless they are inside the slogan below.",
     ]
     if kind == "object":
         parts.append(f"Subject is an object, not a person: {character or game or 'casino chip'}.")
@@ -72,7 +73,7 @@ def sticker_prompt(session):
         parts.append(f"Short text on the sticker, spelled exactly: \"{slogan}\".")
     else:
         parts.append("No extra slogan text.")
-    parts.append("No photorealistic celebrity. No copied trademark artwork.")
+    parts.append("No photorealistic celebrity.")
     return " ".join(parts)
 
 

@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 from io import BytesIO
 
-from media_brands import BRANDS, CATEGORIES, FORMATS
+from media_brands import BRANDS, CATEGORIES, FORMATS, logo_reference
 from media_flow import (
     campaign_prompt,
     new_session,
@@ -133,16 +133,20 @@ class MediaBot:
             return
         if data == "m:stk":
             session["mode"] = "sticker"
-            session["step"] = "sticker_kind"
-            self._show_sticker_kinds(chat_id)
+            session["step"] = "format"
+            self._show_formats(chat_id)
             return
         if data.startswith("f:"):
             key = data[2:]
             if key not in FORMATS:
                 return
             session["fmt"] = key
-            session["step"] = "category"
-            self._show_categories(chat_id)
+            if session.get("mode") == "sticker":
+                session["step"] = "sticker_kind"
+                self._show_sticker_kinds(chat_id)
+            else:
+                session["step"] = "category"
+                self._show_categories(chat_id)
             return
         if data.startswith("c:"):
             key = data[2:]
@@ -171,8 +175,8 @@ class MediaBot:
             return
         if data == "a:stk":
             session["mode"] = "sticker"
-            session["step"] = "sticker_kind"
-            self._show_sticker_kinds(chat_id)
+            session["step"] = "format"
+            self._show_formats(chat_id)
             return
         if data.startswith("s:"):
             self._on_sticker_callback(chat_id, session, data[2:])
@@ -241,9 +245,12 @@ class MediaBot:
         try:
             self._send(chat_id, "Görsel hazırlanıyor. Bu bir dakikayı bulabilir.")
             aspect = FORMATS[session["fmt"]][0]
-            reference = None
+            reference = []
+            logo = logo_reference(session["brand"])
+            if logo:
+                reference.append(logo)
             if revise and session.get("image"):
-                reference = {"bytes": session["image"], "mime": session.get("mime") or "image/png"}
+                reference.append({"bytes": session["image"], "mime": session.get("mime") or "image/png"})
             image = self._call_with_deadline(
                 lambda: generate_image(prompt, aspect, reference=reference)
             )
@@ -264,9 +271,17 @@ class MediaBot:
             return
         self.busy.add(chat_id)
         try:
-            self._send(chat_id, "Sticker çiziliyor.")
+            if session.get("fmt") not in FORMATS:
+                self._show_formats(chat_id)
+                return
+            aspect = FORMATS[session["fmt"]][0]
+            self._send(chat_id, f"Çiziliyor. Boyut: {FORMATS[session['fmt']][1]}.")
+            reference = []
+            logo = logo_reference(session["brand"])
+            if logo:
+                reference.append(logo)
             image = self._call_with_deadline(
-                lambda: generate_image(sticker_prompt(session), "1:1")
+                lambda: generate_image(sticker_prompt(session), aspect, reference=reference)
             )
             session["image"] = image["bytes"]
             session["mime"] = image["mime"]
@@ -399,11 +414,11 @@ class MediaBot:
     def _show_formats(self, chat_id):
         self._send(
             chat_id,
-            "Format seç.\n1:1 kare · 9:16 story · 16:9 banner",
+            "Boyut seç.\n1:1 Kare — gönderi\n9:16 Dikey — story\n16:9 Yatay — banner",
             {"inline_keyboard": [[
-                {"text": "1:1", "callback_data": "f:1x1"},
-                {"text": "9:16", "callback_data": "f:9x16"},
-                {"text": "16:9", "callback_data": "f:16x9"},
+                {"text": "1:1 Kare", "callback_data": "f:1x1"},
+                {"text": "9:16 Dikey", "callback_data": "f:9x16"},
+                {"text": "16:9 Yatay", "callback_data": "f:16x9"},
             ]]},
         )
 

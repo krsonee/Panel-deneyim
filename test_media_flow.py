@@ -16,13 +16,12 @@ class FlowTests(unittest.TestCase):
         })
         prompt = campaign_prompt(session)
         self.assertIn("%100 Freespin Bonusu Seni Bekliyor!", prompt)
-        self.assertIn("MAKROBET", prompt)
-        self.assertIn("makrobet.com", prompt)
+        self.assertIn("official logo", prompt)
+        self.assertIn("makrobet818.com", prompt)
 
         session["brand"] = "betced"
         prompt = campaign_prompt(session)
-        self.assertIn("BETCED", prompt)
-        self.assertIn("betced.com", prompt)
+        self.assertIn("betced368.com", prompt)
 
     def test_revise_keeps_brand(self):
         session = new_session()

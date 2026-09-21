@@ -114,17 +114,25 @@ def _image_block(block):
         return None
 
 
+def _reference_list(reference):
+    if not reference:
+        return []
+    if isinstance(reference, dict):
+        return [reference] if reference.get("bytes") else []
+    return [item for item in reference if item and item.get("bytes")]
+
+
 def generate_image(prompt, aspect_ratio, previous_interaction_id=None, reference=None):
-    """reference = {'bytes': b, 'mime': 'image/png'} önceki görseli düzenlemek için."""
+    """reference bir logo ya da önceki görsel olabilir. Liste de kabul edilir."""
     parts = [{"text": prompt}]
-    if reference and reference.get("bytes"):
+    for item in _reference_list(reference):
         parts.append({
             "inlineData": {
-                "mimeType": reference.get("mime") or "image/png",
-                "data": base64.b64encode(reference["bytes"]).decode("ascii"),
+                "mimeType": item.get("mime") or "image/png",
+                "data": base64.b64encode(item["bytes"]).decode("ascii"),
             }
         })
-    elif previous_interaction_id:
+    if previous_interaction_id and len(parts) == 1:
         parts[0]["text"] = prompt + " Keep the previous poster and apply only the requested change."
     body = {
         "contents": [{"role": "user", "parts": parts}],
