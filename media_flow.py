@@ -115,7 +115,9 @@ def sticker_prompt(session):
                 "for the props and background — candy and fruit for a sweets game, water and fish for "
                 "a fishing game, gold and temple carvings for a mythology game, and so on. Match what "
                 "this specific game is actually about, not a generic pile of coins or a spinning reel. "
-                "Do not turn him into that game's creature."
+                "Do not turn him into that game's creature. "
+                "Never write this game's own name or logo as text anywhere in the image — theme, colors, "
+                "and objects only, no title lettering for the game itself."
             )
         if character:
             parts.append(f"Apply this to the same mascot. Do not switch characters: {character}.")
@@ -156,7 +158,9 @@ def _mascot_sticker_prompt(brand, slogan, game, character):
             "Use your own knowledge of this exact game's real theme, colors, and iconic symbols for "
             "the props and background — candy and fruit for a sweets game, water and fish for a "
             "fishing game, gold and temple carvings for a mythology game, and so on. Match what this "
-            "specific game is actually about, not a generic pile of coins or a spinning reel."
+            "specific game is actually about, not a generic pile of coins or a spinning reel. "
+            "Never write this game's own name or logo as text anywhere in the image — theme, colors, "
+            "and objects only, no title lettering for the game itself."
         )
     if character:
         parts.append(f"Apply this to the same man. Do not switch characters: {character}.")
