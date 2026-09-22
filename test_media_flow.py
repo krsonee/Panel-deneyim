@@ -221,6 +221,17 @@ class FlowTests(unittest.TestCase):
         self.assertIn("Sticker üret", labels)
         self.assertNotIn("Hareketlendir", labels)
 
+    def test_sticker_motion_button_only_runs_when_user_asks(self):
+        # Statik sticker artık otomatik hareketlendirilmiyor; sadece "Hareketli yap"
+        # butonuna (s:motion) basılırsa _animate_sticker çalışmalı.
+        bot = MediaBot("dummy")
+        called = {}
+        bot._animate_sticker = lambda chat_id, session: called.setdefault("args", (chat_id, session))
+        session = new_session()
+        bot._on_sticker_callback(4242, session, "motion")
+        self.assertEqual(called["args"][0], 4242)
+        self.assertIs(called["args"][1], session)
+
     def test_sticker_motion_keeps_magenta_background(self):
         session = new_session()
         session.update({"brand": "makrobet", "slogan": "Promo kod geliyor"})

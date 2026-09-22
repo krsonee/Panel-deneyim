@@ -294,6 +294,9 @@ class MediaBot:
             session["step"] = "character"
             self._send(chat_id, self._character_help(session))
             return
+        if action == "motion":
+            self._animate_sticker(chat_id, session)
+            return
         if action == "ok":
             self._save_sticker(chat_id, session)
             return
@@ -332,6 +335,8 @@ class MediaBot:
             self.busy.discard(chat_id)
 
     def _make_sticker(self, chat_id, session):
+        """Sadece şeffaf, sabit sticker üretir. Hareket artık ayrı bir adım (bkz. _animate_sticker),
+        kullanıcı istemeden otomatik tetiklenmez — hem ücretsiz hem hızlı kalır."""
         if chat_id in self.busy:
             self._send(chat_id, "Bir iş hâlâ sürüyor.")
             return
@@ -341,7 +346,7 @@ class MediaBot:
                 self._show_formats(chat_id)
                 return
             aspect = FORMATS[session["fmt"]][0]
-            self._send(chat_id, "Sticker çiziliyor. Sonra hareket basılacak.")
+            self._send(chat_id, "Sticker çiziliyor.")
             reference = []
             if session.get("sticker_kind") != "object":
                 mascot = mascot_reference(session["brand"])
@@ -368,15 +373,53 @@ class MediaBot:
             session["image"] = image["bytes"]
             session["mime"] = image["mime"]
             session["interaction_id"] = image.get("interaction_id")
+            session["sticker_webp"] = webp
+            session["sticker_format"] = "static"
+            session["step"] = "sticker_ready"
+            _write_draft(chat_id, webp, session.get("brand"), session.get("user_id"), "static")
+            note = "Şeffaf sticker hazır. İstersen hareketlendirebilirim (~0,20$, birkaç dakika sürer)."
+            if not cleaned:
+                note = "Zemin tam silinemedi, hâlâ afiş gibi duruyor. " + note
+            try:
+                self._send_sticker_file(chat_id, webp, "sticker.webp", "image/webp")
+            except Exception:
+                self._send_document(chat_id, webp, "sticker.webp", "Sticker dosyası.", "image/webp")
+            self._send(
+                chat_id,
+                note,
+                {"inline_keyboard": [
+                    [{"text": "Hareketli yap", "callback_data": "s:motion"}],
+                    [
+                        {"text": "Onayla ve kaydet", "callback_data": "s:ok"},
+                        {"text": "İptal", "callback_data": "s:cancel"},
+                    ],
+                ]},
+            )
+        except Exception as exc:
+            self._send(chat_id, f"Sticker çıkmadı: {exc}")
+        finally:
+            self.busy.discard(chat_id)
+
+    def _animate_sticker(self, chat_id, session):
+        """Kullanıcı 'Hareketli yap' butonuna basarsa çağrılır. Statik sticker zaten hazır ve
+        pakete kaydedilebilir durumda; bu adım başarısız olursa statik sticker elde kalır."""
+        if chat_id in self.busy:
+            self._send(chat_id, "Bir iş hâlâ sürüyor.")
+            return
+        if not session.get("image"):
+            self._send(chat_id, "Önce bir sticker üret.")
+            return
+        self.busy.add(chat_id)
+        try:
+            self._send(chat_id, "Hareket basılıyor. Yaklaşık 0,20 dolar. Birkaç dakika sürebilir.")
             motion_file = None
             motion_error = ""
-            self._send(chat_id, "Hareket basılıyor. Yaklaşık 0,20 dolar. Birkaç dakika sürebilir.")
             try:
                 clip = self._call_with_deadline(
                     lambda: generate_video(
                         sticker_motion_prompt(session),
-                        image["bytes"],
-                        image.get("mime") or "image/png",
+                        session["image"],
+                        session.get("mime") or "image/png",
                         video_aspect(session.get("fmt")),
                     ),
                     seconds=300,
@@ -386,38 +429,29 @@ class MediaBot:
                     motion_error = "dosya Telegram boyutuna sığmadı"
             except Exception as exc:
                 motion_error = str(exc)
-            if motion_file:
-                payload = motion_file
-                sticker_format = "video"
-                filename = "sticker.webm"
-                mime = "video/webm"
-                note = "Hareketli sticker böyle. Pakete ekleyeyim mi?"
-            else:
-                payload = webp
-                sticker_format = "static"
-                filename = "sticker.webp"
-                mime = "image/webp"
-                note = f"Hareket çıkmadı ({motion_error}). Sabit sticker duruyor. Pakete ekleyeyim mi?"
-            if not cleaned and sticker_format == "static":
-                note = "Zemin tam silinemedi, hâlâ afiş gibi duruyor. " + note
-            session["sticker_webp"] = payload
-            session["sticker_format"] = sticker_format
-            session["step"] = "sticker_ready"
-            _write_draft(chat_id, payload, session.get("brand"), session.get("user_id"), sticker_format)
+            if not motion_file:
+                self._send(
+                    chat_id,
+                    f"Hareket çıkmadı ({motion_error}). Şeffaf sabit sticker duruyor, onaylayabilirsin.",
+                )
+                return
+            session["sticker_webp"] = motion_file
+            session["sticker_format"] = "video"
+            _write_draft(chat_id, motion_file, session.get("brand"), session.get("user_id"), "video")
             try:
-                self._send_sticker_file(chat_id, payload, filename, mime)
+                self._send_sticker_file(chat_id, motion_file, "sticker.webm", "video/webm")
             except Exception:
-                self._send_document(chat_id, payload, filename, "Sticker dosyası.", mime)
+                self._send_document(chat_id, motion_file, "sticker.webm", "Sticker dosyası.", "video/webm")
             self._send(
                 chat_id,
-                note,
+                "Hareketli sticker böyle. Pakete ekleyeyim mi?",
                 {"inline_keyboard": [[
                     {"text": "Onayla ve kaydet", "callback_data": "s:ok"},
                     {"text": "İptal", "callback_data": "s:cancel"},
                 ]]},
             )
         except Exception as exc:
-            self._send(chat_id, f"Sticker çıkmadı: {exc}")
+            self._send(chat_id, f"Hareket çıkmadı: {exc}")
         finally:
             self.busy.discard(chat_id)
 
