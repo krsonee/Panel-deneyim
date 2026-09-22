@@ -122,16 +122,25 @@ def _reference_list(reference):
     return [item for item in reference if item and item.get("bytes")]
 
 
-def generate_image(prompt, aspect_ratio, previous_interaction_id=None, reference=None):
-    """reference bir logo ya da önceki görsel olabilir. Liste de kabul edilir."""
-    parts = [{"text": prompt}]
+def image_parts(prompt, reference=None, image_first=False):
+    """Maskot düzeninde fotoğraf metinden önce gider, model yeni karakter uydurmasın."""
+    text = {"text": prompt}
+    images = []
     for item in _reference_list(reference):
-        parts.append({
+        images.append({
             "inlineData": {
                 "mimeType": item.get("mime") or "image/png",
                 "data": base64.b64encode(item["bytes"]).decode("ascii"),
             }
         })
+    if image_first and images:
+        return images + [text]
+    return [text] + images
+
+
+def generate_image(prompt, aspect_ratio, previous_interaction_id=None, reference=None, image_first=False):
+    """reference bir logo ya da önceki görsel olabilir. Liste de kabul edilir."""
+    parts = image_parts(prompt, reference, image_first=image_first)
     if previous_interaction_id and len(parts) == 1:
         parts[0]["text"] = prompt + " Keep the previous poster and apply only the requested change."
     body = {

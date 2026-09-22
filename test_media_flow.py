@@ -29,10 +29,15 @@ from media_flow import (
     video_aspect,
     welcome_text,
 )
-from media_gemini import extract_image, video_request_body
+from media_gemini import extract_image, image_parts, video_request_body
 
 
 class FlowTests(unittest.TestCase):
+    def test_mascot_photo_goes_before_the_prompt(self):
+        parts = image_parts("edit this man", {"bytes": b"mascot", "mime": "image/png"}, image_first=True)
+        self.assertIn("inlineData", parts[0])
+        self.assertEqual(parts[1]["text"], "edit this man")
+
     def test_video_request_does_not_use_inline_data(self):
         body = video_request_body("animate the poster", b"not-a-real-image", "image/png", "9:16")
         image = body["instances"][0]["image"]
@@ -93,9 +98,8 @@ class FlowTests(unittest.TestCase):
             "character": "çevresinde freespin yağmuru olsun",
         })
         prompt = sticker_prompt(session)
-        self.assertIn("Not a poster", prompt)
+        self.assertIn("Edit the attached photo", prompt)
         self.assertIn("#FF00FF", prompt)
-        self.assertIn("not text to print", prompt)
         self.assertIn("Promo kod geliyor", prompt)
         self.assertIn("yellow hair", prompt)
         self.assertNotIn("official logo", prompt)
@@ -110,10 +114,11 @@ class FlowTests(unittest.TestCase):
             "character": "makrobet maskotu cevresinde freespin yagmuru olsun",
         })
         prompt = sticker_prompt(session)
-        self.assertIn("only person", prompt)
-        self.assertIn("not a fish", prompt)
+        self.assertIn("Edit the attached photo", prompt)
+        self.assertIn("Do not draw a fox", prompt)
+        self.assertIn("a fish", prompt)
         self.assertIn("Bigbass bonanza", prompt)
-        self.assertIn("never a replacement body", prompt)
+        self.assertIn("never a new body", prompt)
         self.assertIn("Kod geliyor", prompt)
         self.assertIn("freespin yagmuru", prompt)
 

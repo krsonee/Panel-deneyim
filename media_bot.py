@@ -351,14 +351,15 @@ class MediaBot:
                         "mime": "image/png",
                     })
             prompt = sticker_prompt(session)
+            use_mascot = bool(reference)
             image = self._call_with_deadline(
-                lambda: generate_image(prompt, aspect, reference=reference)
+                lambda: generate_image(prompt, aspect, reference=reference, image_first=use_mascot)
             )
             webp, cleaned = _prepare_sticker(image["bytes"])
             if webp and not cleaned:
                 self._send(chat_id, "İlk çizim afiş gibi kaldı. Sticker diye bir kez daha deniyorum.")
                 image = self._call_with_deadline(
-                    lambda: generate_image(prompt, aspect, reference=reference)
+                    lambda: generate_image(prompt, aspect, reference=reference, image_first=use_mascot)
                 )
                 webp, cleaned = _prepare_sticker(image["bytes"])
             if not webp:

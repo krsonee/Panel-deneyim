@@ -55,6 +55,8 @@ def sticker_prompt(session):
     character = (session.get("character") or "").strip()
     kind = session.get("sticker_kind") or "mascot"
     brand = BRANDS[session["brand"]]
+    if kind != "object" and brand.get("mascot"):
+        return _mascot_sticker_prompt(brand, slogan, game, character)
     parts = [
         "Create one die-cut Telegram sticker of a single subject.",
         "Not a poster, not a banner, not a card, not an advertisement layout.",
@@ -67,16 +69,7 @@ def sticker_prompt(session):
     if kind == "object":
         parts.append(f"Subject is one object, not a person: {character or game or 'a casino chip'}.")
     else:
-        if brand.get("mascot"):
-            parts.append(
-                "The attached image is the only person. "
-                "He is the 3D man with swept yellow hair, friendly face, navy suit with gold trim, white shirt, and dark tie. "
-                "Keep that face and that yellow hair. "
-                "He is not a fish, not a fisherman, not a dragon, not Zeus, and not the slot game's own hero. "
-                "He may only change outfit, pose, and what he holds."
-            )
-        else:
-            parts.append("Subject is one original mascot character, centered.")
+        parts.append("Subject is one original mascot character, centered.")
         if game:
             parts.append(
                 f"Slot name is scenery around him, never a replacement body: {game}. "
@@ -91,6 +84,32 @@ def sticker_prompt(session):
     else:
         parts.append("No text anywhere in the image.")
     parts.append("No photorealistic celebrity.")
+    return " ".join(parts)
+
+
+def _mascot_sticker_prompt(brand, slogan, game, character):
+    parts = [
+        "Edit the attached photo into one Telegram sticker.",
+        "The man already in the photo is the sticker. Do not invent a new character.",
+        "Do not draw a fox, a cat, a fish, a dragon, a bird, or any cartoon animal.",
+        "Keep his swept yellow hair, his face, his navy suit with gold trim, his white shirt, and his dark tie.",
+        "You may change only his pose and what he holds.",
+        "Replace the photo background with flat magenta #FF00FF.",
+        "No frame, no poster, no website, no extra headline.",
+        "He floats in the middle and does not touch the edges.",
+        f"Palette around him: {brand['colors']}.",
+    ]
+    if game:
+        parts.append(
+            f"Slot name is scenery around this same man, never a new body: {game}. "
+            "Fish, coins, or reels may float beside him."
+        )
+    if character:
+        parts.append(f"Apply this to the same man. Do not switch characters: {character}.")
+    if slogan:
+        parts.append(f'The only text is this short slogan, spelled exactly, on a small sign in his hand: "{slogan}".')
+    else:
+        parts.append("No text anywhere in the image.")
     return " ".join(parts)
 
 
