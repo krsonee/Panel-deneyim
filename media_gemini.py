@@ -152,26 +152,44 @@ def generate_image(prompt, aspect_ratio, previous_interaction_id=None, reference
     return image
 
 
-def generate_video(prompt, image_bytes, mime, aspect_ratio):
-    """4 saniyelik 720p video. Veo kare (1:1) kabul etmez."""
-    body = {
+def video_request_body(prompt, image_bytes, mime, aspect_ratio):
+    """Veo, Gemini'deki inlineData alanını kabul etmez."""
+    image_bytes, mime = _shrink_for_video(image_bytes, mime)
+    return {
         "instances": [
             {
                 "prompt": prompt,
                 "image": {
-                    "inlineData": {
-                        "mimeType": mime or "image/png",
-                        "data": base64.b64encode(image_bytes).decode("ascii"),
-                    }
+                    "mimeType": mime or "image/jpeg",
+                    "bytesBase64Encoded": base64.b64encode(image_bytes).decode("ascii"),
                 },
             }
         ],
         "parameters": {
             "aspectRatio": aspect_ratio,
-            "durationSeconds": "4",
+            "durationSeconds": 4,
             "resolution": "720p",
+            "sampleCount": 1,
         },
     }
+
+
+def _shrink_for_video(image_bytes, mime):
+    try:
+        from io import BytesIO
+        from PIL import Image
+        image = Image.open(BytesIO(image_bytes)).convert("RGB")
+        image.thumbnail((1280, 1280))
+        out = BytesIO()
+        image.save(out, format="JPEG", quality=85)
+        return out.getvalue(), "image/jpeg"
+    except Exception:
+        return image_bytes, mime or "image/png"
+
+
+def generate_video(prompt, image_bytes, mime, aspect_ratio):
+    """4 saniyelik 720p video. Veo kare (1:1) kabul etmez."""
+    body = video_request_body(prompt, image_bytes, mime, aspect_ratio)
     started = _request(
         f"{API_BASE}/models/{VIDEO_MODEL}:predictLongRunning",
         body,

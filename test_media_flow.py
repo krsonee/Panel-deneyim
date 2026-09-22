@@ -29,10 +29,18 @@ from media_flow import (
     video_aspect,
     welcome_text,
 )
-from media_gemini import extract_image
+from media_gemini import extract_image, video_request_body
 
 
 class FlowTests(unittest.TestCase):
+    def test_video_request_does_not_use_inline_data(self):
+        body = video_request_body("animate the poster", b"not-a-real-image", "image/png", "9:16")
+        image = body["instances"][0]["image"]
+        self.assertIn("bytesBase64Encoded", image)
+        self.assertNotIn("inlineData", image)
+        self.assertEqual(body["parameters"]["aspectRatio"], "9:16")
+        self.assertEqual(body["parameters"]["durationSeconds"], 4)
+
     def test_prompt_keeps_campaign_text_and_brand(self):
         session = new_session()
         session.update({
@@ -45,6 +53,7 @@ class FlowTests(unittest.TestCase):
         self.assertIn("%100 Freespin Bonusu Seni Bekliyor!", prompt)
         self.assertIn("official logo", prompt)
         self.assertIn("makrobet818.com", prompt)
+        self.assertIn("Do not put each word on its own line", prompt)
 
         session["brand"] = "betced"
         prompt = campaign_prompt(session)
