@@ -20,11 +20,10 @@ IMAGE_CANDIDATES = max(1, int(os.environ.get("MEDIA_IMAGE_CANDIDATES", "1") or "
 VIDEO_RESOLUTION = os.environ.get("GEMINI_VIDEO_RESOLUTION", "720p")
 VIDEO_DURATION_SECONDS = int(os.environ.get("GEMINI_VIDEO_DURATION_SECONDS", "4") or "4")
 VIDEO_GENERATE_AUDIO = os.environ.get("GEMINI_VIDEO_AUDIO", "").strip().lower() in ("1", "true", "yes")
-VIDEO_NEGATIVE_PROMPT = os.environ.get(
-    "GEMINI_VIDEO_NEGATIVE_PROMPT",
-    "flicker, jitter, morphing text, warped logo, distorted face, extra limbs, low detail, "
-    "washed out colors, choppy motion, watermark",
-).strip()
+# veo-3.1-lite bu alanı reddediyor ("negativePrompt isn't supported by this model"),
+# bu yüzden varsayılan boş: hiçbir ortam değişkeni istemeden hiçbir şey gönderilmez.
+# Modelin yeni bir sürümü bunu destekliyorsa GEMINI_VIDEO_NEGATIVE_PROMPT ile açılabilir.
+VIDEO_NEGATIVE_PROMPT = os.environ.get("GEMINI_VIDEO_NEGATIVE_PROMPT", "").strip()
 
 
 class GeminiError(RuntimeError):

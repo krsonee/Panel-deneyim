@@ -414,13 +414,23 @@ class FlowTests(unittest.TestCase):
             media_gemini._request = original
         self.assertEqual(best["bytes"], detailed_buf.getvalue())
 
-    def test_video_request_includes_quality_parameters_by_default(self):
+    def test_video_request_defaults_skip_unsupported_negative_prompt(self):
+        # veo-3.1-lite bu alanı reddediyor, o yüzden hiç env değişkeni yokken
+        # negativePrompt gövdeye hiç eklenmemeli (bkz. gerçek Google hatası).
         body = video_request_body("animate the poster", b"not-a-real-image", "image/png", "16:9")
         params = body["parameters"]
         self.assertEqual(params["resolution"], "720p")
-        self.assertIn("negativePrompt", params)
-        self.assertIn("morphing text", params["negativePrompt"])
+        self.assertNotIn("negativePrompt", params)
         self.assertNotIn("generateAudio", params)
+
+    def test_video_request_sends_negative_prompt_only_when_configured(self):
+        original = media_gemini.VIDEO_NEGATIVE_PROMPT
+        media_gemini.VIDEO_NEGATIVE_PROMPT = "flicker, jitter"
+        try:
+            body = video_request_body("animate the poster", b"not-a-real-image", "image/png", "16:9")
+        finally:
+            media_gemini.VIDEO_NEGATIVE_PROMPT = original
+        self.assertEqual(body["parameters"]["negativePrompt"], "flicker, jitter")
 
     def test_campaign_prompt_includes_professional_art_direction(self):
         session = new_session()
