@@ -90,6 +90,20 @@ def sticker_prompt(session):
     return " ".join(parts)
 
 
+def sticker_motion_prompt(session):
+    slogan = (session.get("slogan") or "").strip()
+    text = f'The sign text stays exactly "{slogan}". ' if slogan else "Do not add text. "
+    return (
+        "Animate this sticker in place as a short loop. "
+        "Keep the same character, the same face, and the same pose. "
+        "Keep the flat magenta background exactly #FF00FF. "
+        "Do not replace it with a room, a poster, or a new scene. "
+        "Motion only: a blink, a small bounce, the coins drift, a soft glow on the sign. "
+        f"{text}"
+        "No camera move, no voice, no new words."
+    )
+
+
 def video_prompt(session):
     brand = BRANDS[session["brand"]]
     return (

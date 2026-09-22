@@ -26,6 +26,7 @@ from media_flow import (
     ready_caption,
     revise_prompt,
     sticker_from_poster,
+    sticker_motion_prompt,
     sticker_prompt,
     video_aspect,
     video_prompt,
@@ -300,7 +301,7 @@ class MediaBot:
                 self._show_formats(chat_id)
                 return
             aspect = FORMATS[session["fmt"]][0]
-            self._send(chat_id, f"Sticker kesiliyor. Boyut: {FORMATS[session['fmt']][1]}.")
+            self._send(chat_id, "Sticker çiziliyor. Sonra hareket basılacak.")
             reference = []
             if session.get("sticker_kind") != "object":
                 mascot = mascot_reference(session["brand"])
@@ -325,17 +326,47 @@ class MediaBot:
                 return
             session["image"] = image["bytes"]
             session["mime"] = image["mime"]
-            session["sticker_webp"] = webp
             session["interaction_id"] = image.get("interaction_id")
-            session["step"] = "sticker_ready"
-            _write_draft(chat_id, webp, session.get("brand"), session.get("user_id"))
+            motion_file = None
+            motion_error = ""
+            self._send(chat_id, "Hareket basılıyor. Yaklaşık 0,20 dolar. Birkaç dakika sürebilir.")
             try:
-                self._send_sticker_file(chat_id, webp)
+                clip = self._call_with_deadline(
+                    lambda: generate_video(
+                        sticker_motion_prompt(session),
+                        image["bytes"],
+                        image.get("mime") or "image/png",
+                        "9:16",
+                    ),
+                    seconds=300,
+                )
+                motion_file = _to_video_sticker(clip)
+                if not motion_file:
+                    motion_error = "dosya Telegram boyutuna sığmadı"
+            except Exception as exc:
+                motion_error = str(exc)
+            if motion_file:
+                payload = motion_file
+                sticker_format = "video"
+                filename = "sticker.webm"
+                mime = "video/webm"
+                note = "Hareketli sticker böyle. Pakete ekleyeyim mi?"
+            else:
+                payload = webp
+                sticker_format = "static"
+                filename = "sticker.webp"
+                mime = "image/webp"
+                note = f"Hareket çıkmadı ({motion_error}). Sabit sticker duruyor. Pakete ekleyeyim mi?"
+            if not cleaned and sticker_format == "static":
+                note = "Zemin tam silinemedi, hâlâ afiş gibi duruyor. " + note
+            session["sticker_webp"] = payload
+            session["sticker_format"] = sticker_format
+            session["step"] = "sticker_ready"
+            _write_draft(chat_id, payload, session.get("brand"), session.get("user_id"), sticker_format)
+            try:
+                self._send_sticker_file(chat_id, payload, filename, mime)
             except Exception:
-                self._send_document(chat_id, webp, "sticker.webp", "Sticker dosyası.")
-            note = "Sticker böyle, zemini yok. Pakete ekleyeyim mi?"
-            if not cleaned:
-                note = "Zemin tam silinemedi, hâlâ afiş gibi duruyor. Pakete ekleyeyim mi?"
+                self._send_document(chat_id, payload, filename, "Sticker dosyası.", mime)
             self._send(
                 chat_id,
                 note,
@@ -450,11 +481,13 @@ class MediaBot:
     def _save_sticker(self, chat_id, session):
         webp = session.get("sticker_webp")
         brand = session.get("brand")
+        sticker_format = session.get("sticker_format") or "static"
         if not webp:
             draft = _read_draft(chat_id)
             if draft:
                 webp = draft["webp"]
                 brand = brand or draft.get("brand")
+                sticker_format = draft.get("format") or sticker_format
                 if not session.get("user_id") and draft.get("user_id"):
                     session["user_id"] = draft["user_id"]
         if not webp:
@@ -476,16 +509,20 @@ class MediaBot:
         brand = session.get("brand") or brand
         session["brand"] = brand
         owner = session.get("user_id") or chat_id
-        set_name = self.sticker_sets.get(brand) or f"{brand}_media_by_{self.username}".lower()
-        title = f"{BRANDS[brand]['name']} Media"
+        suffix = "video" if sticker_format == "video" else "media"
+        set_key = f"{brand}:{sticker_format}"
+        set_name = self.sticker_sets.get(set_key) or f"{brand}_{suffix}_by_{self.username}".lower()
+        title = f"{BRANDS[brand]['name']} {'Hareketli' if sticker_format == 'video' else 'Media'}"
+        filename = "sticker.webm" if sticker_format == "video" else "sticker.webp"
+        mime = "video/webm" if sticker_format == "video" else "image/webp"
         sticker = {
             "sticker": "attach://sticker",
-            "format": "static",
+            "format": sticker_format,
             "emoji_list": ["🎰"],
         }
-        file_part = {"sticker": ("sticker.webp", webp, "image/webp")}
+        file_part = {"sticker": (filename, webp, mime)}
         try:
-            if brand in self.sticker_sets:
+            if set_key in self.sticker_sets:
                 self._api(
                     "addStickerToSet",
                     {"user_id": owner, "name": set_name, "sticker": json.dumps(sticker)},
@@ -503,7 +540,7 @@ class MediaBot:
                     files=file_part,
                 )
         except Exception as first_error:
-            if brand in self.sticker_sets:
+            if set_key in self.sticker_sets:
                 self._send(chat_id, f"Paket eklenemedi: {first_error}")
                 return
             try:
@@ -515,7 +552,7 @@ class MediaBot:
             except Exception as second_error:
                 self._send(chat_id, f"Paket eklenemedi: {second_error}")
                 return
-        self.sticker_sets[brand] = set_name
+        self.sticker_sets[set_key] = set_name
         _clear_draft(chat_id)
         self._send(chat_id, f"Sticker pakete eklendi: https://t.me/addstickers/{set_name}")
         self._show_menu(chat_id)
@@ -633,18 +670,18 @@ class MediaBot:
             fields["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
         self._api("sendPhoto", fields, files={"photo": ("image.png", data, "image/png")})
 
-    def _send_document(self, chat_id, data, filename, caption):
+    def _send_document(self, chat_id, data, filename, caption, mime="image/png"):
         self._api(
             "sendDocument",
             {"chat_id": str(chat_id), "caption": caption},
-            files={"document": (filename, data, "image/png")},
+            files={"document": (filename, data, mime)},
         )
 
-    def _send_sticker_file(self, chat_id, data):
+    def _send_sticker_file(self, chat_id, data, filename="sticker.webp", mime="image/webp"):
         self._api(
             "sendSticker",
             {"chat_id": str(chat_id)},
-            files={"sticker": ("sticker.webp", data, "image/webp")},
+            files={"sticker": (filename, data, mime)},
         )
 
     def _send_video(self, chat_id, data, caption, reply_markup=None):
@@ -740,18 +777,25 @@ def _draft_dir():
     return directory
 
 
-def _write_draft(chat_id, webp, brand, user_id):
+def _write_draft(chat_id, blob, brand, user_id, sticker_format="static"):
     directory = _draft_dir()
-    (directory / f"{chat_id}.webp").write_bytes(webp)
+    _clear_draft(chat_id)
+    suffix = ".webm" if sticker_format == "video" else ".webp"
+    (directory / f"{chat_id}{suffix}").write_bytes(blob)
     (directory / f"{chat_id}.json").write_text(json.dumps({
         "brand": brand,
         "user_id": user_id,
+        "format": sticker_format,
     }))
 
 
 def _read_draft(chat_id):
     directory = _draft_dir()
-    blob = directory / f"{chat_id}.webp"
+    blob = directory / f"{chat_id}.webm"
+    sticker_format = "video"
+    if not blob.is_file():
+        blob = directory / f"{chat_id}.webp"
+        sticker_format = "static"
     if not blob.is_file():
         return None
     meta = {}
@@ -761,12 +805,17 @@ def _read_draft(chat_id):
             meta = json.loads(sidecar.read_text())
         except json.JSONDecodeError:
             meta = {}
-    return {"webp": blob.read_bytes(), "brand": meta.get("brand"), "user_id": meta.get("user_id")}
+    return {
+        "webp": blob.read_bytes(),
+        "brand": meta.get("brand"),
+        "user_id": meta.get("user_id"),
+        "format": meta.get("format") or sticker_format,
+    }
 
 
 def _clear_draft(chat_id):
     directory = _draft_dir()
-    for suffix in (".webp", ".json"):
+    for suffix in (".webp", ".webm", ".json"):
         path = directory / f"{chat_id}{suffix}"
         if path.is_file():
             path.unlink()
@@ -849,9 +898,55 @@ def _knockout_magenta(image):
     width, height = image.size
     pixels = image.load()
     corners = ((1, 1), (width - 2, 1), (1, height - 2), (width - 2, height - 2))
-    if not any(match(pixels[x, y]) for x, y in corners):
-        return image
-    return _flood_clear(image, match, (255, 0, 255, 0))
+    if any(match(pixels[x, y]) for x, y in corners):
+        _flood_clear(image, match, (255, 0, 255, 0))
+    for y in range(height):
+        for x in range(width):
+            red, green, blue, alpha = pixels[x, y]
+            if alpha < 16:
+                continue
+            dist = abs(red - 255) + green + abs(blue - 255)
+            if dist <= 100:
+                pixels[x, y] = (red, green, blue, 0)
+    return image
+
+
+def _to_video_sticker(data):
+    """Veo mp4'sini Telegram video sticker'ına çevirir: VP9, en fazla 3 sn, 256 KB."""
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    if not data:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        source = folder / "in.mp4"
+        target = folder / "out.webm"
+        source.write_bytes(data)
+        for crf in (40, 48, 56):
+            command = [
+                "ffmpeg", "-y", "-i", str(source), "-t", "2.9", "-an",
+                "-vf",
+                "chromakey=0xFF00FF:0.28:0.10,"
+                "scale='if(gte(iw,ih),512,-2)':'if(gte(iw,ih),-2,512)':flags=lanczos,"
+                "fps=12",
+                "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
+                "-b:v", "0", "-crf", str(crf),
+                "-deadline", "realtime", "-cpu-used", "5",
+                "-auto-alt-ref", "0", "-row-mt", "1",
+                str(target),
+            ]
+            try:
+                done = subprocess.run(command, capture_output=True, timeout=90)
+            except (OSError, subprocess.TimeoutExpired):
+                return None
+            if done.returncode != 0 or not target.is_file():
+                continue
+            blob = target.read_bytes()
+            if blob and len(blob) <= 256 * 1024:
+                return blob
+    return None
 
 
 def _transparent_ratio(image):

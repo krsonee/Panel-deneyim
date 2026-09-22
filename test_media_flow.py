@@ -5,7 +5,17 @@ from io import BytesIO
 
 from PIL import Image
 
-from media_bot import MediaBot, _prepare_sticker, _read_draft, _reference_on_magenta, _write_draft
+import subprocess
+from pathlib import Path
+
+from media_bot import (
+    MediaBot,
+    _prepare_sticker,
+    _read_draft,
+    _reference_on_magenta,
+    _to_video_sticker,
+    _write_draft,
+)
 from media_brands import mascot_reference
 from media_flow import (
     banner_motion_prompt,
@@ -14,6 +24,7 @@ from media_flow import (
     new_session,
     revise_prompt,
     sticker_from_poster,
+    sticker_motion_prompt,
     sticker_prompt,
     video_aspect,
     welcome_text,
@@ -135,6 +146,50 @@ class FlowTests(unittest.TestCase):
         self.assertIn("Banner gif", labels)
         self.assertIn("Sticker üret", labels)
         self.assertNotIn("Hareketlendir", labels)
+
+    def test_sticker_motion_keeps_magenta_background(self):
+        session = new_session()
+        session.update({"brand": "makrobet", "slogan": "Promo kod geliyor"})
+        prompt = sticker_motion_prompt(session)
+        self.assertIn("#FF00FF", prompt)
+        self.assertIn("Promo kod geliyor", prompt)
+        self.assertIn("short loop", prompt)
+
+    def test_video_sticker_is_vp9_and_under_telegram_limit(self):
+        folder = Path("/tmp/stk-test")
+        folder.mkdir(exist_ok=True)
+        source = folder / "in.mp4"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=0xFF00FF:s=320x180:d=2",
+                "-f", "lavfi", "-i", "color=c=0x14285A:s=80x120:d=2",
+                "-filter_complex", "overlay=120:30",
+                "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                str(source),
+            ],
+            check=True,
+        )
+        webm = _to_video_sticker(source.read_bytes())
+        self.assertIsNotNone(webm)
+        self.assertLessEqual(len(webm), 256 * 1024)
+        probe = subprocess.run(
+            [
+                "ffprobe", "-hide_banner", "-loglevel", "error",
+                "-show_entries", "stream=codec_name,width,height",
+                "-show_entries", "format=duration",
+                "-of", "default=nw=1",
+                "-i", "pipe:0",
+            ],
+            input=webm,
+            capture_output=True,
+            check=True,
+        )
+        text = probe.stdout.decode()
+        self.assertIn("codec_name=vp9", text)
+        self.assertTrue("width=512" in text or "height=512" in text)
+        duration = float(text.split("duration=")[1].split()[0])
+        self.assertLessEqual(duration, 3.0)
 
     def test_welcome_lists_video_and_banner(self):
         text = welcome_text()
