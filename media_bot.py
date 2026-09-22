@@ -25,6 +25,7 @@ from media_flow import (
     new_session,
     ready_caption,
     revise_prompt,
+    sticker_from_poster,
     sticker_prompt,
     video_aspect,
     video_prompt,
@@ -145,8 +146,9 @@ class MediaBot:
             return
         if data == "m:stk":
             session["mode"] = "sticker"
-            session["step"] = "format"
-            self._show_formats(chat_id)
+            session["fmt"] = "1x1"
+            session["step"] = "sticker_kind"
+            self._show_sticker_kinds(chat_id)
             return
         if data.startswith("f:"):
             key = data[2:]
@@ -180,15 +182,17 @@ class MediaBot:
             )
             return
         if data == "a:vid":
-            self._animate(chat_id, session)
+            self._animate(chat_id, session, "video")
+            return
+        if data == "a:gif":
+            self._animate(chat_id, session, "gif")
             return
         if data == "a:hd":
             self._send_hd(chat_id, session)
             return
         if data == "a:stk":
-            session["mode"] = "sticker"
-            session["step"] = "format"
-            self._show_formats(chat_id)
+            sticker_from_poster(session)
+            self._make_sticker(chat_id, session)
             return
         if data.startswith("s:"):
             self._on_sticker_callback(chat_id, session, data[2:])
@@ -401,32 +405,38 @@ class MediaBot:
         finally:
             self.busy.discard(chat_id)
 
-    def _animate(self, chat_id, session):
+    def _animate(self, chat_id, session, kind="video"):
         if not session.get("image"):
             self._send(chat_id, "Önce bir görsel üret.")
             return
         if chat_id in self.busy:
             self._send(chat_id, "Bir iş hâlâ sürüyor.")
             return
+        label = "Video" if kind == "video" else "Banner gif"
         aspect = video_aspect(session.get("fmt"))
         self.busy.add(chat_id)
         try:
             self._send(
                 chat_id,
-                f"Video hazırlanıyor ({aspect}, 4 saniye). Yaklaşık 0,20 dolar. Birkaç dakika sürebilir.",
+                f"{label} hazırlanıyor ({aspect}, 4 saniye). Yaklaşık 0,20 dolar. Birkaç dakika sürebilir.",
             )
-            video = self._call_with_deadline(
+            motion = video_prompt(session) if kind == "video" else banner_motion_prompt(session)
+            clip = self._call_with_deadline(
                 lambda: generate_video(
-                    video_prompt(session),
+                    motion,
                     session["image"],
                     session.get("mime") or "image/png",
                     aspect,
                 ),
-                seconds=240,
+                seconds=300,
             )
-            self._send_video(chat_id, video, "Video hazır.")
+            caption = f"{label} hazır."
+            if kind == "gif":
+                self._send_animation(chat_id, clip, caption, self._result_keyboard())
+            else:
+                self._send_video(chat_id, clip, caption, self._result_keyboard())
         except Exception as exc:
-            self._send(chat_id, f"Video çıkmadı: {exc}")
+            self._send(chat_id, f"{label} çıkmadı: {exc}")
         finally:
             self.busy.discard(chat_id)
 
@@ -558,7 +568,7 @@ class MediaBot:
     def _show_sticker_kinds(self, chat_id):
         self._send(
             chat_id,
-            "Ne tür sticker?",
+            "Kare sticker. Zemin silinir, afiş çıkmaz.\nNe tür?",
             {"inline_keyboard": [[
                 {"text": "Maskot", "callback_data": "s:mascot"},
                 {"text": "Obje", "callback_data": "s:object"},
@@ -600,10 +610,13 @@ class MediaBot:
             ],
             [
                 {"text": "Revize et", "callback_data": "a:rev"},
-                {"text": "Hareketlendir", "callback_data": "a:vid"},
+                {"text": "Video üret", "callback_data": "a:vid"},
             ],
             [
+                {"text": "Banner gif", "callback_data": "a:gif"},
                 {"text": "Sticker üret", "callback_data": "a:stk"},
+            ],
+            [
                 {"text": "Ana menü", "callback_data": "a:home"},
             ],
         ]}
@@ -634,17 +647,23 @@ class MediaBot:
             files={"sticker": ("sticker.webp", data, "image/webp")},
         )
 
-    def _send_video(self, chat_id, data, caption):
+    def _send_video(self, chat_id, data, caption, reply_markup=None):
+        fields = {"chat_id": str(chat_id), "caption": caption}
+        if reply_markup:
+            fields["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
         self._api(
             "sendVideo",
-            {"chat_id": str(chat_id), "caption": caption},
+            fields,
             files={"video": ("kampanya.mp4", data, "video/mp4")},
         )
 
-    def _send_animation(self, chat_id, data, caption):
+    def _send_animation(self, chat_id, data, caption, reply_markup=None):
+        fields = {"chat_id": str(chat_id), "caption": caption}
+        if reply_markup:
+            fields["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
         self._api(
             "sendAnimation",
-            {"chat_id": str(chat_id), "caption": caption},
+            fields,
             files={"animation": ("banner.mp4", data, "video/mp4")},
         )
 

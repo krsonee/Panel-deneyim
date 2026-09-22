@@ -5,7 +5,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from media_bot import _prepare_sticker, _read_draft, _reference_on_magenta, _write_draft
+from media_bot import MediaBot, _prepare_sticker, _read_draft, _reference_on_magenta, _write_draft
 from media_brands import mascot_reference
 from media_flow import (
     banner_motion_prompt,
@@ -13,6 +13,7 @@ from media_flow import (
     campaign_prompt,
     new_session,
     revise_prompt,
+    sticker_from_poster,
     sticker_prompt,
     video_aspect,
     welcome_text,
@@ -110,6 +111,30 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(draft["webp"], b"webp-bytes")
         self.assertEqual(draft["brand"], "makrobet")
         self.assertEqual(draft["user_id"], 7)
+
+    def test_poster_sticker_skips_size_and_uses_campaign(self):
+        session = new_session()
+        session.update({
+            "brand": "makrobet",
+            "fmt": "16x9",
+            "campaign": "%100 NAKİT BONUS BAŞLIYOR",
+        })
+        sticker_from_poster(session)
+        self.assertEqual(session["fmt"], "1x1")
+        self.assertEqual(session["sticker_kind"], "mascot")
+        self.assertEqual(session["slogan"], "%100 NAKİT BONUS BAŞLIYOR")
+        self.assertNotEqual(session["step"], "format")
+
+    def test_result_buttons_are_video_gif_and_sticker(self):
+        labels = [
+            button["text"]
+            for row in MediaBot("dummy")._result_keyboard()["inline_keyboard"]
+            for button in row
+        ]
+        self.assertIn("Video üret", labels)
+        self.assertIn("Banner gif", labels)
+        self.assertIn("Sticker üret", labels)
+        self.assertNotIn("Hareketlendir", labels)
 
     def test_welcome_lists_video_and_banner(self):
         text = welcome_text()

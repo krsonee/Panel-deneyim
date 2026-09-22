@@ -131,6 +131,18 @@ def banner_motion_prompt(session):
     )
 
 
+def sticker_from_poster(session):
+    """Hazır afişten sticker: boyut sormadan, kampanya yazısı slogan olur."""
+    text = (session.get("campaign") or "").strip()
+    session["mode"] = "sticker"
+    session["fmt"] = "1x1"
+    session["sticker_kind"] = "mascot"
+    session["game"] = ""
+    session["slogan"] = text[:60]
+    session["character"] = "elinde küçük tabela tutan maskot"
+    return session
+
+
 def video_aspect(fmt_key):
     """Veo kare üretmez. 1:1 ve 16:9 yatay, 9:16 dikey gider."""
     if fmt_key == "9x16":
