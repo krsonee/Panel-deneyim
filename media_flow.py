@@ -111,7 +111,11 @@ def sticker_prompt(session):
         if game:
             parts.append(
                 f"Slot name is scenery around him, never a replacement body: {game}. "
-                "Fish, coins, or reels may float beside him. Do not turn him into that game's creature."
+                "Use your own knowledge of this exact game's real theme, colors, and iconic symbols "
+                "for the props and background — candy and fruit for a sweets game, water and fish for "
+                "a fishing game, gold and temple carvings for a mythology game, and so on. Match what "
+                "this specific game is actually about, not a generic pile of coins or a spinning reel. "
+                "Do not turn him into that game's creature."
             )
         if character:
             parts.append(f"Apply this to the same mascot. Do not switch characters: {character}.")
@@ -128,27 +132,40 @@ def sticker_prompt(session):
 
 def _mascot_sticker_prompt(brand, slogan, game, character):
     parts = [
-        "Edit the attached photo into one Telegram sticker.",
+        "Edit the attached photo into one rich, professional Telegram sticker.",
         "The man already in the photo is the sticker. Do not invent a new character.",
         "Do not draw a fox, a cat, a fish, a dragon, a bird, or any cartoon animal.",
-        "Keep his swept yellow hair, his face, his navy suit with gold trim, his white shirt, and his dark tie.",
-        "You may change only his pose and what he holds.",
+        "Keep his exact face and his swept yellow hair so he stays instantly recognizable — this part is not negotiable.",
+        "Everything else about his look is flexible: fully re-costume his outfit over or instead of his suit, "
+        "change his pose, change what he holds, and add one or two extra themed elements around him if they "
+        "fit the theme below — a small sidekick character, a treasure chest, a gift box, a spinning prize wheel, "
+        "coins, confetti, or ribbons. For example a general promo or event theme can add a small gold crown and "
+        "a royal coat over his suit; a pirate theme can dress him as a ship captain with a coat and hat; a "
+        "strength or big-win theme can show him as a muscular champion holding a trophy and a belt. "
+        "Pick whichever look fits the theme best, the way a professional character illustrator would.",
         "Replace the photo background with flat magenta #FF00FF.",
-        "No frame, no poster, no website, no extra headline.",
-        "He floats in the middle and does not touch the edges.",
+        "No frame, no poster border, no website address, no fake app screen — this stays one sticker graphic, not an ad layout.",
+        "He (and any small sidekick or prop) floats in the middle and does not touch the edges.",
         f"Palette around him: {brand['colors']}.",
         STICKER_ART_DIRECTION,
-        "Keep his facial proportions natural and consistent with the source photo; do not distort his face or hands.",
+        "Keep his facial proportions natural even in a new costume; do not distort his face or hands.",
     ]
     if game:
         parts.append(
             f"Slot name is scenery around this same man, never a new body: {game}. "
-            "Fish, coins, or reels may float beside him."
+            "Use your own knowledge of this exact game's real theme, colors, and iconic symbols for "
+            "the props and background — candy and fruit for a sweets game, water and fish for a "
+            "fishing game, gold and temple carvings for a mythology game, and so on. Match what this "
+            "specific game is actually about, not a generic pile of coins or a spinning reel."
         )
     if character:
         parts.append(f"Apply this to the same man. Do not switch characters: {character}.")
     if slogan:
-        parts.append(f'The only text is this short slogan, spelled exactly, on a small sign in his hand: "{slogan}".')
+        parts.append(
+            f'Add one bold, on-brand ribbon or badge graphic carrying this exact short text, spelled '
+            f'exactly: "{slogan}". Design it like a real piece of graphic design — a banner or badge '
+            "shape, brand colors, clean bold lettering — not plain floating text."
+        )
     else:
         parts.append("No text anywhere in the image.")
     parts.append(ANTI_ARTIFACT_DIRECTION)
