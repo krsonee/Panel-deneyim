@@ -2,6 +2,38 @@
 
 from media_brands import BRANDS, CATEGORIES, FORMATS
 
+# Bu iki blok her görsel promptuna eklenir. Amatör/AI görünümünün asıl kaynağı
+# genelde eksik sanat yönetimi talimatıdır: ışık, derinlik, malzeme gerçekçiliği
+# ve tipografi kalitesi tarif edilmezse model düz, clipart gibi bir sonuca gider.
+POSTER_ART_DIRECTION = (
+    "Shoot this like a top-tier iGaming ad agency campaign, not a template. "
+    "Use cinematic studio lighting with a soft key light, a subtle rim light, and believable "
+    "contact shadows. Build real depth: a sharp, in-focus foreground subject and message area, "
+    "and a slightly blurred, complementary background layer for parallax feel. "
+    "Grade the colors cohesively around the brand palette with a premium, high-dynamic-range look. "
+    "Compose with clear visual hierarchy, rule-of-thirds balance, and generous breathing room "
+    "around the headline and the logo."
+)
+
+ANTI_ARTIFACT_DIRECTION = (
+    "Avoid every common AI rendering flaw: no melted, duplicated, or warped letters, no illegible "
+    "or blurry type, no double-edged or smeared logo, no mismatched lighting between the logo and "
+    "the scene, no visible seams, no stray watermark text, no extra or malformed fingers or limbs, "
+    "no waxy plastic skin texture, no random unreadable background text."
+)
+
+STICKER_ART_DIRECTION = (
+    "Render it like a premium, best-selling Telegram sticker pack: clean bold outline, vibrant "
+    "cel-shaded lighting with one clear light source, crisp edge definition, and rich color depth. "
+    "Keep every proportion consistent with a professional character design, not a rough sketch."
+)
+
+MOTION_ART_DIRECTION = (
+    "Animate with professional motion-graphics polish: smooth ease-in/ease-out timing, no jitter, "
+    "no flicker, no frame-to-frame morphing of the character, logo, or text, and a perfectly seamless "
+    "loop where the last frame matches the first."
+)
+
 
 def new_session():
     return {
@@ -29,11 +61,15 @@ def campaign_prompt(session):
         f"Small website line, spelled exactly: {brand['domain']}. "
         f"Palette: {brand['colors']}. "
         f"Category: {category}. "
+        f"{POSTER_ART_DIRECTION} "
         "Render this Turkish headline exactly, with the same spelling and punctuation, "
         f"as one compact block of two to four lines: \"{text}\". "
-        "Do not put each word on its own line. "
-        "Add a button that says HEMEN DENE. Add a small 18+ mark. "
+        "Do not put each word on its own line. Use confident, on-brand professional typography "
+        "with consistent kerning and a clear baseline; the headline must stay perfectly legible. "
+        "Add a button that says HEMEN DENE, styled as a real pressable UI button with depth, not flat text. "
+        "Add a small 18+ mark. "
         "Do not add any other words, especially not English slogans. "
+        f"{ANTI_ARTIFACT_DIRECTION} "
         "High-end commercial layout, sharp type, not clipart."
     )
 
@@ -45,7 +81,8 @@ def revise_prompt(session, note):
         f"{note.strip()}. "
         f"Keep the brand {brand['wordmark']} and {brand['domain']}. "
         "Keep every other word, person, and layout the same. "
-        "Headline language stays Turkish. Do not redesign the whole image."
+        "Headline language stays Turkish. Do not redesign the whole image. "
+        f"{ANTI_ARTIFACT_DIRECTION}"
     )
 
 
@@ -63,6 +100,7 @@ def sticker_prompt(session):
         "No frame, no border, no rectangle, no button, no website, no headline.",
         "Background is only flat pure magenta #FF00FF, the same empty background as the reference.",
         "The subject floats in the middle and does not touch the edges.",
+        STICKER_ART_DIRECTION,
         "The scene description below is what the subject is doing. It is not text to print.",
         "Do not add any words except the slogan line, if one is given.",
     ]
@@ -84,6 +122,7 @@ def sticker_prompt(session):
     else:
         parts.append("No text anywhere in the image.")
     parts.append("No photorealistic celebrity.")
+    parts.append(ANTI_ARTIFACT_DIRECTION)
     return " ".join(parts)
 
 
@@ -98,6 +137,8 @@ def _mascot_sticker_prompt(brand, slogan, game, character):
         "No frame, no poster, no website, no extra headline.",
         "He floats in the middle and does not touch the edges.",
         f"Palette around him: {brand['colors']}.",
+        STICKER_ART_DIRECTION,
+        "Keep his facial proportions natural and consistent with the source photo; do not distort his face or hands.",
     ]
     if game:
         parts.append(
@@ -110,6 +151,7 @@ def _mascot_sticker_prompt(brand, slogan, game, character):
         parts.append(f'The only text is this short slogan, spelled exactly, on a small sign in his hand: "{slogan}".')
     else:
         parts.append("No text anywhere in the image.")
+    parts.append(ANTI_ARTIFACT_DIRECTION)
     return " ".join(parts)
 
 
@@ -123,6 +165,7 @@ def sticker_motion_prompt(session):
         "Do not replace it with a room, a poster, or a new scene. "
         "Motion only: he blinks, he bounces slightly, coins or fish drift around him, and the slogan sign blinks. "
         "Do not change who he is. "
+        f"{MOTION_ART_DIRECTION} "
         f"{text}"
         "No camera move, no voice, no new words."
     )
@@ -135,6 +178,7 @@ def video_prompt(session):
         "Keep the same framing, the same Turkish headline, and the same brand "
         f"{brand['wordmark']}. "
         "Add a short subtle motion: light glow, a few coins or sparks, gentle camera push. "
+        f"{MOTION_ART_DIRECTION} "
         "Do not change the words. No new scenes, no voiceover speech."
     )
 
@@ -149,12 +193,16 @@ def banner_prompt(session):
         f"Small website line, spelled exactly: {brand['domain']}. "
         f"Palette: {brand['colors']}. "
         f"Category: {category}. "
+        f"{POSTER_ART_DIRECTION} "
         "This frame will loop as a banner, so keep the layout stable and the headline readable. "
         "Render this Turkish headline exactly, with the same spelling and punctuation, "
         f"as one compact block of two to four lines: \"{text}\". "
-        "Do not put each word on its own line. "
-        "Add a button that says HEMEN DENE. Add a small 18+ mark. "
+        "Do not put each word on its own line. Use confident, on-brand professional typography "
+        "with consistent kerning and a clear baseline; the headline must stay perfectly legible. "
+        "Add a button that says HEMEN DENE, styled as a real pressable UI button with depth, not flat text. "
+        "Add a small 18+ mark. "
         "Do not add any other words, especially not English slogans. "
+        f"{ANTI_ARTIFACT_DIRECTION} "
         "High-end commercial banner, sharp type, not clipart."
     )
 
@@ -166,6 +214,7 @@ def banner_motion_prompt(session):
         "Keep the same framing, the same Turkish headline, and the same brand "
         f"{brand['wordmark']}. "
         "Motion stays inside the banner: a soft light sweep, a small glow on the button, a few sparks. "
+        f"{MOTION_ART_DIRECTION} "
         "Do not change the words. No new scenes, no camera cut, no voiceover."
     )
 

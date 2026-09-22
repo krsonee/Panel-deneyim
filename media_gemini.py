@@ -6,10 +6,25 @@ import os
 import time
 import urllib.error
 import urllib.request
+from io import BytesIO
 
 API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 IMAGE_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image")
 VIDEO_MODEL = os.environ.get("GEMINI_VIDEO_MODEL", "veo-3.1-lite-generate-preview")
+
+# Kalite ayarları ortam değişkeniyle açılır, koda dokunmadan ayarlanabilir.
+# 1'den büyük bir sayı, aynı prompt için birden çok görsel isteyip en netini
+# seçer (maliyet aynı oranda artar, bu yüzden varsayılan kapalı: 1).
+IMAGE_CANDIDATES = max(1, int(os.environ.get("MEDIA_IMAGE_CANDIDATES", "1") or "1"))
+
+VIDEO_RESOLUTION = os.environ.get("GEMINI_VIDEO_RESOLUTION", "720p")
+VIDEO_DURATION_SECONDS = int(os.environ.get("GEMINI_VIDEO_DURATION_SECONDS", "4") or "4")
+VIDEO_GENERATE_AUDIO = os.environ.get("GEMINI_VIDEO_AUDIO", "").strip().lower() in ("1", "true", "yes")
+VIDEO_NEGATIVE_PROMPT = os.environ.get(
+    "GEMINI_VIDEO_NEGATIVE_PROMPT",
+    "flicker, jitter, morphing text, warped logo, distorted face, extra limbs, low detail, "
+    "washed out colors, choppy motion, watermark",
+).strip()
 
 
 class GeminiError(RuntimeError):
@@ -53,30 +68,68 @@ def _short_error(body):
     return err.get("message") or body[:300]
 
 
-def extract_image(payload):
-    """Dönen JSON'dan son görselin baytını ve interaction id'sini çıkarır."""
+def extract_images(payload):
+    """Dönen JSON'daki tüm görsel adaylarını sırayla listeler.
+
+    Tek adaylık eski davranışla uyumlu kalması için sıralama önceliği aynı:
+    output_image, sonra steps, sonra candidates. Best-of-N seçimi bu listeden yapılır.
+    """
+    images = []
     if not isinstance(payload, dict):
-        return None
+        return images
     interaction_id = payload.get("id") or payload.get("name")
     image = payload.get("output_image") or {}
     parsed = _image_block(image)
     if parsed:
         data, mime = parsed
-        return {"bytes": data, "mime": mime, "interaction_id": interaction_id}
+        images.append({"bytes": data, "mime": mime, "interaction_id": interaction_id})
     for step in payload.get("steps") or []:
         for block in step.get("content") or []:
             parsed = _image_block(block)
             if parsed:
                 data, mime = parsed
-                return {"bytes": data, "mime": mime, "interaction_id": interaction_id}
+                images.append({"bytes": data, "mime": mime, "interaction_id": interaction_id})
     for candidate in payload.get("candidates") or []:
         content = candidate.get("content") or {}
         for part in content.get("parts") or []:
             parsed = _image_block(part)
             if parsed:
                 data, mime = parsed
-                return {"bytes": data, "mime": mime, "interaction_id": interaction_id}
-    return None
+                images.append({"bytes": data, "mime": mime, "interaction_id": interaction_id})
+    return images
+
+
+def extract_image(payload):
+    """Dönen JSON'dan ilk görselin baytını ve interaction id'sini çıkarır."""
+    images = extract_images(payload)
+    return images[0] if images else None
+
+
+def _detail_score(image_bytes):
+    """Kaba bir netlik/detay skoru: kenar yoğunluğunun standart sapması.
+
+    Düz, clipart gibi çıkan görseller kenar bakımından zayıf olur; skoru
+    yüksek olan aday genelde daha ayrıntılı ve daha keskin dokuya sahiptir.
+    """
+    try:
+        from PIL import Image, ImageFilter
+        import statistics
+
+        picture = Image.open(BytesIO(image_bytes)).convert("L")
+        picture.thumbnail((256, 256))
+        edges = picture.filter(ImageFilter.FIND_EDGES)
+        pixels = edges.tobytes()
+        if len(pixels) < 2:
+            return 0.0
+        return statistics.pstdev(pixels)
+    except Exception:
+        return 0.0
+
+
+def _pick_best_image(images):
+    if len(images) <= 1:
+        return images[0] if images else None
+    return max(images, key=lambda item: _detail_score(item["bytes"]))
 
 
 def image_failure_reason(payload):
@@ -138,32 +191,51 @@ def image_parts(prompt, reference=None, image_first=False):
     return [text] + images
 
 
-def generate_image(prompt, aspect_ratio, previous_interaction_id=None, reference=None, image_first=False):
-    """reference bir logo ya da önceki görsel olabilir. Liste de kabul edilir."""
+def generate_image(prompt, aspect_ratio, previous_interaction_id=None, reference=None, image_first=False, candidates=None):
+    """reference bir logo ya da önceki görsel olabilir. Liste de kabul edilir.
+
+    candidates > 1 olursa aynı prompt için birden çok görsel istenir ve
+    en detaylı/net görünen aday otomatik seçilir (bkz. _detail_score).
+    """
     parts = image_parts(prompt, reference, image_first=image_first)
     if previous_interaction_id and len(parts) == 1:
         parts[0]["text"] = prompt + " Keep the previous poster and apply only the requested change."
+    candidate_count = candidates if candidates is not None else IMAGE_CANDIDATES
+    generation_config = {
+        "responseModalities": ["IMAGE", "TEXT"],
+        "imageConfig": {"aspectRatio": aspect_ratio},
+    }
+    if candidate_count > 1:
+        generation_config["candidateCount"] = candidate_count
     body = {
         "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {
-            "responseModalities": ["IMAGE", "TEXT"],
-            "imageConfig": {"aspectRatio": aspect_ratio},
-        },
+        "generationConfig": generation_config,
     }
     payload = _request(
         f"{API_BASE}/models/{IMAGE_MODEL}:generateContent",
         body,
         timeout=70,
     )
-    image = extract_image(payload)
-    if not image:
+    images = extract_images(payload)
+    best = _pick_best_image(images)
+    if not best:
         raise GeminiError(image_failure_reason(payload) or "Model görsel döndürmedi. Metni kısaltıp tekrar dene.")
-    return image
+    return best
 
 
 def video_request_body(prompt, image_bytes, mime, aspect_ratio):
     """Veo, Gemini'deki inlineData alanını kabul etmez."""
     image_bytes, mime = _shrink_for_video(image_bytes, mime)
+    parameters = {
+        "aspectRatio": aspect_ratio,
+        "durationSeconds": VIDEO_DURATION_SECONDS,
+        "resolution": VIDEO_RESOLUTION,
+        "sampleCount": 1,
+    }
+    if VIDEO_NEGATIVE_PROMPT:
+        parameters["negativePrompt"] = VIDEO_NEGATIVE_PROMPT
+    if VIDEO_GENERATE_AUDIO:
+        parameters["generateAudio"] = True
     return {
         "instances": [
             {
@@ -174,18 +246,12 @@ def video_request_body(prompt, image_bytes, mime, aspect_ratio):
                 },
             }
         ],
-        "parameters": {
-            "aspectRatio": aspect_ratio,
-            "durationSeconds": 4,
-            "resolution": "720p",
-            "sampleCount": 1,
-        },
+        "parameters": parameters,
     }
 
 
 def _shrink_for_video(image_bytes, mime):
     try:
-        from io import BytesIO
         from PIL import Image
         image = Image.open(BytesIO(image_bytes)).convert("RGB")
         image.thumbnail((1280, 1280))
