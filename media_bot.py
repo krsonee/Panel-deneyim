@@ -1181,19 +1181,22 @@ def _to_video_sticker(data):
         if not crop:
             return None
         crop_w, crop_h, left, top = crop
+        # fps 12 -> 15 hareketi daha akıcı gösterir. "good" deadline + cpu-used 2,
+        # "realtime"e göre aynı boyut bütçesinde çok daha net bir görüntü verir;
+        # bu klip zaten kısa (<3sn, 512px) olduğu için süre bütçesi hâlâ rahat.
         video_filter = (
             f"crop={crop_w}:{crop_h}:{left}:{top},"
             "chromakey=0xFF00FF:0.22:0.08,"
             "scale='if(gte(iw,ih),512,-2)':'if(gte(iw,ih),-2,512)':flags=lanczos,"
-            "fps=12"
+            "fps=15"
         )
-        for crf in (40, 48, 56):
+        for crf in (34, 42, 50, 56):
             command = [
                 "ffmpeg", "-y", "-i", str(source), "-t", "2.9", "-an",
                 "-vf", video_filter,
                 "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
                 "-b:v", "0", "-crf", str(crf),
-                "-deadline", "realtime", "-cpu-used", "5",
+                "-deadline", "good", "-cpu-used", "2",
                 "-auto-alt-ref", "0", "-row-mt", "1",
                 str(target),
             ]

@@ -27,9 +27,11 @@ from media_flow import (
     sticker_motion_prompt,
     sticker_prompt,
     video_aspect,
+    video_prompt,
     welcome_text,
 )
-from media_gemini import extract_image, image_parts, video_request_body
+import media_gemini
+from media_gemini import extract_image, extract_images, image_parts, video_request_body
 
 
 class FlowTests(unittest.TestCase):
@@ -338,6 +340,122 @@ class FlowTests(unittest.TestCase):
         })
         self.assertEqual(found["bytes"], b"gen-bytes")
         self.assertEqual(found["mime"], "image/png")
+
+    def test_extract_images_returns_every_candidate_in_order(self):
+        raw_a = base64.b64encode(b"a-bytes").decode()
+        raw_b = base64.b64encode(b"b-bytes").decode()
+        found = extract_images({
+            "candidates": [
+                {"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": raw_a}}]}},
+                {"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": raw_b}}]}},
+            ]
+        })
+        self.assertEqual([item["bytes"] for item in found], [b"a-bytes", b"b-bytes"])
+
+    def test_generate_image_sends_candidate_count_when_requested(self):
+        captured = {}
+
+        def fake_request(url, payload=None, timeout=120):
+            captured["payload"] = payload
+            raw = base64.b64encode(b"only-candidate").decode()
+            return {"candidates": [{"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": raw}}]}}]}
+
+        original = media_gemini._request
+        media_gemini._request = fake_request
+        try:
+            media_gemini.generate_image("prompt", "1:1", candidates=3)
+        finally:
+            media_gemini._request = original
+        self.assertEqual(captured["payload"]["generationConfig"]["candidateCount"], 3)
+
+    def test_generate_image_defaults_do_not_send_candidate_count(self):
+        captured = {}
+
+        def fake_request(url, payload=None, timeout=120):
+            captured["payload"] = payload
+            raw = base64.b64encode(b"only-candidate").decode()
+            return {"candidates": [{"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": raw}}]}}]}
+
+        original = media_gemini._request
+        media_gemini._request = fake_request
+        try:
+            media_gemini.generate_image("prompt", "1:1")
+        finally:
+            media_gemini._request = original
+        self.assertNotIn("candidateCount", captured["payload"]["generationConfig"])
+
+    def test_generate_image_picks_the_sharper_candidate(self):
+        flat = Image.new("RGB", (64, 64), (128, 128, 128))
+        flat_buf = BytesIO()
+        flat.save(flat_buf, format="PNG")
+
+        detailed = Image.new("RGB", (64, 64))
+        pixels = detailed.load()
+        for x in range(64):
+            for y in range(64):
+                pixels[x, y] = (255, 255, 255) if (x + y) % 2 == 0 else (0, 0, 0)
+        detailed_buf = BytesIO()
+        detailed.save(detailed_buf, format="PNG")
+
+        raw_flat = base64.b64encode(flat_buf.getvalue()).decode()
+        raw_detailed = base64.b64encode(detailed_buf.getvalue()).decode()
+
+        def fake_request(url, payload=None, timeout=120):
+            return {"candidates": [
+                {"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": raw_flat}}]}},
+                {"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": raw_detailed}}]}},
+            ]}
+
+        original = media_gemini._request
+        media_gemini._request = fake_request
+        try:
+            best = media_gemini.generate_image("prompt", "1:1", candidates=2)
+        finally:
+            media_gemini._request = original
+        self.assertEqual(best["bytes"], detailed_buf.getvalue())
+
+    def test_video_request_includes_quality_parameters_by_default(self):
+        body = video_request_body("animate the poster", b"not-a-real-image", "image/png", "16:9")
+        params = body["parameters"]
+        self.assertEqual(params["resolution"], "720p")
+        self.assertIn("negativePrompt", params)
+        self.assertIn("morphing text", params["negativePrompt"])
+        self.assertNotIn("generateAudio", params)
+
+    def test_campaign_prompt_includes_professional_art_direction(self):
+        session = new_session()
+        session.update({
+            "brand": "makrobet",
+            "fmt": "1x1",
+            "category": "casino",
+            "campaign": "%100 Freespin Bonusu Seni Bekliyor!",
+        })
+        prompt = campaign_prompt(session)
+        self.assertIn("cinematic studio lighting", prompt)
+        self.assertIn("no melted, duplicated, or warped letters", prompt)
+
+    def test_banner_prompt_includes_professional_art_direction(self):
+        session = new_session()
+        session.update({
+            "brand": "makrobet",
+            "fmt": "16x9",
+            "category": "casino",
+            "campaign": "%100 Freespin Bonusu Seni Bekliyor!",
+        })
+        prompt = banner_prompt(session)
+        self.assertIn("cinematic studio lighting", prompt)
+        self.assertIn("no melted, duplicated, or warped letters", prompt)
+
+    def test_motion_prompts_include_professional_animation_direction(self):
+        session = new_session()
+        session.update({"brand": "makrobet", "fmt": "16x9", "slogan": "Kod geliyor"})
+        for prompt in (
+            sticker_motion_prompt(session),
+            video_prompt(session),
+            banner_motion_prompt(session),
+        ):
+            self.assertIn("ease-in/ease-out", prompt)
+            self.assertIn("perfectly seamless loop", prompt)
 
 
 if __name__ == "__main__":
