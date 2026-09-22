@@ -119,6 +119,7 @@ class FlowTests(unittest.TestCase):
         self.assertIn("Sweet bonanza", prompt)
         self.assertIn("own knowledge of this exact game's real theme", prompt)
         self.assertIn("candy and fruit for a sweets game", prompt)
+        self.assertIn("Never write this game's own name or logo as text", prompt)
 
     def test_mascotless_brand_game_name_is_also_theme_aware(self):
         # betced has no mascot photo, so this hits the generic (non-photo) sticker branch.
@@ -132,6 +133,7 @@ class FlowTests(unittest.TestCase):
         self.assertIn("never a replacement body", prompt)
         self.assertIn("own knowledge of this exact game's real theme", prompt)
         self.assertIn("water and fish for a fishing game", prompt)
+        self.assertIn("Never write this game's own name or logo as text", prompt)
 
     def test_mascot_sticker_allows_full_costume_and_scene_freedom(self):
         # Referans paket gösterdi ki aynı maskot kral/korsan/şampiyon kılığına
