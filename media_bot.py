@@ -262,7 +262,7 @@ class MediaBot:
         if step == "slogan":
             session["slogan"] = text
             session["step"] = "character"
-            self._send(chat_id, "Karakteri bir cümleyle yaz. Örnek: elinde tahta tabela tutan balıkçı.")
+            self._send(chat_id, self._character_help(session))
             return
         if step == "character":
             session["character"] = text
@@ -292,7 +292,7 @@ class MediaBot:
         if action == "no":
             session["slogan"] = ""
             session["step"] = "character"
-            self._send(chat_id, "Karakteri bir cümleyle yaz.")
+            self._send(chat_id, self._character_help(session))
             return
         if action == "ok":
             self._save_sticker(chat_id, session)
@@ -651,6 +651,15 @@ class MediaBot:
                 {"text": "Obje", "callback_data": "s:object"},
             ]]},
         )
+
+    def _character_help(self, session):
+        brand = BRANDS.get(session.get("brand") or "") or {}
+        if brand.get("mascot"):
+            return (
+                "Maskot ne yapsın? Sarı saçlı adam kalır, yerine balık çizilmez.\n"
+                "Örnek: elinde tabela, etrafında freespin yağmuru."
+            )
+        return "Karakteri bir cümleyle yaz. Örnek: elinde tahta tabela tutan balıkçı."
 
     def _ask_slogan(self, chat_id):
         self._send(

@@ -69,18 +69,21 @@ def sticker_prompt(session):
     else:
         if brand.get("mascot"):
             parts.append(
-                "The attached image is the official mascot. "
-                "Keep his face and swept yellow hair the same. "
-                "He may change outfit, pose, and what he holds. "
-                "Do not replace him with a different character. "
-                "Do not copy the reference background. Output background stays flat magenta #FF00FF."
+                "The attached image is the only person. "
+                "He is the 3D man with swept yellow hair, friendly face, navy suit with gold trim, white shirt, and dark tie. "
+                "Keep that face and that yellow hair. "
+                "He is not a fish, not a fisherman, not a dragon, not Zeus, and not the slot game's own hero. "
+                "He may only change outfit, pose, and what he holds."
             )
         else:
             parts.append("Subject is one original mascot character, centered.")
         if game:
-            parts.append(f"Theme, as a scene only, not as a logo and not as printed text: {game}.")
+            parts.append(
+                f"Slot name is scenery around him, never a replacement body: {game}. "
+                "Fish, coins, or reels may float beside him. Do not turn him into that game's creature."
+            )
         if character:
-            parts.append(f"Scene, not printed text: {character}.")
+            parts.append(f"Apply this to the same mascot. Do not switch characters: {character}.")
     if slogan:
         parts.append(
             f"The only text is this short slogan, spelled exactly, on a small sign: \"{slogan}\"."
@@ -99,7 +102,8 @@ def sticker_motion_prompt(session):
         "Keep the same character, the same face, and the same pose. "
         "Keep the flat magenta background exactly #FF00FF. "
         "Do not replace it with a room, a poster, or a new scene. "
-        "Motion only: a blink, a small bounce, the coins drift, a soft glow on the sign. "
+        "Motion only: he blinks, he bounces slightly, coins or fish drift around him, and the slogan sign blinks. "
+        "Do not change who he is. "
         f"{text}"
         "No camera move, no voice, no new words."
     )

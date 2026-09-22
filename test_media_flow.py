@@ -100,6 +100,23 @@ class FlowTests(unittest.TestCase):
         self.assertIn("yellow hair", prompt)
         self.assertNotIn("official logo", prompt)
 
+    def test_slot_name_does_not_replace_the_mascot(self):
+        session = new_session()
+        session.update({
+            "brand": "makrobet",
+            "sticker_kind": "mascot",
+            "game": "Bigbass bonanza",
+            "slogan": "Kod geliyor",
+            "character": "makrobet maskotu cevresinde freespin yagmuru olsun",
+        })
+        prompt = sticker_prompt(session)
+        self.assertIn("only person", prompt)
+        self.assertIn("not a fish", prompt)
+        self.assertIn("Bigbass bonanza", prompt)
+        self.assertIn("never a replacement body", prompt)
+        self.assertIn("Kod geliyor", prompt)
+        self.assertIn("freespin yagmuru", prompt)
+
     def test_sticker_cutout_drops_magenta_and_fits_telegram(self):
         image = Image.new("RGBA", (600, 400), (255, 0, 255, 255))
         for x in range(220, 380):
