@@ -66,8 +66,11 @@ class MediaBot:
                     print(f"media bot update: {exc}")
                     chat_id = _chat_id(update)
                     if chat_id:
+                        detail = str(exc).strip()
+                        if not detail or detail == "None":
+                            detail = "seçim kayboldu. /start yazıp yeniden seç."
                         try:
-                            self._send(chat_id, f"İşlem yarıda kaldı: {exc}")
+                            self._send(chat_id, f"İşlem yarıda kaldı: {detail}")
                         except Exception:
                             pass
 
@@ -87,6 +90,29 @@ class MediaBot:
             self.sessions[chat_id] = session
         return session
 
+    def _begin(self, chat_id):
+        """Her tıklamada kayıtlı seçimi yükler. İki kopya aynı sohbeti bölüşmesin."""
+        session = self._session(chat_id)
+        loaded = _load_session(chat_id)
+        if not loaded:
+            return session
+        image = session.get("image")
+        mime = session.get("mime")
+        sticker = session.get("sticker_webp")
+        session.clear()
+        session.update(new_session())
+        session.update(loaded)
+        if image:
+            session["image"] = image
+            session["mime"] = mime
+            session["sticker_webp"] = sticker
+        return session
+
+    def _keep(self, chat_id):
+        session = self.sessions.get(chat_id)
+        if session:
+            _save_session(chat_id, session)
+
     def _on_update(self, update):
         if "callback_query" in update:
             self._on_callback(update["callback_query"])
@@ -98,12 +124,15 @@ class MediaBot:
             return
         user_id = (message.get("from") or {}).get("id")
         if user_id:
-            self._session(chat["id"])["user_id"] = user_id
-        if text.startswith("/start") or text.startswith("/marka"):
-            self._show_brands(chat["id"])
-            return
-        if text:
-            self._on_text(chat["id"], text)
+            self._begin(chat["id"])["user_id"] = user_id
+        try:
+            if text.startswith("/start") or text.startswith("/marka"):
+                self._show_brands(chat["id"])
+                return
+            if text:
+                self._on_text(chat["id"], text)
+        finally:
+            self._keep(chat["id"])
 
     def _on_callback(self, query):
         data = query.get("data") or ""
@@ -113,7 +142,13 @@ class MediaBot:
         if not chat_id:
             return
         user_id = (query.get("from") or {}).get("id")
-        session = self._session(chat_id)
+        try:
+            self._dispatch_callback(chat_id, data, user_id)
+        finally:
+            self._keep(chat_id)
+
+    def _dispatch_callback(self, chat_id, data, user_id):
+        session = self._begin(chat_id)
         if user_id:
             session["user_id"] = user_id
         if data.startswith("b:"):
@@ -169,7 +204,12 @@ class MediaBot:
                 return
             session["category"] = key
             session["step"] = "campaign"
-            self._send(chat_id, self._campaign_help(session))
+            help_text = self._campaign_help(session)
+            if not help_text:
+                self._send(chat_id, "Seçim yarım kaldı. Boyutu tekrar seç.")
+                self._show_formats(chat_id)
+                return
+            self._send(chat_id, help_text)
             return
         if data == "a:new":
             session["step"] = "campaign"
@@ -199,7 +239,7 @@ class MediaBot:
             self._on_sticker_callback(chat_id, session, data[2:])
 
     def _on_text(self, chat_id, text):
-        session = self._session(chat_id)
+        session = self._begin(chat_id)
         step = session.get("step")
         if step == "campaign":
             session["campaign"] = text
@@ -623,6 +663,12 @@ class MediaBot:
         )
 
     def _campaign_help(self, session):
+        if (
+            session.get("brand") not in BRANDS
+            or session.get("fmt") not in FORMATS
+            or session.get("category") not in CATEGORIES
+        ):
+            return None
         brand = BRANDS[session["brand"]]["name"]
         fmt = FORMATS[session["fmt"]][1]
         category = CATEGORIES[session["category"]]
@@ -768,6 +814,142 @@ def _multipart(fields, files):
         chunks.append(b"\r\n")
     chunks.append(f"--{boundary}--\r\n".encode())
     return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
+
+
+_SESSION_FIELDS = (
+    "brand",
+    "mode",
+    "fmt",
+    "category",
+    "campaign",
+    "step",
+    "user_id",
+    "sticker_kind",
+    "game",
+    "slogan",
+    "character",
+    "sticker_format",
+    "interaction_id",
+)
+
+
+def _session_dir():
+    from pathlib import Path
+    directory = Path("/tmp/media-bot-sessions")
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def _session_record(session):
+    record = {}
+    for key in _SESSION_FIELDS:
+        value = session.get(key)
+        if isinstance(value, (bytes, bytearray)):
+            continue
+        record[key] = value
+    return record
+
+
+def _save_session(chat_id, session):
+    record = _session_record(session)
+    path = _session_dir() / f"{chat_id}.json"
+    path.write_text(json.dumps(record, ensure_ascii=False))
+    _save_session_db(chat_id, record)
+
+
+def _load_session(chat_id):
+    loaded = _load_session_db(chat_id)
+    if loaded:
+        return loaded
+    path = _session_dir() / f"{chat_id}.json"
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return {key: payload.get(key) for key in _SESSION_FIELDS}
+
+
+def _db_connection():
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url.startswith("postgres"):
+        return None
+    import psycopg2
+    return psycopg2.connect(url, connect_timeout=5)
+
+
+def _save_session_db(chat_id, record):
+    try:
+        conn = _db_connection()
+    except Exception as exc:
+        print(f"media bot oturum kaydı: {exc}")
+        return
+    if conn is None:
+        return
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS media_bot_sessions (
+                        chat_id TEXT PRIMARY KEY,
+                        payload TEXT NOT NULL
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    INSERT INTO media_bot_sessions (chat_id, payload)
+                    VALUES (%s, %s)
+                    ON CONFLICT (chat_id) DO UPDATE SET payload = EXCLUDED.payload
+                    """,
+                    (str(chat_id), json.dumps(record, ensure_ascii=False)),
+                )
+    except Exception as exc:
+        print(f"media bot oturum kaydı: {exc}")
+    finally:
+        conn.close()
+
+
+def _load_session_db(chat_id):
+    try:
+        conn = _db_connection()
+    except Exception:
+        return None
+    if conn is None:
+        return None
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS media_bot_sessions (
+                        chat_id TEXT PRIMARY KEY,
+                        payload TEXT NOT NULL
+                    )
+                    """
+                )
+                cur.execute(
+                    "SELECT payload FROM media_bot_sessions WHERE chat_id = %s",
+                    (str(chat_id),),
+                )
+                row = cur.fetchone()
+    except Exception:
+        return None
+    finally:
+        conn.close()
+    if not row:
+        return None
+    try:
+        payload = json.loads(row[0])
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return {key: payload.get(key) for key in _SESSION_FIELDS}
 
 
 def _draft_dir():
@@ -1003,12 +1185,19 @@ def _to_sticker_webp(data):
     return webp
 
 
+_bot_started = False
+
+
 def start_in_background():
+    global _bot_started
+    if _bot_started:
+        return
     token = os.environ.get(TOKEN_ENV, "").strip()
     gemini = os.environ.get("GEMINI_API_KEY", "").strip()
     if not token or not gemini:
         print("media bot kapalı: MEDIA_BOT_TOKEN veya GEMINI_API_KEY eksik")
         return
+    _bot_started = True
     bot = MediaBot(token)
     threading.Thread(target=bot.run, name="media-bot", daemon=True).start()
 

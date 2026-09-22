@@ -191,6 +191,32 @@ class FlowTests(unittest.TestCase):
         duration = float(text.split("duration=")[1].split()[0])
         self.assertLessEqual(duration, 3.0)
 
+    def test_category_without_size_does_not_crash(self):
+        bot = MediaBot("dummy")
+        session = new_session()
+        session["brand"] = "betced"
+        session["category"] = "casino"
+        self.assertIsNone(bot._campaign_help(session))
+        session["fmt"] = "1x1"
+        text = bot._campaign_help(session)
+        self.assertIn("Betced", text)
+        self.assertIn("Casino Promo", text)
+
+    def test_choice_survives_a_second_bot_copy(self):
+        first = MediaBot("dummy")
+        second = MediaBot("dummy")
+        session = first._begin(909091)
+        session["brand"] = "betced"
+        session["mode"] = "image"
+        session["fmt"] = "16x9"
+        session["step"] = "category"
+        first._keep(909091)
+        other = second._begin(909091)
+        self.assertEqual(other["brand"], "betced")
+        self.assertEqual(other["fmt"], "16x9")
+        self.assertEqual(other["mode"], "image")
+        self.assertIsNone(other.get("image"))
+
     def test_welcome_lists_video_and_banner(self):
         text = welcome_text()
         self.assertIn("video", text)
