@@ -135,6 +135,17 @@ class FlowTests(unittest.TestCase):
         self.assertIn("water and fish for a fishing game", prompt)
         self.assertIn("Never write this game's own name or logo as text", prompt)
 
+    def test_sticker_art_direction_bans_medallion_frame_and_wants_bold_outline(self):
+        # Yan yana kıyaslamada gördük: referans örnekte çerçeve yok, kalın dış çizgi var,
+        # poz dinamik, renkler canlı. Bizim çıktı bir madalyona hapsolmuştu, düzelttik.
+        session = new_session()
+        session.update({"brand": "makrobet", "sticker_kind": "mascot", "slogan": "Kod geliyor"})
+        prompt = sticker_prompt(session)
+        self.assertIn("thick, consistent, dark outline", prompt)
+        self.assertIn("Never enclose the whole scene in a circular medallion", prompt)
+        self.assertIn("dynamic lean, tilt, or", prompt)
+        self.assertIn("punchy, saturated flat-cel colors", prompt)
+
     def test_mascot_sticker_allows_full_costume_and_scene_freedom(self):
         # Referans paket gösterdi ki aynı maskot kral/korsan/şampiyon kılığına
         # girebiliyor, kimliği (yüz/saç) hep aynı kalıyor. Kıyafeti artık kilitli değil.

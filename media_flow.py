@@ -23,9 +23,15 @@ ANTI_ARTIFACT_DIRECTION = (
 )
 
 STICKER_ART_DIRECTION = (
-    "Render it like a premium, best-selling Telegram sticker pack: clean bold outline, vibrant "
-    "cel-shaded lighting with one clear light source, crisp edge definition, and rich color depth. "
-    "Keep every proportion consistent with a professional character design, not a rough sketch."
+    "Render it like a premium, best-selling Telegram sticker pack, in the exact style of a vinyl "
+    "die-cut decal: trace a thick, consistent, dark outline around the character AND separately around "
+    "every single floating prop (each coin, each gem, the banner) — not soft ambient 3D shading. "
+    "Use punchy, saturated flat-cel colors with strong bright specular highlights on metal and gems, "
+    "never muted or pastel gradients. Give the character's pose real energy — a dynamic lean, tilt, or "
+    "action angle — never a stiff, straight-on, symmetrical standing pose. "
+    "Never enclose the whole scene in a circular medallion, badge, coin, or ring-shaped border. The "
+    "character and every floating prop sit directly on the open background with nothing framing, "
+    "circling, or boxing them in."
 )
 
 MOTION_ART_DIRECTION = (
