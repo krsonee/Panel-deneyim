@@ -376,7 +376,7 @@ class MediaBot:
                         sticker_motion_prompt(session),
                         image["bytes"],
                         image.get("mime") or "image/png",
-                        "9:16",
+                        video_aspect(session.get("fmt")),
                     ),
                     seconds=300,
                 )
@@ -1093,6 +1093,64 @@ def _knockout_magenta(image):
     return image
 
 
+def _is_sticker_margin(red, green, blue):
+    if red < 22 and green < 22 and blue < 22:
+        return True
+    return abs(red - 255) + green + abs(blue - 255) <= 130
+
+
+def _content_crop(source, folder):
+    """Siyah şerit ve macenta boşluğu at. Karakterin kutusu kalır."""
+    import subprocess
+    from PIL import Image
+
+    frame_dir = folder / "frames"
+    frame_dir.mkdir()
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-i", str(source), "-t", "2.5", "-vf", "fps=3",
+            str(frame_dir / "f%02d.png"),
+        ],
+        capture_output=True,
+        timeout=40,
+    )
+    left = top = right = bottom = None
+    width = height = 0
+    for path in sorted(frame_dir.glob("*.png"))[:8]:
+        image = Image.open(path).convert("RGB")
+        width, height = image.size
+        pixels = image.load()
+        for y in range(0, height, 3):
+            for x in range(0, width, 3):
+                red, green, blue = pixels[x, y]
+                if _is_sticker_margin(red, green, blue):
+                    continue
+                left = x if left is None else min(left, x)
+                top = y if top is None else min(top, y)
+                right = x if right is None else max(right, x)
+                bottom = y if bottom is None else max(bottom, y)
+    if left is None or width < 2 or height < 2:
+        return None
+    pad_x = int((right - left) * 0.08) + 4
+    pad_y = int((bottom - top) * 0.08) + 4
+    left = max(0, left - pad_x)
+    top = max(0, top - pad_y)
+    right = min(width - 1, right + pad_x)
+    bottom = min(height - 1, bottom + pad_y)
+    crop_w = right - left + 1
+    crop_h = bottom - top + 1
+    if crop_w < 8 or crop_h < 8 or crop_w * crop_h < width * height * 0.04:
+        return None
+    left -= left % 2
+    top -= top % 2
+    crop_w -= crop_w % 2
+    crop_h -= crop_h % 2
+    if crop_w < 2 or crop_h < 2:
+        return None
+    return crop_w, crop_h, left, top
+
+
 def _to_video_sticker(data):
     """Veo mp4'sini Telegram video sticker'ına çevirir: VP9, en fazla 3 sn, 256 KB."""
     import subprocess
@@ -1106,13 +1164,23 @@ def _to_video_sticker(data):
         source = folder / "in.mp4"
         target = folder / "out.webm"
         source.write_bytes(data)
+        try:
+            crop = _content_crop(source, folder)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if not crop:
+            return None
+        crop_w, crop_h, left, top = crop
+        video_filter = (
+            f"crop={crop_w}:{crop_h}:{left}:{top},"
+            "chromakey=0xFF00FF:0.22:0.08,"
+            "scale='if(gte(iw,ih),512,-2)':'if(gte(iw,ih),-2,512)':flags=lanczos,"
+            "fps=12"
+        )
         for crf in (40, 48, 56):
             command = [
                 "ffmpeg", "-y", "-i", str(source), "-t", "2.9", "-an",
-                "-vf",
-                "chromakey=0xFF00FF:0.28:0.10,"
-                "scale='if(gte(iw,ih),512,-2)':'if(gte(iw,ih),-2,512)':flags=lanczos,"
-                "fps=12",
+                "-vf", video_filter,
                 "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
                 "-b:v", "0", "-crf", str(crf),
                 "-deadline", "realtime", "-cpu-used", "5",

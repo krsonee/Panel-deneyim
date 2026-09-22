@@ -200,6 +200,54 @@ class FlowTests(unittest.TestCase):
         duration = float(text.split("duration=")[1].split()[0])
         self.assertLessEqual(duration, 3.0)
 
+    def test_black_bars_are_cut_out_of_the_sticker(self):
+        folder = Path("/tmp/stk-bars")
+        folder.mkdir(exist_ok=True)
+        source = folder / "bars.mp4"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=black:s=320x180:d=2",
+                "-f", "lavfi", "-i", "color=c=0xFF00FF:s=160x100:d=2",
+                "-f", "lavfi", "-i", "color=c=0xE8C36A:s=50x70:d=2",
+                "-filter_complex", "[0][1]overlay=80:40[m];[m][2]overlay=120:55",
+                "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                str(source),
+            ],
+            check=True,
+        )
+        webm = _to_video_sticker(source.read_bytes())
+        self.assertIsNotNone(webm)
+        probe = subprocess.run(
+            [
+                "ffprobe", "-hide_banner", "-loglevel", "error",
+                "-show_entries", "stream=width,height",
+                "-of", "default=nw=1", "-i", "pipe:0",
+            ],
+            input=webm,
+            capture_output=True,
+            check=True,
+        )
+        text = probe.stdout.decode()
+        width = int(text.split("width=")[1].split()[0])
+        height = int(text.split("height=")[1].split()[0])
+        self.assertLess(width / height, 1.9)
+
+    def test_all_black_video_is_not_sent_as_a_sticker(self):
+        folder = Path("/tmp/stk-black")
+        folder.mkdir(exist_ok=True)
+        source = folder / "black.mp4"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=black:s=160x160:d=1",
+                "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                str(source),
+            ],
+            check=True,
+        )
+        self.assertIsNone(_to_video_sticker(source.read_bytes()))
+
     def test_category_without_size_does_not_crash(self):
         bot = MediaBot("dummy")
         session = new_session()
