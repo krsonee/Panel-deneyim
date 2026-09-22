@@ -133,6 +133,18 @@ class FlowTests(unittest.TestCase):
         self.assertIn("own knowledge of this exact game's real theme", prompt)
         self.assertIn("water and fish for a fishing game", prompt)
 
+    def test_mascot_sticker_allows_full_costume_and_scene_freedom(self):
+        # Referans paket gösterdi ki aynı maskot kral/korsan/şampiyon kılığına
+        # girebiliyor, kimliği (yüz/saç) hep aynı kalıyor. Kıyafeti artık kilitli değil.
+        session = new_session()
+        session.update({"brand": "makrobet", "sticker_kind": "mascot", "slogan": "Kod geliyor"})
+        prompt = sticker_prompt(session)
+        self.assertIn("yellow hair", prompt)
+        self.assertIn("fully re-costume", prompt)
+        self.assertIn("ribbon or badge graphic", prompt)
+        self.assertNotIn("navy suit with gold trim", prompt)
+        self.assertNotIn("only his pose and what he holds", prompt)
+
     def test_slot_name_does_not_replace_the_mascot(self):
         session = new_session()
         session.update({
