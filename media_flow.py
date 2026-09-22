@@ -111,7 +111,11 @@ def sticker_prompt(session):
         if game:
             parts.append(
                 f"Slot name is scenery around him, never a replacement body: {game}. "
-                "Fish, coins, or reels may float beside him. Do not turn him into that game's creature."
+                "Use your own knowledge of this exact game's real theme, colors, and iconic symbols "
+                "for the props and background — candy and fruit for a sweets game, water and fish for "
+                "a fishing game, gold and temple carvings for a mythology game, and so on. Match what "
+                "this specific game is actually about, not a generic pile of coins or a spinning reel. "
+                "Do not turn him into that game's creature."
             )
         if character:
             parts.append(f"Apply this to the same mascot. Do not switch characters: {character}.")
@@ -143,7 +147,10 @@ def _mascot_sticker_prompt(brand, slogan, game, character):
     if game:
         parts.append(
             f"Slot name is scenery around this same man, never a new body: {game}. "
-            "Fish, coins, or reels may float beside him."
+            "Use your own knowledge of this exact game's real theme, colors, and iconic symbols for "
+            "the props and background — candy and fruit for a sweets game, water and fish for a "
+            "fishing game, gold and temple carvings for a mythology game, and so on. Match what this "
+            "specific game is actually about, not a generic pile of coins or a spinning reel."
         )
     if character:
         parts.append(f"Apply this to the same man. Do not switch characters: {character}.")

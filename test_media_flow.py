@@ -106,6 +106,33 @@ class FlowTests(unittest.TestCase):
         self.assertIn("yellow hair", prompt)
         self.assertNotIn("official logo", prompt)
 
+    def test_game_name_gets_theme_aware_props_not_generic_coins(self):
+        session = new_session()
+        session.update({
+            "brand": "makrobet",
+            "sticker_kind": "mascot",
+            "game": "Sweet bonanza",
+            "slogan": "Kod geliyor",
+        })
+        prompt = sticker_prompt(session)
+        self.assertIn("never a new body", prompt)
+        self.assertIn("Sweet bonanza", prompt)
+        self.assertIn("own knowledge of this exact game's real theme", prompt)
+        self.assertIn("candy and fruit for a sweets game", prompt)
+
+    def test_mascotless_brand_game_name_is_also_theme_aware(self):
+        # betced has no mascot photo, so this hits the generic (non-photo) sticker branch.
+        session = new_session()
+        session.update({
+            "brand": "betced",
+            "sticker_kind": "mascot",
+            "game": "Big bass bonanza",
+        })
+        prompt = sticker_prompt(session)
+        self.assertIn("never a replacement body", prompt)
+        self.assertIn("own knowledge of this exact game's real theme", prompt)
+        self.assertIn("water and fish for a fishing game", prompt)
+
     def test_slot_name_does_not_replace_the_mascot(self):
         session = new_session()
         session.update({
