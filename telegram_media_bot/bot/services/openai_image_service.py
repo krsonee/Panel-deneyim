@@ -9,21 +9,25 @@ works end-to-end as-is. Nothing else needs to change.
 
 Model compatibility note
 -------------------------
-OpenAI's Images API has two model families with different response
-contracts:
+We do **not** send the `response_format` parameter at all, on purpose.
 
-- ``dall-e-2`` / ``dall-e-3``: accept an explicit ``response_format``
-  ("url" or "b64_json").
-- ``gpt-image-1`` (and successors, e.g. ``gpt-image-1.5``): do **not**
-  accept ``response_format`` at all — sending it raises
-  ``400 Unknown parameter: 'response_format'``. These models always
-  return base64-encoded images in ``data[0].b64_json``.
+`response_format` used to be required to request base64 output from
+`dall-e-2`/`dall-e-3`, and OpenAI's newer GPT image models (`gpt-image-1`
+and successors) never supported it in the first place — both raise
+``400 Unknown parameter: 'response_format'`` once an account/API version
+stops accepting it. Rather than trying to special-case every model
+family (which broke in practice: an earlier version of this file gated
+the parameter on the model name, but real-world `dall-e-3` accounts
+started rejecting it too), we simply never ask for a specific format.
+`_extract_image_bytes()` below reads whichever field the response
+actually populated (`b64_json` or `url`), which works unconditionally
+across every model/account variant we've observed.
 
-`generate_image()` below only sends `response_format` for models that
-support it, and reads whichever field the response actually populated
-(`b64_json` first, falling back to downloading `url`), so switching
-`OPENAI_IMAGE_MODEL` between families in `.env` does not require any code
-changes.
+As an extra safety net, `_call_with_unknown_parameter_fallback()` detects
+*any* "unknown_parameter" 400 error from the API, drops that specific
+parameter from the request, and retries once. This means if some other
+parameter we send (`size`, `n`, ...) is ever rejected by a future API
+change, the request self-heals instead of hard-failing.
 """
 
 from __future__ import annotations
@@ -40,15 +44,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 2
 _RETRY_BACKOFF_SECONDS = 2.0
-
-# Model families that reject the `response_format` parameter outright and
-# always return base64-encoded images (see module docstring above).
-_MODELS_WITHOUT_RESPONSE_FORMAT_PREFIXES = ("gpt-image",)
-
-
-def _supports_response_format(model: str) -> bool:
-    normalized = model.strip().lower()
-    return not normalized.startswith(_MODELS_WITHOUT_RESPONSE_FORMAT_PREFIXES)
+_UNKNOWN_PARAMETER_ERROR_CODE = "unknown_parameter"
 
 
 class OpenAIImageService:
@@ -93,19 +89,13 @@ class OpenAIImageService:
         """
         client = self._ensure_client()
 
+        # Deliberately no `response_format` — see module docstring.
         request_kwargs: dict[str, object] = {
             "model": self._model,
             "prompt": prompt,
             "size": self._size,
             "n": 1,
         }
-        if _supports_response_format(self._model):
-            # Ask for base64 directly rather than "url": it avoids a second
-            # HTTP round-trip and sidesteps the fact that OpenAI's hosted
-            # image URLs expire after 60 minutes. GPT image models always
-            # return base64 and reject this parameter entirely, so it is
-            # only added for dall-e-2/dall-e-3.
-            request_kwargs["response_format"] = "b64_json"
 
         last_error: Exception | None = None
         for attempt in range(1, _MAX_RETRIES + 2):
@@ -117,7 +107,7 @@ class OpenAIImageService:
                     self._model,
                     prompt,
                 )
-                response = await client.images.generate(**request_kwargs)
+                response = await self._call_with_unknown_parameter_fallback(client, request_kwargs)
                 return await self._extract_image_bytes(response.data[0])
             except ProviderNotConfiguredError:
                 raise
@@ -129,12 +119,37 @@ class OpenAIImageService:
 
         raise ImageGenerationError(f"DALL-E 3 görsel üretimi başarısız oldu: {last_error}") from last_error
 
+    async def _call_with_unknown_parameter_fallback(self, client, request_kwargs: dict[str, object]):
+        """Call `images.generate()`; if the API rejects one of our own
+        parameters as unknown, drop it and retry once immediately.
+
+        This is a defensive net against API/account drift — e.g. some
+        accounts started rejecting `response_format` even on `dall-e-3`,
+        after previously requiring it. We no longer send that parameter by
+        default, but this fallback protects against the *next* parameter
+        that might get deprecated without a corresponding code change here.
+        """
+        try:
+            return await client.images.generate(**request_kwargs)
+        except Exception as exc:  # noqa: BLE001 - inspecting provider SDK error shape
+            offending_param = getattr(exc, "param", None)
+            error_code = getattr(exc, "code", None)
+            if error_code == _UNKNOWN_PARAMETER_ERROR_CODE and offending_param in request_kwargs:
+                logger.warning(
+                    "OpenAI '%s' parametresini reddetti (unknown_parameter); "
+                    "bu parametre olmadan tekrar deneniyor.",
+                    offending_param,
+                )
+                retry_kwargs = {k: v for k, v in request_kwargs.items() if k != offending_param}
+                return await client.images.generate(**retry_kwargs)
+            raise
+
     async def _extract_image_bytes(self, image_entry: object) -> bytes:
         """Pull raw image bytes out of a single `images.generate()` result item.
 
-        Handles both possible response shapes: `b64_json` (GPT image
-        models always, dall-e-2/3 when requested) and `url` (dall-e-2/3
-        default / fallback).
+        Handles both possible response shapes: `b64_json` (the default for
+        GPT image models, and what dall-e-2/3 return when no
+        `response_format` is given depends on API version) and `url`.
         """
         b64_json = getattr(image_entry, "b64_json", None)
         if b64_json:
