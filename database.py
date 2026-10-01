@@ -744,7 +744,9 @@ def migrate_makrolink(conn):
                 return False
             if h in _bizzo_blocked:
                 return True
-            for p in ("makrobet", "makrovip", "makrogir", "vipmakro", "makroaffi"):
+            if "bizzocasino" in h:
+                return True
+            for p in ("makrobet", "makrovip", "makrogir", "vipmakro", "makroaffi", "bizzocasino"):
                 if h == p or h.startswith(p + ".") or h.startswith(p):
                     return True
             return False

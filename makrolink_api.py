@@ -64,17 +64,20 @@ _BIZZO_BLOCKED_HOST_PREFIXES = (
     "makrogir",
     "vipmakro",
     "makroaffi",
+    "bizzocasino",
 )
 
 
 def _is_blocked_short_host(host):
-    """Bizzo panelinde Makro short domainlerini reddet."""
+    """Bizzo: Makro short domainleri + kapalı bizzocasino host’larını reddet."""
     if PANEL_BRAND != "bizzo":
         return False
     h = _clean_host(host)
     if not h:
         return False
     if h in _BIZZO_BLOCKED_SHORT_HOSTS:
+        return True
+    if "bizzocasino" in h:
         return True
     for p in _BIZZO_BLOCKED_HOST_PREFIXES:
         if h == p or h.startswith(p + ".") or h.startswith(p):
@@ -87,7 +90,7 @@ def _filter_hosts_for_brand(hosts):
 
 
 def purge_foreign_short_hosts(conn):
-    """Bizzo: makrovip vb. eski seed’i DB’den sil. Makro’da no-op."""
+    """Bizzo: makrovip + kapalı bizzocasino seed’ini DB’den sil. Makro’da no-op."""
     if PANEL_BRAND != "bizzo":
         return False
     changed = False
@@ -110,6 +113,36 @@ def purge_foreign_short_hosts(conn):
     if aff and ("makroaffi" in aff or "makrovip" in aff):
         upsert_setting(conn, "aff_base", "")
         changed = True
+
+    group_raw = (get_setting(conn, "online_domain_group", "") or "").strip()
+    if group_raw and "bizzocasino" in group_raw.lower():
+        kept_lines = []
+        for line in str(group_raw).replace(",", "\n").split("\n"):
+            if "bizzocasino" in line.lower():
+                changed = True
+                continue
+            kept_lines.append(line)
+        upsert_setting(conn, "online_domain_group", "\n".join(kept_lines).strip())
+
+    try:
+        link_rows = fetchall(
+            conn,
+            "SELECT id, destination_url, short_host FROM makrolink_links",
+        )
+    except Exception:
+        from database import safe_rollback
+
+        safe_rollback(conn)
+        link_rows = []
+    for row in link_rows or []:
+        dest = (row["destination_url"] if hasattr(row, "keys") else "") or ""
+        shost = (row["short_host"] if hasattr(row, "keys") and "short_host" in row.keys() else "") or ""
+        if "bizzocasino" in dest.lower() or "bizzocasino" in shost.lower():
+            lid = int(row["id"])
+            execute(conn, "DELETE FROM makrolink_clicks WHERE link_id = ?", (lid,))
+            execute(conn, "DELETE FROM makrolink_links WHERE id = ?", (lid,))
+            changed = True
+
     if changed:
         conn.commit()
     return changed
@@ -1003,7 +1036,7 @@ def create_link(
     cfg_hosts = get_config(conn)
     if PANEL_BRAND == "bizzo" and not (cfg_hosts.get("short_hosts") or cfg_hosts.get("public_host")):
         raise ValueError(
-            "Önce Kısa domainler'e domain ekle ve Kaydet (örn. bizzokazan.site). "
+            "Önce Kısa domainler'e domain ekle ve Kaydet (örn. kisalink1.com). "
             "Render Custom Domain + Cloudflare DNS şart."
         )
     affiliate_id = (affiliate_id or "").strip()[:64]

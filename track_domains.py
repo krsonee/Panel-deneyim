@@ -71,6 +71,18 @@ def upsert_tracked_domain(domain, *, label="", ref_code="", created_by="system")
 
 # Operasyondan tamamen çıkarılan domainler — DB + bio bağını temizle (Namecheap’e dokunulmaz)
 _RETIRED_TRACK_DOMAINS = frozenset({"girbize.com"})
+# Kapalı casino — yalnızca PANEL_BRAND=bizzo boot’ta temizlenir (Makro DB’ye dokunulmaz)
+_BIZZO_RETIRED_HOST_MARKER = "bizzocasino"
+
+
+def is_retired_bizzo_casino_host(host):
+    """bizzocasino168.com / www / alt host — kapalı sitenin tüm varyantları."""
+    raw = (host or "").strip().lower()
+    if not raw:
+        return False
+    if _BIZZO_RETIRED_HOST_MARKER in raw:
+        return True
+    return _BIZZO_RETIRED_HOST_MARKER in normalize_track_domain(raw)
 
 
 def purge_retired_domains():
@@ -100,10 +112,69 @@ def purge_retired_domains():
         conn.commit()
 
 
+def purge_retired_bizzo_casino_domains():
+    """Bizzo panel: kapalı bizzocasino host’larını takip / bio / kısa link’ten siler.
+
+    Makro panelde no-op — paylaşılan kod tabanı, ayrı DB.
+    """
+    try:
+        from panel_config import PANEL_BRAND
+    except Exception:
+        return
+    if PANEL_BRAND != "bizzo":
+        return
+
+    with closing(get_db()) as conn:
+        rows = fetchall(
+            conn,
+            "SELECT id, domain, redirect_url FROM tracked_links",
+        )
+        for row in rows or []:
+            domain = row["domain"] if hasattr(row, "keys") else row[1]
+            redirect = ""
+            if hasattr(row, "keys"):
+                redirect = row["redirect_url"] if "redirect_url" in row.keys() else ""
+            lid = int(row["id"] if hasattr(row, "keys") else row[0])
+            if is_retired_bizzo_casino_host(domain):
+                execute(conn, "DELETE FROM visitor_sessions WHERE tracked_link_id = ?", (lid,))
+                execute(conn, "DELETE FROM tracked_links WHERE id = ?", (lid,))
+                continue
+            if is_retired_bizzo_casino_host(redirect):
+                execute(conn, "UPDATE tracked_links SET redirect_url = '' WHERE id = ?", (lid,))
+
+        pages = fetchall(
+            conn,
+            "SELECT id, custom_domain FROM biolink_pages WHERE custom_domain IS NOT NULL AND TRIM(custom_domain) != ''",
+        )
+        for page in pages or []:
+            custom = page["custom_domain"] if hasattr(page, "keys") else page[1]
+            if is_retired_bizzo_casino_host(custom):
+                execute(conn, "UPDATE biolink_pages SET custom_domain = '' WHERE id = ?", (page["id"],))
+
+        execute(
+            conn,
+            """
+            UPDATE biolink_buttons
+            SET url = ''
+            WHERE LOWER(url) LIKE ?
+            """,
+            (f"%{_BIZZO_RETIRED_HOST_MARKER}%",),
+        )
+        conn.commit()
+
+    try:
+        from makrolink_api import purge_foreign_short_hosts
+
+        with closing(get_db()) as conn:
+            purge_foreign_short_hosts(conn)
+    except Exception as exc:
+        print(f"⚠️  purge_foreign_short_hosts: {exc}")
+
+
 def ensure_brand_tracked_domains():
     """Marka varsayılan domainleri + tüm bio özel domainleri Link Takip’e alır."""
     try:
-        from panel_config import BRAND, BIOLINK_PACK
+        from panel_config import BRAND, BIOLINK_PACK, PANEL_BRAND
     except Exception:
         return
 
@@ -111,6 +182,12 @@ def ensure_brand_tracked_domains():
         purge_retired_domains()
     except Exception as exc:
         print(f"⚠️  purge_retired_domains: {exc}")
+
+    if PANEL_BRAND == "bizzo":
+        try:
+            purge_retired_bizzo_casino_domains()
+        except Exception as exc:
+            print(f"⚠️  purge_retired_bizzo_casino_domains: {exc}")
 
     defaults = list(BRAND.get("default_tracked_domains") or [])
     site = (BIOLINK_PACK.get("site_url") or "").strip()
@@ -120,8 +197,11 @@ def ensure_brand_tracked_domains():
             defaults.append({"domain": host, "label": f"{BRAND.get('casino_name') or 'Casino'} (ana site)"})
 
     for item in defaults:
+        domain = item.get("domain") or ""
+        if is_retired_bizzo_casino_host(domain):
+            continue
         upsert_tracked_domain(
-            item.get("domain") or "",
+            domain,
             label=item.get("label") or "",
             ref_code=item.get("ref_code") or "",
             created_by="brand-seed",
@@ -137,7 +217,7 @@ def ensure_brand_tracked_domains():
         )
     for row in rows or []:
         domain = normalize_track_domain(row.get("custom_domain") or "")
-        if not domain or domain in _RETIRED_TRACK_DOMAINS:
+        if not domain or domain in _RETIRED_TRACK_DOMAINS or is_retired_bizzo_casino_host(domain):
             continue
         title = (row.get("title") or domain).strip()[:80]
         upsert_tracked_domain(domain, label=f"Bio: {title}", created_by="biolink-sync")
@@ -148,7 +228,7 @@ def sync_biolink_custom_domain(page):
     if not page:
         return
     domain = normalize_track_domain(page.get("custom_domain") or "")
-    if not domain or domain in _RETIRED_TRACK_DOMAINS:
+    if not domain or domain in _RETIRED_TRACK_DOMAINS or is_retired_bizzo_casino_host(domain):
         return
     title = (page.get("title") or domain).strip()[:80]
     upsert_tracked_domain(domain, label=f"Bio: {title}", created_by="biolink-sync")
