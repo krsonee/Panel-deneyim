@@ -851,10 +851,32 @@ def migrate_makrolink(conn):
                     continue
                 seen.add(h)
                 hosts.append(h)
-            for must in ("makrovip.com", "makroz.ink", "makrosms.com"):
+            # makroz.ink panel host — kısa link listesinde durmasın
+            hosts = [h for h in hosts if h not in ("makroz.ink", "www.makroz.ink")]
+            seen = set(hosts)
+            for must in ("makrovip.com", "makrosms.com"):
                 if must not in seen:
                     hosts.append(must)
                     seen.add(must)
+            ph_row = fetchone(conn, "SELECT value FROM makrolink_settings WHERE key = ?", ("public_host",))
+            ph = _clean_ml_host((ph_row["value"] if ph_row else "") or "")
+            if ph in ("makroz.ink", "www.makroz.ink", ""):
+                ph = "makrovip.com"
+                if uses_postgres():
+                    execute(
+                        conn,
+                        """
+                        INSERT INTO makrolink_settings (key, value) VALUES ('public_host', ?)
+                        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                        """,
+                        (ph,),
+                    )
+                else:
+                    execute(
+                        conn,
+                        "INSERT OR REPLACE INTO makrolink_settings (key, value) VALUES ('public_host', ?)",
+                        (ph,),
+                    )
             if uses_postgres():
                 execute(
                     conn,

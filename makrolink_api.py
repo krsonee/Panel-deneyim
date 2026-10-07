@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import secrets
 import string
@@ -1445,6 +1446,51 @@ def record_click_and_resolve(conn, code, ip="", user_agent="", referer="", short
         client_id=cid,
     )
     return link["destination_url"]
+
+
+_PANEL_HOSTS = frozenset({
+    "makroz.ink",
+    "www.makroz.ink",
+    "takipmkr.onrender.com",
+    "localhost",
+    "127.0.0.1",
+})
+
+
+def is_panel_host(host):
+    """makroz.ink / takipmkr = yönetim paneli. Kısa link domaini değil."""
+    host = _clean_host((host or "").split(":")[0])
+    if not host:
+        return False
+    if host in _PANEL_HOSTS:
+        return True
+    if host.endswith(".onrender.com"):
+        return True
+    try:
+        base = (os.environ.get("PUBLIC_BASE_URL") or "").strip()
+        parsed = urlparse(base if "://" in base else "https://" + base)
+        ph = _clean_host(parsed.hostname or parsed.netloc or "")
+        if ph and host == ph:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+_SHORTLINK_ONLY_HOSTS = frozenset({
+    "makrovip.com",
+    "makrosms.com",
+})
+
+
+def is_shortlink_only_host(host, conn=None):
+    """makrovip.com / makrosms.com — panel açılmaz, sadece /kod yönlendirir."""
+    host = _clean_host((host or "").split(":")[0])
+    if not host or is_panel_host(host):
+        return False
+    if host in _SHORTLINK_ONLY_HOSTS:
+        return True
+    return is_makrolink_host(host, conn)
 
 
 def is_makrolink_host(host, conn=None):

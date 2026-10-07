@@ -114,7 +114,7 @@ _BRANDS = {
         "login_sub": "Link takip, bio sayfa ve muhasebe",
         "casino_name": "Makrobet",
         "shortlink_label": "Kısa Link",
-        "shortlink_host_placeholder": "makroz.ink",
+        "shortlink_host_placeholder": "makrovip.com",
         "shortlink_max_hosts": 0,  # 0 = sınırsız
         "default_short_host": "",
         "default_aff_base": "",

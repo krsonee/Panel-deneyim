@@ -2544,17 +2544,35 @@ def biolink_custom_domain():
 
 @app.before_request
 def makrolink_host_short_codes():
-    """Kısa domain /kod → hedef URL (tracked redirect'ten ÖNCE; aksi halde path ezilir)."""
+    """Kısa domain: /kod → hedef. makrovip.com kökü panele düşmez."""
     host = (request.host or "").split(":")[0].strip().lower()
     path = (request.path or "/").strip("/")
-    if not path or "/" in path:
-        return None
-    if path.lower() in makrolink_api.RESERVED_PATHS:
-        return None
+    panel = makrolink_api.is_panel_host(host)
     try:
         with closing(get_db()) as conn:
-            if not makrolink_api.is_makrolink_host(host, conn):
-                return None
+            short_only = makrolink_api.is_shortlink_only_host(host, conn)
+    except Exception as exc:
+        print(f"⚠️  makrolink host check: {exc}")
+        short_only = makrolink_api.is_shortlink_only_host(host, None)
+
+    if short_only and not panel:
+        if not path or "/" in path or path.lower() in makrolink_api.RESERVED_PATHS:
+            return ("", 404)
+        if path.startswith("admin") or path.startswith("api") or path.startswith("login"):
+            return ("", 404)
+    else:
+        # Panel host: /admin normal; varsa /kod kısa link
+        if not path or "/" in path or path.lower() in makrolink_api.RESERVED_PATHS:
+            return None
+        try:
+            with closing(get_db()) as conn:
+                if not makrolink_api.is_makrolink_host(host, conn):
+                    return None
+        except Exception:
+            return None
+
+    try:
+        with closing(get_db()) as conn:
             dest = makrolink_api.record_click_and_resolve(
                 conn,
                 path,
