@@ -2364,6 +2364,11 @@
               </div>
               {% endif %}
               <div style="margin-top:0.65rem;">
+                <label for="makrolink-root-redirect">Kök yönlendirme <span class="muted">(uzantısız makrovip.com / makrosms.com)</span></label>
+                <input id="makrolink-root-redirect" placeholder="{% if panel.brand == 'bizzo' %}https://www.bizzocasino168.com{% else %}https://makrogir.com{% endif %}" autocomplete="off" style="width:100%;">
+                <p class="muted-sm" style="margin:0.35rem 0 0;">Domaini uzantısız açınca bu adrese gider. <code>/smsd1</code> gibi kodlar kısa link olarak kalır. Site domaini değişince burayı güncelle.</p>
+              </div>
+              <div style="margin-top:0.65rem;">
                 <label for="makrolink-online-group">Canlı casino domain grubu <span class="muted">(online takip — max 150)</span></label>
                 <textarea id="makrolink-online-group" rows="2" placeholder="ornek804-820  veya  domain1.com, domain2.com" style="width:100%;"></textarea>
                 <p class="muted-sm" style="margin:0.35rem 0 0;">Takip edilen casino domain aralığı / listesi. Domain değişince güncelle + Takip eşle.</p>
@@ -5850,6 +5855,8 @@
               } else gst.textContent = "Grup boş — online Affid eşlemesi yapılmaz (tıklama/GA yine çalışır).";
             }
             if (d.categories && d.categories.length) makrolinkApplyCategories(d.categories);
+            var rootEl = document.getElementById("makrolink-root-redirect");
+            if (rootEl) rootEl.value = d.root_redirect_url || "";
             var gaId = document.getElementById("makrolink-ga4-id");
             if (gaId) gaId.value = d.ga4_measurement_id || "";
             var st = document.getElementById("makrolink-ga4-status");
@@ -6651,6 +6658,9 @@
           public_scheme: document.getElementById("makrolink-scheme").value,
           short_hosts: document.getElementById("makrolink-hosts")
             ? document.getElementById("makrolink-hosts").value
+            : "",
+          root_redirect_url: document.getElementById("makrolink-root-redirect")
+            ? document.getElementById("makrolink-root-redirect").value.trim()
             : "",
           online_domain_group: document.getElementById("makrolink-online-group")
             ? document.getElementById("makrolink-online-group").value

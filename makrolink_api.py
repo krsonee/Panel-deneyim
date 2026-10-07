@@ -48,6 +48,26 @@ SMARTICO_ENABLED = _panel_feature("smartico")
 MAX_SHORT_HOSTS = int(BRAND.get("shortlink_max_hosts") or 0)
 
 
+def default_root_redirect_url():
+    """Kısa domain kökü (uzantısız) → canlı casino. Marka site_url, yoksa makrogir.com."""
+    pack = BRAND.get("biolink_pack") or {}
+    u = (pack.get("site_url") or "").strip()
+    if not u:
+        u = "https://www.bizzocasino168.com" if PANEL_BRAND == "bizzo" else "https://makrogir.com"
+    if not u.startswith(("http://", "https://")):
+        u = "https://" + u
+    return u.rstrip("/")
+
+
+def _normalize_root_redirect(raw):
+    u = (raw or "").strip()
+    if not u:
+        return ""
+    if not u.startswith(("http://", "https://")):
+        u = "https://" + u
+    return u.rstrip("/")
+
+
 def _max_short_hosts():
     return int(BRAND.get("shortlink_max_hosts") or 0)
 
@@ -488,6 +508,10 @@ def get_config(conn, include_secrets=False):
         "categories": list_categories(conn),
         "max_short_hosts": max_hosts,
         "brand": PANEL_BRAND,
+        "root_redirect_url": (
+            _normalize_root_redirect(get_setting(conn, "root_redirect_url", "") or "")
+            or default_root_redirect_url()
+        ),
     }
     if include_secrets:
         cfg["ga4_api_secret"] = secret
@@ -505,6 +529,7 @@ def save_config(
     ga4_measurement_id=None,
     ga4_api_secret=None,
     online_domain_group=None,
+    root_redirect_url=None,
 ):
     if short_hosts is not None:
         if isinstance(short_hosts, list):
@@ -594,6 +619,18 @@ def save_config(
             upsert_setting(conn, "ga4_api_secret", secret)
         elif ga4_api_secret == "":
             upsert_setting(conn, "ga4_api_secret", "")
+
+    if root_redirect_url is not None:
+        u = _normalize_root_redirect(root_redirect_url)
+        if not u:
+            upsert_setting(conn, "root_redirect_url", "")
+        else:
+            if not _valid_url(u):
+                raise ValueError("Geçerli kök yönlendirme URL'si gerekli (örn. https://makrogir.com).")
+            dest_host = _clean_host(urlparse(u).hostname or "")
+            if dest_host in _SHORTLINK_ONLY_HOSTS or is_panel_host(dest_host):
+                raise ValueError("Kök yönlendirme kısa domain veya panele olamaz.")
+            upsert_setting(conn, "root_redirect_url", u)
 
     return get_config(conn, include_secrets=False)
 
@@ -1483,8 +1520,27 @@ _SHORTLINK_ONLY_HOSTS = frozenset({
 })
 
 
+def shortlink_root_destination(conn=None, request_host=None):
+    """Uzantısız kısa domain → canlı site. Ayar yoksa marka site_url (makrogir.com)."""
+    stored = ""
+    if conn is not None:
+        try:
+            stored = get_setting(conn, "root_redirect_url", "") or ""
+        except Exception:
+            stored = ""
+    dest = _normalize_root_redirect(stored) or default_root_redirect_url()
+    dest_host = _clean_host(urlparse(dest).hostname or "")
+    req = _clean_host((request_host or "").split(":")[0])
+    if dest_host and (dest_host == req or dest_host in _SHORTLINK_ONLY_HOSTS or is_panel_host(dest_host)):
+        dest = default_root_redirect_url()
+        dest_host = _clean_host(urlparse(dest).hostname or "")
+        if dest_host == req or dest_host in _SHORTLINK_ONLY_HOSTS or is_panel_host(dest_host):
+            dest = "https://makrogir.com"
+    return dest
+
+
 def is_shortlink_only_host(host, conn=None):
-    """makrovip.com / makrosms.com — panel açılmaz, sadece /kod yönlendirir."""
+    """makrovip.com / makrosms.com — panel açılmaz; kök canlı site, /kod kısa link."""
     host = _clean_host((host or "").split(":")[0])
     if not host or is_panel_host(host):
         return False

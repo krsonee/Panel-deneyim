@@ -51,6 +51,9 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
                     online_domain_group=data.get("online_domain_group")
                     if "online_domain_group" in data
                     else None,
+                    root_redirect_url=data.get("root_redirect_url")
+                    if "root_redirect_url" in data
+                    else None,
                 )
             return jsonify(cfg)
         except ValueError as exc:

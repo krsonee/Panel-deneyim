@@ -2544,7 +2544,7 @@ def biolink_custom_domain():
 
 @app.before_request
 def makrolink_host_short_codes():
-    """Kısa domain: /kod → hedef. makrovip.com kökü panele düşmez."""
+    """Kısa domain: kök → canlı site; /kod → kısa link. Panel açılmaz."""
     host = (request.host or "").split(":")[0].strip().lower()
     path = (request.path or "/").strip("/")
     panel = makrolink_api.is_panel_host(host)
@@ -2556,7 +2556,19 @@ def makrolink_host_short_codes():
         short_only = makrolink_api.is_shortlink_only_host(host, None)
 
     if short_only and not panel:
-        if not path or "/" in path or path.lower() in makrolink_api.RESERVED_PATHS:
+        if not path:
+            dest = None
+            try:
+                with closing(get_db()) as conn:
+                    dest = makrolink_api.shortlink_root_destination(conn, host)
+            except Exception as exc:
+                print(f"⚠️  makrolink root redirect: {exc}")
+                dest = makrolink_api.shortlink_root_destination(None, host)
+            qs = request.query_string.decode("utf-8", errors="ignore")
+            if qs:
+                dest = dest + ("&" if "?" in dest else "?") + qs
+            return redirect(dest, code=302)
+        if "/" in path or path.lower() in makrolink_api.RESERVED_PATHS:
             return ("", 404)
         if path.startswith("admin") or path.startswith("api") or path.startswith("login"):
             return ("", 404)
