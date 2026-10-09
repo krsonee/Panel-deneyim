@@ -1,0 +1,26 @@
+# Telegram bot framework
+aiogram>=3.4,<4.0
+
+# .env configuration loading
+python-dotenv>=1.0
+
+# OpenAI DALL-E 3 image generation
+openai>=1.30
+
+# Async HTTP client (Luma/Runway REST calls, downloading generated media)
+aiohttp>=3.9
+
+# Image handling (sticker canvas resize/pad)
+pillow>=10.3
+
+# Local background removal for transparent stickers
+# NOTE: rembg splits its ONNX Runtime backend into extras — use rembg[cpu]
+# (or rembg[gpu] if you have a CUDA GPU available) or `remove()` will fail
+# with "No onnxruntime backend found".
+rembg[cpu]>=2.0.57
+
+# Building/running ffmpeg filter graphs for sticker (.webm) encoding
+ffmpeg-python>=0.2.0
+
+# Local per-user quota tracking (async SQLite)
+aiosqlite>=0.20
