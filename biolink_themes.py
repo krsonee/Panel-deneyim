@@ -572,7 +572,7 @@ THEMES = {
         card_hover="rgba(34,197,94,0.15)", accent="#facc15", accent2="#22c55e",
         category="Marka", style="neon",
     ),
-    # Bizzo Casino — bizzocasino168.com paleti (mor / lime / altın)
+    # Betced / Bizzo panel — mor / lime / altın palet
     "bizzo": _theme(
         "★ Bizzo",
         bg="#2b1234", text="#ffffff", muted="#c4b5d4",
