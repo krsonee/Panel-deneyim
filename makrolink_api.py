@@ -1,6 +1,6 @@
 """MakroLink — kısa link (çoklu domain) → Smartico go.aff.
 
-Akış: sada.com/xxx | makrovip.com/xxx → go.aff.makroaffi.com/slug
+Akış: sada.com/xxx | makrovip.com/xxx → go.aff.affilatemakrobet.com/slug
 GA4: tek property, Measurement Protocol (tüm short host'lar).
 """
 
@@ -43,6 +43,9 @@ except ImportError:
 
 DEFAULT_PUBLIC_HOST = BRAND.get("default_short_host") or ""
 DEFAULT_AFF_BASE = BRAND.get("default_aff_base") or ""
+LEGACY_SMARTICO_AFF_HOST = "go.aff.makroaffi.com"
+CURRENT_SMARTICO_AFF_HOST = "go.aff.affilatemakrobet.com"
+CURRENT_SMARTICO_AFF_BASE = "https://go.aff.affilatemakrobet.com"
 SMARTICO_ENABLED = _panel_feature("smartico")
 # Bizzo: en fazla N short host; Makro: 0 = sınırsız
 MAX_SHORT_HOSTS = int(BRAND.get("shortlink_max_hosts") or 0)
@@ -596,7 +599,7 @@ def save_config(
             if base and not base.startswith("http"):
                 base = "https://" + base
             if not base or not _valid_url(base + "/x"):
-                raise ValueError("Geçerli Smartico aff base gerekli (örn. https://go.aff.makroaffi.com).")
+                raise ValueError("Geçerli Smartico aff base gerekli (örn. https://go.aff.affilatemakrobet.com).")
             upsert_setting(conn, "aff_base", base)
 
     if online_domain_group is not None:
@@ -770,13 +773,103 @@ def _rewrite_host_token(host, from_token, to_token):
     return ("www." + new_bare) if had_www else new_bare
 
 
+def _destination_host(dest):
+    raw = (dest or "").strip()
+    if not raw:
+        return ""
+    p = urlparse(raw if "://" in raw else "https://" + raw.lstrip("/"))
+    host = (p.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def _swap_destination_host(dest, old_host, new_host):
+    """Sadece host değişir; path / query / fragment (örn. /417389cp) durur."""
+    dest = (dest or "").strip()
+    old_host = _clean_host(old_host)
+    new_host = _clean_host(new_host)
+    if not dest or not old_host or not new_host:
+        return dest, False
+    raw = dest if "://" in dest else "https://" + dest.lstrip("/")
+    p = urlparse(raw)
+    host = (p.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if host != old_host:
+        return dest, False
+    netloc = new_host
+    if p.port:
+        netloc = f"{new_host}:{p.port}"
+    new = urlparse("")._replace(
+        scheme=p.scheme or "https",
+        netloc=netloc,
+        path=p.path,
+        params=p.params,
+        query=p.query,
+        fragment=p.fragment,
+    ).geturl()
+    return new, new != dest
+
+
+def rewrite_legacy_smartico_aff_host(conn):
+    """Tüm kısa link hedeflerinde go.aff.makroaffi.com → go.aff.affilatemakrobet.com.
+
+    Kod, etiket, kategori, short_host, /417389cp path’ine dokunmaz.
+    """
+    if PANEL_BRAND != "makro":
+        return {"updated": 0, "aff_base_updated": False, "scanned": 0, "skipped_other": 0}
+
+    rows = fetchall(conn, "SELECT id, destination_url FROM makrolink_links") or []
+    updated = 0
+    skipped_other = 0
+    already = 0
+    for row in rows:
+        dest = (dict(row).get("destination_url") or "").strip()
+        host = _destination_host(dest)
+        if host == CURRENT_SMARTICO_AFF_HOST:
+            already += 1
+            continue
+        new_url, changed = _swap_destination_host(dest, LEGACY_SMARTICO_AFF_HOST, CURRENT_SMARTICO_AFF_HOST)
+        if not changed:
+            if dest and "makroaffi" in dest.lower():
+                skipped_other += 1
+            continue
+        execute(
+            conn,
+            "UPDATE makrolink_links SET destination_url = ? WHERE id = ?",
+            (new_url, int(row["id"])),
+        )
+        updated += 1
+
+    aff = (get_setting(conn, "aff_base", "") or "").strip()
+    aff_host = _destination_host(aff) if aff else ""
+    aff_base_updated = False
+    if aff_host == LEGACY_SMARTICO_AFF_HOST or "makroaffi" in aff.lower() or (updated and aff_host != CURRENT_SMARTICO_AFF_HOST):
+        upsert_setting(conn, "aff_base", CURRENT_SMARTICO_AFF_BASE)
+        aff_base_updated = True
+    elif not aff and (updated or already):
+        upsert_setting(conn, "aff_base", CURRENT_SMARTICO_AFF_BASE)
+        aff_base_updated = True
+
+    conn.commit()
+    return {
+        "updated": updated,
+        "already": already,
+        "scanned": len(rows),
+        "skipped_other": skipped_other,
+        "aff_base_updated": aff_base_updated,
+        "from_host": LEGACY_SMARTICO_AFF_HOST,
+        "to_host": CURRENT_SMARTICO_AFF_HOST,
+    }
+
+
 def bulk_rewrite_destination_hosts(conn, *, prefix="makrobet", from_num=None, to_num=None,
                                    from_host="", to_host=""):
-    """Sadece seçilen casino host'unu değiştir.
+    """Sadece seçilen host'u değiştir; path/kod/etiket/kategori durur.
 
-    - Smartico go.aff → ASLA değişmez
-    - Diğer domainler (vipmakro, rastgele siteler) → ASLA değişmez
-    - Sadece host'un ilk etiketi birebir `makrobet804` olanlar (örn. makrobet804.com/promotions)
+    Numara modu (makrobet804→805): go.aff ve diğer domainler değişmez.
+    Tam host modu: birebir host eşleşmesi (go.aff dahil).
     """
     prefix = re.sub(r"[^a-z0-9-]", "", (prefix or "makrobet").strip().lower()) or "makrobet"
     from_host = _normalize_domain(from_host) if from_host else ""
@@ -819,9 +912,6 @@ def bulk_rewrite_destination_hosts(conn, *, prefix="makrobet", from_num=None, to
         dest = (d.get("destination_url") or "").strip()
         if not dest:
             continue
-        if is_smartico_destination(conn, dest):
-            skipped_smartico += 1
-            continue
         p = urlparse(dest if "://" in dest else "https://" + dest)
         host = (p.netloc or "").lower()
         if not host:
@@ -829,12 +919,15 @@ def bulk_rewrite_destination_hosts(conn, *, prefix="makrobet", from_num=None, to
             continue
 
         if use_num or not from_host:
+            if is_smartico_destination(conn, dest):
+                skipped_smartico += 1
+                continue
             if not _host_matches_casino_token(host, from_token):
                 skipped_other += 1
                 continue
             new_host = _rewrite_host_token(host, from_token, to_token)
         else:
-            # Tam host: sadece birebir eşleşme (www farkı tolere)
+            # Tam host: birebir eşleşme (www farkı tolere). Path durur; go.aff dahil.
             bare = host[4:] if host.startswith("www.") else host
             if bare != from_host:
                 skipped_other += 1

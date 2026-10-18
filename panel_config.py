@@ -117,7 +117,7 @@ _BRANDS = {
         "shortlink_host_placeholder": "makrovip.com",
         "shortlink_max_hosts": 0,  # 0 = sınırsız
         "default_short_host": "",
-        "default_aff_base": "",
+        "default_aff_base": "https://go.aff.affilatemakrobet.com",
         "domain_prefix_placeholder": "makrobet",
         "accent": "#6366f1",
         "invoice_vendor": "Pronet",

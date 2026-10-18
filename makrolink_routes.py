@@ -186,10 +186,19 @@ def create_makrolink_blueprint(permission_required, admin_only_required=None):
             return jsonify({"error": "Link bulunamadı."}), 404
         return jsonify({"ok": True})
 
+    @api.route("/links/rewrite-aff-host", methods=["POST"])
+    @perm(*MODULE_ACCESS)
+    @admin_only
+    def rewrite_aff_host():
+        """go.aff.makroaffi.com → go.aff.affilatemakrobet.com; path/kod/etiket/kategori durur."""
+        with closing(get_db()) as conn:
+            result = makrolink_api.rewrite_legacy_smartico_aff_host(conn)
+        return jsonify({"ok": True, **result})
+
     @api.route("/links/bulk-rewrite-host", methods=["POST"])
     @perm(*MODULE_ACCESS)
     def bulk_rewrite_host():
-        """Sadece makrobet804→805 tarzı hedefleri değiştir; Smartico ve diğer domainlere dokunma."""
+        """Host değiştir; numara modunda go.aff atlanır, tam host modunda path korunur."""
         data = request.get_json(silent=True) or {}
         try:
             with closing(get_db()) as conn:

@@ -944,6 +944,15 @@ def migrate_makrolink(conn):
             )
     except Exception as exc:
         print(f"⚠️  makrolink code lowercase migrate: {exc}")
+    # go.aff.makroaffi.com → go.aff.affilatemakrobet.com (yalnızca host; path/kod/etiket durur)
+    if _ML_PANEL == "makro":
+        try:
+            from makrolink_api import rewrite_legacy_smartico_aff_host
+            stats = rewrite_legacy_smartico_aff_host(conn)
+            if stats.get("updated") or stats.get("aff_base_updated"):
+                print(f"makrolink aff host rewrite: {stats}")
+        except Exception as exc:
+            print(f"⚠️  makrolink aff host rewrite: {exc}")
     conn.commit()
 
 
