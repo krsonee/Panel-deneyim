@@ -1033,7 +1033,7 @@ def _row_to_dict(conn, row):
     return d
 
 
-def list_links(conn, q_text=None, limit=200):
+def list_links(conn, q_text=None, limit=5000):
     rows = fetchall(
         conn,
         """

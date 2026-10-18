@@ -1113,6 +1113,19 @@
       width: auto; min-width: 160px; max-width: 220px;
       font-size: 0.78rem; padding: 0.35rem 0.55rem;
     }
+    .makrolink-search-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      flex: 1 1 240px;
+      min-width: 200px;
+      max-width: 420px;
+    }
+    .makrolink-search-wrap input {
+      width: 100%;
+      font-size: 0.82rem;
+      padding: 0.4rem 0.65rem;
+    }
     .makrolink-filter-active {
       display: none; align-items: center; gap: 0.35rem;
       font-size: 0.72rem; color: var(--muted); margin-left: auto;
@@ -2328,7 +2341,6 @@
           <div class="card-head">
             <span>{{ panel.shortlink_label }} <span class="muted" style="font-weight:400;font-size:0.72rem;">(kısa link · tıklama sayacı)</span></span>
             <div class="card-actions">
-              <input id="makrolink-search" placeholder="🔎 Link ara…" style="width:150px;" autocomplete="off">
               <span class="muted" id="makrolink-updated" style="font-size:0.72rem;"></span>
               <button type="button" class="btn btn-sm" id="btn-makrolink-settings" data-admin-only="1">⚙️ Ayarlar</button>
               <button type="button" class="btn btn-sm" id="btn-makrolink-refresh">Yenile</button>
@@ -2481,11 +2493,15 @@
           </div>
           <div class="table-wrap">
             <div class="makrolink-table-toolbar" style="flex-wrap:wrap;gap:0.45rem;align-items:end;">
+              <div class="makrolink-search-wrap">
+                <label for="makrolink-search">Link ara</label>
+                <input id="makrolink-search" type="search" placeholder="Kod, etiket, hedef, aff, domain…" autocomplete="off">
+              </div>
               <label for="makrolink-filter-category">Kategori</label>
               <select id="makrolink-filter-category" title="Kategoriye göre filtrele">
                 <option value="">Tüm kategoriler</option>
               </select>
-              <button type="button" class="btn btn-sm" id="makrolink-filter-clear" style="display:none;">Filtreyi temizle</button>
+              <button type="button" class="btn btn-sm" id="makrolink-filter-clear" style="display:none;">Temizle</button>
               <span class="makrolink-filter-active" id="makrolink-filter-active">
                 Filtre: <span class="tag" id="makrolink-filter-active-label"></span>
               </span>
@@ -5382,11 +5398,15 @@
         var clearBtn = document.getElementById("makrolink-filter-clear");
         var activeWrap = document.getElementById("makrolink-filter-active");
         var activeLabel = document.getElementById("makrolink-filter-active-label");
-        var on = !!catFilter;
+        var q = ((document.getElementById("makrolink-search") || {}).value || "").trim();
+        var on = !!catFilter || !!q;
         if (clearBtn) clearBtn.style.display = on ? "" : "none";
         if (activeWrap) activeWrap.classList.toggle("is-on", on);
         if (activeLabel) {
-          activeLabel.textContent = catFilter === "__none__" ? "Kategorisiz" : catFilter;
+          var bits = [];
+          if (q) bits.push("“" + q + "”");
+          if (catFilter) bits.push(catFilter === "__none__" ? "Kategorisiz" : catFilter);
+          activeLabel.textContent = bits.join(" · ");
         }
       }
 
@@ -6573,8 +6593,16 @@
       bindOptional("makrolink-filter-clear", "click", function() {
         var sel = document.getElementById("makrolink-filter-category");
         if (sel) sel.value = "";
+        var search = document.getElementById("makrolink-search");
+        if (search) search.value = "";
         try { localStorage.removeItem("makrolink_cat_filter"); } catch (e) { /* ignore */ }
         makrolinkApplyTableFilters(true);
+      });
+      bindOptional("makrolink-search", "keydown", function(e) {
+        if (e.key === "Escape") {
+          this.value = "";
+          makrolinkApplyTableFilters(true);
+        }
       });
       bindOptional("makrolink-prev", "click", function() {
         if (makrolinkPage > 1) {
