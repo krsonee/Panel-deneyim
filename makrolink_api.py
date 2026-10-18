@@ -92,11 +92,13 @@ _BIZZO_BLOCKED_HOST_PREFIXES = (
 
 
 def _is_blocked_short_host(host):
-    """Bizzo panelinde Makro short domainlerini reddet."""
-    if PANEL_BRAND != "bizzo":
-        return False
+    """Panel host ve (Bizzo'da) Makro domainleri kısa link olamaz."""
     h = _clean_host(host)
     if not h:
+        return False
+    if h in ("makroz.ink", "www.makroz.ink", "takipmkr.onrender.com") or h.endswith(".onrender.com"):
+        return True
+    if PANEL_BRAND != "bizzo":
         return False
     if h in _BIZZO_BLOCKED_SHORT_HOSTS:
         return True
@@ -104,6 +106,19 @@ def _is_blocked_short_host(host):
         if h == p or h.startswith(p + ".") or h.startswith(p):
             return True
     return False
+
+
+def _fallback_short_host(category=""):
+    if (category or "").strip().lower() == "sms":
+        return "makrosms.com"
+    return _clean_host(DEFAULT_PUBLIC_HOST) or "makrovip.com"
+
+
+def _safe_short_host(host, category=""):
+    h = _clean_host(host or "")
+    if h and not _is_blocked_short_host(h):
+        return h
+    return _fallback_short_host(category)
 
 
 def _filter_hosts_for_brand(hosts):
@@ -462,17 +477,21 @@ def _parse_host_list(raw, fallback=DEFAULT_PUBLIC_HOST):
 
 def get_config(conn, include_secrets=False):
     default_host = _clean_host(get_setting(conn, "public_host", DEFAULT_PUBLIC_HOST) or DEFAULT_PUBLIC_HOST)
+    if default_host and _is_blocked_short_host(default_host):
+        default_host = _fallback_short_host()
     hosts = _parse_host_list(get_setting(conn, "short_hosts", ""), default_host or DEFAULT_PUBLIC_HOST)
     if default_host and default_host not in hosts:
         hosts.insert(0, default_host)
-    # Bizzo: eski makrovip seed’ini gizle / listeden çıkar
+    # Panel host + Bizzo'da makro seed asla kısa domain listesinde durmasın
     hosts = _filter_hosts_for_brand(hosts)
     if default_host and _is_blocked_short_host(default_host):
-        default_host = hosts[0] if hosts else ""
+        default_host = hosts[0] if hosts else _fallback_short_host()
     elif default_host and default_host not in hosts:
-        default_host = hosts[0] if hosts else ""
+        default_host = hosts[0] if hosts else _fallback_short_host()
     if not default_host and hosts:
         default_host = hosts[0]
+    if not default_host and PANEL_BRAND == "makro":
+        default_host = "makrovip.com"
 
     scheme = (get_setting(conn, "public_scheme", "https") or "https").strip().lower()
     if scheme not in ("https", "http"):
@@ -540,10 +559,14 @@ def save_config(
         else:
             raw = str(short_hosts)
         hosts = _parse_host_list(raw, DEFAULT_PUBLIC_HOST)
-        blocked = [h for h in hosts if _is_blocked_short_host(h)]
-        if blocked:
+        panel_blocked = [
+            h for h in hosts
+            if h in ("makroz.ink", "www.makroz.ink", "takipmkr.onrender.com") or h.endswith(".onrender.com")
+        ]
+        brand_blocked = [h for h in hosts if _is_blocked_short_host(h) and h not in panel_blocked]
+        if brand_blocked:
             raise ValueError(
-                "Bu panelde Makro domain kullanılamaz: " + ", ".join(blocked)
+                "Bu panelde Makro domain kullanılamaz: " + ", ".join(brand_blocked)
             )
         hosts = _filter_hosts_for_brand(hosts)
         max_hosts = _max_short_hosts()
@@ -572,7 +595,10 @@ def save_config(
                 upsert_setting(conn, "public_host", "")
                 host = ""
         if host and _is_blocked_short_host(host):
-            raise ValueError(f"Bu panelde Makro domain kullanılamaz: {host}")
+            if PANEL_BRAND == "makro":
+                host = _fallback_short_host()
+            else:
+                raise ValueError(f"Bu panelde Makro domain kullanılamaz: {host}")
         if host:
             upsert_setting(conn, "public_host", host)
             # Varsayılanı listeye ekle
@@ -961,14 +987,9 @@ def bulk_rewrite_destination_hosts(conn, *, prefix="makrobet", from_num=None, to
     }
 
 
-def short_url(conn, code, host=None):
+def short_url(conn, code, host=None, category=""):
     cfg = get_config(conn)
-    h = _clean_host(host) if host else cfg["public_host"]
-    if not h:
-        h = cfg["public_host"]
-    elif h not in (cfg.get("short_hosts") or []) and cfg.get("public_host"):
-        # Listede yoksa yine de seçilen hostu yaz — sessizce makroz.ink'e düşürme
-        pass
+    h = _safe_short_host(host or cfg.get("public_host") or "", category)
     return f"{cfg['public_scheme']}://{h}/{code}"
 
 
@@ -980,7 +1001,7 @@ def short_urls_for_code(conn, code):
         return []
     out = []
     for h in cfg.get("short_hosts") or []:
-        if h:
+        if h and not _is_blocked_short_host(h):
             out.append(f"{cfg['public_scheme']}://{h}/{code}")
     if not out and cfg.get("public_host"):
         out.append(f"{cfg['public_scheme']}://{cfg['public_host']}/{code}")
@@ -991,16 +1012,13 @@ def _row_to_dict(conn, row):
     if not row:
         return None
     d = dict(row)
+    cat = (d.get("category") or "").strip()
     try:
-        d["short_host"] = _clean_host(d.get("short_host") or "")
+        bound = _safe_short_host(d.get("short_host") or "", cat)
     except Exception:
-        d["short_host"] = ""
-    bound = d.get("short_host") or ""
-    cat = (d.get("category") or "").strip().lower()
-    if not bound and cat == "sms":
-        bound = "makrosms.com"
-        d["short_host"] = bound
-    d["short_url"] = short_url(conn, d["code"], host=bound or None)
+        bound = _fallback_short_host(cat)
+    d["short_host"] = bound
+    d["short_url"] = short_url(conn, d["code"], host=bound, category=cat)
     all_urls = short_urls_for_code(conn, d["code"])
     if d["short_url"] and d["short_url"] not in all_urls:
         all_urls = [d["short_url"]] + all_urls
@@ -1044,8 +1062,8 @@ def list_links(conn, q_text=None, limit=200):
 
 def _allowed_short_hosts(conn):
     cfg = get_config(conn)
-    hosts = list(cfg.get("short_hosts") or [])
-    ph = _clean_host(cfg.get("public_host") or "")
+    hosts = [h for h in (cfg.get("short_hosts") or []) if h and not _is_blocked_short_host(h)]
+    ph = _safe_short_host(cfg.get("public_host") or "")
     if ph and ph not in hosts:
         hosts.append(ph)
     return hosts, ph
@@ -1056,6 +1074,8 @@ def resolve_bound_short_host(conn, raw, *, required=False):
     allowed, public_host = _allowed_short_hosts(conn)
     h = _clean_host(raw)
     if h:
+        if _is_blocked_short_host(h):
+            raise ValueError("makroz.ink paneldir, kısa link değil. makrovip.com veya makrosms.com seç.")
         if h not in allowed:
             raise ValueError("Bu kısa domain listede yok. Önce Ayarlar’dan ekle.")
         return h

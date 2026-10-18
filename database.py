@@ -892,14 +892,33 @@ def migrate_makrolink(conn):
                     "INSERT OR REPLACE INTO makrolink_settings (key, value) VALUES ('short_hosts', ?)",
                     ("\n".join(hosts),),
                 )
-            # SMS linkleri yanlışlıkla makroz.ink’e yazılmıştı — geri makrosms.com
+            # Panel host / boş short_host asla kopyalanan adres olmasın
             execute(
                 conn,
                 """
                 UPDATE makrolink_links
                 SET short_host = 'makrosms.com'
                 WHERE lower(TRIM(COALESCE(category, ''))) = 'sms'
-                  AND lower(TRIM(COALESCE(short_host, ''))) IN ('makroz.ink', '')
+                  AND (
+                    lower(TRIM(COALESCE(short_host, ''))) IN (
+                        '', 'makroz.ink', 'www.makroz.ink', 'takipmkr.onrender.com'
+                    )
+                    OR lower(TRIM(COALESCE(short_host, ''))) LIKE '%.onrender.com'
+                  )
+                """,
+            )
+            execute(
+                conn,
+                """
+                UPDATE makrolink_links
+                SET short_host = 'makrovip.com'
+                WHERE lower(TRIM(COALESCE(category, ''))) != 'sms'
+                  AND (
+                    lower(TRIM(COALESCE(short_host, ''))) IN (
+                        '', 'makroz.ink', 'www.makroz.ink', 'takipmkr.onrender.com'
+                    )
+                    OR lower(TRIM(COALESCE(short_host, ''))) LIKE '%.onrender.com'
+                  )
                 """,
             )
     # Kısa kodları lowercase normalize et (case-insensitive eşsizlik)
