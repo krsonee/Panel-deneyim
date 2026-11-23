@@ -82,14 +82,25 @@ def main():
         if h and h not in host_list:
             host_list.append(h)
 
+    from mail_delivery import is_account_unavailable_error, smtp_error_brief
+
+    def _probe(s, u):
+        s.login(u, password)
+        # MAIL FROM + RSET: DATA yok, mail gönderilmez; 551 login'de mi zarfta mı görünür.
+        code, resp = s.mail(u)
+        s.rset()
+        if code >= 400:
+            raise smtplib.SMTPSenderRefused(code, resp, u)
+
     ctx = ssl.create_default_context()
     ok = False
+    account_blocked = False
     for h in host_list:
         for u in users:
             try:
                 if port == 465:
                     with smtplib.SMTP_SSL(h, port, timeout=25, context=ctx) as s:
-                        s.login(u, password)
+                        _probe(s, u)
                 else:
                     with smtplib.SMTP(h, port, timeout=25) as s:
                         s.ehlo()
@@ -98,14 +109,38 @@ def main():
                             s.ehlo()
                         except smtplib.SMTPException:
                             pass
-                        s.login(u, password)
-                print(f"OK login user={u} host={h}:{port}")
+                        _probe(s, u)
+                print(f"OK login+MAIL FROM user={u} host={h}:{port}")
                 ok = True
                 break
             except Exception as exc:
-                print(f"FAIL user={u} host={h} -> {exc}")
+                print(f"FAIL user={u} host={h} -> {smtp_error_brief(exc)}")
+                if is_account_unavailable_error(exc):
+                    account_blocked = True
         if ok:
             break
+
+    if account_blocked and not ok:
+        print("---")
+        print("Sonuç: 551 Main account unavailable — sender tanınıyor ama 551 veren bölgede gönderime kapalı.")
+        print("ud010301 = o bölgede sender yok, ud010201 = sender var/şifre yanlış.")
+        print("1) 551 veren host'un bölgesinde DirectMail → Sender Addresses → adres durumu + Set SMTP Password")
+        print("2) Email Domains → domain 'Verified' mi; Overview → Account Status")
+        try:
+            from mail_alibaba_report import account_status
+
+            with closing(get_db()) as conn:
+                st = account_status(conn)
+            if st.get("ok"):
+                print(
+                    f"API ({st['region']}): UserStatus={st['user_status']} [{st['user_status_label']}] "
+                    f"seviye={st.get('quota_level')} günlük={st.get('daily_quota')} kanal={st.get('ip_channel_type')}"
+                )
+            else:
+                print(f"API DescAccountSummary okunamadı: {st.get('error')}")
+        except Exception as exc:
+            print(f"API DescAccountSummary hata: {exc}")
+        sys.exit(3)
 
     if not ok:
         print("---")
