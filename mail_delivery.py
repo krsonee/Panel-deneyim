@@ -5,7 +5,7 @@ import ssl
 import smtplib
 import time
 from email.message import EmailMessage
-from email.utils import formataddr, make_msgid
+from email.utils import formataddr, formatdate, make_msgid
 
 from database import (
     execute,
@@ -92,6 +92,7 @@ def _smtp_send(
     msg["Subject"] = subject or "(konu yok)"
     msg["From"] = formataddr((from_name, from_email))
     msg["To"] = to_email
+    msg["Date"] = formatdate(localtime=False, usegmt=True)
     msg["Message-ID"] = make_msgid(domain=from_email.split("@")[-1] if "@" in from_email else "localhost")
     for hk, hv in (extra_headers or {}).items():
         if hv:
