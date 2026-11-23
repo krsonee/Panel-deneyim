@@ -143,20 +143,24 @@ def _smtp_login_once(host, port, user, password) -> None:
             smtp.login(user, password or "")
 
 
-# DirectMail bölge hostları (yanlış host → bazen 535)
+# DirectMail bölge hostları; Ayarlar'daki host her zaman önce denenir.
+# Sender adresleri bölgeye özel: başka bölgede tanımsız adres 535 [@ud010301] alır.
 _ALI_SMTP_HOSTS = (
-    "smtpdm.aliyun.com",
     "smtpdm-ap-southeast-1.aliyuncs.com",
+    "smtpdm-ap-southeast-1.aliyun.com",
+    "smtpdm.aliyun.com",
     "smtpdm-eu-central-1.aliyuncs.com",
     "smtpdm-us-east-1.aliyuncs.com",
-    "smtpdm-ap-southeast-1.aliyun.com",
 )
+
+_ALI_UD_HINTS = {
+    "ud010301": "bu bölgede sender tanımlı değil",
+    "ud010201": "sender var, SMTP şifresi yanlış",
+}
 
 
 def is_account_unavailable_error(err) -> bool:
-    """Alibaba 551 Main account unavailable — hesap seviyesi blok (UserStatus≠0).
-    Tüm bölge host'ları ve tüm sender domainleri aynı hesaba bağlı olduğundan
-    host/domain değiştirmek çözmez."""
+    """Alibaba 551 Main account unavailable [@ud010102]."""
     if isinstance(err, smtplib.SMTPResponseException):
         if err.smtp_code == 551:
             return True
@@ -164,6 +168,25 @@ def is_account_unavailable_error(err) -> bool:
     if isinstance(err, bytes):
         err = err.decode("utf-8", errors="replace")
     return "main account unavailable" in str(err or "").lower()
+
+
+def smtp_error_brief(exc) -> str:
+    if isinstance(exc, smtplib.SMTPResponseException):
+        text = exc.smtp_error
+        if isinstance(text, bytes):
+            text = text.decode("utf-8", errors="replace")
+        brief = f"{exc.smtp_code} {text}".strip()
+    else:
+        brief = f"{type(exc).__name__}: {exc}".strip()
+    for code, meaning in _ALI_UD_HINTS.items():
+        if code in brief:
+            brief += f" ({meaning})"
+            break
+    return brief[:160]
+
+
+def format_host_errors(attempts) -> str:
+    return " | ".join(f"{a['host']}: {a['error']}" for a in attempts)
 
 
 _ACCOUNT_HINT_CACHE = {"at": 0.0, "hint": ""}
@@ -176,10 +199,9 @@ def account_unavailable_hint(conn) -> str:
     if _ACCOUNT_HINT_CACHE["hint"] and now - _ACCOUNT_HINT_CACHE["at"] < _ACCOUNT_HINT_TTL:
         return _ACCOUNT_HINT_CACHE["hint"]
     hint = (
-        "Alibaba DirectMail hesabı gönderime kapalı (551 Main account unavailable): "
-        "şifre/host/bölge sorunu değil. DirectMail konsolu → Overview → Account Status "
-        "(限制外发 ise 'Request Unblock/申请解封', tek hak); Billing'de borç/bakiye ve "
-        "Security Center'da risk bildirimi kontrol et."
+        "551 Main account unavailable: Alibaba sender'ı tanıyor ama o bölgede gönderime "
+        "kapalı görüyor. DirectMail konsolu (551 veren host'un bölgesi) → Sender Addresses'ta "
+        "adres durumu/SMTP şifresi, Email Domains'te domain durumu, Overview'da Account Status."
     )
     try:
         from mail_alibaba_report import account_status
@@ -188,8 +210,7 @@ def account_unavailable_hint(conn) -> str:
         if st.get("ok"):
             hint += (
                 f" API ({st.get('region')}): UserStatus={st.get('user_status')} "
-                f"[{st.get('user_status_label')}], seviye={st.get('quota_level')}, "
-                f"kanal={st.get('ip_channel_type')}."
+                f"[{st.get('user_status_label')}], seviye={st.get('quota_level')}."
             )
     except Exception as exc:
         print(f"⚠️  alibaba account_status: {exc}")
@@ -258,18 +279,20 @@ def smtp_login_test(conn, *, domain_id=None, override_password=None, override_us
                 attempts.append({
                     "user": user,
                     "host": host,
-                    "error": str(exc).strip()[:180],
+                    "error": smtp_error_brief(exc),
+                    "account_unavailable": is_account_unavailable_error(exc),
                 })
-                if is_account_unavailable_error(exc):
-                    return {
-                        "ok": False,
-                        "error": account_unavailable_hint(conn),
-                        "password_len": len(password),
-                        "from_email": from_email,
-                        "settings_user": settings_user,
-                        "attempts": attempts[:12],
-                        "account_unavailable": True,
-                    }
+
+    if any(a["account_unavailable"] for a in attempts):
+        return {
+            "ok": False,
+            "error": account_unavailable_hint(conn),
+            "password_len": len(password),
+            "from_email": from_email,
+            "settings_user": settings_user,
+            "attempts": attempts[:20],
+            "account_unavailable": True,
+        }
 
     return {
         "ok": False,
@@ -654,10 +677,8 @@ def deliver_mail(
         if h and h not in host_list:
             host_list.append(h)
 
-    last_err = ""
-    hosts_tried = 0
+    attempts = []
     for try_host in host_list:
-        hosts_tried += 1
         try:
             msg_id = _smtp_send(
                 host=try_host,
@@ -735,16 +756,19 @@ def deliver_mail(
                 )
             return send_id, "sent", ""
         except Exception as exc:
-            last_err = str(exc).strip()[:400] or "SMTP gönderim hatası"
-            if is_account_unavailable_error(exc):
-                last_err = f"{account_unavailable_hint(conn)} — {last_err}"[:700]
-                break
-            # Yanlış bölge host'u da 535 verebildiği için auth hatalarında da
-            # diğer host'ları deniyoruz — if/else öncesi ikisi de aynı continue'ya
-            # gidiyordu (dead branch); tek continue ile aynı davranış, daha açık.
+            # Yanlış bölge host'u 535, başka bölgedeki aynı adres 551 verebilir;
+            # her hatada sonraki host'a geç, hepsini raporla.
+            attempts.append({
+                "host": try_host,
+                "error": smtp_error_brief(exc) or "SMTP gönderim hatası",
+                "account_unavailable": is_account_unavailable_error(exc),
+            })
             continue
 
-    err = f"{last_err} [auth={auth_source}; user={user}; hosts_tried={hosts_tried}@{try_host}]"
+    err = format_host_errors(attempts)
+    if any(a["account_unavailable"] for a in attempts):
+        err = f"{err} — {account_unavailable_hint(conn)}"
+    err = f"{err} [auth={auth_source}; user={user}; hosts_tried={len(attempts)}]"
     execute(
         conn,
         """

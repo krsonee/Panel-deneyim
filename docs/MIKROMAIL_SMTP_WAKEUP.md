@@ -51,19 +51,20 @@ SOURCE_DATABASE_URL='BURAYA_MAKROPANEL_DB_URL' python scripts/copy_smtp_from_mak
 
 ## 551 Main account unavailable (535 değil)
 
-Hesap seviyesi blok: Alibaba DirectMail hesabının `UserStatus` değeri normal değil
-(1 dondurulmuş, 2 borçlu, 4 dış gönderim kısıtlı/限制外发, 8 silinmiş). Şifre, host,
-bölge veya sender adresi sorunu değil; başka host / başka domain denemek çözmez
-(aynı hesaba bağlılar). Panel 551'de host denemeyi bırakır ve Alibaba Rapor
-AccessKey'i varsa `DescAccountSummary` ile UserStatus'u hataya yazar.
+Panel tüm bölge host'larını dener ve hata mesajında **her host'un** cevabını yazar.
+Alibaba ek kodları (Kasım 2026 gözlemi):
 
-1. DirectMail konsolu → **Overview / 概览** → Account Status. Normal değilse sebep bu.
-2. 限制外发 ise aynı sayfada **Request Unblock / 申请解封** (tek hak). Tetikleyici
-   genelde önceki gün ≥300 gönderimde geçersiz adres >%11, spam >%15 veya teslim %0,
-   ya da seviye 1'de düşüş. Açıldıktan sonra listeyi scrub et, hacmi düşür.
-3. Dondurulmuşsa self-servis yok → Alibaba destek bileti.
-4. Shell: `python scripts/smtp_diag.py` (login + MAIL FROM, DATA yok) → 551 görürse
-   çıkış kodu 3 ve API UserStatus satırı.
+- `535 [@ud010301]` → bu bölgede sender adresi tanımlı değil (normal, diğer bölgeler için)
+- `535 [@ud010201]` → sender bu bölgede var, SMTP şifresi yanlış
+- `551 Main account unavailable [@ud010102]` → sender tanınıyor ama o bölgede gönderime kapalı
+
+551 veren host'un bölgesinde (vipozelileti.com için Singapur) kontrol:
+
+1. **Sender Addresses** → adres satırı durumu (normal/dondurulmuş), gerekirse **Set SMTP Password** + 10 dk.
+2. **Email Domains** → domain `Verified` mi (SPF/DKIM/ownership TXT değişmiş olabilir → Verify).
+3. **Overview** → Account Status. Normal değilse 限制外发 → **Request Unblock / 申请解封** (tek hak).
+4. Shell: `python scripts/smtp_diag.py` (login + MAIL FROM, DATA yok) — login'de mi zarfta mı 551
+   geldiğini ve Alibaba Rapor AccessKey'i varsa API UserStatus'u gösterir; 551'de çıkış kodu 3.
 
 ---
 

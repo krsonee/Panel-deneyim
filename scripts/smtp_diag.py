@@ -82,7 +82,7 @@ def main():
         if h and h not in host_list:
             host_list.append(h)
 
-    from mail_delivery import is_account_unavailable_error
+    from mail_delivery import is_account_unavailable_error, smtp_error_brief
 
     def _probe(s, u):
         s.login(u, password)
@@ -114,19 +114,18 @@ def main():
                 ok = True
                 break
             except Exception as exc:
-                print(f"FAIL user={u} host={h} -> {exc}")
+                print(f"FAIL user={u} host={h} -> {smtp_error_brief(exc)}")
                 if is_account_unavailable_error(exc):
                     account_blocked = True
-                    break
-        if ok or account_blocked:
+        if ok:
             break
 
-    if account_blocked:
+    if account_blocked and not ok:
         print("---")
-        print("Sonuç: 551 Main account unavailable — Alibaba HESABI gönderime kapalı (şifre/host değil).")
-        print("1) DirectMail konsolu → Overview → Account Status / 用户状态 (Normal değilse sebep bu)")
-        print("2) 限制外发 / Restricted ise Overview'da 'Request Unblock / 申请解封' (tek hak)")
-        print("3) Billing → borç / ödeme yöntemi; Security Center / mesaj merkezi → risk bildirimi")
+        print("Sonuç: 551 Main account unavailable — sender tanınıyor ama 551 veren bölgede gönderime kapalı.")
+        print("ud010301 = o bölgede sender yok, ud010201 = sender var/şifre yanlış.")
+        print("1) 551 veren host'un bölgesinde DirectMail → Sender Addresses → adres durumu + Set SMTP Password")
+        print("2) Email Domains → domain 'Verified' mi; Overview → Account Status")
         try:
             from mail_alibaba_report import account_status
 
