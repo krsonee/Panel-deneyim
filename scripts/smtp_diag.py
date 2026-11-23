@@ -82,14 +82,25 @@ def main():
         if h and h not in host_list:
             host_list.append(h)
 
+    from mail_delivery import is_account_unavailable_error
+
+    def _probe(s, u):
+        s.login(u, password)
+        # MAIL FROM + RSET: DATA yok, mail gönderilmez; 551 login'de mi zarfta mı görünür.
+        code, resp = s.mail(u)
+        s.rset()
+        if code >= 400:
+            raise smtplib.SMTPSenderRefused(code, resp, u)
+
     ctx = ssl.create_default_context()
     ok = False
+    account_blocked = False
     for h in host_list:
         for u in users:
             try:
                 if port == 465:
                     with smtplib.SMTP_SSL(h, port, timeout=25, context=ctx) as s:
-                        s.login(u, password)
+                        _probe(s, u)
                 else:
                     with smtplib.SMTP(h, port, timeout=25) as s:
                         s.ehlo()
@@ -98,14 +109,39 @@ def main():
                             s.ehlo()
                         except smtplib.SMTPException:
                             pass
-                        s.login(u, password)
-                print(f"OK login user={u} host={h}:{port}")
+                        _probe(s, u)
+                print(f"OK login+MAIL FROM user={u} host={h}:{port}")
                 ok = True
                 break
             except Exception as exc:
                 print(f"FAIL user={u} host={h} -> {exc}")
-        if ok:
+                if is_account_unavailable_error(exc):
+                    account_blocked = True
+                    break
+        if ok or account_blocked:
             break
+
+    if account_blocked:
+        print("---")
+        print("Sonuç: 551 Main account unavailable — Alibaba HESABI gönderime kapalı (şifre/host değil).")
+        print("1) DirectMail konsolu → Overview → Account Status / 用户状态 (Normal değilse sebep bu)")
+        print("2) 限制外发 / Restricted ise Overview'da 'Request Unblock / 申请解封' (tek hak)")
+        print("3) Billing → borç / ödeme yöntemi; Security Center / mesaj merkezi → risk bildirimi")
+        try:
+            from mail_alibaba_report import account_status
+
+            with closing(get_db()) as conn:
+                st = account_status(conn)
+            if st.get("ok"):
+                print(
+                    f"API ({st['region']}): UserStatus={st['user_status']} [{st['user_status_label']}] "
+                    f"seviye={st.get('quota_level')} günlük={st.get('daily_quota')} kanal={st.get('ip_channel_type')}"
+                )
+            else:
+                print(f"API DescAccountSummary okunamadı: {st.get('error')}")
+        except Exception as exc:
+            print(f"API DescAccountSummary hata: {exc}")
+        sys.exit(3)
 
     if not ok:
         print("---")

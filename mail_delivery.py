@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ssl
 import smtplib
+import time
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
@@ -152,6 +153,50 @@ _ALI_SMTP_HOSTS = (
 )
 
 
+def is_account_unavailable_error(err) -> bool:
+    """Alibaba 551 Main account unavailable — hesap seviyesi blok (UserStatus≠0).
+    Tüm bölge host'ları ve tüm sender domainleri aynı hesaba bağlı olduğundan
+    host/domain değiştirmek çözmez."""
+    if isinstance(err, smtplib.SMTPResponseException):
+        if err.smtp_code == 551:
+            return True
+        err = err.smtp_error
+    if isinstance(err, bytes):
+        err = err.decode("utf-8", errors="replace")
+    return "main account unavailable" in str(err or "").lower()
+
+
+_ACCOUNT_HINT_CACHE = {"at": 0.0, "hint": ""}
+_ACCOUNT_HINT_TTL = 300
+
+
+def account_unavailable_hint(conn) -> str:
+    # Kampanyada her alıcı 551 alır; DescAccountSummary'yi alıcı başına çağırma.
+    now = time.monotonic()
+    if _ACCOUNT_HINT_CACHE["hint"] and now - _ACCOUNT_HINT_CACHE["at"] < _ACCOUNT_HINT_TTL:
+        return _ACCOUNT_HINT_CACHE["hint"]
+    hint = (
+        "Alibaba DirectMail hesabı gönderime kapalı (551 Main account unavailable): "
+        "şifre/host/bölge sorunu değil. DirectMail konsolu → Overview → Account Status "
+        "(限制外发 ise 'Request Unblock/申请解封', tek hak); Billing'de borç/bakiye ve "
+        "Security Center'da risk bildirimi kontrol et."
+    )
+    try:
+        from mail_alibaba_report import account_status
+
+        st = account_status(conn)
+        if st.get("ok"):
+            hint += (
+                f" API ({st.get('region')}): UserStatus={st.get('user_status')} "
+                f"[{st.get('user_status_label')}], seviye={st.get('quota_level')}, "
+                f"kanal={st.get('ip_channel_type')}."
+            )
+    except Exception as exc:
+        print(f"⚠️  alibaba account_status: {exc}")
+    _ACCOUNT_HINT_CACHE.update(at=now, hint=hint)
+    return hint
+
+
 def smtp_login_test(conn, *, domain_id=None, override_password=None, override_user=None,
                     override_host=None, override_port=None, probe_hosts=True) -> dict:
     """Ayarlar SMTP login. Birden fazla user/host dener — 535 teşhisi için."""
@@ -215,6 +260,16 @@ def smtp_login_test(conn, *, domain_id=None, override_password=None, override_us
                     "host": host,
                     "error": str(exc).strip()[:180],
                 })
+                if is_account_unavailable_error(exc):
+                    return {
+                        "ok": False,
+                        "error": account_unavailable_hint(conn),
+                        "password_len": len(password),
+                        "from_email": from_email,
+                        "settings_user": settings_user,
+                        "attempts": attempts[:12],
+                        "account_unavailable": True,
+                    }
 
     return {
         "ok": False,
@@ -600,7 +655,9 @@ def deliver_mail(
             host_list.append(h)
 
     last_err = ""
+    hosts_tried = 0
     for try_host in host_list:
+        hosts_tried += 1
         try:
             msg_id = _smtp_send(
                 host=try_host,
@@ -679,12 +736,15 @@ def deliver_mail(
             return send_id, "sent", ""
         except Exception as exc:
             last_err = str(exc).strip()[:400] or "SMTP gönderim hatası"
+            if is_account_unavailable_error(exc):
+                last_err = f"{account_unavailable_hint(conn)} — {last_err}"[:700]
+                break
             # Yanlış bölge host'u da 535 verebildiği için auth hatalarında da
             # diğer host'ları deniyoruz — if/else öncesi ikisi de aynı continue'ya
             # gidiyordu (dead branch); tek continue ile aynı davranış, daha açık.
             continue
 
-    err = f"{last_err} [auth={auth_source}; user={user}; hosts_tried={len(host_list)}]"
+    err = f"{last_err} [auth={auth_source}; user={user}; hosts_tried={hosts_tried}@{try_host}]"
     execute(
         conn,
         """

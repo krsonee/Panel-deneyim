@@ -306,6 +306,60 @@ def mask_key(k: str) -> str:
     return k[:4] + "•" * (len(k) - 8) + k[-4:]
 
 
+# DescAccountSummary.UserStatus — 551 "Main account unavailable" bunlardan
+# biri 0 değilken döner (bölge/şifre/sender sorunu değil, hesap seviyesi).
+_USER_STATUS_LABELS = {
+    0: "normal",
+    1: "dondurulmuş (冻结) — self-servis açılmaz, Alibaba destek",
+    2: "borçlu (欠费) — Billing'de ödeme/bakiye",
+    4: "dış gönderim kısıtlı (限制外发) — Overview → 申请解封 / Request Unblock (tek hak)",
+    8: "mantıksal silinmiş (逻辑删除)",
+}
+
+
+def describe_user_status(code) -> str:
+    try:
+        code = int(code)
+    except (TypeError, ValueError):
+        return "bilinmiyor"
+    if code in _USER_STATUS_LABELS:
+        return _USER_STATUS_LABELS[code]
+    parts = [lbl for bit, lbl in _USER_STATUS_LABELS.items() if bit and code & bit]
+    return " + ".join(parts) if parts else f"bilinmiyor ({code})"
+
+
+def account_status(conn, *, timeout=8) -> dict:
+    """Salt-okunur dm:DescAccountSummary — UserStatus, kota, itibar seviyesi.
+    RAM anahtarında bu izin yoksa ok=False döner; çağıranlar bunu tolere etmeli."""
+    cfg = get_config(conn)
+    if not cfg["configured"]:
+        return {"ok": False, "error": "AccessKey Id / Secret girilmemiş."}
+    try:
+        data = _call_api(cfg["ak_id"], cfg["ak_secret"], cfg["region"], "DescAccountSummary", {}, timeout=timeout)
+    except AlibabaReportError as exc:
+        return {"ok": False, "region": cfg["region"], "error": str(exc)}
+    if "UserStatus" not in data:
+        return {
+            "ok": False,
+            "region": cfg["region"],
+            "error": f"{data.get('Code')}: {data.get('Message')}" if data.get("Code") else "UserStatus yok",
+        }
+    code = data.get("UserStatus")
+    return {
+        "ok": True,
+        "region": cfg["region"],
+        "user_status": code,
+        "user_status_label": describe_user_status(code),
+        "quota_level": data.get("QuotaLevel"),
+        "daily_quota": data.get("DailyQuota"),
+        "month_quota": data.get("MonthQuota"),
+        "remain_free_quota": data.get("RemainFreeQuota"),
+        "ip_channel_type": data.get("IpChannelType"),
+        "domains": data.get("Domains"),
+        "mail_addresses": data.get("MailAddresses"),
+    }
+
+
 def test_connection(conn) -> dict:
     """Salt-okunur, 1 kayıtlık minik bir istek — kimlik bilgisi + izin doğrulaması.
     Başarılıysa alibaba_report_verified=1 yazar (senkron job'un çalışması için şart)."""
@@ -336,6 +390,7 @@ def test_connection(conn) -> dict:
         "request_id": data.get("RequestId"),
         "sample_count": len(sample),
         "sample": sample[:1],
+        "account": account_status(conn),
     }
 
 

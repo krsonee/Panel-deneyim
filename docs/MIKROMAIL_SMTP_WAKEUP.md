@@ -49,6 +49,24 @@ SOURCE_DATABASE_URL='BURAYA_MAKROPANEL_DB_URL' python scripts/copy_smtp_from_mak
 
 ---
 
+## 551 Main account unavailable (535 değil)
+
+Hesap seviyesi blok: Alibaba DirectMail hesabının `UserStatus` değeri normal değil
+(1 dondurulmuş, 2 borçlu, 4 dış gönderim kısıtlı/限制外发, 8 silinmiş). Şifre, host,
+bölge veya sender adresi sorunu değil; başka host / başka domain denemek çözmez
+(aynı hesaba bağlılar). Panel 551'de host denemeyi bırakır ve Alibaba Rapor
+AccessKey'i varsa `DescAccountSummary` ile UserStatus'u hataya yazar.
+
+1. DirectMail konsolu → **Overview / 概览** → Account Status. Normal değilse sebep bu.
+2. 限制外发 ise aynı sayfada **Request Unblock / 申请解封** (tek hak). Tetikleyici
+   genelde önceki gün ≥300 gönderimde geçersiz adres >%11, spam >%15 veya teslim %0,
+   ya da seviye 1'de düşüş. Açıldıktan sonra listeyi scrub et, hacmi düşür.
+3. Dondurulmuşsa self-servis yok → Alibaba destek bileti.
+4. Shell: `python scripts/smtp_diag.py` (login + MAIL FROM, DATA yok) → 551 görürse
+   çıkış kodu 3 ve API UserStatus satırı.
+
+---
+
 ## Render env kontrol
 
 `mikromail` ve `mikromail-worker` için **aynı** `MAILING_SECRET_KEY` olmalı (generateValue ayrı ayrı üretmesin).
