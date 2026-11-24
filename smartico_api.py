@@ -27,12 +27,15 @@ from database import (
 from panel_config import PANEL_BRAND
 
 DEFAULT_API_HOST = "https://boapi.smartico.ai"
-DEFAULT_INT_API_BASE = "https://go.aff.makroaffi.com"
-# Eski yanlış default (DNS yok) → otomatik düzelt
+DEFAULT_INT_API_BASE = "https://go.aff.affilatemakrobet.com"
+# Eski TAP domainleri (DNS yok) → DB'de kayıtlı olsa da otomatik yeni default'a çevir
 _LEGACY_INT_API_BASES = frozenset({
     "https://api.aff.makroaffi.com",
     "http://api.aff.makroaffi.com",
     "api.aff.makroaffi.com",
+    "https://go.aff.makroaffi.com",
+    "http://go.aff.makroaffi.com",
+    "go.aff.makroaffi.com",
 })
 
 # Makro TAP — Smartico Settings'teki sabitler (Default'a Aktar için)
